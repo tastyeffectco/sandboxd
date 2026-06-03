@@ -86,6 +86,42 @@ command:
   converges Docker back to the database on every boot. You can read the whole
   control plane in an afternoon.
 
+## "Why not just a shell script?"
+
+Fair question — and honestly: **if you need one or two long-lived containers for
+yourself, a shell script (or `docker run`, or [lxd](https://canonical.com/lxd))
+is simpler. Use that.** We mean it. sandboxed is overkill for one-off projects.
+
+It earns its keep the moment you're running **many** sandboxes for **other
+people** — a team, or a product — because that's when the tidy little `docker
+run` script quietly grows into all of this:
+
+- **URLs, not ports.** Every sandbox gets a clean preview URL with automatic
+  routing + TLS — no port bookkeeping, no collisions to manage.
+- **It sleeps and wakes itself.** Idle sandboxes stop to free RAM and restart
+  transparently on the next request (warming-up page, readiness probe, request
+  hold). That part alone is well past 100 lines — and it's the difference
+  between one cheap box and a rack of always-on VMs.
+- **It survives reboots.** SQLite is the source of truth; a reconciler
+  re-converges Docker to it on boot. A script forgets everything when the host
+  restarts.
+- **It's an API, not a CLI you shell into.** create / exec / stop / destroy /
+  write-files / run-agent-task are real HTTP endpoints with auth — you call them
+  from your app backend, per user, at scale.
+- **One user can't take down the rest.** Per-sandbox memory/PID limits + a
+  host-memory pressure reaper.
+- **Agents with a lifecycle.** Submit a prompt, stream progress (SSE), capture a
+  durable result — not just `opencode` fired inline.
+
+Rebuild those as your script grows and you've rebuilt sandboxed. So: skip it for
+one-offs; reach for it when "just a script" has started keeping you up at night.
+
+> **Prefer Kubernetes?** The control plane talks to the container runtime through
+> a thin `docker` CLI boundary, so a k8s Job/Pod backend is an interface swap,
+> not a rewrite — a great first contribution. Today it targets a single Docker
+> host (no k8s required), which is the sweet spot for teams who don't want to run
+> a cluster just for sandboxes.
+
 ## Quick start
 
 Requirements: **Docker Engine + the Compose plugin**, on Linux. That's it.
