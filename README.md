@@ -15,26 +15,39 @@
 
 ---
 
-## What is sandboxed?
+## What is sandboxed? (start here)
 
-**sandboxed turns one Linux box into a fleet of isolated, on-demand dev
-sandboxes — each with a real shell, the common toolchains, a coding agent, and
-its own preview URL.** You drive it with a small HTTP API:
+Think of the apps where you type *"build me a todo app"* and seconds later a
+working website appears at its own link — like Lovable, Bolt, v0, or Replit.
+**sandboxed is the open-source backend that makes that possible**, running on
+your own server.
+
+Here's what it does, in plain terms. You send it one HTTP request, and it:
+
+1. **Creates a sandbox** — a private, isolated Linux container (its own
+   filesystem, its own memory limits), so one user's code can never see or
+   break another's.
+2. **Runs an AI coding agent inside it** — you give it a prompt, and it writes
+   the code into that sandbox. (The OpenCode and Claude Code CLIs come
+   pre-installed.)
+3. **Gives the app a live URL** — the dev server running inside the sandbox is
+   instantly reachable at a shareable preview link.
 
 ```
-POST /sandbox          → an isolated container spins up
-POST .../tasks         → an AI agent builds an app inside it
-http://<id>.preview... → the running app, live, on a shareable URL
+POST /sandbox          → a private, isolated container spins up
+POST .../tasks         → an AI agent writes an app inside it
+http://<id>.preview... → that app is live at its own URL
 ```
 
-Sandboxes **stop when idle** to free memory and **wake on the next request**, so
-a modest server can host many of them. Workspaces persist on disk across stops
-and reboots. The whole thing is a single Go control plane that drives the Docker
-daemon, fronted by Traefik — no Kubernetes, no database server, no message bus.
+It's also cheap to run: a sandbox **goes to sleep when nobody's using it**
+(freeing memory) and **wakes up the instant someone opens its link again** —
+files are saved on disk the whole time. So one ordinary server can hold many
+users instead of needing one virtual machine each.
 
-This is the infrastructure that sits behind "describe an app → watch it get
-built → see it running" products. sandboxed gives you that core, open source,
-on your own hardware.
+Under the hood it's deliberately small and easy to understand: **one Go program
+that tells Docker what to do**, with **Traefik** handling the URLs and
+**SQLite** as the database. No Kubernetes, no separate database server, no
+message queue — you could read the whole thing in an afternoon.
 
 ```
             ┌──────────────── your host (just needs Docker) ────────────────┐
@@ -219,58 +232,37 @@ Safe by default — it removes only what sandboxed created (containers labelled
 `sandboxed.managed=true`, the compose stack, the network) and **keeps your
 workspaces** unless you pass `--data`/`--all`.
 
-## Roadmap & current limitations
-
-sandboxed v1 optimizes for "runs anywhere with just Docker." A few things are
-deliberately simple — none affect the core loop (create → build → preview →
-idle → wake → persist), and each is a known place to harden:
-
-- **No hard per-workspace disk quota.** Workspaces are plain directories on a
-  shared filesystem. Add fs/volume quotas if you need them.
-- **Soft memory throttle off by default.** The hard per-sandbox `--memory`
-  ceiling still applies; the gentler cgroup `memory.high` is opt-in.
-- **Egress is default-allow, unlogged.** Add host firewall rules / a proxy for
-  egress control.
-- **Snapshots/templates are experimental** on directory storage.
-
-Contributions toward any of these — and toward more agent backends — are very
-welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
-## Security
-
-Be deliberate before exposing this to the open internet. Honest notes:
-
-- **Sandboxes run real user code under hardened `runc`** (dropped capabilities,
-  `no-new-privileges`, read-only rootfs, memory/PID/file-descriptor limits) — but
-  this is **container isolation, not VM isolation**. It's designed for
-  **authenticated, accountable users running their own code**, not anonymous
-  hostile multi-tenancy. If you need to run untrusted strangers' code, put each
-  trust domain on its own VM, or add a stronger runtime (gVisor/Kata/Firecracker).
-- **The control plane holds the Docker socket**, which is root-equivalent on the
-  host. Treat the host as part of your trust boundary, keep it patched, and don't
-  co-locate unrelated sensitive workloads.
-- **The API ships with auth disabled** for a smooth local start. **Enable it
-  before any non-local deployment** (`SANDBOXD_API_AUTH_DISABLED=false` +
-  `SANDBOXD_API_TOKENS`) and never publish the API port to the internet
-  unauthenticated.
-- **Egress is unrestricted by default** — a sandbox can reach the network freely.
-  Add firewall/egress controls if that's a concern for your users.
-- **Preview URLs are unauthenticated by default** (anyone with the URL can view
-  a public sandbox). Private sandboxes gate access via a forward-auth hook; wire
-  it up before serving sensitive previews.
-
-None of this is exotic — it's the standard "you're running a server that
-executes code" checklist. Follow it and sandboxed is a solid base.
-
 ## Is this a good foundation for a startup?
 
 Yes — that's exactly the point. If you want to ship an **AI app-builder or agent
 SaaS** without first spending months building multi-tenant isolation, preview
 routing, idle/wake cost control, and agent orchestration, sandboxed gives you
 that core on day one, on a single inexpensive server, with margins you control.
-It's a **strong, honest starting point** — beta-quality, MIT-licensed, and
-designed to be read and extended. Launch lean on it, harden the items above as
-you grow, and contribute the improvements back.
+It's a **strong, honest starting point** — beta-quality, MIT-licensed, and built
+to be read and extended. Launch lean on it; harden as you grow (next section).
+
+## Before you scale hard: what's simple on purpose, and what to harden
+
+sandboxed v1 is tuned for "**works anywhere with just Docker, in one command**."
+To keep it that simple, a few things were left basic **on purpose**. None of
+them affect the core loop (create → build → preview → sleep → wake → persist) —
+they're the knobs to tighten once you have real users and real money on the line.
+Plain version:
+
+| Kept simple on purpose | Fine for | Do this when you're scaling / serious |
+|---|---|---|
+| **Container isolation** (hardened Docker), not full VMs | your own users running their own code | running **untrusted strangers' code** → put each tenant on its own VM, or use gVisor / Kata / Firecracker |
+| **API auth is OFF by default** | local development | **turn it on** (`SANDBOXD_API_AUTH_DISABLED=false` + tokens) and never expose the API port unauthenticated |
+| **Preview links are public** (anyone with the URL) | demos, sharing | gate sensitive previews (the private-sandbox forward-auth hook) |
+| **Open, unlogged network egress** | most apps | add firewall / egress rules + logging |
+| **Plain-directory workspaces**, no disk quota | a single server | add filesystem/volume quotas; plan multi-host sharding |
+| **One server, one Docker socket** (the control plane is root-equivalent on the host) | starting out | treat the host as a trust boundary, keep it patched, isolate it, and don't co-locate unrelated secrets |
+
+**The short version for a fast-scaling company:** the three that matter most are
+(1) **stronger isolation** (VM-per-tenant) if you ever run untrusted code,
+(2) **turn on API auth** and lock down the host, and (3) **plan for more than one
+machine**. Everything else above is a config change, not a rewrite. Start lean,
+revisit these as you grow — and PRs are very welcome ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 ## License
 
