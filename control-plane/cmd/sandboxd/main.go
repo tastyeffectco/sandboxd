@@ -467,7 +467,7 @@ func main() {
 	}()
 
 	// --- Egress goroutines: DISABLED in the OSS build -----------------
-	// The original platform ran a journald-tail egress collector, an
+	// Earlier deployments ran a journald-tail egress collector, an
 	// nftables drop-counter poller, and a systemd refresh-job watcher.
 	// All three depend on host nftables / journald / systemd, which a
 	// portable docker-compose deployment does not provide. With
@@ -476,7 +476,7 @@ func main() {
 	_ = egressMgr // documents the deliberate nil
 
 	// --- nginx registry-proxy hot-reloader: DISABLED in the OSS build -
-	// The original platform ran a single host-side nginx caching proxy
+	// Earlier deployments ran a single host-side nginx caching proxy
 	// for npm/pypi/crates/bun and hot-reloaded it on config change. The
 	// OSS image points package managers at the public registries
 	// directly, so there is no proxy container to watch. Re-enable by

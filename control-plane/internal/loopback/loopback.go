@@ -1,6 +1,6 @@
 // Package loopback manages per-sandbox workspace storage.
 //
-// HISTORY / OSS NOTE: in the original single-node platform this package
+// HISTORY / OSS NOTE: historically this package
 // created an 8 GB sparse ext4 loopback file per sandbox (truncate +
 // mkfs.ext4 + losetup mount) so the kernel enforced a hard per-workspace
 // quota. That requires privileged host access (loop devices, mount,

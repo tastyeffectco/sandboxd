@@ -56,10 +56,9 @@ func main() {
 		log.Error("mkdir runtime dir", "dir", runtimeDir, "err", err.Error())
 		os.Exit(1)
 	}
-	// Ensure the app working directory exists. The original platform
-	// seeded ~/workspace/app from a project template; the OSS build ships
-	// without that template, so a fresh workspace has only ~/workspace.
-	// Both the managed dev server and the coding-agent runner chdir into
+	// Ensure the app working directory exists. A fresh workspace ships
+	// with only ~/workspace, so ~/workspace/app may not exist yet. Both
+	// the managed dev server and the coding-agent runner chdir into
 	// appDir — a missing dir makes fork/exec fail with a misleading
 	// ENOENT against the binary. Creating it here self-heals every
 	// sandbox on start (including ones provisioned before this fix).

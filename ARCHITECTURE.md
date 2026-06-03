@@ -84,21 +84,20 @@ on a dedicated VM per trust domain.
 The only writable disk location inside a sandbox is `/home/sandbox`. Back up a
 workspace by copying its directory; back up state by copying the SQLite file.
 
-## Deliberate simplifications vs. the original platform
+## Design choices & current limitations (v1)
 
-sandboxed is the portable, open-source distribution of a single-node platform
-that targeted one specific cloud host. To make it run anywhere with just Docker,
-several host-coupled mechanisms were simplified or made optional. Each is a
-conscious trade-off:
+sandboxed v1 optimizes for "runs anywhere with just Docker, one command." A few
+mechanisms are deliberately simple so there's nothing host-specific to install
+or configure. Each is a conscious trade-off you can tighten later:
 
-| Original | sandboxed | Why |
+| Area | v1 choice | Trade-off / how to harden |
 |---|---|---|
-| 8 GB ext4 **loopback** per workspace (hard quota) | plain **directory** per workspace | losetup/mkfs/mount need privileged host access; portability beats a hard quota for v1 |
-| `memory.high` written to host cgroup | **off by default** (`--memory` ceiling only) | needs host cgroup access the control-plane container may lack |
-| **nftables** egress policy + connection logging | none | needs host nftables/journald/systemd |
-| host **nginx registry proxy** | public registries | nothing extra to run |
-| **DNS-01 wildcard** ACME on a real domain | HTTP on `*.localhost` (TLS optional) | zero-config local; TLS is a documented switch |
-| auto-snapshots / Grafana Cloud / systemd timers | dropped | not core to the create→preview→idle→wake loop |
+| Workspace storage | plain **directory** per sandbox | no hard per-workspace disk quota (host fs is shared); add quotas at the fs/volume layer if needed |
+| Memory | hard `--memory` ceiling per sandbox | the softer cgroup `memory.high` throttle is opt-in (`SANDBOXED_SET_MEMORY_HIGH`, needs host cgroup access) |
+| Egress | default-allow, no logging | add host firewall rules / a proxy if you need egress control |
+| Package installs | public npm/PyPI registries | run your own caching proxy and point the image at it for speed/airgap |
+| TLS / domain | HTTP on `*.localhost` out of the box | switch to a real wildcard domain + cert resolver (see README → Production / TLS) |
+| Snapshots/templates | API present, **experimental** on directory storage | use plain workspace copies, or contribute a directory-tar snapshot backend |
 
 `--userns=host` is set on the infra containers (and, by default, on sandboxes)
 so workspace ownership is deterministic whether or not the host daemon uses

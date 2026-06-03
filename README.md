@@ -1,59 +1,83 @@
 <h1 align="center">sandboxed</h1>
 
 <p align="center">
-  <b>Self-hosted, isolated Linux dev sandboxes with instant preview URLs — running entirely on Docker.</b>
+  <b>The open-source engine for AI app-builder products.</b><br/>
+  Give every user an isolated cloud dev environment, a built-in coding agent,
+  and a live preview URL — self-hosted, on one machine, in one command.
 </p>
 
 <p align="center">
-  <i>One command. One host. No Kubernetes.</i>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
+  <img alt="Runs on Docker" src="https://img.shields.io/badge/runs%20on-Docker-2496ED.svg">
+  <img alt="Single binary control plane" src="https://img.shields.io/badge/control%20plane-single%20Go%20binary-00ADD8.svg">
+  <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-yellow.svg">
 </p>
 
 ---
 
-`sandboxed` gives each user (or each agent, or each branch) an isolated Linux
-container with a real shell, the common language toolchains pre-installed, and
-an **HTTPS-or-HTTP preview URL** for whatever dev server they run inside it.
-Sandboxes **stop when idle** to free RAM and **wake on the next request** —
-so you can pack many of them onto one modest host.
+## What is sandboxed?
 
-It's a small Go control plane that drives the Docker daemon, fronted by
-Traefik. That's the whole stack.
-
-> **Driving it from an agent or script?** See [`AGENTS.md`](AGENTS.md) — a
-> single self-contained runbook (install → API → agent auth → uninstall).
+**sandboxed turns one Linux box into a fleet of isolated, on-demand dev
+sandboxes — each with a real shell, the common toolchains, a coding agent, and
+its own preview URL.** You drive it with a small HTTP API:
 
 ```
-            ┌──────────── your host (just needs Docker) ────────────┐
- browser ──▶│  Traefik  ──▶  sandbox container (dev server :3000)    │
-            │     ▲              ▲   ▲   ▲                            │
- API/CLI ──▶│  sandboxd ─────────┘   │   │  (docker run/stop/exec)   │
-            │     │  SQLite state     │   └─ workspace dir (persists) │
-            └─────┼───────────────────┼────────────────────────────-─┘
-                  └─ idle reaper ──────┘  stop-on-idle / wake-on-request
+POST /sandbox          → an isolated container spins up
+POST .../tasks         → an AI agent builds an app inside it
+http://<id>.preview... → the running app, live, on a shareable URL
 ```
 
-## Features
+Sandboxes **stop when idle** to free memory and **wake on the next request**, so
+a modest server can host many of them. Workspaces persist on disk across stops
+and reboots. The whole thing is a single Go control plane that drives the Docker
+daemon, fronted by Traefik — no Kubernetes, no database server, no message bus.
 
-- **Real isolation per sandbox** — hardened `runc`: dropped capabilities,
-  `no-new-privileges`, read-only rootfs, per-sandbox memory & PID limits.
-- **Preview URLs that just work** — `http://s-<id>-<port>.preview.localhost`
-  resolves to your machine with zero DNS and zero certificates. Point it at a
-  real wildcard domain for production.
-- **Stop-on-idle, wake-on-request** — idle sandboxes are `docker stop`-ed to
-  release memory; the first request to a stopped preview wakes it in seconds.
-  Workspaces persist across stops and host reboots.
-- **Batteries-included image** — Node + pnpm + bun, Python + uv, git, ripgrep,
-  fd, plus the Claude Code and OpenCode CLIs, ready to go.
-- **A real HTTP API** — create / list / exec / stop / destroy sandboxes,
-  write files into a workspace, run coding tasks. Easy to drive from your own
-  backend.
-- **Single binary control plane** — SQLite is the source of truth; a reconciler
-  converges Docker back to it on every boot. No external database, no message
-  bus, no orchestrator.
+This is the infrastructure that sits behind "describe an app → watch it get
+built → see it running" products. sandboxed gives you that core, open source,
+on your own hardware.
 
-## 1. Install
+```
+            ┌──────────────── your host (just needs Docker) ────────────────┐
+ browser ──▶│  Traefik  ──▶  sandbox  (coding agent + dev server :3000)      │
+            │     ▲              ▲   ▲                                        │
+ API/CLI ──▶│  sandboxd ─────────┘   └─ workspace dir (persists)             │
+            │     │  SQLite (source of truth) · idle→stop · request→wake      │
+            └─────┴────────────────────────────────────────────────────────-─┘
+```
+
+## Why sandboxed?
+
+If you're building an **AI app-builder, an agent platform, a coding playground,
+or a per-user preview product**, the hard part isn't the prompt — it's the
+infrastructure underneath it:
+
+- **Multi-tenant isolation** so one user's code can't touch another's.
+- **Per-user preview URLs** with automatic routing and TLS.
+- **Cost control** — idle environments must release memory, or your bill explodes.
+- **Agent orchestration** — run a coding agent against a workspace, stream its
+  progress, capture the result.
+- **Persistence, wake-on-demand, reconciliation after a crash or reboot.**
+
+That's months of platform work. sandboxed is that platform, distilled to one
+command:
+
+- ⚡ **One-command install.** `./install.sh` and you have a working API + previews.
+- 🧠 **Agents included.** The OpenCode and Claude Code CLIs ship in every sandbox;
+  hand a sandbox a prompt and it builds.
+- 💸 **Dense by design.** Stop-on-idle + wake-on-request means dozens of sandboxes
+  share one box instead of one VM each — the difference between a $20 server and
+  a $2,000 cluster.
+- 🔓 **Yours.** Self-hosted, MIT-licensed, no vendor lock-in. Own your data, your
+  margins, and your roadmap.
+- 🪶 **Boring on purpose.** SQLite + the `docker` CLI + Traefik. A reconciler
+  converges Docker back to the database on every boot. You can read the whole
+  control plane in an afternoon.
+
+## Quick start
 
 Requirements: **Docker Engine + the Compose plugin**, on Linux. That's it.
+
+### 1. Install
 
 ```bash
 git clone https://github.com/tastyeffectco/sandboxes.git
@@ -65,61 +89,66 @@ cd sandboxes
 control plane, and starts the stack. The API is then live at
 `http://127.0.0.1:9090` (verify: `curl http://127.0.0.1:9090/healthz` → `ok`).
 
-## 2. Usage — have OpenCode build an app, then open its preview
+### 2. Have an agent build an app
 
-The base image already includes the **OpenCode** and **Claude Code** CLIs, so
-you can hand a sandbox a prompt and watch it build. Provide an API key at create
-time via `env`, then submit a task:
+The base image already includes the **OpenCode** and **Claude Code** CLIs. Hand
+a sandbox a prompt and watch it build (OpenCode runs on its free plan out of the
+box; pass your own provider key via `env` to use your account):
 
 ```bash
 API=http://127.0.0.1:9090
 
-# (1) create a sandbox on port 3000, with your agent's API key injected
-ID=$(curl -s -XPOST $API/sandbox -H 'content-type: application/json' -d '{
-        "ports":[3000],
-        "env":{"ANTHROPIC_API_KEY":"sk-ant-..."}
-     }' | sed -E 's/.*"id":"([^"]+)".*/\1/')
+# create a sandbox that will serve on port 3000
+ID=$(curl -s -XPOST $API/sandbox -H 'content-type: application/json' \
+       -d '{"ports":[3000]}' | sed -E 's/.*"id":"([^"]+)".*/\1/')
 echo "sandbox: $ID"
 
-# (2) spin OpenCode with a request — it works in ~/workspace
+# spin a coding agent with a request — it works in ~/workspace/app
 curl -s -XPOST $API/v1/sandboxes/$ID/tasks -H 'content-type: application/json' -d '{
-        "prompt":"create a Vite app that shows a todo list, and run it on port 3000",
+        "prompt":"create a Vite app that shows a todo list and run it on port 3000",
         "agent":"opencode"
      }'
 # -> {"id":"<taskId>","status":"running","events_url":"/v1/sandboxes/<id>/tasks/<taskId>/events"}
 
-# (3) stream the agent's progress (Server-Sent Events)
+# stream the agent's progress (Server-Sent Events)
 curl -N $API/v1/sandboxes/$ID/tasks/<taskId>/events
 ```
 
-### 3. See the preview URL
+To use your own model account instead of the free plan, inject a key at create
+time — it's available to the agent and any shell in the sandbox:
 
-Once the app is serving on port 3000, it's live at its preview URL — no extra
-wiring, the sandbox self-registered the route:
-
-```
-http://s-$ID-3000.preview.localhost
+```bash
+curl -s -XPOST $API/sandbox -d '{"ports":[3000],"env":{"ANTHROPIC_API_KEY":"sk-ant-..."}}'
 ```
 
-`*.localhost` resolves to `127.0.0.1` in every modern browser, so it just works
-locally (add `:$HTTP_PORT` if you changed it from 80). The first request to a
-stopped sandbox **wakes it** automatically. On a public domain you get
-`https://s-<id>-3000.preview.yourdomain.com` (see [Production / TLS](#production--tls)).
+### 3. Open the live preview
 
-> **No agent, just a shell?** Skip step 2 and run anything via the exec API:
-> `curl -XPOST $API/sandbox/$ID/exec -d '{"cmd":["bash","-lc","cd ~/workspace && python3 -m http.server 3000"]}'`
-> — then open the same preview URL. (exec is non-interactive; for the Claude/
-> OpenCode TUI use `docker exec -it s-$ID bash`.)
+Once the app serves on port 3000, it's reachable at its preview URL — the
+sandbox self-registered the route, nothing else to wire:
+
+```
+http://s-<id>-3000.preview.localhost
+```
+
+`*.localhost` resolves to `127.0.0.1` in every modern browser, so it works
+locally with zero DNS and zero certificates (add `:$HTTP_PORT` if you changed it
+from 80). The first request to a stopped sandbox **wakes it** automatically. On a
+real domain you get `https://s-<id>-3000.preview.yourdomain.com`
+(see [Production / TLS](#production--tls)).
+
+> **Just want a shell, no agent?** Skip step 2 and run anything via the exec API:
+> `curl -XPOST $API/sandbox/$ID/exec -d '{"cmd":["bash","-lc","cd ~/workspace/app && python3 -m http.server 3000"]}'`
+> then open the same preview URL.
 
 ## API
 
 Base URL = `http://127.0.0.1:9090` (set by `SANDBOXED_API_BIND`). Auth is **off
-by default**; with `SANDBOXD_API_AUTH_DISABLED=false` + `SANDBOXD_API_TOKENS`,
-add `-H "Authorization: Bearer <secret>"`.
+by default** for local use; with `SANDBOXD_API_AUTH_DISABLED=false` +
+`SANDBOXD_API_TOKENS`, send `-H "Authorization: Bearer <secret>"`.
 
 | Method & path | Body | Purpose |
 |---|---|---|
-| `POST /sandbox` | `{"ports":[3000],"env":{...}}` | **create** — `id` optional (ULID auto), `env` injects vars (e.g. API keys) |
+| `POST /sandbox` | `{"ports":[3000],"env":{...}}` | **create** — `id` optional (ULID auto); `env` injects vars (e.g. API keys) |
 | `GET /sandboxes` | — | list all sandboxes |
 | `GET /sandbox/{id}` | — | get one (status, ports, container id…) |
 | `POST /sandbox/{id}/exec` | `{"cmd":["bash","-lc","…"]}` | run a command (non-interactive) |
@@ -133,39 +162,49 @@ add `-H "Authorization: Bearer <secret>"`.
 | `GET/PUT /v1/sandboxes/{id}/files` | `{"path","content","append"}` | list / read / write workspace files |
 | `GET /healthz`, `GET /readyz` | — | liveness / readiness |
 
-Full runbook for scripting or driving from an agent: [`AGENTS.md`](AGENTS.md).
-Tear down a single sandbox with `DELETE`/`purge`; tear down the whole stack with
-`docker compose down` (workspaces persist under `SANDBOXED_DATA_DIR`).
+A complete, copy-pasteable runbook (including driving it from your own agent) is
+in **[`AGENTS.md`](AGENTS.md)**.
 
 ## How it works
 
 | Concern | Choice |
 |---|---|
-| Container runtime | Docker + hardened `runc` (cap-drop ALL, no-new-privileges, read-only rootfs) |
-| Workspace storage | One bind-mounted directory per sandbox under the data dir (persists) |
-| Edge / preview | Traefik v3, Docker label provider — sandboxes self-register their routes |
-| Idle management | Stop-on-idle (`docker stop`) + wake-on-request; no warm pool |
+| Container runtime | Docker + hardened `runc` (cap-drop ALL, `no-new-privileges`, read-only rootfs) |
+| Workspace storage | one bind-mounted directory per sandbox under the data dir (persists) |
+| Edge / preview | Traefik v3 Docker provider — sandboxes self-register their routes |
+| Idle management | stop-on-idle (`docker stop`) + wake-on-request; no warm pool |
 | State | SQLite (WAL); a reconciler converges Docker to the DB on boot |
-| Control plane | One Go binary, shells out to the `docker` CLI over the mounted socket |
+| Control plane | one Go binary, shells out to the `docker` CLI over the mounted socket |
 
-The control plane runs in a container with the host Docker socket mounted, and
+The control plane runs in a container with the host Docker socket mounted and
 launches each sandbox as a sibling container on a shared network so Traefik can
-route to it. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full picture and
-the [`control-plane/`](control-plane/) source for the API.
+route to it. Full design: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Configuration
 
-Everything is in `.env` (created from [`.env.example`](.env.example) on first
-install). The defaults run a fully working local stack. The knobs you're most
-likely to touch:
+Everything is in `.env` (created from [`.env.example`](.env.example) on install).
+The defaults run a complete local stack. The knobs you'll touch most:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `PREVIEW_DOMAIN` | `localhost` | Domain preview URLs hang off |
-| `HTTP_PORT` | `80` | Host port Traefik listens on |
-| `SANDBOXED_DATA_DIR` | `/var/lib/sandboxed` | Where workspaces + state live |
-| `SANDBOXED_API_BIND` | `127.0.0.1:9090` | Where the control-plane API is published |
-| `SANDBOXD_API_AUTH_DISABLED` | `true` | Open API for local use; set `false` + tokens for prod |
+| `PREVIEW_DOMAIN` | `localhost` | domain preview URLs hang off |
+| `HTTP_PORT` | `80` | host port Traefik listens on |
+| `SANDBOXED_DATA_DIR` | `/var/lib/sandboxed` | where workspaces + state live |
+| `SANDBOXED_API_BIND` | `127.0.0.1:9090` | where the control-plane API is published |
+| `SANDBOXD_API_AUTH_DISABLED` | `true` | open API for local use; set `false` + tokens for prod |
+
+## Production / TLS
+
+For a public deployment on a real wildcard domain:
+
+1. Point `*.preview.yourdomain.com` at the host.
+2. In `traefik/traefik.yml`, enable the `websecure` entrypoint and add a
+   certificate resolver (Let's Encrypt DNS-01 is ideal — one wildcard cert covers
+   every preview host, so you never hit per-host ACME limits).
+3. In `.env`: `PREVIEW_DOMAIN=yourdomain.com`, `PREVIEW_ENTRYPOINT=websecure`,
+   `PREVIEW_TLS=true`, and **enable auth** — `SANDBOXD_API_AUTH_DISABLED=false`
+   with `SANDBOXD_API_TOKENS=name:secret`.
+4. `docker compose up -d`.
 
 ## Uninstall
 
@@ -177,42 +216,62 @@ likely to touch:
 ```
 
 Safe by default — it removes only what sandboxed created (containers labelled
-`sandboxed.managed=true`, the compose stack, and the network) and **keeps your
-workspaces** under `SANDBOXED_DATA_DIR` unless you pass `--data`/`--all`. After
-`--all` you can delete the checkout itself with `rm -rf`.
+`sandboxed.managed=true`, the compose stack, the network) and **keeps your
+workspaces** unless you pass `--data`/`--all`.
 
-## Production / TLS
+## Roadmap & current limitations
 
-For a public deployment on a real wildcard domain:
+sandboxed v1 optimizes for "runs anywhere with just Docker." A few things are
+deliberately simple — none affect the core loop (create → build → preview →
+idle → wake → persist), and each is a known place to harden:
 
-1. Point `*.preview.yourdomain.com` at the host.
-2. In `traefik/traefik.yml`, enable the `websecure` entrypoint and add a
-   certificate resolver (Let's Encrypt DNS-01 is recommended — one wildcard
-   cert covers every preview host, so you never hit per-host ACME limits).
-3. Set in `.env`: `PREVIEW_DOMAIN=yourdomain.com`, `PREVIEW_ENTRYPOINT=websecure`,
-   `PREVIEW_TLS=true`, `HTTP_PORT=80` (kept for the ACME challenge / redirect),
-   and **enable auth**: `SANDBOXD_API_AUTH_DISABLED=false` with
-   `SANDBOXD_API_TOKENS=name:secret`.
-4. `docker compose up -d`.
+- **No hard per-workspace disk quota.** Workspaces are plain directories on a
+  shared filesystem. Add fs/volume quotas if you need them.
+- **Soft memory throttle off by default.** The hard per-sandbox `--memory`
+  ceiling still applies; the gentler cgroup `memory.high` is opt-in.
+- **Egress is default-allow, unlogged.** Add host firewall rules / a proxy for
+  egress control.
+- **Snapshots/templates are experimental** on directory storage.
 
-## Differences from the original platform
+Contributions toward any of these — and toward more agent backends — are very
+welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-`sandboxed` is the open-source distribution of a single-node platform that was
-built for a specific cloud host. To make it portable and one-click, a few
-host-coupled pieces are simplified or made optional:
+## Security
 
-- **No hard per-workspace disk quota.** Workspaces are plain directories, not
-  loopback ext4 images. The host filesystem is shared.
-- **`memory.high` soft throttle is off by default** (needs host cgroup access);
-  the hard `--memory` ceiling on each sandbox still applies.
-- **No nftables egress policy / connection logging**, and **no host package
-  registry proxy** — the image talks to the public npm/PyPI registries.
-- **Auto-snapshots are disabled**; the snapshot/template API endpoints exist but
-  are experimental on directory storage.
+Be deliberate before exposing this to the open internet. Honest notes:
 
-None of these affect the core loop — create, preview, idle, wake, persist. Each
-is a deliberate, documented trade-off; see `ARCHITECTURE.md`.
+- **Sandboxes run real user code under hardened `runc`** (dropped capabilities,
+  `no-new-privileges`, read-only rootfs, memory/PID/file-descriptor limits) — but
+  this is **container isolation, not VM isolation**. It's designed for
+  **authenticated, accountable users running their own code**, not anonymous
+  hostile multi-tenancy. If you need to run untrusted strangers' code, put each
+  trust domain on its own VM, or add a stronger runtime (gVisor/Kata/Firecracker).
+- **The control plane holds the Docker socket**, which is root-equivalent on the
+  host. Treat the host as part of your trust boundary, keep it patched, and don't
+  co-locate unrelated sensitive workloads.
+- **The API ships with auth disabled** for a smooth local start. **Enable it
+  before any non-local deployment** (`SANDBOXD_API_AUTH_DISABLED=false` +
+  `SANDBOXD_API_TOKENS`) and never publish the API port to the internet
+  unauthenticated.
+- **Egress is unrestricted by default** — a sandbox can reach the network freely.
+  Add firewall/egress controls if that's a concern for your users.
+- **Preview URLs are unauthenticated by default** (anyone with the URL can view
+  a public sandbox). Private sandboxes gate access via a forward-auth hook; wire
+  it up before serving sensitive previews.
+
+None of this is exotic — it's the standard "you're running a server that
+executes code" checklist. Follow it and sandboxed is a solid base.
+
+## Is this a good foundation for a startup?
+
+Yes — that's exactly the point. If you want to ship an **AI app-builder or agent
+SaaS** without first spending months building multi-tenant isolation, preview
+routing, idle/wake cost control, and agent orchestration, sandboxed gives you
+that core on day one, on a single inexpensive server, with margins you control.
+It's a **strong, honest starting point** — beta-quality, MIT-licensed, and
+designed to be read and extended. Launch lean on it, harden the items above as
+you grow, and contribute the improvements back.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Use it, ship it, sell what you build on it.
