@@ -1,5 +1,7 @@
 <h1 align="center">sandboxed</h1>
 
+<img width="1100" height="816" alt="sandboxed-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
+
 <p align="center">
   <b>The open-source engine for AI app-builder products.</b><br/>
   Give every user an isolated cloud dev environment, a built-in coding agent,
