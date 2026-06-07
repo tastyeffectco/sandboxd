@@ -145,7 +145,7 @@ Requirements: **Docker Engine + the Compose plugin**, on Linux. That's it.
 
 ```bash
 git clone https://github.com/tastyeffectco/sandboxd.git
-cd sandboxes
+cd sandboxd
 ./install.sh
 ```
 
