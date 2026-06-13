@@ -49,6 +49,8 @@ type Server struct {
 	//                        portable build (the --memory ceiling still applies).
 	Network           string
 	Userns            string
+	Runtime           string
+	DNSResolvConf     string
 	PreviewEntrypoint string
 	PreviewTLS        bool
 	// PublicHTTPPort is the HOST-facing port that preview/console URLs are
