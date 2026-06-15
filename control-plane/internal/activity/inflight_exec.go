@@ -47,14 +47,18 @@ func (i *InflightExec) Enter(id string) {
 // reaching zero deletes the map entry to keep the map small.
 func (i *InflightExec) Exit(id string) {
 	i.mu.Lock()
+	decremented := false
 	if i.n[id] > 0 {
 		i.n[id]--
 		if i.n[id] == 0 {
 			delete(i.n, id)
 		}
+		decremented = true
 	}
 	i.mu.Unlock()
-	metrics.InflightExec.Dec()
+	if decremented {
+		metrics.InflightExec.Dec()
+	}
 }
 
 // Active returns true if the sandbox has any in-flight exec call.
