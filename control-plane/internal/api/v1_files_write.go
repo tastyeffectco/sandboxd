@@ -120,6 +120,10 @@ func mountOwner(mnt string) (uid, gid int) {
 // v1PutFile is the handler for PUT /v1/sandboxes/{id}/files.
 func (s *Server) v1PutFile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !isULID(id) {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid sandbox id")
+		return
+	}
 	_, mnt := s.Loopback.Paths(id)
 	if info, err := os.Stat(mnt); err != nil || !info.IsDir() {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no workspace for that sandbox")
