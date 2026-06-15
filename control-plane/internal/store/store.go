@@ -150,22 +150,6 @@ func (s *Store) Get(ctx context.Context, id string) (*Sandbox, error) {
 	return sb, nil
 }
 
-// GitRemote returns the sandbox's configured git push target, or "" if
-// none is set. A dedicated single-column read so the common SELECT path
-// and scanSandbox stay untouched.
-func (s *Store) GitRemote(ctx context.Context, id string) (string, error) {
-	var url sql.NullString
-	err := s.db.QueryRowContext(ctx,
-		`SELECT git_remote_url FROM sandbox WHERE id = ?`, id).Scan(&url)
-	if err == sql.ErrNoRows {
-		return "", ErrNotFound
-	}
-	if err != nil {
-		return "", err
-	}
-	return url.String, nil
-}
-
 func (s *Store) List(ctx context.Context) ([]*Sandbox, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, status, image, workspace_img, workspace_mnt,

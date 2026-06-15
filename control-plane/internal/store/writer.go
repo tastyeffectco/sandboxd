@@ -261,17 +261,6 @@ func (s *Store) EnsureWorkspaceOwner(ctx context.Context, sandboxID, externalUse
 	return inserted, err
 }
 
-// SetGitRemote sets (or clears, with "") the per-sandbox git push
-// target. Called once on create when the caller supplies a remote.
-func (s *Store) SetGitRemote(ctx context.Context, id, url string) error {
-	return s.submit(ctx, func(db *sql.DB) error {
-		_, err := db.ExecContext(ctx,
-			`UPDATE sandbox SET git_remote_url = ?, updated_at = ? WHERE id = ?`,
-			nullIfEmpty(url), time.Now().Unix(), id)
-		return err
-	})
-}
-
 // nullIfEmpty maps "" to a NULL-valued NullString so empty optional
 // columns store as NULL rather than the empty string.
 func nullIfEmpty(s string) sql.NullString {

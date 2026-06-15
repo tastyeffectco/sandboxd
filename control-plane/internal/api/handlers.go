@@ -58,10 +58,6 @@ type createReq struct {
 	// Not part of the public /v1 contract; never set from an external
 	// body in practice (v1 builds the internal body itself).
 	TemplatePath string `json:"template_path,omitempty"`
-	// GitRemoteURL, when set, is the https git remote sandboxd pushes
-	// the app workspace to on each task finish (auto-git-push). The URL
-	// is not a secret; the master token is host-side. Empty = off.
-	GitRemoteURL string `json:"git_remote_url,omitempty"`
 	// Env injects environment variables into the sandbox container at
 	// create time (e.g. {"ANTHROPIC_API_KEY":"sk-..."}). They are visible
 	// to the container's main process (runtimed) and therefore to coding
@@ -345,10 +341,6 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "idle_policy must be 'sleep' or 'always_on'")
 		return
 	}
-	if req.GitRemoteURL != "" && !strings.HasPrefix(req.GitRemoteURL, "https://") {
-		writeErr(w, http.StatusBadRequest, "git_remote_url must be an https:// URL")
-		return
-	}
 
 	// Optional fast-cold-start template
 	// (ops/design/fast-coldstart-react-vite-snapshot.md). When set, the
@@ -465,14 +457,6 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = metrics.RefreshSandboxGauge(r.Context(), s.Store)
-
-	// Record the optional git push target (auto-git-push). Non-fatal:
-	// a failure here must not abort an otherwise-good create.
-	if req.GitRemoteURL != "" {
-		if err := s.Store.SetGitRemote(r.Context(), req.ID, req.GitRemoteURL); err != nil {
-			log.Warn("create: SetGitRemote failed", "err", err.Error())
-		}
-	}
 
 	// From here on, any error path also marks the row as 'error' and
 	// attempts best-effort cleanup of the half-built state.

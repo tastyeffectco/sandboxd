@@ -209,16 +209,6 @@ var (
 		Name: "sandboxd_nginx_reloads_total",
 		Help: "nginx safe-reload outcomes from the operator-managed config watcher.",
 	}, []string{"outcome"}) // ok | validate_failed | reload_failed | exec_error | reload_exec_error
-
-	// GitPush counts auto-git-push attempts on task finish, by outcome.
-	// Only counted when the sandbox has a remote configured (a push was
-	// actually attempted) — an unconfigured sandbox is not a failure.
-	// Operators alert on outcome="failed" (a broken/expired token, a
-	// missing host token while a remote is set, or a rejected push).
-	GitPush = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "sandboxd_git_push_total",
-		Help: "Auto-git-push attempts on task finish, by outcome.",
-	}, []string{"outcome"}) // ok | failed
 )
 
 func init() {
@@ -262,8 +252,6 @@ func init() {
 		// Phase 9
 		ForwardAuthDuration,
 		PreviewAccess,
-		// auto-git-push (NginxReloads is already registered above)
-		GitPush,
 	)
 }
 
