@@ -93,7 +93,7 @@ func (a *app) runPostTaskChecks(ctx context.Context, filesChanged []string) stri
 			attrs = append(attrs, "remediated", true)
 		}
 		if f.previewError != "" {
-			attrs = append(attrs, "preview_error", true)
+			attrs = append(attrs, "preview_error", f.previewError)
 			if previewErr == "" {
 				previewErr = f.previewError
 			}

@@ -107,6 +107,10 @@ func diskBytes(path string) int64 {
 
 func (s *Server) handlePurgeSandbox(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !isULID(id) {
+		writeErr(w, http.StatusBadRequest, "invalid sandbox id")
+		return
+	}
 	freed, externalUserID, err := s.purgeOne(r.Context(), id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "purge: "+err.Error())
