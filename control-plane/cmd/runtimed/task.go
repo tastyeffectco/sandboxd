@@ -20,7 +20,7 @@ import (
 
 var errTaskInProgress = errors.New("a task is already in progress")
 
-const defaultTaskTimeout = 10 * time.Minute
+const defaultTaskTimeout = runtime.DefaultTaskTimeout
 
 // eventSink receives canonical events from an agent adapter.
 type eventSink func(evType string, data any)

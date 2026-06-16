@@ -225,7 +225,7 @@ by default** for local use; with `SANDBOXD_API_AUTH_DISABLED=false` +
 | `POST /v1/sandboxes/{id}/stop` | — | stop now to free RAM (wakes on next preview hit) |
 | `DELETE /sandbox/{id}` | — | destroy the container, **keep** the workspace |
 | `POST /sandbox/{id}/purge` | — | destroy **and delete** the workspace |
-| `POST /v1/sandboxes/{id}/tasks` | `{"prompt":"…","agent":"opencode"}` | run a coding agent headlessly |
+| `POST /v1/sandboxes/{id}/tasks` | `{"prompt":"…","agent":"opencode","timeout_s":600}` | run a coding agent headlessly (`timeout_s` optional: 0/omitted → 10m default, max 24h) |
 | `GET /v1/sandboxes/{id}/tasks/{taskId}` | — | task result |
 | `GET /v1/sandboxes/{id}/tasks/{taskId}/events` | — | live task event stream (SSE) |
 | `GET/PUT /v1/sandboxes/{id}/files` | `{"path","content","append"}` | list / read / write workspace files |
