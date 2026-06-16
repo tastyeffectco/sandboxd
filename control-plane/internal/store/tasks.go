@@ -19,6 +19,7 @@ type Task struct {
 	Prompt            string
 	Status            string // running | succeeded | failed | cancelled
 	ResultJSON        sql.NullString
+	TimeoutS          int // task timeout in seconds; 0 = runtimed default
 	CreatedAt         time.Time
 	FinishedAt        sql.NullInt64
 }
@@ -29,10 +30,10 @@ func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO task
 			  (task_id, sandbox_id, external_user_id, external_project_id,
-			   agent, prompt, status, created_at)
-			VALUES (?,?,?,?,?,?,'running',?)`,
+			   agent, prompt, status, timeout_s, created_at)
+			VALUES (?,?,?,?,?,?,'running',?,?)`,
 			t.TaskID, t.SandboxID, t.ExternalUserID, t.ExternalProjectID,
-			t.Agent, t.Prompt, time.Now().Unix())
+			t.Agent, t.Prompt, t.TimeoutS, time.Now().Unix())
 		return err
 	})
 }
@@ -54,10 +55,10 @@ func (s *Store) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	var created int64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT task_id, sandbox_id, external_user_id, external_project_id,
-		       agent, prompt, status, result_json, created_at, finished_at
+		       agent, prompt, status, result_json, timeout_s, created_at, finished_at
 		  FROM task WHERE task_id=?`, taskID).Scan(
 		&t.TaskID, &t.SandboxID, &t.ExternalUserID, &t.ExternalProjectID,
-		&t.Agent, &t.Prompt, &t.Status, &t.ResultJSON, &created, &t.FinishedAt)
+		&t.Agent, &t.Prompt, &t.Status, &t.ResultJSON, &t.TimeoutS, &created, &t.FinishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -73,7 +74,7 @@ func (s *Store) GetTask(ctx context.Context, taskID string) (*Task, error) {
 func (s *Store) ListRunningTasks(ctx context.Context) ([]*Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT task_id, sandbox_id, external_user_id, external_project_id,
-		       agent, prompt, status, result_json, created_at, finished_at
+		       agent, prompt, status, result_json, timeout_s, created_at, finished_at
 		  FROM task WHERE status='running'`)
 	if err != nil {
 		return nil, err
@@ -85,7 +86,7 @@ func (s *Store) ListRunningTasks(ctx context.Context) ([]*Task, error) {
 		var created int64
 		if err := rows.Scan(&t.TaskID, &t.SandboxID, &t.ExternalUserID,
 			&t.ExternalProjectID, &t.Agent, &t.Prompt, &t.Status,
-			&t.ResultJSON, &created, &t.FinishedAt); err != nil {
+			&t.ResultJSON, &t.TimeoutS, &created, &t.FinishedAt); err != nil {
 			return nil, err
 		}
 		t.CreatedAt = time.Unix(created, 0).UTC()

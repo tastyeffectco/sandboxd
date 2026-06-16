@@ -12,9 +12,25 @@ import (
 )
 
 const (
-	taskWatchTimeout  = 15 * time.Minute // outlives the runtimed task timeout
+	// watchMargin is the slack the watcher keeps beyond the task's own
+	// timeout, so it is still streaming when runtimed emits the terminal
+	// `done` event — which, on a timeout, fires right at the deadline.
+	watchMargin       = 5 * time.Minute
 	taskWatchAttempts = 3
 )
+
+// watchWindowFor is how long watchTask streams events before giving up.
+// It MUST outlive the runtimed task timeout (the 10m default, or the
+// caller's timeout_s): a shorter window aborts the stream and marks a
+// still-running task failed. Earlier this was a fixed 15m, which
+// quietly capped any task whose timeout_s exceeded ~15m.
+func watchWindowFor(timeoutS int) time.Duration {
+	eff := runtime.DefaultTaskTimeout
+	if timeoutS > 0 {
+		eff = time.Duration(timeoutS) * time.Second
+	}
+	return eff + watchMargin
+}
 
 // failedResult builds a clean terminal result for a task that could
 // not complete normally. failure_reason is always an existing model
@@ -35,9 +51,17 @@ func failedResult(taskID, reason, msg string) *runtime.TaskResult {
 // to SQLite when the terminal `done` event arrives — independent of
 // whether any client ever connects to the public events stream. This
 // is what makes a task's result durable past the sandbox's lifetime.
-func (s *Server) watchTask(sandboxID, taskID string) {
+// watchTask streams a task's events under a window derived from its
+// timeout (taskTimeoutS; 0 = the runtimed default). See watchWindowFor.
+func (s *Server) watchTask(sandboxID, taskID string, taskTimeoutS int) {
+	s.watchTaskWindow(sandboxID, taskID, watchWindowFor(taskTimeoutS))
+}
+
+// watchTaskWindow is watchTask with an explicit streaming window. Split
+// out so tests can inject a short window instead of waiting minutes.
+func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration) {
 	log := s.Log.With("component", "taskwatch", "task", taskID)
-	ctx, cancel := context.WithTimeout(context.Background(), taskWatchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), window)
 	defer cancel()
 
 	rc := s.runtimeClientFor(sandboxID)
@@ -127,7 +151,7 @@ func (s *Server) ReconcileTasks(ctx context.Context) {
 		}
 		if sb, gerr := s.Store.Get(ctx, t.SandboxID); gerr == nil && sb.Status == "running" {
 			s.Log.Info("task reconcile: sandbox running — re-attaching watcher", "task", t.TaskID)
-			go s.watchTask(t.SandboxID, t.TaskID)
+			go s.watchTask(t.SandboxID, t.TaskID, t.TimeoutS)
 			continue
 		}
 		s.finishWatchedTask(t.TaskID, failedResult(t.TaskID, "sandbox_unavailable",
