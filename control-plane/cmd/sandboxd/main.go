@@ -348,7 +348,6 @@ func main() {
 		TemplatesDir:        envDefault("SANDBOXD_TEMPLATES_DIR", templatesRoot),
 		LibraryRoot:         envDefault("SANDBOXD_LIBRARY_DIR", libraryRoot),
 		LLMTxtPath:          envDefault("SANDBOXD_LLM_TXT_PATH", "/etc/sandboxed/llm.txt"),
-		GitTokenPath:        envDefault("SANDBOXD_GIT_TOKEN_PATH", "/etc/sandboxed/git/token"),
 	}
 
 	// Finalize any coding task left `running` by a previous sandboxd

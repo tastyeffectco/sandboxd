@@ -40,7 +40,6 @@ type v1Sandbox struct {
 	Preview      v1Preview `json:"preview"`
 	ActiveTaskID string    `json:"active_task_id,omitempty"`
 	Template     string    `json:"template"`
-	GitRemoteURL string    `json:"git_remote_url,omitempty"` // the assigned push target, echoed back
 	CreatedAt    string    `json:"created_at"`
 	UpdatedAt    string    `json:"updated_at,omitempty"`
 }
@@ -116,11 +115,6 @@ func (s *Server) v1SandboxFromRow(r *http.Request, sb *store.Sandbox) v1Sandbox 
 		CreatedAt: sb.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: sb.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	// Echo the assigned git push target so the caller can read back the
-	// platform's record of the assignment (auto-git-push).
-	if remote, err := s.Store.GitRemote(r.Context(), sb.ID); err == nil {
-		out.GitRemoteURL = remote
-	}
 	prev := v1Preview{URL: s.previewURL(sb.ID)}
 	_, mnt := s.Loopback.Paths(sb.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -157,11 +151,6 @@ type v1CreateReq struct {
 	// snapshot the caller's tenant owns (ops/design/snapshots-as-templates.md)
 	// instead of the default template. Mutually exclusive with Template.
 	FromSnapshot string `json:"from_snapshot,omitempty"`
-	// GitRemoteURL, when set, makes the platform push this app's
-	// workspace to that https git remote on each task finish. The repo
-	// the caller assigns here is echoed back on every Sandbox object so
-	// the caller can read the platform's record of the assignment.
-	GitRemoteURL string `json:"git_remote_url,omitempty"`
 }
 
 func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
@@ -198,9 +187,6 @@ func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
 		"ports":      []int{3000},
 		"visibility": vis,
 		"external":   map[string]string{"user_id": req.Project.UserID, "project_id": req.Project.ID},
-	}
-	if req.GitRemoteURL != "" {
-		createBody["git_remote_url"] = req.GitRemoteURL
 	}
 	if req.FromSnapshot != "" {
 		// Resolve + authorize the snapshot under the caller's tenant,

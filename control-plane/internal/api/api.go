@@ -73,11 +73,6 @@ type Server struct {
 	// GET /llm.txt (the API contract for integrators). Empty → 404.
 	LLMTxtPath string
 
-	// GitTokenPath is the host file holding the master git push token
-	// (auto-git-push). Read at push time; injected inline; never enters
-	// a sandbox. Empty disables auto-git-push platform-wide.
-	GitTokenPath string
-
 	// Phase 5 additions — nil-safe so existing tests that build a
 	// Server without these still work.
 	Inflight     *activity.InflightExec

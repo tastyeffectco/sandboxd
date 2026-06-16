@@ -105,10 +105,6 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 	s.finishWatchedTask(taskID, result)
 	log.Info("task watcher: result persisted", "status", result.Status)
 
-	// auto-git-push: after the result is durable, push the workspace to
-	// its assigned remote (host-side, best-effort). Never affects the
-	// task result. No-op when the sandbox has no remote / no host token.
-	s.pushOnTaskFinish(sandboxID, taskID)
 }
 
 func (s *Server) finishWatchedTask(taskID string, result *runtime.TaskResult) {
