@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// DefaultTaskTimeout is the runtimed task timeout applied when a task
+// submits no explicit timeout_s. It is the single source of truth for
+// the default, shared by runtimed (which enforces it) and the
+// control-plane task watcher (which must outlive it).
+const DefaultTaskTimeout = 10 * time.Minute
+
 // TaskStatus is the lifecycle state of a coding task.
 type TaskStatus string
 

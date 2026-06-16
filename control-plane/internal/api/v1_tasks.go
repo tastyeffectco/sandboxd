@@ -22,8 +22,8 @@ func (s *Server) runtimeClientFor(id string) *runtime.Client {
 // --- POST /v1/sandboxes/{id}/tasks ----------------------------------
 
 type v1TaskSubmitReq struct {
-	Prompt   string `json:"prompt"`
-	Agent    string `json:"agent,omitempty"`
+	Prompt string `json:"prompt"`
+	Agent  string `json:"agent,omitempty"`
 	// TimeoutS sets the maximum task runtime in seconds.
 	// 0 or omitted means use the runtimed default (10m).
 	TimeoutS int `json:"timeout_s,omitempty"`
@@ -109,13 +109,14 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.CreateTask(r.Context(), &store.Task{
 		TaskID: taskID, SandboxID: id, Agent: agent, Prompt: req.Prompt,
 		Status:         "running",
+		TimeoutS:       req.TimeoutS,
 		ExternalUserID: sb.ExternalUserID, ExternalProjectID: sb.ExternalProjectID,
 	}); err != nil {
 		// The task is running in runtimed but the row failed to write.
 		// The task still proceeds; GET would 404 until reconciled.
 		s.loggerFor(r, id).Error("v1 task: CreateTask failed", "task", taskID, "err", err.Error())
 	} else {
-		go s.watchTask(id, taskID)
+		go s.watchTask(id, taskID, req.TimeoutS)
 	}
 
 	s.auditAction(r, audit.Entry{
