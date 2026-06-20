@@ -323,3 +323,14 @@ revisit these as you grow — and PRs are very welcome ([`CONTRIBUTING.md`](CONT
 ## License
 
 [MIT](LICENSE). Use it, ship it, sell what you build on it.
+
+## Environment Variables
+
+To customize your sandboxd installation, you can configure various environment variables. These variables are defined in the `.env` file, which is created during the installation process. Here are some key variables you might want to adjust:
+
+- `HTTP_PORT`: The port on which the API is accessible. Default is `80`. Change this if you have another service running on port 80.
+- `SANDBOXD_API_BIND`: The IP address and port where the API will be published. Default is `127.0.0.1:9090`.
+- `SANDBOXD_API_AUTH_DISABLED`: Set to `false` to enable authentication for the API.
+- `SANDBOXD_API_TOKENS`: Define service tokens for API authentication in the format `name:secret`.
+
+Make sure to review the `.env.example` file for more options and their descriptions.
