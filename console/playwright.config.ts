@@ -8,7 +8,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: 'list',
   use: {
-    baseURL: process.env.CONSOLE_URL || 'http://127.0.0.1:8787',
+    baseURL: process.env.CONSOLE_URL || 'http://console.localhost',
     trace: 'on-first-retry',
   },
 })

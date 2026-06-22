@@ -17,12 +17,14 @@ From the repo root:
 docker compose --profile console up
 ```
 
-Then open the console at <http://127.0.0.1:8787>. Core mode (`docker compose up`,
-no profile) runs sandboxd without the console.
+Then open <http://console.localhost> (or `console.<PREVIEW_DOMAIN>:<HTTP_PORT>`).
+Core mode (`docker compose up`, no profile) runs sandboxd without the console.
 
-The console container serves the built SPA from nginx and proxies `/v1` to the
+The console is routed through the **same Traefik as the previews**, by Host
+header — `console.<domain>` → console, `*.preview.<domain>` → sandboxes — so it
+shares one entrypoint. nginx serves the built SPA and proxies `/v1` to the
 `sandboxd` service on the internal network, so the browser uses same-origin
-relative paths — no CORS, and no auth in the single-user default.
+relative paths: no CORS, and no auth in the single-user default.
 
 ## Develop
 
