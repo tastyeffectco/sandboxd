@@ -1,6 +1,6 @@
 // v1_snapshots.go — snapshots-as-templates
 // (ops/design/snapshots-as-templates.md). A snapshot is a reusable,
-// frozen raw copy of a sandbox's workspace .img, stored under
+// frozen copy of a sandbox's workspace directory, stored under
 // LibraryRoot and cloned into new sandboxes via the existing
 // ProvisionFromTemplate path. Scoped to the API tenant (auth.Actor.Name).
 package api
@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -105,10 +106,10 @@ func (s *Server) v1CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	snapID := newULID()
-	imgPath := filepath.Join(s.LibraryRoot, snapID+".img")
+	imgPath := filepath.Join(s.LibraryRoot, snapID)
 
 	// Capture under the source's id-lock so a concurrent wake can't
-	// start the container and write the loopback mid-copy. The lock is
+	// start the container and write the workspace mid-copy. The lock is
 	// released before returning; we never hold it across stop/wake.
 	if s.Locks != nil {
 		s.Locks.Lock(src.ID)
@@ -142,7 +143,7 @@ func (s *Server) v1CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		SizeBytes:       sql.NullInt64{Int64: size, Valid: true},
 	}
 	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
-		_ = os.Remove(imgPath) // roll back the orphaned image
+		_ = os.RemoveAll(imgPath) // roll back the orphaned snapshot
 		writeV1Err(w, http.StatusInternalServerError, "internal", "store: "+err.Error())
 		return
 	}
@@ -186,8 +187,8 @@ func (s *Server) v1DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 		s.writeSnapshotLookupErr(w, err)
 		return
 	}
-	if err := os.Remove(snap.ImagePath); err != nil && !os.IsNotExist(err) {
-		writeV1Err(w, http.StatusInternalServerError, "internal", "remove image: "+err.Error())
+	if err := os.RemoveAll(snap.ImagePath); err != nil && !os.IsNotExist(err) {
+		writeV1Err(w, http.StatusInternalServerError, "internal", "remove snapshot: "+err.Error())
 		return
 	}
 	if err := s.Store.DeleteSnapshot(r.Context(), snap.ID); err != nil {
@@ -220,48 +221,56 @@ func (s *Server) writeSnapshotLookupErr(w http.ResponseWriter, err error) {
 	writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 }
 
-// captureImage copies srcImg → dst (raw, sparse-aware) crash-consistently:
-// sync the host pagecache, cp --reflink=auto to a .tmp, fsync the tmp,
-// atomic rename, fsync the directory. The caller guarantees no writer
-// (source stopped + id-lock held). Returns the captured size in bytes.
-func captureImage(ctx context.Context, srcImg, dst, root string) (int64, error) {
+// captureImage copies the workspace directory srcDir → dst
+// crash-consistently: cp -a into a sibling .tmp directory (preserving
+// ownership/perms), sync file data + metadata to disk, atomically
+// rename the directory into place, then fsync the parent. The caller
+// guarantees no writer (source stopped + id-lock held). Returns the
+// captured tree's allocated size in bytes.
+func captureImage(ctx context.Context, srcDir, dst, root string) (int64, error) {
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return 0, err
 	}
 	tmp := dst + ".tmp"
-	_ = os.Remove(tmp) // clear any leftover from a prior crash
-	_ = exec.CommandContext(ctx, "sync").Run()
-	if out, err := exec.CommandContext(ctx, "cp", "--reflink=auto", "--sparse=always", srcImg, tmp).CombinedOutput(); err != nil {
-		_ = os.Remove(tmp)
-		return 0, errorsWrap("cp", err, out)
-	}
-	if err := fsyncPath(tmp); err != nil {
-		_ = os.Remove(tmp)
+	_ = os.RemoveAll(tmp) // clear any leftover from a prior crash
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return 0, err
 	}
+	// Trailing /. copies directory contents into tmp; cp -a preserves
+	// ownership/perms (mirrors loopback.ProvisionFromTemplate).
+	if out, err := exec.CommandContext(ctx, "cp", "-a", strings.TrimRight(srcDir, "/")+"/.", tmp+"/").CombinedOutput(); err != nil {
+		_ = os.RemoveAll(tmp)
+		return 0, errorsWrap("cp", err, out)
+	}
+	// Flush the copied tree to disk, then atomically publish the
+	// directory and fsync the parent so the rename survives a crash.
+	_ = exec.CommandContext(ctx, "sync").Run()
 	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
+		_ = os.RemoveAll(tmp)
 		return 0, err
 	}
 	_ = fsyncPath(root)
-	fi, err := os.Stat(dst)
-	if err != nil {
-		return 0, err
-	}
-	return allocatedBytes(fi), nil
+	return dirAllocatedBytes(dst), nil
 }
 
-// allocatedBytes returns the real on-disk (allocated) size of a file,
-// not its apparent/logical size. A snapshot .img is an 8 GB sparse file
-// whose apparent size is always 8 GB; the allocated size (~the source
-// workspace's real usage) is the meaningful number for a consumer and
-// matches `du`. Falls back to the apparent size if the syscall stat is
-// unavailable.
-func allocatedBytes(fi os.FileInfo) int64 {
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		return st.Blocks * 512 // st_blocks is in 512-byte units
-	}
-	return fi.Size()
+// dirAllocatedBytes returns the real on-disk (allocated) size of a
+// directory tree — the meaningful number for a workspace snapshot, and
+// what `du` reports. Falls back to the apparent size for any entry
+// where the syscall stat is unavailable.
+func dirAllocatedBytes(root string) int64 {
+	var total int64
+	_ = filepath.Walk(root, func(_ string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return nil // best-effort: skip unreadable entries
+		}
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+			total += st.Blocks * 512 // st_blocks is in 512-byte units
+		} else {
+			total += fi.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 func fsyncPath(p string) error {
