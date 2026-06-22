@@ -71,6 +71,10 @@ type createReq struct {
 	//   reaping. NOTE: still stoppable under critical host pressure (<5% mem
 	//   available), and not auto-restarted if stopped.
 	IdlePolicy string `json:"idle_policy,omitempty"`
+	// AppID links this sandbox to a durable app (Phase 1). Set by the
+	// POST /v1/apps/{id}/sandbox path; empty for the standalone sandbox
+	// API. The sandbox is the app's current running instance.
+	AppID string `json:"app_id,omitempty"`
 }
 
 type sandboxResp struct {
@@ -440,6 +444,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ExternalUserID:      nullStr(req.External.UserID),
 		ExternalProjectID:   nullStr(req.External.ProjectID),
 		ExternalWorkspaceID: nullStr(req.External.WorkspaceID),
+		AppID:               nullStr(req.AppID),
 	}
 	if err := s.Store.Create(r.Context(), sb); err != nil {
 		if errors.Is(err, store.ErrConflict) {
