@@ -86,3 +86,19 @@ services:
       SANDBOXD_IDLE_THRESHOLD_SECONDS: ${SANDBOXD_IDLE_THRESHOLD_SECONDS:-2100}
     networks:
       - sandboxd_net
+
+  # Optional web console:  docker compose --profile console up
+  # Builds the Vite SPA and serves it from nginx, proxying the public /v1
+  # API to sandboxd. API-only — it never touches the DB or workspaces.
+  console:
+    profiles: [console]
+    build:
+      context: ./console
+    image: sandboxd-console:0.1.0
+    restart: unless-stopped
+    depends_on:
+      - sandboxd
+    ports:
+      - "${CONSOLE_BIND:-127.0.0.1:8787}:80"
+    networks:
+      - sandboxd_net
