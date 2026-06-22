@@ -95,4 +95,25 @@ for i in $(seq 1 25); do [ "$(status "$ID")" = "running" ] && { woke=1; break; }
 [ -n "$woke" ] || fail "sandbox did not wake on task submit"
 log "wake-on-task ✓"
 
+# 6. App model: a durable app above sandboxes (create → attach → survive).
+log "app: create → attach sandbox → 409 on second → survives delete"
+APP="$(curl -s -m10 -XPOST "$API/v1/apps" -H 'content-type: application/json' -d '{"name":"E2E App","tags":["e2e"]}' | grep -oE '"id":"[^"]+"' | head -1 | cut -d'"' -f4)"
+[ -n "$APP" ] || fail "create app returned no id"
+curl -s -m10 "$API/v1/apps" | grep -q "\"$APP\"" || fail "app not in tenant list"
+sbcode="$(curl -s -m120 -o /tmp/appsb.json -w '%{http_code}' -XPOST "$API/v1/apps/$APP/sandbox" -H 'content-type: application/json' -d '{}')"
+[ "$sbcode" = "201" ] || { cat /tmp/appsb.json; fail "attach sandbox returned $sbcode, want 201"; }
+ASB="$(grep -oE '"id":"[^"]+"' /tmp/appsb.json | head -1 | cut -d'"' -f4)"; IDS+=("$ASB")
+curl -s -m10 "$API/v1/apps/$APP" | grep -q "\"current_sandbox_id\":\"$ASB\"" || fail "app current_sandbox_id not set"
+dup="$(curl -s -m10 -o /dev/null -w '%{http_code}' -XPOST "$API/v1/apps/$APP/sandbox" -H 'content-type: application/json' -d '{}')"
+[ "$dup" = "409" ] || fail "second attach returned $dup, want 409 (one live sandbox per app)"
+curl -s -m60 -o /dev/null -XDELETE "$API/sandbox/$ASB"
+gone=""
+for i in $(seq 1 30); do
+  curl -s -m10 "$API/v1/apps/$APP" | grep -q 'current_sandbox_id' || { gone=1; break; }
+  sleep 1
+done
+[ -n "$gone" ] || fail "current_sandbox_id still present after sandbox delete"
+curl -s -m10 "$API/v1/apps/$APP" | grep -q "\"id\":\"$APP\"" || fail "app did not survive sandbox delete"
+log "app lifecycle ✓"
+
 echo "✅ E2E PASSED"
