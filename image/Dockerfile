@@ -121,12 +121,17 @@ COPY image/etc/profile.d/sandbox-env.sh /etc/profile.d/sandbox-env.sh
 # for the contract.
 COPY image/skel/ /opt/sandbox-skel/
 
+# Baked app templates. runtimed seeds the chosen one (RUNTIMED_TEMPLATE,
+# default react-standard) into an empty workspace/app on first boot.
+# Add a template = drop a new dir here; the registry is additive.
+COPY image/templates/ /opt/templates/
+
 # Sandbox user (uid/gid 1000 inside the container; userns-remap offsets
 # it on the host so a running sandbox's processes appear as host-uid
 # DOCKREMAP_BASE+1000, typically 101000).
 RUN /usr/sbin/groupadd -g 1000 sandbox \
  && /usr/sbin/useradd -u 1000 -g 1000 -m -s /bin/bash sandbox \
- && chown -R 1000:1000 /opt/sandbox-skel \
+ && chown -R 1000:1000 /opt/sandbox-skel /opt/templates \
  && chmod 700 /opt/sandbox-skel
 
 # Public registries. The original platform pointed these at a host-side
