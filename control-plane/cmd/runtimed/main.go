@@ -11,6 +11,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -48,7 +49,11 @@ func main() {
 	appDir := envOr("RUNTIMED_APP_DIR", "/home/sandbox/workspace/app")
 	runtimeDir := envOr("RUNTIMED_DIR", "/home/sandbox/.runtimed")
 	socketPath := envOr("RUNTIMED_SOCKET", filepath.Join(runtimeDir, "sock"))
-	devCmd := envOr("RUNTIMED_DEV_CMD", "pnpm dev")
+	// Install dependencies on the first boot of a fresh workspace (the
+	// starter app ships source only; node_modules then persists in the
+	// workspace across stop/wake). `bash -lc` runs this, so the compound
+	// form is intentional.
+	devCmd := envOr("RUNTIMED_DEV_CMD", "[ -d node_modules ] || pnpm install; pnpm dev")
 	previewPort := envOrInt("RUNTIMED_PREVIEW_PORT", 3000)
 	probeInterval := time.Duration(envOrInt("RUNTIMED_PROBE_INTERVAL_SECONDS", 3)) * time.Second
 
@@ -66,6 +71,13 @@ func main() {
 		log.Error("mkdir app dir", "dir", appDir, "err", err.Error())
 		os.Exit(1)
 	}
+
+	// Seed the app from a baked template on the first boot of an empty
+	// workspace. The control plane chooses the template (RUNTIMED_TEMPLATE);
+	// the default is react-standard, and "blank"/"none" leaves the app
+	// empty. A snapshot/fork clone or an already-populated workspace is
+	// left untouched (the dir is non-empty), so this only fires once.
+	seedTemplateApp(appDir, envOr("RUNTIMED_TEMPLATE", "react-standard"), log)
 
 	a := &app{
 		dev:         newDevServer(appDir, devCmd, filepath.Join(runtimeDir, "dev-server.log"), log),
@@ -95,6 +107,38 @@ func main() {
 	log.Info("runtimed shutting down — stopping dev server")
 	a.dev.stop()
 	log.Info("runtimed stopped")
+}
+
+// seedTemplateApp copies a baked app scaffold from /opt/templates/<name>
+// into an empty app dir. No-op when the template is blank/none, when the
+// app dir is already populated (a snapshot clone or an existing
+// workspace), or when the named template isn't present in the image.
+func seedTemplateApp(appDir, template string, log *slog.Logger) {
+	if template == "" || template == "blank" || template == "none" {
+		return
+	}
+	entries, err := os.ReadDir(appDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		// A lone .gitkeep (the empty-dir placeholder) still counts as
+		// empty; anything else is a snapshot clone or a real workspace.
+		if e.Name() != ".gitkeep" {
+			return
+		}
+	}
+	src := filepath.Join("/opt/templates", template)
+	if fi, err := os.Stat(src); err != nil || !fi.IsDir() {
+		log.Warn("template not found; leaving app empty", "template", template, "path", src)
+		return
+	}
+	// Trailing /. copies contents into appDir; cp -a preserves perms.
+	if out, err := exec.Command("cp", "-a", src+"/.", appDir+"/").CombinedOutput(); err != nil {
+		log.Error("seed template failed", "template", template, "err", err.Error(), "out", string(out))
+		return
+	}
+	log.Info("seeded app from template", "template", template)
 }
 
 // probeLoop polls the dev server's HTTP port so /status reports a real
