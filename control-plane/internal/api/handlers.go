@@ -342,14 +342,17 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional fast-cold-start template
-	// (ops/design/fast-coldstart-react-vite-snapshot.md). When set, the
-	// workspace .img is a reflink (CoW) clone of a prebuilt golden
-	// template instead of an empty provision+seed — zero install, zero
-	// scaffold, zero network on the create hot path. Resolve and
-	// validate the golden .img up front so an unknown/unavailable
-	// template fails cleanly with 400/503 before any row is created.
+	// Workspace seed source. Two distinct mechanisms:
+	//   - template_path: a host-side clone of a snapshot (full workspace,
+	//     including node_modules) via ProvisionFromTemplate — the
+	//     snapshot/fork spin-up path.
+	//   - template: a named app scaffold baked into the image at
+	//     /opt/templates/<name>, seeded by runtimed on first boot
+	//     (default react-standard; "blank" leaves the app empty). The
+	//     workspace is still empty-provisioned here — only the seed
+	//     source differs — so no host-side templates dir is required.
 	var templatePath string
+	var templateName string
 	switch {
 	case req.TemplatePath != "" && req.Template != "":
 		writeErr(w, http.StatusBadRequest, "template and template_path are mutually exclusive")
@@ -375,17 +378,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 				"invalid template: must be lowercase [a-z0-9-], <=64 chars")
 			return
 		}
-		if s.TemplatesDir == "" {
-			writeErr(w, http.StatusServiceUnavailable,
-				"templates not configured on this host (SANDBOXD_TEMPLATES_DIR unset)")
-			return
-		}
-		templatePath = filepath.Join(s.TemplatesDir, req.Template+".img")
-		if _, err := os.Stat(templatePath); err != nil {
-			writeErr(w, http.StatusBadRequest,
-				"unknown or unavailable template: "+req.Template)
-			return
-		}
+		templateName = req.Template
 	}
 
 	// Phase 5 — wake admission check applies to brand-new creates too
@@ -514,6 +507,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		envFlags = append(envFlags, k+"="+v)
+	}
+	// A named template selects the app scaffold runtimed seeds on first
+	// boot. Unset → runtimed's default (react-standard); "blank" → empty.
+	if templateName != "" {
+		envFlags = append(envFlags, "RUNTIMED_TEMPLATE="+templateName)
 	}
 
 	// 2. docker run with the locked flag set + traefik labels.
