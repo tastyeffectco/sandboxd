@@ -206,12 +206,12 @@ func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		createBody["template_path"] = snap.ImagePath
-	} else {
-		tmpl := req.Template
-		if tmpl == "" {
-			tmpl = defaultTemplate
-		}
-		createBody["template"] = tmpl
+	} else if req.Template != "" {
+		// An explicit template clones that golden workspace. With no
+		// template the sandbox is provisioned empty (handleCreate seeds
+		// the /opt/sandbox-skel home), so the public create path works
+		// out of the box without a pre-seeded template image on the host.
+		createBody["template"] = req.Template
 	}
 	internal, _ := json.Marshal(createBody)
 	code, body := s.delegate(r, s.handleCreate, http.MethodPost, "/sandbox", nil, internal)
