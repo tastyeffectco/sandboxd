@@ -106,10 +106,14 @@ ASB="$(grep -oE '"id":"[^"]+"' /tmp/appsb.json | head -1 | cut -d'"' -f4)"; IDS+
 curl -s -m10 "$API/v1/apps/$APP" | grep -q "\"current_sandbox_id\":\"$ASB\"" || fail "app current_sandbox_id not set"
 dup="$(curl -s -m10 -o /dev/null -w '%{http_code}' -XPOST "$API/v1/apps/$APP/sandbox" -H 'content-type: application/json' -d '{}')"
 [ "$dup" = "409" ] || fail "second attach returned $dup, want 409 (one live sandbox per app)"
-curl -s -m30 -o /dev/null -XPOST "$API/sandbox/$ASB/purge"
-sleep 2
+curl -s -m60 -o /dev/null -XDELETE "$API/sandbox/$ASB"
+gone=""
+for i in $(seq 1 30); do
+  curl -s -m10 "$API/v1/apps/$APP" | grep -q 'current_sandbox_id' || { gone=1; break; }
+  sleep 1
+done
+[ -n "$gone" ] || fail "current_sandbox_id still present after sandbox delete"
 curl -s -m10 "$API/v1/apps/$APP" | grep -q "\"id\":\"$APP\"" || fail "app did not survive sandbox delete"
-curl -s -m10 "$API/v1/apps/$APP" | grep -q 'current_sandbox_id' && fail "current_sandbox_id present after delete"
 log "app lifecycle ✓"
 
 echo "✅ E2E PASSED"
