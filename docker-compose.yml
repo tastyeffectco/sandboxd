@@ -90,6 +90,12 @@ services:
   # Optional web console:  docker compose --profile console up
   # Builds the Vite SPA and serves it from nginx, proxying the public /v1
   # API to sandboxd. API-only — it never touches the DB or workspaces.
+  #
+  # Routed through the SAME Traefik as the previews, by Host header:
+  #   console.<PREVIEW_DOMAIN>  -> this console
+  #   *.preview.<PREVIEW_DOMAIN> -> sandbox previews
+  # one entrypoint (:${HTTP_PORT}), Traefik picks by the router rule.
+  # Reachable at http://console.${PREVIEW_DOMAIN:-localhost}:${HTTP_PORT}.
   console:
     profiles: [console]
     build:
@@ -98,7 +104,12 @@ services:
     restart: unless-stopped
     depends_on:
       - sandboxd
-    ports:
-      - "${CONSOLE_BIND:-127.0.0.1:8787}:80"
+      - traefik
+    labels:
+      - "sandboxd.managed=true" # satisfies the traefik docker-provider constraint
+      - "traefik.enable=true"
+      - "traefik.http.routers.console.rule=Host(`console.${PREVIEW_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.console.entrypoints=web"
+      - "traefik.http.services.console.loadbalancer.server.port=80"
     networks:
       - sandboxd_net
