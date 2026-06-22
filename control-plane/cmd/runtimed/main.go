@@ -48,7 +48,11 @@ func main() {
 	appDir := envOr("RUNTIMED_APP_DIR", "/home/sandbox/workspace/app")
 	runtimeDir := envOr("RUNTIMED_DIR", "/home/sandbox/.runtimed")
 	socketPath := envOr("RUNTIMED_SOCKET", filepath.Join(runtimeDir, "sock"))
-	devCmd := envOr("RUNTIMED_DEV_CMD", "pnpm dev")
+	// Install dependencies on the first boot of a fresh workspace (the
+	// starter app ships source only; node_modules then persists in the
+	// workspace across stop/wake). `bash -lc` runs this, so the compound
+	// form is intentional.
+	devCmd := envOr("RUNTIMED_DEV_CMD", "[ -d node_modules ] || pnpm install; pnpm dev")
 	previewPort := envOrInt("RUNTIMED_PREVIEW_PORT", 3000)
 	probeInterval := time.Duration(envOrInt("RUNTIMED_PROBE_INTERVAL_SECONDS", 3)) * time.Second
 
