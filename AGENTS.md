@@ -109,6 +109,18 @@ curl -s -XPOST $API/sandbox/$ID/exec -H 'content-type: application/json' \
 docker exec -it -e ANTHROPIC_API_KEY=sk-ant-... s-$ID bash   # then: claude
 ```
 
+## Web console (optional)
+A web UI over the public `/v1` API — apps, live preview, agent tasks + logs,
+start/stop, and per-app config & secrets. Start it with the `console` profile:
+```bash
+docker compose --profile console up -d
+```
+Open `http://console.${PREVIEW_DOMAIN:-localhost}:${HTTP_PORT:-80}` (i.e.
+http://console.localhost by default). It shares Traefik with the previews
+(routed by Host: `console.<domain>`), talks only to `/v1`, never touches the DB
+or workspaces, and needs no extra config in the single-user default. Plain
+`docker compose up -d` omits it. Details: `console/README.md`.
+
 ## Operate
 ```bash
 docker compose logs -f sandboxd   # control-plane logs
