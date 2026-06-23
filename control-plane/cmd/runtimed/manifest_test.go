@@ -38,7 +38,7 @@ func TestManifestAbsentIsDefaultWeb(t *testing.T) {
 	if m.Web.Command != testDefaults.WebCommand || m.Web.Port != 3000 || m.Web.HealthPath != "/" {
 		t.Errorf("default web wrong: %+v", m.Web)
 	}
-	if m.Build.Command != "pnpm build" || m.Build.TimeoutSeconds != 120 {
+	if m.buildCommand() != "pnpm build" || m.Build.TimeoutSeconds != 120 {
 		t.Errorf("default build wrong: %+v", m.Build)
 	}
 	if len(m.Workers) != 0 {
@@ -91,7 +91,7 @@ workers:
 	if m.Web.Command != "python -m http.server 5000" || m.Web.Port != 5000 || m.Web.HealthPath != "/healthz" {
 		t.Errorf("web wrong: %+v", m.Web)
 	}
-	if m.Build.Command != "make build" || m.Build.TimeoutSeconds != 300 {
+	if m.buildCommand() != "make build" || m.Build.TimeoutSeconds != 300 {
 		t.Errorf("build wrong: %+v", m.Build)
 	}
 	if len(m.Workers) != 2 || m.Workers[0].Name != "queue" || m.Workers[1].Name != "cron" {
@@ -204,8 +204,9 @@ func TestManifestWorkerOnly(t *testing.T) {
 	if len(m.Workers) != 1 {
 		t.Fatalf("want 1 worker, got %d", len(m.Workers))
 	}
-	// Build still defaults (a worker app may still be build-checked).
-	if m.Build.Command != "pnpm build" {
+	// A worker manifest with NO build block still defaults (back-compat); a
+	// preset that wants to skip sets build.command: "" explicitly.
+	if m.buildCommand() != "pnpm build" {
 		t.Errorf("build default missing: %+v", m.Build)
 	}
 }
@@ -232,5 +233,31 @@ func TestManifestInvalidFallsBack(t *testing.T) {
 	}
 	if m == nil || m.Web == nil {
 		t.Fatal("invalid manifest must still yield a safe default")
+	}
+}
+
+// Build-check resolution: unset vs explicit-empty vs explicit command.
+// A preset must be able to DISABLE the build check with build.command: "".
+func TestManifestBuildResolution(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want string // resolved build command; "" means skip
+	}{
+		{"absent build block -> default", "version: 1\nweb:\n  port: 3000\n", "pnpm build"},
+		{"empty build block {} -> default", "version: 1\nweb:\n  port: 3000\nbuild: {}\n", "pnpm build"},
+		{"explicit empty command -> skip", "version: 1\nweb:\n  port: 3000\nbuild:\n  command: \"\"\n", ""},
+		{"explicit command -> run it", "version: 1\nweb:\n  port: 3000\nbuild:\n  command: \"make ci\"\n", "make ci"},
+	}
+	for _, c := range cases {
+		dir := writeManifest(t, c.yaml)
+		m, err := LoadManifest(dir, testDefaults)
+		if err != nil {
+			t.Errorf("%s: load: %v", c.name, err)
+			continue
+		}
+		if got := m.buildCommand(); got != c.want {
+			t.Errorf("%s: buildCommand()=%q want %q", c.name, got, c.want)
+		}
 	}
 }

@@ -236,9 +236,13 @@ func (a *app) runTask(t *task) {
 	// honest outcome: a missing/empty build command is "skipped" (NOT a pass),
 	// and build_ok stays true only for a real "passed".
 	res.BuildStatus = runtime.BuildSkipped
-	if status != runtime.TaskCancelled && a.build != nil && a.build.Command != "" {
+	buildCmd := ""
+	if a.build != nil && a.build.Command != nil {
+		buildCmd = *a.build.Command
+	}
+	if status != runtime.TaskCancelled && buildCmd != "" {
 		t.setPhase("build_check")
-		ok, bmsg := buildCheck(a.appDir, a.build.Command, time.Duration(a.build.TimeoutSeconds)*time.Second, a.log)
+		ok, bmsg := buildCheck(a.appDir, buildCmd, time.Duration(a.build.TimeoutSeconds)*time.Second, a.log)
 		res.BuildErrorMessage = bmsg
 		if ok {
 			res.BuildStatus = runtime.BuildPassed
