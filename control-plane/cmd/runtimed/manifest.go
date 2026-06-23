@@ -59,6 +59,12 @@ type WebProc struct {
 	Command    string `yaml:"command"`
 	Port       int    `yaml:"port"`
 	HealthPath string `yaml:"health_path"`
+	// RestartAfterTask bounces the web process after every coding task so an
+	// agent-written production build can't poison a live dev server (e.g. the
+	// agent runs `next build`, writing production `.next/` that `next dev`
+	// then 500s on). The web command re-runs on restart, so a start-time clean
+	// step (e.g. `rm -rf .next`) takes effect. Default false (no restart).
+	RestartAfterTask bool `yaml:"restart_after_task"`
 }
 
 // BuildSpec is the build check run after a coding task.

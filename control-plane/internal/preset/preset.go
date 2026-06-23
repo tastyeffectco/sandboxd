@@ -58,6 +58,7 @@ web:
   command: "[ -d node_modules ] || pnpm install; rm -rf .next; pnpm dev --hostname 0.0.0.0"
   port: 3000
   health_path: "/"
+  restart_after_task: true
 build:
   command: ""
 `,

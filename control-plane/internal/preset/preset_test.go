@@ -28,6 +28,11 @@ func TestNextjsPresetNoBuildPoisoning(t *testing.T) {
 	if !strings.Contains(p.Manifest, "rm -rf .next") {
 		t.Error("nextjs web command should `rm -rf .next` before dev")
 	}
+	// The web process must restart after a task so an agent-run `next build`
+	// can't leave the live `next dev` poisoned.
+	if !strings.Contains(p.Manifest, "restart_after_task: true") {
+		t.Error("nextjs preset should set web.restart_after_task: true")
+	}
 }
 
 // The Next.js template ships a .gitignore so node_modules/.next don't become

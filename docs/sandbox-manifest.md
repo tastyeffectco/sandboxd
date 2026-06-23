@@ -29,6 +29,7 @@ web:
   command: "pnpm dev"     # how to start the web server (run via `bash -lc` in the app dir)
   port: 3000              # the HTTP port the preview routes to
   health_path: "/"        # path probed for readiness; HTTP 200 = ready
+  restart_after_task: false  # restart the web process after each task (see below)
 
 # Post-task build check (run after a coding task to catch breakage).
 build:
@@ -50,6 +51,7 @@ Every field is optional and defaulted:
 | `web.command` | `[ -d node_modules ] \|\| pnpm install; pnpm dev` | also from `RUNTIMED_DEV_CMD` |
 | `web.port` | `3000` | also from `RUNTIMED_PREVIEW_PORT` |
 | `web.health_path` | `/` | 200 ⇒ ready |
+| `web.restart_after_task` | `false` | restart the web process after each task — see "Dev-mode resilience" |
 | `build.command` | `pnpm build` | see "Build checks" — explicit `""` skips |
 | `build.timeout_seconds` | `120` | |
 | `workers` | none | each gets a `worker-N` name if unnamed |
@@ -88,6 +90,24 @@ true` when it is actually serving.
 > silently replaced by the default `pnpm build`, so presets could not disable the
 > check — which made the Next.js preset run `next build` after every task and
 > poison the live `next dev` server. Presets now set `build.command: ""` to skip.
+
+### Dev-mode resilience (`web.restart_after_task`)
+Skipping the platform build check stops *runtimed* from poisoning a dev server,
+but the **coding agent itself** can run `next build` (or any production build)
+during a task. That writes production `.next/` while `next dev` is live and
+poisons it — `_next/static/chunks/*` start returning 404/500.
+
+`web.restart_after_task: true` makes runtimed **restart the web process after
+every task** (success or failure; skipped on cancel). The web command re-runs, so
+a start-time clean step takes effect — for Next.js the command is
+`… rm -rf .next; pnpm dev …`, so the restart wipes any agent-written production
+build and brings dev back up clean. runtimed waits (up to 90s) for the restarted
+server to serve a 200 before reporting the task's final preview/health, so
+`preview_status_after` reflects the healed server. Each restart increments the
+process's `restarts` count in `GET /status`.
+
+The **Next.js preset sets this to true**; most stacks (Vite, Express, FastAPI)
+don't need it and leave it `false` (a restart is just wasted time for them).
 
 ## Process model
 runtimed supervises each declared process — one web process (optional) plus any
@@ -185,11 +205,14 @@ restarted after the build, so it stays broken.
   Tradeoff: **no post-task build verification for Next.js** until an isolated
   build check exists (build in a temp dir/clone, not the live workspace).
 - Web command now `rm -rf .next` before `pnpm dev` — defends a clean dev start
-  against a stale/production `.next/` carried in by a snapshot restore. (Alone it
-  is insufficient: dev isn't restarted after a post-task build, so it can't undo
-  a mid-session poison — which is why the build check is *skipped*, not just cleaned.)
+  against a stale/production `.next/` carried in by a snapshot restore.
 - Next.js template ships a **`.gitignore`** (`node_modules`, `.next`, `out`,
   `.env`, `.env.local`).
+- **`web.restart_after_task: true`** (see "Dev-mode resilience") — the agent can
+  run `next build` *during* a task, which `rm -rf .next` at boot can't undo
+  mid-session. Restarting the web process after each task re-runs the command
+  (incl. `rm -rf .next`) and heals the live dev server. This closes the
+  agent-poison gap that skipping the build check alone did not.
 
 **Re-test (rebuilt image `sandboxd-base:p7c1b`, portless):** fresh nextjs ready
 **~30s**, `/`+asset `200`; reproduced the bug (`pnpm build` → `/`+asset `500`);
@@ -208,6 +231,16 @@ post-task build check still runs — and the task result reported
 `web.log` present), and `/` + four `/_next/static/chunks/*` assets returned
 **200** afterward (not poisoned). FastAPI: same — `build_status: "skipped"`, no
 `pnpm build`, `/health → 200`.
+
+**Agent-poison fix + retest (rebuilt image `sandboxd-base:p7c1e`, 2026-06-23):**
+even with the build check skipped, the *agent* can run `next build` during a
+task. Added `web.restart_after_task` and enabled it on the Next.js preset. Live
+retest: created a Next.js sandbox, ran `pnpm build` to **simulate the agent
+poisoning `.next/` mid-task** (`.next` became a production build with `BUILD_ID`;
+`/_next/static/chunks/*` → 404), then ran a coding task. After the task the web
+process showed **`restarts: 1`**, `/` + four `/_next/static/chunks/*` returned
+**200**, and `.next` was a **clean dev build again** (no `BUILD_ID`) — the
+restart healed the live dev server.
 
 #### Honest build / health semantics — implemented (2026-06-23)
 The task result no longer reports a skipped build as a pass. `TaskResult` now has:

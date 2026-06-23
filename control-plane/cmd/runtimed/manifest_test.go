@@ -261,3 +261,17 @@ func TestManifestBuildResolution(t *testing.T) {
 		}
 	}
 }
+
+// web.restart_after_task parses; default (absent) is false.
+func TestManifestWebRestartAfterTask(t *testing.T) {
+	dir := writeManifest(t, "version: 1\nweb:\n  port: 3000\n  restart_after_task: true\n")
+	m, err := LoadManifest(dir, testDefaults)
+	if err != nil || m.Web == nil || !m.Web.RestartAfterTask {
+		t.Errorf("restart_after_task should be true: %+v (err %v)", m.Web, err)
+	}
+	dir = writeManifest(t, "version: 1\nweb:\n  port: 3000\n")
+	m, _ = LoadManifest(dir, testDefaults)
+	if m.Web.RestartAfterTask {
+		t.Error("restart_after_task should default to false when absent")
+	}
+}
