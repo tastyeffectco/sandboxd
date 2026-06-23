@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/secrets"
 	"github.com/sandboxd/control-plane/internal/store"
@@ -155,5 +156,63 @@ func TestAppConfigToggleSensitivityReEncrypts(t *testing.T) {
 	pt, err := s.Secrets.Open(c.ValueCiphertext, c.ValueNonce)
 	if err != nil || string(pt) != "plain-then-secret" {
 		t.Errorf("re-encrypted value wrong: %q %v", pt, err)
+	}
+}
+
+// A PATCH that doesn't include `value` must not touch the stored secret.
+func TestAppConfigPatchPreservesSecretWithoutValue(t *testing.T) {
+	s, appID := newConfigTestServer(t)
+	const secret = "sk-keep-me-2222"
+	do(s, "POST", "/v1/apps/"+appID+"/config",
+		`{"key":"K","value":"`+secret+`","sensitive":true,"access_policy":"control_plane_only"}`,
+		cfgTenant, map[string]string{"id": appID})
+	before, _ := s.Store.GetAppConfig(context.Background(), appID, "K")
+
+	// Change only the access policy — no `value` field present.
+	w := do(s, "PATCH", "/v1/apps/"+appID+"/config/K", `{"access_policy":"agent_access"}`,
+		cfgTenant, map[string]string{"id": appID, "key": "K"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", w.Code, w.Body)
+	}
+	after, _ := s.Store.GetAppConfig(context.Background(), appID, "K")
+	if after.AccessPolicy != "agent_access" {
+		t.Errorf("policy not updated: %q", after.AccessPolicy)
+	}
+	if !bytes.Equal(after.ValueCiphertext, before.ValueCiphertext) || !bytes.Equal(after.ValueNonce, before.ValueNonce) {
+		t.Error("policy-only PATCH changed the stored secret bytes")
+	}
+	pt, err := s.Secrets.Open(after.ValueCiphertext, after.ValueNonce)
+	if err != nil || string(pt) != secret {
+		t.Errorf("secret altered by a value-less PATCH: %q %v", pt, err)
+	}
+}
+
+type captureAudit struct{ rows []string }
+
+func (c *captureAudit) InsertAudit(_ context.Context, _ int64, _, _, _, _, action, target, detail string) error {
+	c.rows = append(c.rows, action+" "+target+" "+detail)
+	return nil
+}
+
+// Audit rows record the config key, never the secret value.
+func TestAppConfigAuditRecordsKeyNotValue(t *testing.T) {
+	s, appID := newConfigTestServer(t)
+	cap := &captureAudit{}
+	s.Audit = audit.New(cap, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	const secret = "sk-not-in-audit-7777"
+	do(s, "POST", "/v1/apps/"+appID+"/config",
+		`{"key":"OPENAI_API_KEY","value":"`+secret+`","sensitive":true}`,
+		cfgTenant, map[string]string{"id": appID})
+
+	if len(cap.rows) == 0 {
+		t.Fatal("no audit row written for config create")
+	}
+	joined := strings.Join(cap.rows, "\n")
+	if !strings.Contains(joined, "OPENAI_API_KEY") {
+		t.Errorf("audit missing the key name: %s", joined)
+	}
+	if strings.Contains(joined, secret) {
+		t.Errorf("audit leaked the secret value: %s", joined)
 	}
 }
