@@ -3,6 +3,13 @@ import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy } from './api'
 import { StatusBadge } from './ui'
 
 const ACCESS_POLICIES: AccessPolicy[] = ['control_plane_only', 'agent_access', 'runtime_access', 'both']
+// Only control_plane_only is enforced today. The others describe delivery to
+// agents/app runtimes that the secrets broker (Slice 2) has not implemented
+// yet, so they are shown but not selectable — picking one must not imply a
+// secret is being delivered anywhere.
+const ACTIVE_POLICIES: AccessPolicy[] = ['control_plane_only']
+const policyReserved = (p: AccessPolicy) => !ACTIVE_POLICIES.includes(p)
+const policyLabel = (p: AccessPolicy) => (policyReserved(p) ? `${p} — reserved (broker)` : p)
 
 export function AppDetail({ appId, onError }: { appId: string; onError: (m: string) => void }) {
   const [app, setApp] = useState<TApp | null>(null)
@@ -129,6 +136,8 @@ function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) =
   const [value, setValue] = useState('')
   const [sensitive, setSensitive] = useState(true)
   const [policy, setPolicy] = useState<AccessPolicy>('control_plane_only')
+  const [editKey, setEditKey] = useState<string | null>(null) // row whose value is being replaced
+  const [editValue, setEditValue] = useState('')
 
   const load = useCallback(() => {
     api
@@ -168,6 +177,11 @@ function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) =
           Secrets are encrypted at rest and never shown again.
         </span>
       </div>
+      <p className="muted" style={{ fontSize: 12, marginTop: 4 }} data-testid="config-broker-note">
+        Stored in sandboxd only. <code>control_plane_only</code> is the one policy
+        enforced today — delivery to agents and app runtimes arrives with the
+        secrets broker (not yet implemented), so the other policies are reserved.
+      </p>
 
       {items === null ? (
         <p className="muted">Loading…</p>
@@ -190,7 +204,44 @@ function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) =
               <tr key={it.key} data-testid={`config-row-${it.key}`}>
                 <td className="mono">{it.key}</td>
                 <td className="mono">
-                  {it.sensitive ? (
+                  {editKey === it.key ? (
+                    <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                      <input
+                        className="input mono"
+                        type={it.sensitive ? 'password' : 'text'}
+                        placeholder={it.sensitive ? 'new secret value' : 'new value'}
+                        value={editValue}
+                        autoFocus
+                        disabled={busy}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        data-testid={`config-edit-value-${it.key}`}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={busy}
+                        data-testid={`config-save-${it.key}`}
+                        onClick={() =>
+                          act(async () => {
+                            await api.patchConfig(appId, it.key, { value: editValue })
+                            setEditKey(null)
+                            setEditValue('')
+                          })
+                        }
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditKey(null)
+                          setEditValue('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : it.sensitive ? (
                     <span className="tag" title="Encrypted at rest; write-only">
                       •••• {it.value_set ? 'set' : 'empty'}
                     </span>
@@ -209,13 +260,24 @@ function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) =
                     }
                   >
                     {ACCESS_POLICIES.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
+                      <option key={p} value={p} disabled={policyReserved(p) && it.access_policy !== p}>
+                        {policyLabel(p)}
                       </option>
                     ))}
                   </select>
                 </td>
-                <td>
+                <td className="row" style={{ gap: 4 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy || editKey === it.key}
+                    data-testid={`config-replace-${it.key}`}
+                    onClick={() => {
+                      setEditKey(it.key)
+                      setEditValue('')
+                    }}
+                  >
+                    {it.sensitive ? 'Replace' : 'Edit'}
+                  </button>
                   <button
                     className="btn btn-ghost btn-sm"
                     disabled={busy}
@@ -254,8 +316,8 @@ function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) =
           data-testid="config-new-policy"
         >
           {ACCESS_POLICIES.map((p) => (
-            <option key={p} value={p}>
-              {p}
+            <option key={p} value={p} disabled={policyReserved(p)}>
+              {policyLabel(p)}
             </option>
           ))}
         </select>
