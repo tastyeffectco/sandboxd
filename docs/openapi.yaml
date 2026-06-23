@@ -115,6 +115,139 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/apps/{id}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: List snapshots captured from this app (tenant-scoped, newest first)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots:
+                    type: array
+                    items: { $ref: "#/components/schemas/Snapshot" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Restore the app from a snapshot (REPLACES its current sandbox)
+      description: >
+        Destructive: purges the app's current sandbox (container + workspace)
+        and creates a fresh one cloned from the snapshot. Un-snapshotted work
+        is lost, so the console confirms before calling.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshot_id]
+              properties:
+                snapshot_id: { type: string }
+      responses:
+        "201":
+          description: New sandbox created from the snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/fork:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Fork a snapshot into a new app (source app untouched)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshot_id]
+              properties:
+                snapshot_id: { type: string }
+                name: { type: string, description: "New app name; defaults to '<source> (fork)'." }
+      responses:
+        "201":
+          description: New app, with its sandbox spun from the snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app: { $ref: "#/components/schemas/App" }
+                  sandbox: { $ref: "#/components/schemas/Sandbox" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: App activity timeline (newest-first, tenant-scoped)
+      description: >
+        Durable app/sandbox/task/config/snapshot events for the app. Newest-first;
+        paginate with `before` (an event id from a prior page's `next_before`).
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: before
+          schema: { type: string }
+          description: Event id (ULID) cursor; returns events strictly older than it.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+                  next_before: { type: string, description: "Cursor for the next page; absent when empty." }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/tasks/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [tasks]
+      summary: Task activity timeline (newest-first, tenant-scoped)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: before
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+                  next_before: { type: string }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -591,6 +724,20 @@ components:
         build_error_message: { type: string }
         preview_status_after: { type: string }
         duration_ms: { type: integer }
+    Event:
+      type: object
+      description: One entry in the durable activity timeline.
+      properties:
+        id: { type: string, description: "ULID; also the pagination cursor." }
+        type: { type: string, description: "Stable machine-readable, e.g. task.failed, snapshot.restored." }
+        severity: { type: string, enum: [info, warning, error] }
+        message: { type: string, description: "Human-readable; not for programmatic logic." }
+        app_id: { type: string }
+        sandbox_id: { type: string }
+        task_id: { type: string }
+        snapshot_id: { type: string }
+        payload: { type: object, additionalProperties: true, description: "Small JSON; no secrets or large logs." }
+        created_at: { type: string, format: date-time }
     Snapshot:
       type: object
       properties:
@@ -598,6 +745,7 @@ components:
         name: { type: string }
         status: { type: string }
         source_sandbox_id: { type: string }
+        source_app_id: { type: string, description: "App the snapshot was captured from." }
         base_image: { type: string }
         visibility: { type: string }
         size_bytes: { type: integer }

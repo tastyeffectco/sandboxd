@@ -35,6 +35,28 @@ export interface Sandbox {
   preview?: Preview
 }
 
+export interface AppEvent {
+  id: string
+  type: string
+  severity: string
+  message: string
+  app_id?: string
+  sandbox_id?: string
+  task_id?: string
+  snapshot_id?: string
+  payload?: Record<string, unknown>
+  created_at: string
+}
+
+export interface Snapshot {
+  id: string
+  name: string
+  status: string
+  source_app_id?: string
+  size_bytes?: number
+  created_at: string
+}
+
 export interface TaskResult {
   id: string
   status: string
@@ -104,4 +126,19 @@ export const api = {
 
   createSnapshot: (sandboxId: string, name: string) =>
     req<{ id: string }>('POST', '/v1/snapshots', { source_sandbox_id: sandboxId, name }),
+
+  // Phase 4 — app-scoped snapshot history, restore, fork.
+  listAppSnapshots: (appId: string) =>
+    req<{ snapshots: Snapshot[] }>('GET', `/v1/apps/${appId}/snapshots`).then((r) => r.snapshots || []),
+  restoreApp: (appId: string, snapshotId: string) =>
+    req<Sandbox>('POST', `/v1/apps/${appId}/restore`, { snapshot_id: snapshotId }),
+  forkApp: (appId: string, snapshotId: string, name: string) =>
+    req<{ app: App }>('POST', `/v1/apps/${appId}/fork`, { snapshot_id: snapshotId, name }),
+
+  // Phase 5 — durable activity timeline (newest-first).
+  listAppEvents: (appId: string, limit = 50) =>
+    req<{ events: AppEvent[]; next_before?: string }>(
+      'GET',
+      `/v1/apps/${appId}/events?limit=${limit}`,
+    ).then((r) => r.events || []),
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
@@ -120,6 +121,9 @@ func (s *Server) v1CreateAppConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditConfig(r, "app_config.create", app.ID, c.Key)
+	s.recordEvent(r, events.Event{Type: events.ConfigCreated, Severity: events.SeverityInfo,
+		Message: "Config key created: " + c.Key, AppID: app.ID,
+		Payload: map[string]any{"key": c.Key, "sensitive": c.Sensitive}})
 	writeJSON(w, http.StatusCreated, redactConfig(c))
 }
 
@@ -199,6 +203,9 @@ func (s *Server) v1PatchAppConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	got, _ := s.Store.GetAppConfig(r.Context(), app.ID, key)
 	s.auditConfig(r, "app_config.update", app.ID, key)
+	s.recordEvent(r, events.Event{Type: events.ConfigUpdated, Severity: events.SeverityInfo,
+		Message: "Config key updated: " + key, AppID: app.ID,
+		Payload: map[string]any{"key": key}})
 	writeJSON(w, http.StatusOK, redactConfig(got))
 }
 
@@ -218,6 +225,9 @@ func (s *Server) v1DeleteAppConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditConfig(r, "app_config.delete", app.ID, key)
+	s.recordEvent(r, events.Event{Type: events.ConfigDeleted, Severity: events.SeverityInfo,
+		Message: "Config key deleted: " + key, AppID: app.ID,
+		Payload: map[string]any{"key": key}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
