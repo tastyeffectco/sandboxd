@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/sandboxd/control-plane/internal/runtime"
 )
 
 var testDefaults = Defaults{
@@ -78,7 +81,8 @@ build:
 workers:
   - name: queue
     command: "python worker.py"
-  - command: "python cron.py"
+  - name: cron
+    command: "python cron.py"
 `)
 	m, err := LoadManifest(dir, testDefaults)
 	if err != nil {
@@ -90,8 +94,100 @@ workers:
 	if m.Build.Command != "make build" || m.Build.TimeoutSeconds != 300 {
 		t.Errorf("build wrong: %+v", m.Build)
 	}
-	if len(m.Workers) != 2 || m.Workers[0].Name != "queue" || m.Workers[1].Name != "worker-2" {
+	if len(m.Workers) != 2 || m.Workers[0].Name != "queue" || m.Workers[1].Name != "cron" {
 		t.Errorf("workers wrong: %+v", m.Workers)
+	}
+}
+
+// Build config is never nil — even an absent manifest, a worker-only app, or a
+// rejected manifest yields a non-nil Build (so the post-task build check can't
+// panic on a.build.Command).
+func TestManifestBuildNeverNil(t *testing.T) {
+	cases := map[string]string{
+		"absent":      "",
+		"worker-only": "version: 1\nworkers:\n  - name: w\n    command: \"node w.js\"\n",
+		"invalid":     "web: [bad: map",
+	}
+	for name, body := range cases {
+		var dir string
+		if body == "" {
+			dir = t.TempDir()
+		} else {
+			dir = writeManifest(t, body)
+		}
+		m, _ := LoadManifest(dir, testDefaults) // err ignored: must still return a manifest
+		if m == nil || m.Build == nil {
+			t.Errorf("%s: Build must be non-nil", name)
+		}
+	}
+}
+
+// Invalid worker names are rejected; the manifest falls back to the safe
+// default (no workers, default web) so a bad name can never reach a log path.
+func TestManifestInvalidWorkerNamesRejected(t *testing.T) {
+	bad := []string{
+		"workers:\n  - name: \"../escape\"\n    command: x",
+		"workers:\n  - name: \"a/b\"\n    command: x",
+		"workers:\n  - name: \"..\"\n    command: x",
+		"workers:\n  - name: \"\"\n    command: x", // empty
+		"workers:\n  - name: \"has space\"\n    command: x",
+		"workers:\n  - name: ok\n    command: \"\"", // empty command
+	}
+	for _, body := range bad {
+		dir := writeManifest(t, "version: 1\n"+body+"\n")
+		m, err := LoadManifest(dir, testDefaults)
+		if err == nil {
+			t.Errorf("expected rejection for: %q", body)
+		}
+		// Fallback is the safe default: a web app with no workers.
+		if m.Web == nil || len(m.Workers) != 0 {
+			t.Errorf("rejected manifest should fall back to default web/no-workers, got %+v", m)
+		}
+	}
+}
+
+// Duplicate worker names are rejected (they'd collide on the log path).
+func TestManifestDuplicateWorkerNames(t *testing.T) {
+	dir := writeManifest(t, "version: 1\nworkers:\n  - name: w\n    command: a\n  - name: w\n    command: b\n")
+	if _, err := LoadManifest(dir, testDefaults); err == nil {
+		t.Error("expected rejection of duplicate worker names")
+	}
+}
+
+// A worker-only app (web == nil) reports PreviewNone and runs no preview
+// probe — and neither status() nor probe() panics with no web process.
+func TestWorkerOnlyAppStatusAndProbe(t *testing.T) {
+	a := &app{bootedAt: time.Now()} // web nil, no workers
+	a.probe()                       // worker-only: must return without touching a web process
+	st := a.status()
+	if st.Preview.Status != runtime.PreviewNone {
+		t.Errorf("worker-only preview status = %q; want %q", st.Preview.Status, runtime.PreviewNone)
+	}
+	if len(st.Processes) != 0 {
+		t.Errorf("expected no processes, got %d", len(st.Processes))
+	}
+}
+
+// Explicitly out-of-range web ports are rejected. (port: 0 is the YAML int
+// zero value = "unset", so it defaults to the standard 3000 rather than being
+// an error — there's no way to tell an explicit 0 from an absent field.)
+func TestManifestInvalidPort(t *testing.T) {
+	for _, p := range []string{"70000", "-1"} {
+		dir := writeManifest(t, "version: 1\nweb:\n  port: "+p+"\n")
+		if _, err := LoadManifest(dir, testDefaults); err == nil {
+			t.Errorf("expected rejection of port %s", p)
+		}
+	}
+	// In-range is accepted.
+	dir := writeManifest(t, "version: 1\nweb:\n  port: 65535\n")
+	if _, err := LoadManifest(dir, testDefaults); err != nil {
+		t.Errorf("port 65535 should be valid: %v", err)
+	}
+	// port: 0 means "unset" -> defaults to 3000, not an error.
+	dir = writeManifest(t, "version: 1\nweb:\n  port: 0\n")
+	m, err := LoadManifest(dir, testDefaults)
+	if err != nil || m.Web.Port != 3000 {
+		t.Errorf("port 0 should default to 3000, got port=%d err=%v", m.Web.Port, err)
 	}
 }
 
