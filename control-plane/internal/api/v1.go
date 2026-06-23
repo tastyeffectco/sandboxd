@@ -36,13 +36,24 @@ type v1Preview struct {
 }
 
 type v1Sandbox struct {
-	ID           string    `json:"id"`
-	Status       string    `json:"status"`
-	Preview      v1Preview `json:"preview"`
-	ActiveTaskID string    `json:"active_task_id,omitempty"`
-	Template     string    `json:"template"`
-	CreatedAt    string    `json:"created_at"`
-	UpdatedAt    string    `json:"updated_at,omitempty"`
+	ID           string      `json:"id"`
+	Status       string      `json:"status"`
+	Preview      v1Preview   `json:"preview"`
+	Processes    []v1Process `json:"processes"`
+	ActiveTaskID string      `json:"active_task_id,omitempty"`
+	Template     string      `json:"template"`
+	CreatedAt    string      `json:"created_at"`
+	UpdatedAt    string      `json:"updated_at,omitempty"`
+}
+
+// v1Process is one supervised process (the web dev server or a worker) from the
+// app's runtime manifest, surfaced for the console process panel.
+type v1Process struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind"` // "web" | "worker"
+	Running  bool   `json:"running"`
+	Pid      int    `json:"pid,omitempty"`
+	Restarts int    `json:"restarts"`
 }
 
 // --- helpers --------------------------------------------------------
@@ -133,27 +144,46 @@ func (s *Server) v1SandboxFromRow(r *http.Request, sb *store.Sandbox) v1Sandbox 
 		CreatedAt: sb.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: sb.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	prev := v1Preview{URL: s.previewURL(sb.ID)}
 	_, mnt := s.Loopback.Paths(sb.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	if rs, err := runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock")).Status(ctx); err == nil {
+	var rs *runtime.Status
+	if got, err := runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock")).Status(ctx); err == nil {
+		rs = got
+	}
+	out.Preview, out.Processes = s.v1RuntimeView(sb.ID, sb.Status, rs)
+	if rs != nil && rs.ActiveTask != nil {
+		out.ActiveTaskID = rs.ActiveTask.ID
+	}
+	return out
+}
+
+// v1RuntimeView maps a runtimed Status into the public preview + process shape.
+// rs is nil when runtimed is unreachable; then preview reflects the row status.
+// A worker-only app (preview status "none") has no public endpoint, so its
+// preview URL is cleared. Pure given the Server config — unit-tested.
+func (s *Server) v1RuntimeView(id, rowStatus string, rs *runtime.Status) (v1Preview, []v1Process) {
+	prev := v1Preview{URL: s.previewURL(id)}
+	var procs []v1Process
+	if rs != nil {
 		prev.Status = string(rs.Preview.Status)
 		prev.LastHTTPStatus = rs.Preview.LastHTTPStatus
 		if rs.Preview.LastCheckedAt != nil {
 			prev.LastCheckedAt = rs.Preview.LastCheckedAt.UTC().Format(time.RFC3339)
 		}
 		prev.BuildErrorMessage = rs.Preview.BuildErrorMessage
-		if rs.ActiveTask != nil {
-			out.ActiveTaskID = rs.ActiveTask.ID
+		for _, p := range rs.Processes {
+			procs = append(procs, v1Process{Name: p.Name, Kind: p.Kind, Running: p.Running, Pid: p.Pid, Restarts: p.Restarts})
 		}
-	} else if sb.Status == "running" {
+	} else if rowStatus == "running" {
 		prev.Status = "starting" // running but runtimed not yet answering
 	} else {
 		prev.Status = "down"
 	}
-	out.Preview = prev
-	return out
+	if prev.Status == string(runtime.PreviewNone) {
+		prev.URL = "" // worker-only: no public endpoint to advertise
+	}
+	return prev, procs
 }
 
 // --- POST /v1/sandboxes ---------------------------------------------

@@ -129,11 +129,17 @@ export function AppDetail({
 
       <div className="detail">
         <div>
-          <h2>Preview</h2>
+          <h2>Preview / endpoint</h2>
           {previewURL && status === 'running' ? (
             <iframe className="preview-frame" src={previewURL} title="preview" data-testid="preview" />
           ) : (
-            <div className="preview-empty">{sb ? 'Sandbox not running' : 'No sandbox yet'}</div>
+            <div className="preview-empty" data-testid="preview-empty">
+              {!sb
+                ? 'No sandbox yet'
+                : sb.preview?.status === 'none'
+                  ? 'No public endpoint — worker process running'
+                  : 'Sandbox not running'}
+            </div>
           )}
           {previewURL && (
             <div className="mono" style={{ fontSize: 12, marginTop: 8 }}>
@@ -147,6 +153,8 @@ export function AppDetail({
         <TaskPanel sandboxId={sb?.id} running={status === 'running'} onError={onError} />
       </div>
 
+      <ProcessesPanel sandbox={sb} onError={onError} />
+
       <SnapshotsPanel
         appId={appId}
         appName={app.name}
@@ -159,6 +167,101 @@ export function AppDetail({
       <ConfigPanel appId={appId} onError={onError} />
 
       <ActivityPanel appId={appId} reloadKey={snapReload} onError={onError} />
+    </div>
+  )
+}
+
+// ProcessesPanel shows the sandbox's supervised processes (web + workers) from
+// the runtime manifest, and lets you tail each process's recent logs. A
+// worker-only app (no web) is valid here — its worker simply shows as running
+// with no public endpoint.
+function ProcessesPanel({ sandbox, onError }: { sandbox: Sandbox | null; onError: (m: string) => void }) {
+  const [logsFor, setLogsFor] = useState<string | null>(null)
+  const [logLines, setLogLines] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  if (!sandbox) return null
+  const procs = sandbox.processes ?? []
+
+  const viewLogs = async (name: string) => {
+    setBusy(true)
+    setLogsFor(name)
+    setLogLines([])
+    try {
+      const r = await api.getProcessLogs(sandbox.id, name, 200)
+      setLogLines(r.lines)
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card" data-testid="processes-panel">
+      <h2 className="card-title">Processes</h2>
+      {procs.length === 0 ? (
+        <p className="muted" data-testid="processes-empty">
+          No processes reported (sandbox stopped or still starting).
+        </p>
+      ) : (
+        <table className="config-table" data-testid="processes-list">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Kind</th>
+              <th>Status</th>
+              <th>PID</th>
+              <th>Restarts</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {procs.map((p) => (
+              <tr key={p.name} data-testid={`process-${p.name}`}>
+                <td className="mono">{p.name}</td>
+                <td>{p.kind}</td>
+                <td>
+                  <span className={`badge ${p.running ? 'running' : 'stopped'}`}>
+                    {p.running ? 'running' : 'stopped'}
+                  </span>
+                </td>
+                <td className="muted mono">{p.pid || '—'}</td>
+                <td className="muted">{p.restarts}</td>
+                <td>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy}
+                    data-testid={`process-logs-${p.name}`}
+                    onClick={() => viewLogs(p.name)}
+                  >
+                    Logs
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {logsFor && (
+        <div className="log mono" data-testid="process-log-output" style={{ marginTop: 10 }}>
+          <div className="row">
+            <strong>{logsFor} — recent logs</strong>
+            <div className="spacer" />
+            <button className="btn btn-ghost btn-sm" onClick={() => setLogsFor(null)}>
+              close
+            </button>
+          </div>
+          {logLines.length === 0 ? (
+            <div className="muted">{busy ? 'Loading…' : '(no output)'}</div>
+          ) : (
+            logLines.map((l, i) => (
+              <div key={i} className="ev">
+                {l}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
