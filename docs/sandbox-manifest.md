@@ -89,16 +89,19 @@ workers:
 ```
 
 ## Verification status (Phase 7)
-The manifest core (parsing, defaults, validation, the generalized process model)
-is **unit-tested**, but Phase 7 is **NOT fully verified** yet. Because runtimed
-is the in-sandbox binary, end-to-end behavior is only confirmed once the **base
-image is rebuilt** and a real sandbox runs all three shapes:
-- the **default Vite app** (no manifest — backward compatibility),
-- a **custom web manifest** (e.g. a Next.js / Python server on a non-default port
-  + `health_path`),
-- a **worker-only manifest** (no preview).
+Unit-tested **and live-verified end-to-end** (2026-06-23) on a rebuilt base image
+(`sandboxd-base:phase7`) driven by a disposable host-run sandboxd — all three
+shapes passed:
 
-Until that live run passes, treat Phase 7 as "core implemented, not e2e-verified."
+| Shape | Result |
+|---|---|
+| **Default Vite** (no manifest) | preview `ready`; `web` process running; `pnpm build` exit 0 (build check works) |
+| **Custom web** (python `http.server` on `:5000`, `health_path /healthz`, build skipped) | preview `ready`; web serves `GET /healthz → 200` and `/ → 200`; build intentionally skipped (`build.command: ""`) |
+| **Worker-only** (one worker, no `web`) | preview `none` (treated as valid, not an error); worker process running and producing output |
+
+Test sandboxes were **portless** (no Traefik label) so the shared host's
+production routing was never touched; verification used runtimed's reported
+status plus in-container checks, not Traefik. Re-run after any runtimed change.
 
 ## Security
 The manifest is **declarative config for processes that already run inside the
