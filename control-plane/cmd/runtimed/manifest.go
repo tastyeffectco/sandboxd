@@ -1,0 +1,136 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ManifestFile is the optional per-app runtime manifest in the workspace.
+// It lets an app declare how it builds, runs, exposes a preview, and reports
+// health — so sandboxd works beyond the default Vite/React app. ABSENT is the
+// common case and means "use the built-in defaults" (which equal today's
+// Vite behavior), so existing apps keep working untouched.
+const ManifestFile = "sandbox.yaml"
+
+// Manifest is the parsed sandbox.yaml. All fields are optional; Load fills
+// defaults. The agent can edit this file like any workspace file; runtimed
+// re-reads it on (re)start.
+type Manifest struct {
+	Version int        `yaml:"version"`
+	Web     *WebProc   `yaml:"web"`     // the previewed process; nil => no preview (worker-only)
+	Build   *BuildSpec `yaml:"build"`   // post-task build check
+	Workers []Worker   `yaml:"workers"` // background processes, no preview
+}
+
+// WebProc is the single previewed process: it serves HTTP on Port and is
+// health-probed at HealthPath.
+type WebProc struct {
+	Command    string `yaml:"command"`
+	Port       int    `yaml:"port"`
+	HealthPath string `yaml:"health_path"`
+}
+
+// BuildSpec is the build check run after a coding task.
+type BuildSpec struct {
+	Command        string `yaml:"command"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
+}
+
+// Worker is a background process with no preview (e.g. a queue consumer).
+type Worker struct {
+	Name    string `yaml:"name"`
+	Command string `yaml:"command"`
+}
+
+// Defaults preserve the pre-manifest Vite/React behavior. Sourced from the
+// long-standing RUNTIMED_* env vars so an operator override still works as the
+// default when no manifest sets the field.
+type Defaults struct {
+	WebCommand    string
+	WebPort       int
+	BuildCommand  string
+	BuildTimeoutS int
+	WebHealthPath string
+}
+
+// LoadManifest reads <appDir>/sandbox.yaml and returns a fully-defaulted
+// manifest. Rules:
+//   - no file               -> default web app (Vite), no workers.
+//   - file, web present      -> web app with its fields, missing ones defaulted.
+//   - file, no web + workers -> worker-only app (no preview).
+//   - file, no web, no workers (empty) -> default web app.
+//
+// A parse error is returned so the caller can log it and fall back to defaults
+// rather than booting a misconfigured app silently.
+func LoadManifest(appDir string, def Defaults) (*Manifest, error) {
+	path := filepath.Join(appDir, ManifestFile)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return defaultManifest(def), nil
+		}
+		return defaultManifest(def), fmt.Errorf("read %s: %w", ManifestFile, err)
+	}
+	var m Manifest
+	if err := yaml.Unmarshal(raw, &m); err != nil {
+		return defaultManifest(def), fmt.Errorf("parse %s: %w", ManifestFile, err)
+	}
+	m.applyDefaults(def)
+	return &m, nil
+}
+
+func defaultManifest(def Defaults) *Manifest {
+	m := &Manifest{Version: 1}
+	m.applyDefaults(def)
+	return m
+}
+
+func (m *Manifest) applyDefaults(def Defaults) {
+	if m.Version == 0 {
+		m.Version = 1
+	}
+	// An empty manifest (no web, no workers) is a default web app — keeps a
+	// stray/empty sandbox.yaml from silently disabling the preview.
+	if m.Web == nil && len(m.Workers) == 0 {
+		m.Web = &WebProc{}
+	}
+	if m.Web != nil {
+		if m.Web.Command == "" {
+			m.Web.Command = def.WebCommand
+		}
+		if m.Web.Port == 0 {
+			m.Web.Port = def.WebPort
+		}
+		if m.Web.HealthPath == "" {
+			m.Web.HealthPath = def.WebHealthPath
+		}
+	}
+	if m.Build == nil {
+		m.Build = &BuildSpec{}
+	}
+	if m.Build.Command == "" {
+		m.Build.Command = def.BuildCommand
+	}
+	if m.Build.TimeoutSeconds <= 0 {
+		m.Build.TimeoutSeconds = def.BuildTimeoutS
+	}
+	// Workers without a name get a positional one so logs/status are stable.
+	for i := range m.Workers {
+		if m.Workers[i].Name == "" {
+			m.Workers[i].Name = fmt.Sprintf("worker-%d", i+1)
+		}
+	}
+}
+
+// hasDefaultWeb reports whether the web process is the built-in default (no
+// sandbox.yaml customization). Used to decide whether to run the Vite-specific
+// entry-asset deep probe, which only makes sense for the default React app.
+func (m *Manifest) isDefaultWeb(def Defaults) bool {
+	return m.Web != nil &&
+		m.Web.Command == def.WebCommand &&
+		m.Web.Port == def.WebPort &&
+		m.Web.HealthPath == def.WebHealthPath
+}

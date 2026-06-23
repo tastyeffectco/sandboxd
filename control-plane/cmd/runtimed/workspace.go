@@ -82,10 +82,16 @@ func filesChanged(appDir, checkpointID string) ([]string, error) {
 
 // buildCheck runs the project build and reports whether the app
 // compiles — this is what makes a task's build_ok honest.
-func buildCheck(appDir string, log *slog.Logger) (ok bool, errMsg string) {
-	ctx, cancel := context.WithTimeout(context.Background(), buildCheckTimeout)
+func buildCheck(appDir, command string, timeout time.Duration, log *slog.Logger) (ok bool, errMsg string) {
+	if command == "" {
+		return true, "" // no build command declared -> nothing to check
+	}
+	if timeout <= 0 {
+		timeout = buildCheckTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-lc", "pnpm build")
+	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
 	cmd.Dir = appDir
 	out, err := cmd.CombinedOutput()
 	if err == nil {

@@ -40,8 +40,22 @@ const (
 type Status struct {
 	Runtimed RuntimedInfo `json:"runtimed"`
 	Preview  PreviewState `json:"preview"`
+	// Processes lists every supervised process (the web process and any
+	// workers from sandbox.yaml). Empty on older runtimed builds. The web
+	// process's preview health is also surfaced in Preview for compatibility.
+	Processes []ProcessState `json:"processes,omitempty"`
 	// ActiveTask is the running task, or null when idle.
 	ActiveTask *ActiveTask `json:"active_task"`
+}
+
+// ProcessState is one supervised process (the web dev server or a worker)
+// from the app's runtime manifest (sandbox.yaml).
+type ProcessState struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind"` // "web" | "worker"
+	Running  bool   `json:"running"`
+	Pid      int    `json:"pid,omitempty"`
+	Restarts int    `json:"restarts"`
 }
 
 // RuntimedInfo identifies the supervisor and how long it has been up.

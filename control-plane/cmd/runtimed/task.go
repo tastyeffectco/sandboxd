@@ -233,7 +233,7 @@ func (a *app) runTask(t *task) {
 	// 5. post-task build check (skipped on cancel — keep cancel fast).
 	if status != runtime.TaskCancelled {
 		t.setPhase("build_check")
-		ok, bmsg := buildCheck(a.appDir, a.log)
+		ok, bmsg := buildCheck(a.appDir, a.build.Command, time.Duration(a.build.TimeoutSeconds)*time.Second, a.log)
 		res.BuildOK = ok
 		res.BuildErrorMessage = bmsg
 		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_error_message": bmsg})
