@@ -34,6 +34,7 @@ type app struct {
 	previewPort   int        // web process's HTTP port
 	webHealthPath string     // path probed for web readiness
 	defaultWeb    bool       // web is the built-in default => run the Vite asset deep-probe
+	webRestart    bool       // restart the web process after every task (manifest web.restart_after_task)
 	build         *BuildSpec // post-task build check (from manifest)
 	appDir        string
 	runtimeDir    string
@@ -124,6 +125,7 @@ func main() {
 		a.previewPort = m.Web.Port
 		a.webHealthPath = m.Web.HealthPath
 		a.defaultWeb = m.isDefaultWeb(manifestDefaults)
+		a.webRestart = m.Web.RestartAfterTask
 	}
 	for _, w := range m.Workers {
 		a.workers = append(a.workers,

@@ -253,6 +253,15 @@ func (a *app) runTask(t *task) {
 	}
 	res.BuildOK = res.BuildStatus == runtime.BuildPassed
 
+	// 5.3 restart_after_task (skipped on cancel): bounce the web process so an
+	// agent-written production build can't poison a live dev server. The web
+	// command re-runs (e.g. `rm -rf .next; pnpm dev`), cleaning the artifact.
+	// Done before the health/probe steps so PreviewStatusAfter reflects the
+	// restarted server.
+	if status != runtime.TaskCancelled && a.web != nil && a.webRestart {
+		a.restartWebAndWait(ctx)
+	}
+
 	// 5.5 post-task health pipeline (skipped on cancel): remediate
 	// dev-server state the build check can't see (e.g. stale config →
 	// restart) then probe the live entry assets and report a preview
@@ -273,6 +282,38 @@ func (a *app) runTask(t *task) {
 	}
 
 	a.finishTask(t, &res, status, reason, errMsg)
+}
+
+// webRestartReadyTimeout bounds how long restartWebAndWait waits for the
+// bounced web process to serve again (a Next.js dev recompile can take a while).
+const webRestartReadyTimeout = 90 * time.Second
+
+// restartWebAndWait restarts the web process (via stop(); the supervisor then
+// re-runs its start command) and waits until it serves a 200 on the health
+// path again, so the post-task preview/health reflects the fresh server rather
+// than the mid-restart gap. Best-effort: returns on ctx cancel or timeout.
+func (a *app) restartWebAndWait(ctx context.Context) {
+	if a.web == nil {
+		return
+	}
+	a.log.Info("restarting web process after task (restart_after_task)")
+	a.web.stop() // blocks until the child is dead; supervisor re-runs the start cmd
+	deadline := time.Now().Add(webRestartReadyTimeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		if code, _ := a.devGet(ctx, a.webHealthPath); code == 200 {
+			a.log.Info("web process restarted and serving")
+			return
+		}
+		if time.Now().After(deadline) {
+			a.log.Warn("web process not ready after restart before timeout")
+			return
+		}
+	}
 }
 
 // postTaskHealth derives overall app health and the preview_ok signal.
