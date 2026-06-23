@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy } from './api'
+import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy, Snapshot } from './api'
 import { StatusBadge } from './ui'
 
 const ACCESS_POLICIES: AccessPolicy[] = ['control_plane_only', 'agent_access', 'runtime_access', 'both']
@@ -23,6 +23,7 @@ export function AppDetail({
   const [app, setApp] = useState<TApp | null>(null)
   const [sb, setSb] = useState<Sandbox | null>(null)
   const [busy, setBusy] = useState(false)
+  const [snapReload, setSnapReload] = useState(0) // bump to refresh snapshot history
 
   const refresh = useCallback(async () => {
     try {
@@ -54,14 +55,15 @@ export function AppDetail({
     }
   }
 
-  // Capture a snapshot with explicit feedback. v0.3.0 only captures — history,
-  // restore, and fork land in v0.4.0. A running source returns 409.
+  // Capture a snapshot with explicit feedback. A running source returns 409.
+  // On success, refresh the history list below.
   const snapshot = async () => {
     if (!sb || !app) return
     setBusy(true)
     try {
       await api.createSnapshot(sb.id, `${app.name}-${Date.now()}`)
-      onInfo('Snapshot captured. History, restore, and fork are coming in v0.4.0.')
+      onInfo('Snapshot captured.')
+      setSnapReload((n) => n + 1)
     } catch (e) {
       const err = e as Error & { status?: number }
       onError(err.status === 409 ? 'Stop the sandbox before capturing a snapshot.' : err.message)
@@ -145,7 +147,138 @@ export function AppDetail({
         <TaskPanel sandboxId={sb?.id} running={status === 'running'} onError={onError} />
       </div>
 
+      <SnapshotsPanel
+        appId={appId}
+        appName={app.name}
+        reloadKey={snapReload}
+        onError={onError}
+        onInfo={onInfo}
+        onChanged={refresh}
+      />
+
       <ConfigPanel appId={appId} onError={onError} />
+    </div>
+  )
+}
+
+// SnapshotsPanel shows an app's snapshot history and the two recovery
+// actions. Restore is destructive (replaces the current sandbox), so it
+// confirms first. Fork spins a brand-new app from the snapshot.
+function SnapshotsPanel({
+  appId,
+  appName,
+  reloadKey,
+  onError,
+  onInfo,
+  onChanged,
+}: {
+  appId: string
+  appName: string
+  reloadKey: number
+  onError: (m: string) => void
+  onInfo: (m: string) => void
+  onChanged: () => void
+}) {
+  const [snaps, setSnaps] = useState<Snapshot[] | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    api
+      .listAppSnapshots(appId)
+      .then(setSnaps)
+      .catch((e) => onError((e as Error).message))
+  }, [appId, onError])
+  useEffect(load, [load, reloadKey])
+
+  const restore = async (snap: Snapshot) => {
+    if (
+      !window.confirm(
+        `Restore "${snap.name}"?\n\nThis REPLACES the app's current sandbox and permanently discards any work that has not been snapshotted. Continue?`,
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    try {
+      await api.restoreApp(appId, snap.id)
+      onInfo('Restored from snapshot — a fresh sandbox was created.')
+      onChanged()
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const fork = async (snap: Snapshot) => {
+    const name = window.prompt('Fork into a new app named:', `${appName} fork`)
+    if (name === null || !name.trim()) return
+    setBusy(true)
+    try {
+      const res = await api.forkApp(appId, snap.id, name.trim())
+      onInfo(`Forked into new app "${res.app?.name ?? name.trim()}".`)
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card" data-testid="snapshots-panel">
+      <div className="row">
+        <h2 className="card-title">Snapshots</h2>
+        <div className="spacer" />
+        <span className="muted" style={{ fontSize: 12 }}>
+          Capture from the controls above (stop the sandbox first). Restore replaces the
+          current sandbox; fork creates a new app.
+        </span>
+      </div>
+      {snaps === null ? (
+        <p className="muted">Loading…</p>
+      ) : snaps.length === 0 ? (
+        <p className="muted" data-testid="snapshots-empty">
+          No snapshots yet.
+        </p>
+      ) : (
+        <table className="config-table" data-testid="snapshots-list">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Captured</th>
+              <th>Size</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {snaps.map((s) => (
+              <tr key={s.id} data-testid={`snapshot-row-${s.id}`}>
+                <td className="mono">{s.name}</td>
+                <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
+                <td className="muted">{s.size_bytes ? `${Math.round(s.size_bytes / 1024)} KB` : '—'}</td>
+                <td className="row" style={{ gap: 4 }}>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    disabled={busy || s.status !== 'ready'}
+                    data-testid={`snapshot-restore-${s.id}`}
+                    onClick={() => restore(s)}
+                  >
+                    Restore
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy || s.status !== 'ready'}
+                    data-testid={`snapshot-fork-${s.id}`}
+                    onClick={() => fork(s)}
+                  >
+                    Fork
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
