@@ -18,6 +18,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/loopback"
 	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/sandboxd/control-plane/internal/secrets"
 	"github.com/sandboxd/control-plane/internal/snapshot"
 	"github.com/sandboxd/control-plane/internal/store"
 	"github.com/sandboxd/control-plane/internal/wake"
@@ -72,6 +73,11 @@ type Server struct {
 	// LLMTxtPath is the host file served at the public, tokenless
 	// GET /llm.txt (the API contract for integrators). Empty → 404.
 	LLMTxtPath string
+
+	// Secrets encrypts sensitive app_config values at rest (Slice 1 of
+	// app config/secrets). nil-safe: sensitive config writes return 503
+	// when unset, but main.go always configures it.
+	Secrets *secrets.Cipher
 
 	// Phase 5 additions — nil-safe so existing tests that build a
 	// Server without these still work.
@@ -147,6 +153,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
 	mux.HandleFunc("POST /v1/apps/{id}/sandbox", s.observe("POST /v1/apps/{id}/sandbox", s.v1CreateAppSandbox))
+	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
+	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
+	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
+	mux.HandleFunc("DELETE /v1/apps/{id}/config/{key}", s.observe("DELETE /v1/apps/{id}/config/{key}", s.v1DeleteAppConfig))
 
 	// Snapshots-as-templates (ops/design/snapshots-as-templates.md).
 	mux.HandleFunc("POST /v1/snapshots", s.observe("POST /v1/snapshots", s.v1CreateSnapshot))
