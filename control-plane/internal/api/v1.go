@@ -106,10 +106,20 @@ func (s *Server) previewURL(id string) string {
 	// unless PreviewTLS is configured (so a local/default deploy returns
 	// a reachable http:// URL the console can iframe).
 	scheme := "http"
+	defaultPort := "80"
 	if s.PreviewTLS {
 		scheme = "https"
+		defaultPort = "443"
 	}
-	return fmt.Sprintf("%s://s-%s-3000.preview.%s", scheme, id, s.PreviewDomain)
+	host := fmt.Sprintf("s-%s-3000.preview.%s", id, s.PreviewDomain)
+	// Append the host-facing port unless it's the scheme default. On a
+	// shared host published on e.g. :18080, the bare URL would hit whatever
+	// owns :80 (a front proxy), so the port must be in the URL the browser,
+	// console iframe, and open-in-tab link all use.
+	if p := s.PublicHTTPPort; p != "" && p != defaultPort {
+		host += ":" + p
+	}
+	return scheme + "://" + host
 }
 
 // v1SandboxFromRow reshapes a stored sandbox to the v1 object, folding

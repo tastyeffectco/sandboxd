@@ -77,6 +77,10 @@ services:
       # --- routing (HTTP by default) ---
       PREVIEW_ENTRYPOINT: ${PREVIEW_ENTRYPOINT:-web}
       PREVIEW_TLS: ${PREVIEW_TLS:-false}
+      # Host-facing port previews/console are reached on; appended to preview
+      # URLs unless it's the scheme default (80/443). Matches HTTP_PORT so a
+      # shared-host deploy (e.g. 18080) returns a reachable URL.
+      SANDBOXD_PUBLIC_HTTP_PORT: ${HTTP_PORT:-80}
       # --- portability toggles ---
       SANDBOXD_SET_MEMORY_HIGH: ${SANDBOXD_SET_MEMORY_HIGH:-false}
       # --- auth (open by default for local use; set tokens for prod) ---
