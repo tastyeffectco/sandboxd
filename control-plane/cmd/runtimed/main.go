@@ -24,15 +24,20 @@ import (
 
 const version = "0.1.0"
 
-// app holds runtimed's live state: the dev-server supervisor, the most
-// recent preview health probe, and the one active coding task.
+// app holds runtimed's live state: the supervised processes (the web dev
+// server and any workers from sandbox.yaml), the most recent preview health
+// probe, and the one active coding task.
 type app struct {
-	dev         *devServer
-	previewPort int
-	appDir      string
-	runtimeDir  string
-	log         *slog.Logger
-	bootedAt    time.Time
+	web           *process   // the previewed process; nil for a worker-only app
+	workers       []*process // background processes, no preview
+	previewPort   int        // web process's HTTP port
+	webHealthPath string     // path probed for web readiness
+	defaultWeb    bool       // web is the built-in default => run the Vite asset deep-probe
+	build         *BuildSpec // post-task build check (from manifest)
+	appDir        string
+	runtimeDir    string
+	log           *slog.Logger
+	bootedAt      time.Time
 
 	mu           sync.Mutex
 	lastCode     int
@@ -49,13 +54,20 @@ func main() {
 	appDir := envOr("RUNTIMED_APP_DIR", "/home/sandbox/workspace/app")
 	runtimeDir := envOr("RUNTIMED_DIR", "/home/sandbox/.runtimed")
 	socketPath := envOr("RUNTIMED_SOCKET", filepath.Join(runtimeDir, "sock"))
-	// Install dependencies on the first boot of a fresh workspace (the
-	// starter app ships source only; node_modules then persists in the
-	// workspace across stop/wake). `bash -lc` runs this, so the compound
-	// form is intentional.
-	devCmd := envOr("RUNTIMED_DEV_CMD", "[ -d node_modules ] || pnpm install; pnpm dev")
-	previewPort := envOrInt("RUNTIMED_PREVIEW_PORT", 3000)
 	probeInterval := time.Duration(envOrInt("RUNTIMED_PROBE_INTERVAL_SECONDS", 3)) * time.Second
+
+	// Manifest defaults preserve the pre-manifest Vite behavior. The
+	// long-standing RUNTIMED_* env vars remain the source of each default, so
+	// an operator override still applies when sandbox.yaml doesn't set the
+	// field. (Install runs on first boot of a fresh workspace; node_modules
+	// then persists across stop/wake. `bash -lc` runs the compound form.)
+	manifestDefaults := Defaults{
+		WebCommand:    envOr("RUNTIMED_DEV_CMD", "[ -d node_modules ] || pnpm install; pnpm dev"),
+		WebPort:       envOrInt("RUNTIMED_PREVIEW_PORT", 3000),
+		BuildCommand:  envOr("RUNTIMED_BUILD_CMD", "pnpm build"),
+		BuildTimeoutS: envOrInt("RUNTIMED_BUILD_TIMEOUT_SECONDS", 120),
+		WebHealthPath: envOr("RUNTIMED_HEALTH_PATH", "/"),
+	}
 
 	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
 		log.Error("mkdir runtime dir", "dir", runtimeDir, "err", err.Error())
@@ -79,13 +91,29 @@ func main() {
 	// left untouched (the dir is non-empty), so this only fires once.
 	seedTemplateApp(appDir, envOr("RUNTIMED_TEMPLATE", "react-standard"), log)
 
+	// Load the app's runtime manifest (sandbox.yaml). Absent => built-in
+	// defaults (a Vite web app); a parse error logs and falls back safely.
+	m, err := LoadManifest(appDir, manifestDefaults)
+	if err != nil {
+		log.Warn("manifest load failed; using defaults", "err", err.Error())
+	}
+
 	a := &app{
-		dev:         newDevServer(appDir, devCmd, filepath.Join(runtimeDir, "dev-server.log"), log),
-		previewPort: previewPort,
-		appDir:      appDir,
-		runtimeDir:  runtimeDir,
-		log:         log,
-		bootedAt:    time.Now(),
+		build:      m.Build,
+		appDir:     appDir,
+		runtimeDir: runtimeDir,
+		log:        log,
+		bootedAt:   time.Now(),
+	}
+	if m.Web != nil {
+		a.web = newProcess("web", "web", appDir, m.Web.Command, filepath.Join(runtimeDir, "web.log"), log)
+		a.previewPort = m.Web.Port
+		a.webHealthPath = m.Web.HealthPath
+		a.defaultWeb = m.isDefaultWeb(manifestDefaults)
+	}
+	for _, w := range m.Workers {
+		a.workers = append(a.workers,
+			newProcess(w.Name, "worker", appDir, w.Command, filepath.Join(runtimeDir, w.Name+".log"), log))
 	}
 
 	// Finalize any task interrupted by a previous stop/crash before
@@ -95,17 +123,28 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	go a.dev.supervise(ctx)
-	go a.probeLoop(ctx, probeInterval)
+	if a.web != nil {
+		go a.web.supervise(ctx)
+		go a.probeLoop(ctx, probeInterval)
+	}
+	for _, w := range a.workers {
+		go w.supervise(ctx)
+	}
 
-	log.Info("runtimed started", "version", version, "app_dir", appDir, "socket", socketPath)
+	log.Info("runtimed started", "version", version, "app_dir", appDir, "socket", socketPath,
+		"web", a.web != nil, "workers", len(a.workers))
 	if err := serve(ctx, socketPath, a); err != nil {
 		log.Error("control server", "err", err.Error())
 	}
 
-	// ctx is done — shut the dev server down cleanly before exiting.
-	log.Info("runtimed shutting down — stopping dev server")
-	a.dev.stop()
+	// ctx is done — stop all supervised processes cleanly before exiting.
+	log.Info("runtimed shutting down — stopping processes")
+	if a.web != nil {
+		a.web.stop()
+	}
+	for _, w := range a.workers {
+		w.stop()
+	}
 	log.Info("runtimed stopped")
 }
 
@@ -158,15 +197,18 @@ func (a *app) probeLoop(ctx context.Context, interval time.Duration) {
 }
 
 func (a *app) probe() {
+	if a.web == nil {
+		return // worker-only app: no preview to probe
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	code, _ := a.devGet(ctx, "/")
-	// The HTML shell can serve 200 while the dev server fails to
-	// transform the real entry modules (a blank page). Only probe the
-	// entry assets once the shell is up, so `error` means "renders the
-	// shell but the app is broken", not "still starting".
+	code, _ := a.devGet(ctx, a.webHealthPath)
+	// The HTML shell can serve 200 while the dev server fails to transform
+	// the real entry modules (a blank page). Probe the entry assets once the
+	// shell is up — but only for the DEFAULT Vite app; a custom app declares
+	// its own health_path and has no Vite entry modules to probe.
 	assetErr := ""
-	if code == 200 {
+	if code == 200 && a.defaultWeb {
 		assetErr = a.probeEntryAssets(ctx)
 	}
 	a.mu.Lock()
@@ -176,34 +218,50 @@ func (a *app) probe() {
 	a.mu.Unlock()
 }
 
-// status derives the runtime.Status snapshot from the dev-server
-// process state and the latest health probe.
+// status derives the runtime.Status snapshot from the supervised processes
+// and the latest web health probe.
 func (a *app) status() runtime.Status {
-	pid, restarts, running := a.dev.snapshot()
-	a.mu.Lock()
-	code, assetErr, checked := a.lastCode, a.lastAssetErr, a.lastChecked
-	a.mu.Unlock()
+	var ps runtime.PreviewState
+	var procs []runtime.ProcessState
 
-	ps := runtime.PreviewState{Restarts: restarts, LastHTTPStatus: code}
-	switch {
-	case !running:
+	if a.web != nil {
+		pid, restarts, running := a.web.snapshot()
+		a.mu.Lock()
+		code, assetErr, checked := a.lastCode, a.lastAssetErr, a.lastChecked
+		a.mu.Unlock()
+
+		ps.Restarts = restarts
+		ps.LastHTTPStatus = code
+		switch {
+		case !running:
+			ps.Status = runtime.PreviewDown
+		case code == 200 && assetErr == "":
+			ps.Status = runtime.PreviewReady
+			ps.Pid = pid
+		case code == 200 && assetErr != "":
+			// shell serves but an entry module fails to compile — a blank page.
+			ps.Status = runtime.PreviewError
+			ps.BuildErrorMessage = assetErr
+			ps.Pid = pid
+		default:
+			ps.Status = runtime.PreviewStarting
+			ps.Pid = pid
+		}
+		if !checked.IsZero() {
+			c := checked
+			ps.LastCheckedAt = &c
+		}
+		procs = append(procs, runtime.ProcessState{Name: "web", Kind: "web", Running: running, Pid: pid, Restarts: restarts})
+	} else {
+		// Worker-only app: there is no preview.
 		ps.Status = runtime.PreviewDown
-	case code == 200 && assetErr == "":
-		ps.Status = runtime.PreviewReady
-		ps.Pid = pid
-	case code == 200 && assetErr != "":
-		// shell serves but an entry module fails to compile — a blank page.
-		ps.Status = runtime.PreviewError
-		ps.BuildErrorMessage = assetErr
-		ps.Pid = pid
-	default:
-		ps.Status = runtime.PreviewStarting
-		ps.Pid = pid
 	}
-	if !checked.IsZero() {
-		c := checked
-		ps.LastCheckedAt = &c
+
+	for _, w := range a.workers {
+		pid, restarts, running := w.snapshot()
+		procs = append(procs, runtime.ProcessState{Name: w.name, Kind: "worker", Running: running, Pid: pid, Restarts: restarts})
 	}
+
 	return runtime.Status{
 		Runtimed: runtime.RuntimedInfo{
 			Version:  version,
@@ -211,6 +269,7 @@ func (a *app) status() runtime.Status {
 			UptimeS:  int64(time.Since(a.bootedAt).Seconds()),
 		},
 		Preview:    ps,
+		Processes:  procs,
 		ActiveTask: a.activeTaskRef(),
 	}
 }
