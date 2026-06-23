@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/runtime"
 )
 
@@ -89,7 +90,20 @@ func main() {
 	// the default is react-standard, and "blank"/"none" leaves the app
 	// empty. A snapshot/fork clone or an already-populated workspace is
 	// left untouched (the dir is non-empty), so this only fires once.
-	seedTemplateApp(appDir, envOr("RUNTIMED_TEMPLATE", "react-standard"), log)
+	// Apply a runtime preset (if the create path selected one) on first boot:
+	// seed the preset's starter template into an empty workspace and write its
+	// sandbox.yaml when none exists. Otherwise fall back to the named template.
+	// Both paths only ever touch an EMPTY workspace / a MISSING sandbox.yaml.
+	if presetID := envOr("RUNTIMED_RUNTIME_PRESET", ""); presetID != "" {
+		if p, ok := preset.Get(presetID); ok {
+			applyPreset(appDir, p, log)
+		} else {
+			log.Warn("unknown runtime preset; using default template", "preset", presetID)
+			seedTemplateApp(appDir, "react-standard", log)
+		}
+	} else {
+		seedTemplateApp(appDir, envOr("RUNTIMED_TEMPLATE", "react-standard"), log)
+	}
 
 	// Load the app's runtime manifest (sandbox.yaml). Absent => built-in
 	// defaults (a Vite web app); a parse error logs and falls back safely.

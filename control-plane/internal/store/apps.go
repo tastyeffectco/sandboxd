@@ -20,6 +20,7 @@ type App struct {
 	Description       string
 	Tags              []string
 	LatestSnapshotID  sql.NullString
+	RuntimePreset     sql.NullString // runtime preset id (0017); "" = none
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -47,7 +48,7 @@ func scanApp(sc scanner) (*App, error) {
 	var tags string
 	var created, updated int64
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
-		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated)
+		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -64,7 +65,7 @@ func scanApp(sc scanner) (*App, error) {
 }
 
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
-	       name, description, tags, latest_snapshot_id, created_at, updated_at`
+	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset`
 
 // CreateApp inserts a new app. The caller sets ID (ULID) and OwnerToken.
 func (s *Store) CreateApp(ctx context.Context, a *App) error {
@@ -73,10 +74,10 @@ func (s *Store) CreateApp(ctx context.Context, a *App) error {
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO app (id, owner_token, external_user_id, external_project_id,
 			                 name, description, tags, latest_snapshot_id,
-			                 created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			                 created_at, updated_at, runtime_preset)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			a.ID, a.OwnerToken, a.ExternalUserID, a.ExternalProjectID,
-			a.Name, a.Description, marshalTags(a.Tags), a.LatestSnapshotID, now, now)
+			a.Name, a.Description, marshalTags(a.Tags), a.LatestSnapshotID, now, now, a.RuntimePreset)
 		if err != nil {
 			if isUniqueViolation(err) {
 				return ErrConflict
