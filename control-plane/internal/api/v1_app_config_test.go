@@ -216,3 +216,92 @@ func TestAppConfigAuditRecordsKeyNotValue(t *testing.T) {
 		t.Errorf("audit leaked the secret value: %s", joined)
 	}
 }
+
+// TestAppConfigSecretDoesNotLeak is the v0.3.0 CI safety guard for
+// app-scoped secrets. It runs the full lifecycle for one sensitive value
+// and asserts the secret never escapes through any of the four leak
+// vectors at once — API responses, DB plaintext columns, audit rows, and
+// server logs — while a non-sensitive value still round-trips plainly.
+// The other tests in this file cover encryption/redaction in depth; this
+// one is the single consolidated no-leak assertion and adds the log-output
+// vector the others don't capture.
+func TestAppConfigSecretDoesNotLeak(t *testing.T) {
+	const secret = "sk-test-secret-ci"
+
+	st, err := store.Open(context.Background(), "file::memory:?_fk=1", "../../migrations")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	cipher, err := secrets.Load("", filepath.Join(t.TempDir(), "secrets.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Capture everything the server logs so we can prove the secret never
+	// reaches log output (handler logs + the audit logger's own warnings).
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	capAudit := &captureAudit{}
+	s := &Server{Store: st, Secrets: cipher, Log: logger, Audit: audit.New(capAudit, logger)}
+
+	// 1. Create an app.
+	app := &store.App{ID: "01APPCFG0000000000000010", OwnerToken: cfgTenant, Name: "App"}
+	if err := st.CreateApp(context.Background(), app); err != nil {
+		t.Fatal(err)
+	}
+	cfgURL := "/v1/apps/" + app.ID + "/config"
+	pv := map[string]string{"id": app.ID}
+
+	// 2. Create a sensitive config value.
+	w := do(s, "POST", cfgURL, `{"key":"OPENAI_API_KEY","value":"`+secret+`","sensitive":true}`, cfgTenant, pv)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create sensitive: %d %s", w.Code, w.Body)
+	}
+	// 3. The create response and a subsequent GET must not return the secret.
+	if strings.Contains(w.Body.String(), secret) {
+		t.Error("API: create response leaked the secret")
+	}
+	g := do(s, "GET", cfgURL, "", cfgTenant, pv)
+	if strings.Contains(g.Body.String(), secret) {
+		t.Error("API: GET /config leaked the secret")
+	}
+
+	// 4. The stored row must hold ciphertext + nonce and no plaintext.
+	c, err := st.GetAppConfig(context.Background(), app.ID, "OPENAI_API_KEY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.ValueCiphertext) == 0 || len(c.ValueNonce) == 0 {
+		t.Errorf("DB: sensitive row missing ciphertext/nonce: ct=%d nonce=%d", len(c.ValueCiphertext), len(c.ValueNonce))
+	}
+	if c.ValuePlaintext.Valid {
+		t.Error("DB: sensitive value stored in the plaintext column")
+	}
+	if bytes.Contains(c.ValueCiphertext, []byte(secret)) {
+		t.Error("DB: ciphertext contains the plaintext secret")
+	}
+	if c.AccessPolicy != "control_plane_only" {
+		t.Errorf("default access_policy = %q; want control_plane_only", c.AccessPolicy)
+	}
+
+	// 5. Audit rows record the key name, never the value.
+	auditRows := strings.Join(capAudit.rows, "\n")
+	if !strings.Contains(auditRows, "OPENAI_API_KEY") {
+		t.Errorf("audit: missing the key name: %s", auditRows)
+	}
+	if strings.Contains(auditRows, secret) {
+		t.Errorf("audit: leaked the secret value: %s", auditRows)
+	}
+
+	// 6. A non-sensitive value still round-trips plainly.
+	do(s, "POST", cfgURL, `{"key":"API_URL","value":"https://api.example.com","sensitive":false}`, cfgTenant, pv)
+	g2 := do(s, "GET", cfgURL, "", cfgTenant, pv)
+	if !strings.Contains(g2.Body.String(), "https://api.example.com") {
+		t.Error("non-sensitive value was not returned plainly")
+	}
+
+	// Logs (handler + audit logger) must never contain the secret.
+	if strings.Contains(logBuf.String(), secret) {
+		t.Errorf("logs leaked the secret:\n%s", logBuf.String())
+	}
+}
