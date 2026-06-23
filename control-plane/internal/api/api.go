@@ -15,6 +15,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
 	"github.com/sandboxd/control-plane/internal/egress"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/loopback"
 	"github.com/sandboxd/control-plane/internal/metrics"
@@ -106,8 +107,9 @@ type Server struct {
 	// main.go around this mux).
 	Auth                *auth.Middleware
 	Audit               *audit.Logger
-	SnapshotsRoot       string // per-sandbox purge of _snapshots/<id>/
-	ForwardAuthDenyMode string // "redirect" (default) | "meta-refresh"
+	Events              *events.Recorder // Phase 5 — durable app_events timeline
+	SnapshotsRoot       string           // per-sandbox purge of _snapshots/<id>/
+	ForwardAuthDenyMode string           // "redirect" (default) | "meta-refresh"
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -163,6 +165,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{id}/snapshots", s.observe("GET /v1/apps/{id}/snapshots", s.v1ListAppSnapshots))
 	mux.HandleFunc("POST /v1/apps/{id}/restore", s.observe("POST /v1/apps/{id}/restore", s.v1RestoreApp))
 	mux.HandleFunc("POST /v1/apps/{id}/fork", s.observe("POST /v1/apps/{id}/fork", s.v1ForkApp))
+	mux.HandleFunc("GET /v1/apps/{id}/events", s.observe("GET /v1/apps/{id}/events", s.v1ListAppEvents))
+	mux.HandleFunc("GET /v1/tasks/{id}/events", s.observe("GET /v1/tasks/{id}/events", s.v1ListTaskEvents))
 	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
 	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
 	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
