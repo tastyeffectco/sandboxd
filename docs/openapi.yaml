@@ -521,6 +521,38 @@ paths:
       responses:
         "200": { description: OK }
 
+  /v1/sandboxes/{id}/processes/{name}/logs:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - in: path
+        name: name
+        required: true
+        schema: { type: string }
+        description: Process name ([A-Za-z0-9_-], e.g. "web" or a worker name).
+    get:
+      tags: [sandboxes]
+      summary: Tail a supervised process's logs (read-only)
+      parameters:
+        - in: query
+          name: tail
+          schema: { type: integer, default: 200, maximum: 1000 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  process: { type: string }
+                  lines: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404":
+          description: No such sandbox, or no logs for that process.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/sandboxes/{id}/export:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
@@ -685,8 +717,20 @@ components:
         status: { type: string, enum: [creating, running, stopped, error] }
         template: { type: string }
         preview: { $ref: "#/components/schemas/Preview" }
+        processes:
+          type: array
+          description: Supervised processes from the runtime manifest (web + workers).
+          items: { $ref: "#/components/schemas/Process" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    Process:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [web, worker] }
+        running: { type: boolean }
+        pid: { type: integer }
+        restarts: { type: integer }
     Preview:
       type: object
       properties:

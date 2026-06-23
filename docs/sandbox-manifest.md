@@ -8,6 +8,12 @@ edit it like any workspace file.
 **No manifest = the built-in defaults** (a Vite/React web app on port 3000), so
 existing apps keep working unchanged. runtimed reads the manifest on (re)start.
 
+> **Phase status:** 7A (Runtime Manifest Core) is **accepted & live-verified**
+> (see Verification status below). 7B (process API + console) is implemented on
+> `feat/runtime-manifest`: `GET /v1/sandboxes/{id}` now includes `processes[]`,
+> and `GET /v1/sandboxes/{id}/processes/{name}/logs` tails a process's log
+> (read-only, name-validated). 7C (presets & manifest UX) is not started.
+
 ## Schema (version 1)
 
 ```yaml

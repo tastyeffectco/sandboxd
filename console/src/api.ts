@@ -29,10 +29,19 @@ export interface ConfigItem {
   updated_at: string
 }
 
+export interface Process {
+  name: string
+  kind: string // "web" | "worker"
+  running: boolean
+  pid?: number
+  restarts: number
+}
+
 export interface Sandbox {
   id: string
   status: string
   preview?: Preview
+  processes?: Process[]
 }
 
 export interface AppEvent {
@@ -113,6 +122,11 @@ export const api = {
     req<unknown>('DELETE', `/v1/apps/${appId}/config/${encodeURIComponent(key)}`),
 
   getSandbox: (id: string) => req<Sandbox>('GET', `/v1/sandboxes/${id}`),
+  getProcessLogs: (id: string, name: string, tail = 200) =>
+    req<{ process: string; lines: string[] }>(
+      'GET',
+      `/v1/sandboxes/${id}/processes/${encodeURIComponent(name)}/logs?tail=${tail}`,
+    ),
   startSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/start`),
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
