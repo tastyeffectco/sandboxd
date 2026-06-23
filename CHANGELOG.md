@@ -7,8 +7,8 @@ a patch is fixes only).
 
 ## [0.2.0] — 2026-06-22
 
-Reliability of the Docker + SQLite core (Phase 0) and the durable app model
-(Phase 1).
+Reliability fixes across the core, and durable "apps" as first-class entities
+above sandboxes.
 
 ### Added
 - **Durable app model.** Apps are now first-class entities above sandboxes. An
