@@ -11,7 +11,15 @@ const ACTIVE_POLICIES: AccessPolicy[] = ['control_plane_only']
 const policyReserved = (p: AccessPolicy) => !ACTIVE_POLICIES.includes(p)
 const policyLabel = (p: AccessPolicy) => (policyReserved(p) ? `${p} — reserved (broker)` : p)
 
-export function AppDetail({ appId, onError }: { appId: string; onError: (m: string) => void }) {
+export function AppDetail({
+  appId,
+  onError,
+  onInfo,
+}: {
+  appId: string
+  onError: (m: string) => void
+  onInfo: (m: string) => void
+}) {
   const [app, setApp] = useState<TApp | null>(null)
   const [sb, setSb] = useState<Sandbox | null>(null)
   const [busy, setBusy] = useState(false)
@@ -41,6 +49,22 @@ export function AppDetail({ appId, onError }: { appId: string; onError: (m: stri
       await refresh()
     } catch (e) {
       onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Capture a snapshot with explicit feedback. v0.3.0 only captures — history,
+  // restore, and fork land in v0.4.0. A running source returns 409.
+  const snapshot = async () => {
+    if (!sb || !app) return
+    setBusy(true)
+    try {
+      await api.createSnapshot(sb.id, `${app.name}-${Date.now()}`)
+      onInfo('Snapshot captured. History, restore, and fork are coming in v0.4.0.')
+    } catch (e) {
+      const err = e as Error & { status?: number }
+      onError(err.status === 409 ? 'Stop the sandbox before capturing a snapshot.' : err.message)
     } finally {
       setBusy(false)
     }
@@ -88,8 +112,8 @@ export function AppDetail({ appId, onError }: { appId: string; onError: (m: stri
             className="btn btn-outline"
             disabled={busy}
             data-testid="snapshot"
-            title="Snapshots capture a stopped sandbox"
-            onClick={() => act(() => api.createSnapshot(sb.id, `${app.name}-${Date.now()}`))}
+            title="Capture a snapshot (stop the sandbox first)"
+            onClick={snapshot}
           >
             Snapshot
           </button>

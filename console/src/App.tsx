@@ -5,12 +5,18 @@ import { AppDetail } from './AppDetail'
 export default function App() {
   const [appId, setAppId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
   useEffect(() => {
     if (!error) return
     const t = setTimeout(() => setError(null), 4500)
     return () => clearTimeout(t)
   }, [error])
+  useEffect(() => {
+    if (!info) return
+    const t = setTimeout(() => setInfo(null), 5000)
+    return () => clearTimeout(t)
+  }, [info])
 
   return (
     <>
@@ -27,7 +33,7 @@ export default function App() {
       </div>
       <div className="container">
         {appId ? (
-          <AppDetail appId={appId} onError={setError} />
+          <AppDetail appId={appId} onError={setError} onInfo={setInfo} />
         ) : (
           <AppList onOpen={setAppId} onError={setError} />
         )}
@@ -35,6 +41,11 @@ export default function App() {
       {error && (
         <div className="toast" onClick={() => setError(null)} data-testid="toast">
           {error}
+        </div>
+      )}
+      {info && (
+        <div className="toast toast-info" onClick={() => setInfo(null)} data-testid="toast-info">
+          {info}
         </div>
       )}
     </>

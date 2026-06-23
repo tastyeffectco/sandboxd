@@ -58,7 +58,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(message)
+    const err = new Error(message) as Error & { status?: number }
+    err.status = res.status
+    throw err
   }
   const ct = res.headers.get('content-type') || ''
   return (ct.includes('application/json') ? res.json() : (res.text() as unknown)) as Promise<T>
