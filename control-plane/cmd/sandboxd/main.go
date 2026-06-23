@@ -201,6 +201,7 @@ func main() {
 	loopMgr.SeedImage = image
 	loopMgr.DockerBin = "docker"
 	loopMgr.Userns = userns
+	loopMgr.Log = log.With("component", "loopback")
 
 	// Egress (nftables) is DISABLED in the portable OSS build: it
 	// requires host nftables + journald + systemd-timer refresh jobs

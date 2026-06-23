@@ -271,10 +271,30 @@ snapshot store (`captureImage`), so the ignore-list lives right in that copy.
 - preserves mode + ownership (so the restore path's `cp -a` keeps the sandbox
   user's files writable).
 
-Restore/fork are **unchanged** (they `cp -a` the snapshot dir). Restored
-workspaces re-create the ignored dirs on first boot (`[ -d node_modules ] ||
-pnpm install`, `rm -rf .next`, venv install). Tested: exclusion incl. a nested
-`node_modules`, source + `sandbox.yaml` preserved, and symlink-escape safety.
+Restored workspaces re-create the ignored dirs on first boot (`[ -d node_modules
+] || pnpm install`, `rm -rf .next`, venv install). Tested: exclusion incl. a
+nested `node_modules`, source + `sandbox.yaml` preserved, and symlink-escape safety.
+
+#### Fork/restore ownership normalization — implemented (2026-06-23)
+`ProvisionFromTemplate` (the single funnel for app **fork**, app **restore**, and
+direct **`from_snapshot`** creation) clones the snapshot/template with `cp -a`,
+which preserves the *source* ownership, and creates the workspace dir itself as
+**root**. So the sandbox user (uid 1000) hit **EACCES** writing `~/.cache`, the
+pnpm/npm store, `node_modules`, `.next`, `.venv`, generated files — forks/restores
+booted broken. (The fresh seed already chowns; only the template path didn't.)
+
+Fix: after the clone, `ProvisionFromTemplate` **recursively normalizes ownership**
+of the whole workspace (incl. the `$HOME` dir itself) to the sandbox uid/gid —
+the same result the fresh seed's `chown -R sandbox:sandbox` gives. It never trusts
+the snapshot's captured ownership. It uses `Lchown` and **does not follow
+symlinks** (a `WalkDir` lstat walk that never descends a symlink), so a symlink
+pointing outside the workspace can't redirect the chown. The normalization is
+logged. (Host-side numeric chown to 1000:1000 is correct for the OSS no-userns
+default; under userns-remap it would move into a container like the seed.)
+
+Live-verified: Next.js snapshot → fork → `$HOME` `1000:1000`, preview `/` + assets
+`200`, `node_modules` reinstalled and `~/.cache` writable (no EACCES); FastAPI fork
+boots with venv/pip reinstall + `/health 200`.
 
 #### Known follow-ups (not implemented here)
 - **Per-task `agent.log` empty on timeout** — agent transcript persistence on task
