@@ -47,7 +47,13 @@ type Server struct {
 	Userns            string
 	PreviewEntrypoint string
 	PreviewTLS        bool
-	SetMemoryHigh     bool
+	// PublicHTTPPort is the HOST-facing port that preview/console URLs are
+	// reached on (the host side of Traefik's published port). previewURL
+	// appends it unless it's the default for the scheme (80 for http, 443
+	// for https), so on a shared host with HTTP_PORT=18080 the API returns
+	// a reachable ":18080" URL instead of a bare :80 one. Empty = default.
+	PublicHTTPPort string
+	SetMemoryHigh  bool
 
 	// AgentCfg is the in-memory cache of the platform's agent
 	// configuration (model + AGENTS.md) — the source of truth for
