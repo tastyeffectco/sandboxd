@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/runtime"
 	"github.com/sandboxd/control-plane/internal/store"
 )
@@ -123,6 +124,9 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		Action: "task.create", Target: id,
 		Detail: map[string]any{"task_id": taskID, "agent": agent},
 	})
+	s.recordEvent(r, events.Event{Type: events.TaskStarted, Severity: events.SeverityInfo,
+		Message: "Task started", AppID: sb.AppID.String, SandboxID: id, TaskID: taskID,
+		Payload: map[string]any{"agent": agent}})
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"id":         taskID,
 		"sandbox_id": id,
