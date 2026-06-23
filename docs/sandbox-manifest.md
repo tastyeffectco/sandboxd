@@ -8,9 +8,12 @@ edit it like any workspace file.
 **No manifest = the built-in defaults** (a Vite/React web app on port 3000), so
 existing apps keep working unchanged. runtimed reads the manifest on (re)start.
 
-> **Phase status:** 7A (Runtime Manifest Core), 7B (process API + console), and
-> 7C-1 (runtime presets) are all **accepted & live-verified** (see Verification
-> status below). `GET /v1/sandboxes/{id}` includes `processes[]`;
+> **Phase status:** 7A (Runtime Manifest Core) and 7B (process API + console)
+> are **accepted & live-verified**. 7C-1 (runtime presets) is implemented and
+> fresh-boot-verified for all five presets; the Next.js post-task `.next`
+> poisoning bug is **fixed and re-tested** (see below) — but 7C-1 is **NOT yet
+> marked fully accepted** (real-agent task path not run here; snapshot `.next`
+> bloat is an open follow-up). `GET /v1/sandboxes/{id}` includes `processes[]`;
 > `GET /v1/sandboxes/{id}/processes/{name}/logs` tails a process's log;
 > `GET /v1/presets` lists the five presets and `runtime_preset` is accepted on
 > app/sandbox create. 7C-2 (manifest view/edit/validate, advanced override,
@@ -111,7 +114,7 @@ Test sandboxes were **portless** (no Traefik label) so the shared host's
 production routing was never touched; verification used runtimed's reported
 status plus in-container checks, not Traefik. Re-run after any runtimed change.
 
-### Runtime presets (Phase 7C-1) — accepted & live-verified
+### Runtime presets (Phase 7C-1) — fresh-boot verified (full acceptance pending)
 Live e2e (2026-06-23) on a rebuilt image (`sandboxd-base:p7c1`, new templates +
 runtimed) via a disposable host-run sandboxd, all sandboxes **portless** (no prod
 collision). **All five presets boot.**
@@ -119,7 +122,7 @@ collision). **All five presets boot.**
 | Preset | Result | Ready (warm cache) | Endpoint / worker |
 |---|---|---|---|
 | **react-vite** | ✅ pass | ~31s | `GET / → 200` |
-| **nextjs** | ✅ pass | ~39s | `GET / → 200` — *cold boot may be slower* (large `next` install + first compile) |
+| **nextjs** | ✅ pass | ~30–39s | `GET / → 200`; `_next/static` asset `→ 200`. *Cold boot may be slower*. See Next.js post-task fix below. |
 | **node-express** | ✅ pass | ~30s | `GET /health → 200` |
 | **fastapi** | ✅ pass | ~37s | `GET /health → 200` — runtime **venv + pip install works** on first boot |
 | **worker** | ✅ pass | ~28s | preview `none` + worker process running |
@@ -140,6 +143,43 @@ Not yet live-tested (still unit-only):
 - bake a **warm pnpm store / npm cache** into the image to cut cold-boot installs for react-vite / nextjs / node-express;
 - **preinstall FastAPI + uvicorn** (or `uv`) so the FastAPI preset skips pip install on first boot;
 - consider a **Next.js-optimized image/layer** (prebaked `next`/`react`) for the heaviest cold boot.
+
+#### Next.js post-task `.next` poisoning — fixed & re-tested (2026-06-23)
+**Bug:** the Next.js preset ran `pnpm dev` as the web process and `pnpm build` as
+the post-task build check in the same workspace. `next build` writes production
+`.next/`, which the long-running `next dev` then serves from → 500s on
+`_next/static` (`ENOENT .next/static/chunks/...`). The dev server is not
+restarted after the build, so it stays broken.
+
+**Fix (smallest reliable):**
+- Next.js preset `build.command` is now **empty** — the build check is the only
+  thing that runs `next build`, so skipping it removes the poisoning source.
+  Tradeoff: **no post-task build verification for Next.js** until an isolated
+  build check exists (build in a temp dir/clone, not the live workspace).
+- Web command now `rm -rf .next` before `pnpm dev` — defends a clean dev start
+  against a stale/production `.next/` carried in by a snapshot restore. (Alone it
+  is insufficient: dev isn't restarted after a post-task build, so it can't undo
+  a mid-session poison — which is why the build check is *skipped*, not just cleaned.)
+- Next.js template ships a **`.gitignore`** (`node_modules`, `.next`, `out`,
+  `.env`, `.env.local`).
+
+**Re-test (rebuilt image `sandboxd-base:p7c1b`, portless):** fresh nextjs ready
+**~30s**, `/`+asset `200`; reproduced the bug (`pnpm build` → `/`+asset `500`);
+recovery via restart (`rm -rf .next`) → re-ready **~10s**, `/`+asset `200`;
+simulated homepage edit → hot-reload `200`, edit visible; checkpoint tracks only
+the **6** real files (no `node_modules`/`.next`/`out`). **Not run here:** a real
+LLM agent task (no `ANTHROPIC_API_KEY`) — the post-task build-check mechanism (the
+poison source) was verified directly instead.
+
+#### Known follow-ups (not implemented here)
+- **Snapshots are not filtered** — `cp -aT` clones the whole workspace, so `.next`
+  and `node_modules` bloat snapshots. No exclusion today; needs a snapshot
+  ignore-list (or build-from-source on restore). For a later slice.
+- **Task result should separate health from build** — expose `build_ok`,
+  `preview_ok`, `app_healthy` distinctly (today a skipped build reports
+  `build_ok=true`, conflating "not checked" with "passed").
+- **Per-task `agent.log` empty on timeout** — agent transcript persistence on task
+  timeout needs investigation.
 
 ## Security
 The manifest is **declarative config for processes that already run inside the

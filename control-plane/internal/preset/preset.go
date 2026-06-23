@@ -47,13 +47,19 @@ build:
 		ID: "nextjs", Label: "Next.js",
 		Description: "Next.js app (App Router).",
 		Template:    "nextjs-standard",
+		// `rm -rf .next` before dev so a stale/production build (from a snapshot
+		// restore or a manual `next build`) can't poison `next dev` with
+		// missing _next/static chunks. build is intentionally EMPTY: `next build`
+		// writes the SAME .next/ that the long-running `next dev` serves from, so
+		// a post-task build check would 500 the live dev server. Skipped until an
+		// isolated build check exists (see docs/sandbox-manifest.md follow-ups).
 		Manifest: `version: 1
 web:
-  command: "[ -d node_modules ] || pnpm install; pnpm dev --hostname 0.0.0.0"
+  command: "[ -d node_modules ] || pnpm install; rm -rf .next; pnpm dev --hostname 0.0.0.0"
   port: 3000
   health_path: "/"
 build:
-  command: "pnpm build"
+  command: ""
 `,
 		Capabilities: []string{"node", "pnpm"},
 	},
