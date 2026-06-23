@@ -253,8 +253,8 @@ func (a *app) status() runtime.Status {
 		}
 		procs = append(procs, runtime.ProcessState{Name: "web", Kind: "web", Running: running, Pid: pid, Restarts: restarts})
 	} else {
-		// Worker-only app: there is no preview.
-		ps.Status = runtime.PreviewDown
+		// Worker-only app: there is no web process to preview.
+		ps.Status = runtime.PreviewNone
 	}
 
 	for _, w := range a.workers {

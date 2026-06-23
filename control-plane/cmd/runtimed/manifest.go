@@ -79,6 +79,11 @@ func LoadManifest(appDir string, def Defaults) (*Manifest, error) {
 		return defaultManifest(def), fmt.Errorf("parse %s: %w", ManifestFile, err)
 	}
 	m.applyDefaults(def)
+	// Reject an invalid manifest and fall back to the safe default rather than
+	// boot a misconfigured (or unsafe) app. The caller logs the error.
+	if err := m.validate(); err != nil {
+		return defaultManifest(def), fmt.Errorf("invalid %s: %w", ManifestFile, err)
+	}
 	return &m, nil
 }
 
@@ -117,12 +122,44 @@ func (m *Manifest) applyDefaults(def Defaults) {
 	if m.Build.TimeoutSeconds <= 0 {
 		m.Build.TimeoutSeconds = def.BuildTimeoutS
 	}
-	// Workers without a name get a positional one so logs/status are stable.
-	for i := range m.Workers {
-		if m.Workers[i].Name == "" {
-			m.Workers[i].Name = fmt.Sprintf("worker-%d", i+1)
+}
+
+// validate rejects unsafe or malformed manifests. Worker names are checked
+// strictly because they become a log file path (~/.runtimed/<name>.log), so a
+// `/`, `..`, or empty name could escape or collide; ports must be in range.
+func (m *Manifest) validate() error {
+	if m.Web != nil && (m.Web.Port < 1 || m.Web.Port > 65535) {
+		return fmt.Errorf("web.port %d out of range (1-65535)", m.Web.Port)
+	}
+	seen := map[string]bool{}
+	for _, w := range m.Workers {
+		if !validWorkerName(w.Name) {
+			return fmt.Errorf("invalid worker name %q (allowed: [A-Za-z0-9_-], 1-64 chars)", w.Name)
+		}
+		if seen[w.Name] {
+			return fmt.Errorf("duplicate worker name %q", w.Name)
+		}
+		seen[w.Name] = true
+		if w.Command == "" {
+			return fmt.Errorf("worker %q has no command", w.Name)
 		}
 	}
+	return nil
+}
+
+// validWorkerName allows only [A-Za-z0-9_-] (1-64 chars). This rejects empty
+// names, path separators, and "." / ".." (the dot is not an allowed char), so
+// the per-worker log path stays inside the runtime dir.
+func validWorkerName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // hasDefaultWeb reports whether the web process is the built-in default (no

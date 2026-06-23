@@ -57,6 +57,16 @@ that fast-fails repeatedly (reported, not crash-looped). Per-process status
 (name, kind, running, pid, restarts) and the web preview health are in
 `GET /status`; logs are written per process under `~/.runtimed/<name>.log`.
 
+**Worker-only apps have no preview.** When `web` is omitted, the runtime reports
+preview status **`none`** (distinct from `down`, which means a web process
+exists but isn't serving), no preview probe runs, and there is no preview URL.
+
+**Validation.** A malformed manifest is rejected and the app falls back to the
+built-in defaults (so it still boots): worker names must match `[A-Za-z0-9_-]`
+(1–64 chars) — no path separators, `..`, empty, or duplicate names, since the
+name becomes a log-file path — every worker needs a command, and an explicit
+`web.port` must be 1–65535.
+
 ## Examples
 
 **Python web app:**
@@ -77,6 +87,18 @@ workers:
   - name: ingest
     command: "python ingest.py"
 ```
+
+## Verification status (Phase 7)
+The manifest core (parsing, defaults, validation, the generalized process model)
+is **unit-tested**, but Phase 7 is **NOT fully verified** yet. Because runtimed
+is the in-sandbox binary, end-to-end behavior is only confirmed once the **base
+image is rebuilt** and a real sandbox runs all three shapes:
+- the **default Vite app** (no manifest — backward compatibility),
+- a **custom web manifest** (e.g. a Next.js / Python server on a non-default port
+  + `health_path`),
+- a **worker-only manifest** (no preview).
+
+Until that live run passes, treat Phase 7 as "core implemented, not e2e-verified."
 
 ## Security
 The manifest is **declarative config for processes that already run inside the

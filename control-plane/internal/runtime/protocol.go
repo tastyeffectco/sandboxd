@@ -34,6 +34,10 @@ const (
 	// PreviewError — the app fails to compile. Set by the post-task
 	// build check; not produced until the task subsystem lands.
 	PreviewError PreviewStatus = "error"
+	// PreviewNone — the app declares no web process (a worker-only
+	// sandbox.yaml), so there is nothing to preview. Distinct from "down"
+	// (which means a web process exists but isn't serving).
+	PreviewNone PreviewStatus = "none"
 )
 
 // Status is the GET /status response — the whole runtimed snapshot.
