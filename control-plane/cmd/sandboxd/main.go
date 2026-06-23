@@ -43,6 +43,7 @@ import (
 	nginxwatch "github.com/sandboxd/control-plane/internal/nginx"
 	"github.com/sandboxd/control-plane/internal/reaper"
 	"github.com/sandboxd/control-plane/internal/reconcile"
+	"github.com/sandboxd/control-plane/internal/secrets"
 	"github.com/sandboxd/control-plane/internal/snapshot"
 	"github.com/sandboxd/control-plane/internal/store"
 	"github.com/sandboxd/control-plane/internal/wake"
@@ -322,8 +323,17 @@ func main() {
 	wakeHandler.ForwardAuthDenyMode = denyMode
 	wakeHandler.SetMemoryHigh = setMemoryHigh
 
+	// app_config/secrets encryption: SANDBOXD_SECRETS_KEY (base64 32
+	// bytes) or an auto-generated 0600 keyfile under the data dir.
+	secretsCipher, err := secrets.Load(os.Getenv("SANDBOXD_SECRETS_KEY"), filepath.Join(dataDir, "secrets.key"))
+	if err != nil {
+		log.Error("init secrets encryption", "err", err.Error())
+		os.Exit(1)
+	}
+
 	server := &api.Server{
 		Store:               st,
+		Secrets:             secretsCipher,
 		Docker:              dockerClient,
 		Loopback:            loopMgr,
 		Log:                 log.With("component", "api"),
