@@ -103,3 +103,15 @@ or configure. Each is a conscious trade-off you can tighten later:
 so workspace ownership is deterministic whether or not the host daemon uses
 userns-remap. Set `SANDBOXD_USERNS=` empty to opt sandboxes back into the
 daemon default.
+
+## Future backends (optional, not required)
+
+The default stack is **Docker + SQLite** — no enterprise backend is needed to
+run sandboxd. The three subsystems most likely to need a heavier backend at
+scale are each already isolated behind one swappable boundary: the runtime
+(`internal/docker`), secrets (`internal/secrets`), and the event timeline
+(`internal/events` + `app_events`). We add a provider interface only when a
+second backend is actually being implemented — concrete until then. See
+[`docs/architecture/future-backends.md`](docs/architecture/future-backends.md)
+for the per-subsystem swap path (Firecracker/Kata/remote workers; Vault/cloud
+secret managers; ClickHouse/OTEL/Loki).
