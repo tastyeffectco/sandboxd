@@ -209,6 +209,28 @@ real domain you get `https://s-<id>-3000.preview.yourdomain.com`
 > `curl -XPOST $API/sandbox/$ID/exec -d '{"cmd":["bash","-lc","cd ~/workspace/app && python3 -m http.server 3000"]}'`
 > then open the same preview URL.
 
+## Web console (optional UI)
+
+Prefer a UI to curl? sandboxd ships an optional web console — a small React SPA
+that talks **only** to the public `/v1` API. From it you can create and open
+apps, watch the live preview, submit agent tasks and stream their logs,
+start/stop the sandbox, and manage per-app **config & secrets** (sensitive
+values are write-only: set once, never shown again).
+
+```bash
+docker compose --profile console up -d        # core stack + console
+```
+
+Then open **http://console.localhost** (or `console.<PREVIEW_DOMAIN>:<HTTP_PORT>`
+if you changed them). It's routed through the same Traefik as the previews, by
+Host header — `console.<domain>` → console, `*.preview.<domain>` → previews — so
+it shares one entrypoint, no extra port. Plain `docker compose up -d` (no
+profile) runs sandboxd without the console.
+
+The console never touches the database or workspaces — it's a pure `/v1` client
+(contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
+[`console/README.md`](console/README.md).
+
 ## API
 
 Base URL = `http://127.0.0.1:9090` (set by `SANDBOXD_API_BIND`). Auth is **off
