@@ -63,8 +63,10 @@ type WebProc struct {
 
 // BuildSpec is the build check run after a coding task.
 type BuildSpec struct {
-	Command        string `yaml:"command"`
-	TimeoutSeconds int    `yaml:"timeout_seconds"`
+	// Command is a pointer so we can tell "unset" (nil → use the default
+	// build) from an explicit empty string (&"" → SKIP the build check).
+	Command        *string `yaml:"command"`
+	TimeoutSeconds int     `yaml:"timeout_seconds"`
 }
 
 // Worker is a background process with no preview (e.g. a queue consumer).
@@ -141,15 +143,34 @@ func (m *Manifest) applyDefaults(def Defaults) {
 			m.Web.HealthPath = def.WebHealthPath
 		}
 	}
+	// Build check resolution — distinguish "unset" from an explicit empty
+	// command so a preset can DISABLE the post-task build check:
+	//   - no build block (m.Build == nil)         -> default build (back-compat)
+	//   - build: {} (block present, no command)   -> default build (documented)
+	//   - build.command: "" (explicit empty)      -> SKIP the build check
+	//   - build.command: "x"                       -> run "x"
+	// The build check is runtime verification (does the app still build/start),
+	// NOT a production deployment build — presets that have no meaningful build
+	// (Next.js dev, FastAPI, workers) skip it with an explicit empty command.
 	if m.Build == nil {
-		m.Build = &BuildSpec{}
-	}
-	if m.Build.Command == "" {
-		m.Build.Command = def.BuildCommand
+		cmd := def.BuildCommand
+		m.Build = &BuildSpec{Command: &cmd}
+	} else if m.Build.Command == nil {
+		cmd := def.BuildCommand
+		m.Build.Command = &cmd
 	}
 	if m.Build.TimeoutSeconds <= 0 {
 		m.Build.TimeoutSeconds = def.BuildTimeoutS
 	}
+}
+
+// buildCommand returns the resolved build command after applyDefaults (always
+// non-nil there); "" means "skip the build check".
+func (m *Manifest) buildCommand() string {
+	if m.Build == nil || m.Build.Command == nil {
+		return ""
+	}
+	return *m.Build.Command
 }
 
 // validate rejects unsafe or malformed manifests. Worker names are checked

@@ -50,7 +50,7 @@ Every field is optional and defaulted:
 | `web.command` | `[ -d node_modules ] \|\| pnpm install; pnpm dev` | also from `RUNTIMED_DEV_CMD` |
 | `web.port` | `3000` | also from `RUNTIMED_PREVIEW_PORT` |
 | `web.health_path` | `/` | 200 ⇒ ready |
-| `build.command` | `pnpm build` | empty ⇒ build check skipped |
+| `build.command` | `pnpm build` | see "Build checks" — explicit `""` skips |
 | `build.timeout_seconds` | `120` | |
 | `workers` | none | each gets a `worker-N` name if unnamed |
 
@@ -60,6 +60,34 @@ Resolution rules:
 - **file with `workers:` and no `web:`** → worker-only app (no preview).
 - **empty file** → default web app (a stray/empty file won't disable the preview).
 - **invalid YAML** → logged, falls back to defaults (the app still boots).
+
+### Build checks (and how to skip them)
+The build check is **runtime verification** — after a coding task, runtimed runs
+`build.command` in the workspace to catch obvious breakage before reporting the
+result. It is **not a production deployment build**: there is no artifact, no
+bundling for release, no deploy. Stacks whose "build" would be meaningless or
+harmful as a post-task check (a Next.js dev server, a FastAPI/Express API, a
+worker) should **skip** it.
+
+`build.command` distinguishes *unset* from an *explicit empty string*:
+
+| Manifest | Behavior |
+|---|---|
+| no `build:` block | **default** (`pnpm build`) — backward compatible |
+| `build: {}` (block present, no `command`) | **default** (`pnpm build`) |
+| `build:`<br>`  command: ""` | **skip** the build check |
+| `build:`<br>`  command: "make ci"` | run `make ci` |
+
+A skipped build is reported **honestly**: the task result has
+`build_status: "skipped"` (not `passed`), and `build_ok` is `false` (it is `true`
+only for `build_status: "passed"`). `app_healthy` still reflects real health
+(web preview serving / a worker running), so a skipped-build app is `app_healthy:
+true` when it is actually serving.
+
+> Why a pointer/explicit-empty distinction? Earlier, an empty `build.command` was
+> silently replaced by the default `pnpm build`, so presets could not disable the
+> check — which made the Next.js preset run `next build` after every task and
+> poison the live `next dev` server. Presets now set `build.command: ""` to skip.
 
 ## Process model
 runtimed supervises each declared process — one web process (optional) plus any
@@ -167,9 +195,19 @@ restarted after the build, so it stays broken.
 **~30s**, `/`+asset `200`; reproduced the bug (`pnpm build` → `/`+asset `500`);
 recovery via restart (`rm -rf .next`) → re-ready **~10s**, `/`+asset `200`;
 simulated homepage edit → hot-reload `200`, edit visible; checkpoint tracks only
-the **6** real files (no `node_modules`/`.next`/`out`). **Not run here:** a real
-LLM agent task (no `ANTHROPIC_API_KEY`) — the post-task build-check mechanism (the
-poison source) was verified directly instead.
+the **6** real files (no `node_modules`/`.next`/`out`).
+
+**Follow-up fix + retest (rebuilt image `sandboxd-base:p7c1d`, 2026-06-23):** a
+deeper bug was found — `applyDefaults` replaced an explicit `build.command: ""`
+with the default `pnpm build`, so presets *could not* skip the build (Next.js was
+still running `next build` after tasks). Fixed by making `build.command` a
+pointer (unset vs explicit-empty). Re-tested by actually **running a coding task**
+on a Next.js sandbox: the agent itself fails without credentials, but the
+post-task build check still runs — and the task result reported
+`build_status: "skipped"`, **no `pnpm build`/`next build` executed** (only
+`web.log` present), and `/` + four `/_next/static/chunks/*` assets returned
+**200** afterward (not poisoned). FastAPI: same — `build_status: "skipped"`, no
+`pnpm build`, `/health → 200`.
 
 #### Honest build / health semantics — implemented (2026-06-23)
 The task result no longer reports a skipped build as a pass. `TaskResult` now has:

@@ -95,7 +95,11 @@ build:
 		ID: "worker", Label: "Worker (no public endpoint)",
 		Description: "A background worker process with no web preview.",
 		Template:    "", // no starter files; the agent/user fills in the worker
+		// build.command "" explicitly skips the post-task build check — a
+		// worker has no web build to verify (and no Node project to `pnpm build`).
 		Manifest: `version: 1
+build:
+  command: ""
 workers:
   - name: worker
     command: "echo 'worker started — edit sandbox.yaml or ask the agent to set the real command'; while true; do sleep 30; done"
