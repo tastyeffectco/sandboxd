@@ -41,17 +41,28 @@ BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:0.4.0-test}"
 CONSOLE_USER="${CONSOLE_USER:-demo}"
 CONSOLE_PASS="${CONSOLE_PASS:-}"   # generated if empty
 
+# Shared-host-safe by default: bind an UNCOMMON host port so we never collide
+# with an existing reverse proxy (Coolify / nginx / another Traefik) on 80/443.
+#   - HTTP_PORT=18080  sandboxd's Traefik edge (host port). Set HTTP_PORT=80 for
+#                      a dedicated host where sandboxd owns port 80.
+#   - API_PORT=19090   control-plane API, published on LOOPBACK ONLY.
+# TLS is deferred; a future TLS follow-up would use HTTPS_PORT=18443 (or 443 on
+# a dedicated host). We do NOT bind or require 443 here.
+HTTP_PORT="${HTTP_PORT:-18080}"
+API_PORT="${API_PORT:-19090}"
+
 bold "sandboxd v0.4.0 — isolated test installer"
 cat <<EOF
 
-  This will, on THIS host:
+  This will, on THIS host (SHARED-HOST-SAFE defaults):
     • install Docker + Compose if missing
-    • require ports 80 and 443 to be free (Traefik uses 80; 443 reserved for TLS)
+    • require host port ${HTTP_PORT} to be free (does NOT touch 80/443 unless you set HTTP_PORT=80)
     • create data dir:        $DATA_DIR   (dedicated; not production)
     • write:                  .env, docker-compose.override.yml
     • disable edge API route: traefik/dynamic/api.yml -> .v04disabled
     • build images & start:   traefik + sandboxd + console (Docker Compose)
-    • expose previews+console via Traefik on sslip.io (HTTP; TLS is a follow-up)
+    • expose previews+console via Traefik on sslip.io, host port ${HTTP_PORT} (HTTP; TLS is a follow-up)
+    • publish the control-plane API on 127.0.0.1:${API_PORT} (loopback only)
 
   Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?') ($(git rev-parse --short HEAD 2>/dev/null || echo '?')) — expected: feat/snapshots-fork
   It does NOT touch production and does NOT merge or push anything.
@@ -92,15 +103,16 @@ else
 fi
 ok "Docker $($SUDO docker version --format '{{.Server.Version}}' 2>/dev/null), Compose $($COMPOSE version --short 2>/dev/null)"
 
-# ── 3. ports 80/443 must be free ─────────────────────────────────────
+# ── 3. the chosen HTTP_PORT must be free ─────────────────────────────
+# Shared-host-safe: we only need our single edge port. We do NOT check or
+# require 443 (TLS is deferred). 80 is only relevant if you set HTTP_PORT=80.
 port_busy() { $SUDO ss -ltnH "sport = :$1" 2>/dev/null | grep -q . ; }
-for p in 80 443; do
-  if port_busy "$p"; then
-    die "port $p is already in use. Free it (this test needs 80, and reserves 443 for TLS) and re-run.
-       Inspect with:  sudo ss -ltnp 'sport = :$p'"
-  fi
-done
-ok "ports 80 and 443 are free"
+if port_busy "$HTTP_PORT"; then
+  die "host port ${HTTP_PORT} is already in use. Pick a free one and re-run:
+       HTTP_PORT=18081 $0
+       (Inspect with:  sudo ss -ltnp 'sport = :${HTTP_PORT}')"
+fi
+ok "host port ${HTTP_PORT} is free"
 
 # ── 4. public IPv4 ───────────────────────────────────────────────────
 PUBLIC_IP="${PUBLIC_IP:-}"
@@ -133,7 +145,10 @@ cat > .env <<EOF
 PREVIEW_DOMAIN=${PREVIEW_DOMAIN}
 PREVIEW_ENTRYPOINT=web
 PREVIEW_TLS=false
-HTTP_PORT=80
+# Uncommon host port so we don't collide with an existing 80/443 proxy on a
+# shared host. Traefik still listens on :80 INSIDE its container; this only
+# changes the host-side publish. Set to 80 for a dedicated host.
+HTTP_PORT=${HTTP_PORT}
 
 SANDBOXD_IMAGE=${BASE_IMAGE}
 SANDBOXD_NETWORK=sandboxd_net
@@ -143,7 +158,7 @@ SANDBOXD_LOG_DIR=${LOG_DIR}
 # API published on loopback only; the console proxies /v1 internally. The
 # public edge API router (traefik/dynamic/api.yml) is disabled by this script,
 # so the control-plane API is not reachable unauthenticated from the internet.
-SANDBOXD_API_BIND=127.0.0.1:9090
+SANDBOXD_API_BIND=127.0.0.1:${API_PORT}
 SANDBOXD_API_AUTH_DISABLED=true
 SANDBOXD_API_TOKENS=
 
@@ -210,22 +225,29 @@ $COMPOSE --profile console up -d
 ok "stack is up"
 
 # ── 12. summary ──────────────────────────────────────────────────────
+# Include :HTTP_PORT in URLs unless it's the bare 80 (dedicated-host mode).
+PORTSUFFIX=""; [ "$HTTP_PORT" != "80" ] && PORTSUFFIX=":${HTTP_PORT}"
 echo
 bold "v0.4.0 test stack is running 🎉"
 cat <<EOF
 
-  Console  : http://console.${PREVIEW_DOMAIN}/
+  Console  : http://console.${PREVIEW_DOMAIN}${PORTSUFFIX}/
              login: ${CONSOLE_USER} / ${CONSOLE_PASS}
-  Previews : http://s-<sandbox-id>-<port>.preview.${PREVIEW_DOMAIN}/   (public, no login)
-  API      : http://127.0.0.1:9090  (loopback only; not exposed to the internet)
+  Previews : http://s-<sandbox-id>-<port>.preview.${PREVIEW_DOMAIN}${PORTSUFFIX}/   (public, no login)
+  API      : http://127.0.0.1:${API_PORT}  (loopback only; not exposed to the internet)
 
   sslip.io resolves any *.${PUBLIC_IP}.sslip.io to ${PUBLIC_IP}, so no DNS setup is needed.
-  This is HTTP (port 80). TLS on 443 is an optional follow-up — see the runbook.
+  Mode: $( [ "$HTTP_PORT" = "80" ] && echo "dedicated-host (sandboxd owns port 80)" || echo "shared-host (edge on :${HTTP_PORT}; safe next to Coolify/nginx/another Traefik)" ).
+  HTTP only; TLS is an optional follow-up — see the runbook.
+
+  If this host already runs a reverse proxy on 80/443, either open ${HTTP_PORT} in the
+  firewall and use the URLs above, OR point that proxy's wildcard preview host and
+  console host at http://127.0.0.1:${HTTP_PORT} (see docs/v0.4.0-test-runbook.md).
 
   Logs     : $COMPOSE logs -f sandboxd
   Status   : $COMPOSE --profile console ps
 
-  Test checklist & TLS notes: docs/v0.4.0-test-runbook.md
+  Test checklist, modes & TLS notes: docs/v0.4.0-test-runbook.md
 
   TEARDOWN (removes the test stack + its data + the generated files):
     $COMPOSE --profile console down
