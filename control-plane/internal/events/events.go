@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -83,12 +84,26 @@ type Event struct {
 type Recorder struct {
 	store Store
 	log   *slog.Logger
+
+	// Monotonic ULID source so events emitted in the same millisecond (e.g.
+	// a task's completion burst) still sort in emission order by id — which
+	// is the timeline's page cursor. MonotonicEntropy is not concurrency-
+	// safe, so id generation is guarded by mu.
+	mu      sync.Mutex
+	entropy *ulid.MonotonicEntropy
 }
 
 // New constructs a Recorder. A nil store yields a no-op recorder (nil-safe
 // for tests / partial wiring).
 func New(store Store, log *slog.Logger) *Recorder {
-	return &Recorder{store: store, log: log}
+	return &Recorder{store: store, log: log, entropy: ulid.Monotonic(rand.Reader, 0)}
+}
+
+// nextID returns a monotonic ULID (unique + sortable in emission order).
+func (r *Recorder) nextID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return ulid.MustNew(ulid.Now(), r.entropy).String()
 }
 
 // Record appends one event, best-effort. Generates a ULID id (time-sortable
@@ -109,7 +124,7 @@ func (r *Recorder) Record(_ context.Context, e Event) {
 			r.log.Warn("events: payload marshal failed (dropping payload)", "type", e.Type, "err", err.Error())
 		}
 	}
-	id := ulid.MustNew(ulid.Now(), rand.Reader).String()
+	id := r.nextID()
 	createdAt := time.Now().UTC().Format(time.RFC3339)
 
 	wctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

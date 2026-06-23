@@ -23,10 +23,11 @@ CREATE TABLE app_events (
     payload_json TEXT,               -- valid JSON when present; no secrets / large logs
     created_at   TEXT NOT NULL       -- RFC3339 UTC (display/export; ordering uses id)
 );
--- Cursor columns end in `id` (the ULID) so each scoped timeline paginates
--- newest-first with a stable cursor.
-CREATE INDEX idx_app_events_app     ON app_events(owner_token, app_id, id);
-CREATE INDEX idx_app_events_task    ON app_events(owner_token, task_id, id);
-CREATE INDEX idx_app_events_sandbox ON app_events(owner_token, sandbox_id, id);
-CREATE INDEX idx_app_events_owner   ON app_events(owner_token, id);
-CREATE INDEX idx_app_events_type    ON app_events(type, id);
+-- Only the two indexes the read API actually uses (app timeline + task
+-- timeline). Cursor column ends in `id` (the ULID) so each scoped feed
+-- paginates newest-first with a stable cursor. Owner-only / sandbox-only /
+-- type-only indexes were dropped: no endpoint queries by those, and each
+-- extra index is pure write amplification on this append-only table. Re-add
+-- if/when a query needs it (e.g. a tenant-wide feed or by-type export).
+CREATE INDEX idx_app_events_app  ON app_events(owner_token, app_id, id);
+CREATE INDEX idx_app_events_task ON app_events(owner_token, task_id, id);

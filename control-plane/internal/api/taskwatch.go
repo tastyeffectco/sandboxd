@@ -142,36 +142,31 @@ func (s *Server) recordTaskEvents(sandboxID, taskID string, result *runtime.Task
 		s.Events.Record(ctx, e)
 	}
 
+	// Payloads carry safe STRUCTURED flags/reasons only — never the raw
+	// build/dev-server/agent output (which can echo secrets the user's app
+	// printed). The full text stays in the task's result.json.
 	if result.Status == runtime.TaskSucceeded {
 		rec(events.TaskCompleted, events.SeverityInfo, "Task completed",
-			map[string]any{"files_changed": len(result.FilesChanged), "duration_ms": result.DurationMS})
+			map[string]any{"files_changed": len(result.FilesChanged), "duration_ms": result.DurationMS, "build_ok": result.BuildOK})
 	} else {
 		rec(events.TaskFailed, events.SeverityError, "Task failed: "+string(result.Status),
-			map[string]any{"failure_reason": result.FailureReason, "error": truncate(result.ErrorMessage, 500)})
+			map[string]any{"failure_reason": result.FailureReason, "has_error": result.ErrorMessage != ""})
 	}
 	// A real build failure (distinct from infra failures, which leave
 	// BuildErrorMessage empty).
 	if result.BuildErrorMessage != "" {
 		rec(events.TaskBuildFailed, events.SeverityError, "Task build failed",
-			map[string]any{"build_error": truncate(result.BuildErrorMessage, 500)})
+			map[string]any{"reason": "build_failed", "has_build_error": true})
 	}
-	// Preview health after the task: report only a clear signal.
+	// Preview health after the task: report only a clear signal. preview_status
+	// is the structured enum (down/starting/ready/error), not raw output.
 	switch {
 	case result.PreviewErrorMessage != "" || result.PreviewStatusAfter == runtime.PreviewError:
 		rec(events.PreviewHealthFailed, events.SeverityWarning, "Preview unhealthy after task",
-			map[string]any{"preview_status": string(result.PreviewStatusAfter),
-				"preview_error": truncate(result.PreviewErrorMessage, 500)})
+			map[string]any{"preview_status": string(result.PreviewStatusAfter), "has_preview_error": result.PreviewErrorMessage != ""})
 	case result.PreviewStatusAfter == runtime.PreviewReady:
 		rec(events.PreviewHealthOK, events.SeverityInfo, "Preview healthy after task", nil)
 	}
-}
-
-// truncate caps a string for event payloads (avoid storing large logs).
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 // ReconcileTasks finalizes tasks left `running` by a previous sandboxd

@@ -156,7 +156,9 @@ func TestConfigCreatedEventHasNoSecret(t *testing.T) {
 	}
 }
 
-// A failed task produces useful failure events on the app + task timelines.
+// A failed task produces useful failure events on the app + task timelines,
+// and the raw build/preview/agent error text (which can echo secrets the
+// app printed) NEVER lands in payload_json or message.
 func TestTaskFailureEvents(t *testing.T) {
 	s, app := newEventsTestServer(t)
 	// A sandbox linked to the app so recordTaskEvents resolves owner/app.
@@ -165,10 +167,16 @@ func TestTaskFailureEvents(t *testing.T) {
 	if err := s.Store.Create(context.Background(), sb); err != nil {
 		t.Fatal(err)
 	}
+	// Fake secrets planted in the raw error fields.
+	const secret = "sk-leak-in-build-output-9999"
 	res := &runtime.TaskResult{
 		ID: "01TASKEVT000000000000001", Status: runtime.TaskFailed,
-		FailureReason: "agent_error", ErrorMessage: "boom",
-		BuildErrorMessage: "tsc: type error", FilesChanged: []string{},
+		FailureReason:       "agent_error",
+		ErrorMessage:        "agent error: " + secret,
+		BuildErrorMessage:   "tsc error: API_KEY=" + secret,
+		PreviewErrorMessage: "vite 500: " + secret,
+		PreviewStatusAfter:  runtime.PreviewError,
+		FilesChanged:        []string{},
 	}
 	s.recordTaskEvents(sb.ID, "01TASKEVT000000000000001", res)
 
@@ -176,16 +184,39 @@ func TestTaskFailureEvents(t *testing.T) {
 	seen := map[string]bool{}
 	for _, e := range rows {
 		seen[e.Type] = true
+		if strings.Contains(e.PayloadJSON.String, secret) || strings.Contains(e.Message, secret) {
+			t.Errorf("event %s LEAKED raw error text: msg=%q payload=%q", e.Type, e.Message, e.PayloadJSON.String)
+		}
 	}
-	if !seen[events.TaskFailed] {
-		t.Error("missing task.failed event")
-	}
-	if !seen[events.TaskBuildFailed] {
-		t.Error("missing task.build.failed event")
+	for _, want := range []string{events.TaskFailed, events.TaskBuildFailed, events.PreviewHealthFailed} {
+		if !seen[want] {
+			t.Errorf("missing %s event", want)
+		}
 	}
 	// And reachable via the task-scoped feed.
 	tr, _ := s.Store.ListTaskEvents(context.Background(), cfgTenant, "01TASKEVT000000000000001", "", 50)
 	if len(tr) == 0 {
 		t.Error("task feed empty for a failed task")
+	}
+}
+
+// Monotonic ULIDs: a burst of events recorded in the same millisecond still
+// sorts in emission order (newest-first feed returns them reverse-emitted).
+func TestEventIDsAreMonotonic(t *testing.T) {
+	s, app := newEventsTestServer(t)
+	const n = 8
+	for i := 0; i < n; i++ {
+		s.Events.Record(context.Background(), events.Event{OwnerToken: cfgTenant, AppID: app.ID,
+			Type: events.AppUpdated, Severity: events.SeverityInfo, Message: "burst"})
+	}
+	rows, _ := s.Store.ListAppEvents(context.Background(), cfgTenant, app.ID, "", 50)
+	if len(rows) != n {
+		t.Fatalf("want %d events, got %d", n, len(rows))
+	}
+	// Newest-first: ids must be strictly descending (unique + ordered).
+	for i := 1; i < len(rows); i++ {
+		if rows[i-1].ID <= rows[i].ID {
+			t.Errorf("ids not strictly descending at %d: %s <= %s", i, rows[i-1].ID, rows[i].ID)
+		}
 	}
 }
