@@ -35,6 +35,15 @@ export interface Sandbox {
   preview?: Preview
 }
 
+export interface Snapshot {
+  id: string
+  name: string
+  status: string
+  source_app_id?: string
+  size_bytes?: number
+  created_at: string
+}
+
 export interface TaskResult {
   id: string
   status: string
@@ -104,4 +113,12 @@ export const api = {
 
   createSnapshot: (sandboxId: string, name: string) =>
     req<{ id: string }>('POST', '/v1/snapshots', { source_sandbox_id: sandboxId, name }),
+
+  // Phase 4 — app-scoped snapshot history, restore, fork.
+  listAppSnapshots: (appId: string) =>
+    req<{ snapshots: Snapshot[] }>('GET', `/v1/apps/${appId}/snapshots`).then((r) => r.snapshots || []),
+  restoreApp: (appId: string, snapshotId: string) =>
+    req<Sandbox>('POST', `/v1/apps/${appId}/restore`, { snapshot_id: snapshotId }),
+  forkApp: (appId: string, snapshotId: string, name: string) =>
+    req<{ app: App }>('POST', `/v1/apps/${appId}/fork`, { snapshot_id: snapshotId, name }),
 }
