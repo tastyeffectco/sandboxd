@@ -20,6 +20,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/cgroup"
 	"github.com/sandboxd/control-plane/internal/docker"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/logging"
 	"github.com/sandboxd/control-plane/internal/metrics"
 	"github.com/sandboxd/control-plane/internal/runtime"
@@ -206,6 +207,19 @@ func (s *Server) auditAction(r *http.Request, e audit.Entry) {
 	e.ActorName = a.Name
 	e.ActorIP = a.IP
 	s.Audit.Write(r.Context(), e)
+}
+
+// recordEvent appends one app_events timeline entry, best-effort. It fills
+// OwnerToken from the request actor (the tenant) unless the caller set it, so
+// handlers just pass type/severity/message + the relevant ids. nil-safe.
+func (s *Server) recordEvent(r *http.Request, e events.Event) {
+	if s.Events == nil {
+		return
+	}
+	if e.OwnerToken == "" {
+		e.OwnerToken = auth.ActorFrom(r.Context()).Name
+	}
+	s.Events.Record(r.Context(), e)
 }
 
 // validExternalID enforces the roadmap §4 constraint on the opaque
@@ -455,6 +469,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = metrics.RefreshSandboxGauge(r.Context(), s.Store)
+	s.recordEvent(r, events.Event{Type: events.SandboxCreateStarted, Severity: events.SeverityInfo,
+		Message: "Creating sandbox", AppID: req.AppID, SandboxID: req.ID})
 
 	// From here on, any error path also marks the row as 'error' and
 	// attempts best-effort cleanup of the half-built state.
@@ -464,6 +480,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		_ = s.Loopback.Release(context.Background(), req.ID)
 		_ = s.Store.MarkError(r.Context(), req.ID, msg)
 		_ = metrics.RefreshSandboxGauge(r.Context(), s.Store)
+		s.recordEvent(r, events.Event{Type: events.SandboxCreateFailed, Severity: events.SeverityError,
+			Message: "Sandbox create failed", AppID: req.AppID, SandboxID: req.ID,
+			Payload: map[string]any{"reason": msg}})
 	}
 
 	// 1. Loopback provision (idempotent; reuses any existing .img).
@@ -627,6 +646,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ExternalUserID: req.External.UserID,
 		Detail:         createDetail,
 	})
+	s.recordEvent(r, events.Event{Type: events.SandboxStarted, Severity: events.SeverityInfo,
+		Message: "Sandbox started", AppID: req.AppID, SandboxID: req.ID})
 	writeJSON(w, http.StatusCreated, toRespRow(fresh))
 }
 
@@ -758,6 +779,8 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		Target:         id,
 		ExternalUserID: extUID,
 	})
+	s.recordEvent(r, events.Event{Type: events.SandboxDeleted, Severity: events.SeverityInfo,
+		Message: "Sandbox deleted", AppID: sb.AppID.String, SandboxID: id})
 	w.WriteHeader(http.StatusNoContent)
 }
 

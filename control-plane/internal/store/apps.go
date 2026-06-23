@@ -97,6 +97,15 @@ func (s *Store) GetAppForOwner(ctx context.Context, id, ownerToken string) (*App
 	return scanApp(row)
 }
 
+// GetApp returns an app by id without an owner filter. Owner-agnostic on
+// purpose: used by background paths (e.g. the task watcher) that resolve an
+// app's owner_token for event recording and have no tenant in scope. NOT for
+// tenant-facing reads — those must use GetAppForOwner.
+func (s *Store) GetApp(ctx context.Context, id string) (*App, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+appSelectCols+` FROM app WHERE id = ?`, id)
+	return scanApp(row)
+}
+
 // ListAppsForOwner lists a tenant's apps, optionally filtered by the
 // external_user_id integration tag (empty = no constraint).
 func (s *Store) ListAppsForOwner(ctx context.Context, ownerToken, externalUserID string) ([]*App, error) {

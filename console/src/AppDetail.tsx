@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy, Snapshot } from './api'
+import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy, Snapshot, AppEvent } from './api'
 import { StatusBadge } from './ui'
 
 const ACCESS_POLICIES: AccessPolicy[] = ['control_plane_only', 'agent_access', 'runtime_access', 'both']
@@ -157,6 +157,71 @@ export function AppDetail({
       />
 
       <ConfigPanel appId={appId} onError={onError} />
+
+      <ActivityPanel appId={appId} reloadKey={snapReload} onError={onError} />
+    </div>
+  )
+}
+
+// ActivityPanel renders the durable event timeline (newest-first). It is
+// backed by SQLite, so it survives page refresh and server restart. Failed
+// events are flagged by severity. Read-only.
+function ActivityPanel({
+  appId,
+  reloadKey,
+  onError,
+}: {
+  appId: string
+  reloadKey: number
+  onError: (m: string) => void
+}) {
+  const [evts, setEvts] = useState<AppEvent[] | null>(null)
+
+  const load = useCallback(() => {
+    api
+      .listAppEvents(appId)
+      .then(setEvts)
+      .catch((e) => onError((e as Error).message))
+  }, [appId, onError])
+  useEffect(load, [load, reloadKey])
+  useEffect(() => {
+    const t = setInterval(load, 6000) // reflect new activity
+    return () => clearInterval(t)
+  }, [load])
+
+  const sev = (s: string) => (s === 'error' ? 'ev-error' : s === 'warning' ? 'ev-warn' : 'ev-info')
+
+  return (
+    <div className="card" data-testid="activity-panel">
+      <div className="row">
+        <h2 className="card-title">Activity</h2>
+        <div className="spacer" />
+        <span className="muted" style={{ fontSize: 12 }}>Durable timeline — survives restarts.</span>
+      </div>
+      {evts === null ? (
+        <p className="muted">Loading…</p>
+      ) : evts.length === 0 ? (
+        <p className="muted" data-testid="activity-empty">
+          No activity yet.
+        </p>
+      ) : (
+        <div className="timeline" data-testid="activity-list">
+          {evts.map((e) => (
+            <div key={e.id} className={`tl-row ${sev(e.severity)}`} data-testid={`event-${e.type}`}>
+              <span className="tl-time muted mono">{new Date(e.created_at).toLocaleString()}</span>
+              <span className="tl-type mono">{e.type}</span>
+              <span className="tl-msg">{e.message}</span>
+              {(e.task_id || e.sandbox_id || e.snapshot_id) && (
+                <span className="tl-ids muted mono">
+                  {e.task_id ? `task:${e.task_id.slice(0, 8)} ` : ''}
+                  {e.sandbox_id ? `sb:${e.sandbox_id.slice(0, 8)} ` : ''}
+                  {e.snapshot_id ? `snap:${e.snapshot_id.slice(0, 8)}` : ''}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
