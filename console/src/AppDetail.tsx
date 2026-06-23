@@ -704,7 +704,19 @@ function TaskPanel({
         es.close()
         api
           .getTask(sandboxId, t.id)
-          .then((r) => setStatus(r.status + (r.build_ok ? ' · build ok' : '')))
+          .then((r) => {
+            // Honest build label: a skipped build (e.g. Next.js) is not "passed".
+            const build =
+              r.build_status === 'passed'
+                ? ' · build passed'
+                : r.build_status === 'failed'
+                  ? ' · build failed'
+                  : r.build_status === 'skipped'
+                    ? ' · build skipped'
+                    : ''
+            const health = r.app_healthy === false ? ' · unhealthy' : ''
+            setStatus(r.status + build + health)
+          })
           .catch(() => setStatus('done'))
       })
       es.onerror = () => es.close()

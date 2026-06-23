@@ -171,13 +171,30 @@ the **6** real files (no `node_modules`/`.next`/`out`). **Not run here:** a real
 LLM agent task (no `ANTHROPIC_API_KEY`) — the post-task build-check mechanism (the
 poison source) was verified directly instead.
 
+#### Honest build / health semantics — implemented (2026-06-23)
+The task result no longer reports a skipped build as a pass. `TaskResult` now has:
+- **`build_status`**: `passed` | `failed` | `skipped` (skipped = no build command,
+  e.g. the Next.js preset);
+- **`preview_ok`**: bool for web apps; **omitted/null for worker-only** (no endpoint);
+- **`app_healthy`**: build not failed AND (web: preview serving / worker-only: a
+  worker process running);
+- **`build_ok`** is kept for backward compatibility but is now **true only when
+  `build_status == passed`** — a skipped build is never `build_ok=true`.
+
+The console shows "build skipped" / "build passed" / "build failed" (and
+"unhealthy" when `app_healthy=false`) instead of the old unconditional "build ok".
+
 #### Known follow-ups (not implemented here)
-- **Snapshots are not filtered** — `cp -aT` clones the whole workspace, so `.next`
-  and `node_modules` bloat snapshots. No exclusion today; needs a snapshot
-  ignore-list (or build-from-source on restore). For a later slice.
-- **Task result should separate health from build** — expose `build_ok`,
-  `preview_ok`, `app_healthy` distinctly (today a skipped build reports
-  `build_ok=true`, conflating "not checked" with "passed").
+- **Snapshots are not filtered (size bloat only).** Snapshot capture is a `zstd`
+  of the raw loopback **`.img`** (a block filesystem image), *not* a file-tree
+  copy — so `.gitignore`/`--exclude` can't slot into the capture path. A real
+  ignore-list needs reflink-copy → loop-mount → prune (`node_modules`, `.next`,
+  `out`, `.venv`, `__pycache__`, `.cache`, `dist`/`build`) → compress, or a
+  redesign of capture to a filtered tar. **Deferred** (not small / mount risk for
+  an RC). Note: the **correctness** worry (stale `.next` carried into a
+  fork/restore) is already handled — the web command runs `rm -rf .next` before
+  `pnpm dev`, and `node_modules` carried over only *helps* boot speed. So this is
+  a size optimization, not a bug.
 - **Per-task `agent.log` empty on timeout** — agent transcript persistence on task
   timeout needs investigation.
 
