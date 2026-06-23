@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, App as TApp } from './api'
 import { AppDetail } from './AppDetail'
+import { StatusBadge } from './ui'
 
 export default function App() {
   const [appId, setAppId] = useState<string | null>(null)
@@ -54,11 +55,33 @@ export default function App() {
 
 function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (m: string) => void }) {
   const [apps, setApps] = useState<TApp[] | null>(null)
+  // Real status of each app's current sandbox, keyed by app id. A sandbox
+  // row exists in many states (creating/running/stopped/error), so presence
+  // alone must not read as "running" — we show the actual status.
+  const [sbStatus, setSbStatus] = useState<Record<string, string>>({})
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
-    api.listApps().then(setApps).catch((e) => onError(e.message))
+    api
+      .listApps()
+      .then(async (list) => {
+        setApps(list)
+        const pairs = await Promise.all(
+          list
+            .filter((a) => a.current_sandbox_id)
+            .map(async (a) => {
+              try {
+                const s = await api.getSandbox(a.current_sandbox_id as string)
+                return [a.id, s.status] as const
+              } catch {
+                return [a.id, 'unknown'] as const
+              }
+            }),
+        )
+        setSbStatus(Object.fromEntries(pairs))
+      })
+      .catch((e) => onError(e.message))
   }, [onError])
   useEffect(load, [load])
 
@@ -113,10 +136,14 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
                 {a.description || a.id}
               </div>
               <div className="row">
-                <span className={`badge ${a.current_sandbox_id ? 'running' : ''}`}>
-                  <span className="dot-i" />
-                  {a.current_sandbox_id ? 'sandbox' : 'no sandbox'}
-                </span>
+                {a.current_sandbox_id ? (
+                  <StatusBadge status={sbStatus[a.id]} />
+                ) : (
+                  <span className="badge">
+                    <span className="dot-i" />
+                    no sandbox
+                  </span>
+                )}
                 <div className="spacer" />
                 {a.tags?.slice(0, 3).map((t) => (
                   <span key={t} className="tag">
