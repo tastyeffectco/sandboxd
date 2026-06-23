@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: sandboxd /v1 API
-  version: "0.2.0"
+  version: "0.3.0"
   description: >
     The public, tenant-scoped API for sandboxd. This is the only surface a
     console or external integration should use — the internal /sandbox and
@@ -114,6 +114,89 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/apps/{id}/config:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: List an app's config entries (metadata; secret values redacted)
+      description: >
+        Returns every config key for the app. Sensitive entries never
+        include their value (only value_set=true); non-sensitive entries
+        include the plaintext value.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConfigItem" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [apps]
+      summary: Create a config entry (set sensitive=true to encrypt at rest)
+      description: >
+        Sensitive values are AES-256-GCM-encrypted at rest and are
+        write-only — they are never returned by any GET. access_policy
+        governs who may later read the value through the broker; the
+        default control_plane_only never leaves sandboxd.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConfigRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigItem" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: A config entry with this key already exists; PATCH to update.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/apps/{id}/config/{key}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - in: path
+        name: key
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [apps]
+      summary: Update a config entry (value, sensitivity, or access policy)
+      description: >
+        Omit value to keep the stored value untouched (a policy-only
+        change preserves an existing secret). Toggling sensitive
+        re-encodes the stored value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchConfigRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigItem" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [apps]
+      summary: Delete a config entry
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Error" }
 
   /v1/sandboxes:
     post:
@@ -429,6 +512,39 @@ components:
         name: { type: string }
         description: { type: string }
         tags: { type: array, items: { type: string } }
+    ConfigItem:
+      type: object
+      properties:
+        key: { type: string }
+        sensitive: { type: boolean }
+        access_policy:
+          type: string
+          enum: [control_plane_only, agent_access, runtime_access, both]
+        value_set: { type: boolean, description: "True when a value is stored." }
+        value:
+          type: string
+          description: "Present only for non-sensitive entries; sensitive values are never returned."
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateConfigRequest:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string }
+        value: { type: string }
+        sensitive: { type: boolean, default: false }
+        access_policy:
+          type: string
+          enum: [control_plane_only, agent_access, runtime_access, both]
+          default: control_plane_only
+    PatchConfigRequest:
+      type: object
+      properties:
+        value: { type: string, description: "Omit to keep the stored value unchanged." }
+        sensitive: { type: boolean }
+        access_policy:
+          type: string
+          enum: [control_plane_only, agent_access, runtime_access, both]
     Sandbox:
       type: object
       properties:

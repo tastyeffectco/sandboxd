@@ -5,6 +5,29 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.3.0 (integration: `console`)
+
+Backend and console landing together as one incremental release. Tracked on
+the `console` integration branch; `main` stays at 0.2.0 until v0.3.0 is cut.
+
+### Added
+- **App-scoped config & secrets.** Per-app key/value config under
+  `/v1/apps/{id}/config` (`POST` / `GET`) and `/v1/apps/{id}/config/{key}`
+  (`PATCH` / `DELETE`). Sensitive values are AES-256-GCM-encrypted at rest and
+  write-only over the API (a `GET` returns metadata and `value_set`, never the
+  plaintext); non-sensitive values are returned. An `access_policy`
+  (`control_plane_only` default) records who may later read a value through the
+  broker. Documented in `docs/openapi.yaml`. (#33)
+- **Web console + `/v1` OpenAPI spec.** An optional Vite/React console (served
+  through Traefik at `console.<domain>`) over the public `/v1` API, plus
+  `docs/openapi.yaml` and a contract test that keeps the spec and the routes in
+  sync. The app detail screen now includes a **Config & Secrets** panel. (#32)
+
+### Note
+- The secrets **broker** (Slice 2 — delivering values to agents/runtimes per
+  `access_policy`) is intentionally deferred and tracked separately; it does not
+  block this release.
+
 ## [0.2.0] — 2026-06-22
 
 Reliability fixes across the core, and durable "apps" as first-class entities
