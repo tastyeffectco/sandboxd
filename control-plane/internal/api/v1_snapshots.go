@@ -10,11 +10,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -233,12 +234,28 @@ func (s *Server) writeSnapshotLookupErr(w http.ResponseWriter, err error) {
 	writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 }
 
+// snapshotIgnoreDirs are conservative generated/dependency directories
+// excluded from snapshots (and therefore forks/restores) so they don't
+// bloat the artifact or carry stale build output. Matched by base name at
+// ANY depth. Deliberately conservative — only reproducible caches/deps,
+// never user source. dist/build are NOT ignored (not treated as generated
+// by the current templates). Restored workspaces re-create these on first
+// boot (`[ -d node_modules ] || pnpm install`, `rm -rf .next`, venv install).
+var snapshotIgnoreDirs = map[string]bool{
+	"node_modules": true,
+	".next":        true,
+	"out":          true,
+	".venv":        true,
+	"__pycache__":  true,
+	".cache":       true,
+}
+
 // captureImage copies the workspace directory srcDir → dst
-// crash-consistently: cp -a into a sibling .tmp directory (preserving
-// ownership/perms), sync file data + metadata to disk, atomically
-// rename the directory into place, then fsync the parent. The caller
-// guarantees no writer (source stopped + id-lock held). Returns the
-// captured tree's allocated size in bytes.
+// crash-consistently: copy (excluding snapshotIgnoreDirs) into a sibling
+// .tmp directory (preserving ownership/perms), sync file data + metadata
+// to disk, atomically rename the directory into place, then fsync the
+// parent. The caller guarantees no writer (source stopped + id-lock held).
+// Returns the captured tree's allocated size in bytes.
 func captureImage(ctx context.Context, srcDir, dst, root string) (int64, error) {
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return 0, err
@@ -248,11 +265,9 @@ func captureImage(ctx context.Context, srcDir, dst, root string) (int64, error) 
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return 0, err
 	}
-	// Trailing /. copies directory contents into tmp; cp -a preserves
-	// ownership/perms (mirrors loopback.ProvisionFromTemplate).
-	if out, err := exec.CommandContext(ctx, "cp", "-a", strings.TrimRight(srcDir, "/")+"/.", tmp+"/").CombinedOutput(); err != nil {
+	if err := copyTreeExcluding(srcDir, tmp, snapshotIgnoreDirs); err != nil {
 		_ = os.RemoveAll(tmp)
-		return 0, errorsWrap("cp", err, out)
+		return 0, errorsWrap("copy", err, nil)
 	}
 	// Flush the copied tree to disk, then atomically publish the
 	// directory and fsync the parent so the rename survives a crash.
@@ -263,6 +278,81 @@ func captureImage(ctx context.Context, srcDir, dst, root string) (int64, error) 
 	}
 	_ = fsyncPath(root)
 	return dirAllocatedBytes(dst), nil
+}
+
+// copyTreeExcluding copies src → dst preserving mode + ownership, while:
+//   - skipping any directory whose base name is in `ignore` (at any depth);
+//   - copying symlinks VERBATIM (never following them), so a symlink — even
+//     one pointing outside the workspace — can't cause the copy to read or
+//     write outside the tree (no traversal/symlink escape);
+//   - skipping sockets/devices/pipes (e.g. a stale .runtimed/sock).
+//
+// dst must already exist. The control plane runs as root, so chown can
+// restore the sandbox user's ownership the restore path (cp -a) expects.
+func copyTreeExcluding(src, dst string, ignore map[string]bool) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil // dst root already exists
+		}
+		if d.IsDir() && ignore[d.Name()] {
+			return filepath.SkipDir
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		switch {
+		case d.IsDir():
+			if err := os.MkdirAll(target, info.Mode().Perm()); err != nil {
+				return err
+			}
+		case info.Mode()&fs.ModeSymlink != 0:
+			link, lerr := os.Readlink(path)
+			if lerr != nil {
+				return lerr
+			}
+			if serr := os.Symlink(link, target); serr != nil {
+				return serr
+			}
+		case info.Mode().IsRegular():
+			if cerr := copyFileMode(path, target, info.Mode().Perm()); cerr != nil {
+				return cerr
+			}
+		default:
+			return nil // skip sockets/devices/fifos
+		}
+		// Preserve ownership; Lchown so a symlink's own ownership is set
+		// (not its target's).
+		if st, ok := info.Sys().(*syscall.Stat_t); ok {
+			_ = os.Lchown(target, int(st.Uid), int(st.Gid))
+		}
+		return nil
+	})
+}
+
+func copyFileMode(src, dst string, perm fs.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // dirAllocatedBytes returns the real on-disk (allocated) size of a
