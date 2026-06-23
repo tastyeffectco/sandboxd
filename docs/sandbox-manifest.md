@@ -8,11 +8,13 @@ edit it like any workspace file.
 **No manifest = the built-in defaults** (a Vite/React web app on port 3000), so
 existing apps keep working unchanged. runtimed reads the manifest on (re)start.
 
-> **Phase status:** 7A (Runtime Manifest Core) is **accepted & live-verified**
-> (see Verification status below). 7B (process API + console) is implemented on
-> `feat/runtime-manifest`: `GET /v1/sandboxes/{id}` now includes `processes[]`,
-> and `GET /v1/sandboxes/{id}/processes/{name}/logs` tails a process's log
-> (read-only, name-validated). 7C (presets & manifest UX) is not started.
+> **Phase status:** 7A (Runtime Manifest Core), 7B (process API + console), and
+> 7C-1 (runtime presets) are all **accepted & live-verified** (see Verification
+> status below). `GET /v1/sandboxes/{id}` includes `processes[]`;
+> `GET /v1/sandboxes/{id}/processes/{name}/logs` tails a process's log;
+> `GET /v1/presets` lists the five presets and `runtime_preset` is accepted on
+> app/sandbox create. 7C-2 (manifest view/edit/validate, advanced override,
+> agent-instructions, app+DB preset) is **not started**.
 
 ## Schema (version 1)
 
@@ -108,6 +110,36 @@ shapes passed:
 Test sandboxes were **portless** (no Traefik label) so the shared host's
 production routing was never touched; verification used runtimed's reported
 status plus in-container checks, not Traefik. Re-run after any runtimed change.
+
+### Runtime presets (Phase 7C-1) — accepted & live-verified
+Live e2e (2026-06-23) on a rebuilt image (`sandboxd-base:p7c1`, new templates +
+runtimed) via a disposable host-run sandboxd, all sandboxes **portless** (no prod
+collision). **All five presets boot.**
+
+| Preset | Result | Ready (warm cache) | Endpoint / worker |
+|---|---|---|---|
+| **react-vite** | ✅ pass | ~31s | `GET / → 200` |
+| **nextjs** | ✅ pass | ~39s | `GET / → 200` — *cold boot may be slower* (large `next` install + first compile) |
+| **node-express** | ✅ pass | ~30s | `GET /health → 200` |
+| **fastapi** | ✅ pass | ~37s | `GET /health → 200` — runtime **venv + pip install works** on first boot |
+| **worker** | ✅ pass | ~28s | preview `none` + worker process running |
+
+Confirmed across all presets:
+- each seeds its **expected starter files** (worker seeds none — only `sandbox.yaml`, correct);
+- **`sandbox.yaml` is written by runtimed** on first boot (never overwriting an existing one);
+- **process status + logs endpoint** work (`GET /v1/sandboxes/{id}/processes/{name}/logs` returned real recent logs);
+- install happens **at runtime** on first boot (`node_modules` / `.venv` created then);
+- **API rejects unknown presets with 400** (both `POST /v1/apps` and `POST /sandbox`);
+- if bypassed with a bad preset env, **runtimed logs loudly** (`WARN "unknown runtime preset; using default template"`) and safely **falls back to `react-standard`**.
+
+Not yet live-tested (still unit-only):
+- the **console preset dropdown** is build/typecheck-clean but **not browser-click tested**;
+- **app-default preset resolution** (`POST /v1/apps/{id}/sandbox` using the app's stored preset when omitted) is **unit-tested** but not exercised through the public app-sandbox flow live (live runs passed the preset explicitly to stay portless).
+
+**Future image optimization** (later, not 7C-1):
+- bake a **warm pnpm store / npm cache** into the image to cut cold-boot installs for react-vite / nextjs / node-express;
+- **preinstall FastAPI + uvicorn** (or `uv`) so the FastAPI preset skips pip install on first boot;
+- consider a **Next.js-optimized image/layer** (prebaked `next`/`react`) for the heaviest cold boot.
 
 ## Security
 The manifest is **declarative config for processes that already run inside the
