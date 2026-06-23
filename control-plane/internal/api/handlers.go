@@ -23,6 +23,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/logging"
 	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/runtime"
 	"github.com/sandboxd/control-plane/internal/snapshot"
 	"github.com/sandboxd/control-plane/internal/store"
@@ -76,6 +77,10 @@ type createReq struct {
 	// POST /v1/apps/{id}/sandbox path; empty for the standalone sandbox
 	// API. The sandbox is the app's current running instance.
 	AppID string `json:"app_id,omitempty"`
+	// RuntimePreset, when set, names a runtime preset (react-vite, nextjs,
+	// node-express, fastapi, worker). runtimed applies the preset's template +
+	// sandbox.yaml on first boot. Takes precedence over Template.
+	RuntimePreset string `json:"runtime_preset,omitempty"`
 }
 
 type sandboxResp struct {
@@ -536,6 +541,15 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// boot. Unset → runtimed's default (react-standard); "blank" → empty.
 	if templateName != "" {
 		envFlags = append(envFlags, "RUNTIMED_TEMPLATE="+templateName)
+	}
+	// A runtime preset supplies both the starter template and the sandbox.yaml;
+	// runtimed applies it on first boot and prefers it over RUNTIMED_TEMPLATE.
+	if req.RuntimePreset != "" {
+		if !preset.Valid(req.RuntimePreset) {
+			writeErr(w, http.StatusBadRequest, "unknown runtime_preset: "+req.RuntimePreset)
+			return
+		}
+		envFlags = append(envFlags, "RUNTIMED_RUNTIME_PRESET="+req.RuntimePreset)
 	}
 
 	// 2. docker run with the locked flag set + traefik labels.

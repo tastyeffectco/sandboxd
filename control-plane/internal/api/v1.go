@@ -18,6 +18,7 @@ import (
 
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/events"
+	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/runtime"
 	"github.com/sandboxd/control-plane/internal/store"
 )
@@ -199,6 +200,9 @@ type v1CreateReq struct {
 	// snapshot the caller's tenant owns (ops/design/snapshots-as-templates.md)
 	// instead of the default template. Mutually exclusive with Template.
 	FromSnapshot string `json:"from_snapshot,omitempty"`
+	// RuntimePreset selects a runtime preset (react-vite, nextjs, …). Applied
+	// by runtimed on first boot; takes precedence over Template.
+	RuntimePreset string `json:"runtime_preset,omitempty"`
 }
 
 func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +258,12 @@ func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		createBody["template_path"] = snap.ImagePath
+	} else if req.RuntimePreset != "" {
+		if !preset.Valid(req.RuntimePreset) {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown runtime_preset")
+			return
+		}
+		createBody["runtime_preset"] = req.RuntimePreset
 	} else if req.Template != "" {
 		// An explicit template clones that golden workspace. With no
 		// template the sandbox is provisioned empty (handleCreate seeds

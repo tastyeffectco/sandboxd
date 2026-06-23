@@ -7,9 +7,18 @@ export interface App {
   name: string
   description: string
   tags: string[]
+  runtime_preset?: string
   current_sandbox_id?: string
   created_at: string
   updated_at: string
+}
+
+export interface Preset {
+  id: string
+  label: string
+  description: string
+  template?: string
+  capabilities?: string[]
 }
 
 export interface Preview {
@@ -99,10 +108,11 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
-  createApp: (b: { name: string; description?: string; tags?: string[] }) =>
+  listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
+  createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
-  createAppSandbox: (id: string, body: { template?: string } = {}) =>
+  createAppSandbox: (id: string, body: { template?: string; runtime_preset?: string } = {}) =>
     req<Sandbox>('POST', `/v1/apps/${id}/sandbox`, body),
 
   // App config & secrets. Sensitive values are write-only: the server

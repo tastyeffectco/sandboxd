@@ -22,6 +22,22 @@ tags:
   - name: snapshots
 
 paths:
+  /v1/presets:
+    get:
+      tags: [apps]
+      summary: List available runtime presets
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presets:
+                    type: array
+                    items: { $ref: "#/components/schemas/Preset" }
+
   /v1/apps:
     get:
       tags: [apps]
@@ -101,6 +117,7 @@ paths:
               type: object
               properties:
                 template: { type: string, description: "Template name; omit for react-standard, 'blank' for empty." }
+                runtime_preset: { type: string, description: "Runtime preset id (overrides the app default + template)." }
                 ports: { type: array, items: { type: integer }, default: [3000] }
       responses:
         "201":
@@ -659,9 +676,18 @@ components:
         tags: { type: array, items: { type: string } }
         external_user_id: { type: string }
         external_project_id: { type: string }
+        runtime_preset: { type: string, description: "Default runtime preset id for new sandboxes." }
         current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    Preset:
+      type: object
+      properties:
+        id: { type: string, description: "e.g. react-vite, nextjs, node-express, fastapi, worker." }
+        label: { type: string }
+        description: { type: string }
+        template: { type: string }
+        capabilities: { type: array, items: { type: string }, description: "Image capabilities the preset needs." }
     CreateAppRequest:
       type: object
       required: [name]
@@ -671,6 +697,7 @@ components:
         tags: { type: array, items: { type: string } }
         external_user_id: { type: string }
         external_project_id: { type: string }
+        runtime_preset: { type: string, description: "Runtime preset id; see GET /v1/presets." }
     PatchAppRequest:
       type: object
       properties:
@@ -742,6 +769,7 @@ components:
       properties:
         template: { type: string }
         from_snapshot: { type: string }
+        runtime_preset: { type: string, description: "Runtime preset id; see GET /v1/presets." }
         visibility: { type: string, enum: [public, private] }
         project:
           type: object

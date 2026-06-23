@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, App as TApp } from './api'
+import { api, App as TApp, Preset } from './api'
 import { AppDetail } from './AppDetail'
 import { StatusBadge } from './ui'
 
@@ -60,7 +60,13 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
   // alone must not read as "running" — we show the actual status.
   const [sbStatus, setSbStatus] = useState<Record<string, string>>({})
   const [name, setName] = useState('')
+  const [presets, setPresets] = useState<Preset[]>([])
+  const [presetID, setPresetID] = useState('')
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.listPresets().then(setPresets).catch(() => setPresets([]))
+  }, [])
 
   const load = useCallback(() => {
     api
@@ -89,7 +95,7 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
     if (!name.trim()) return
     setBusy(true)
     try {
-      const a = await api.createApp({ name: name.trim() })
+      const a = await api.createApp({ name: name.trim(), runtime_preset: presetID || undefined })
       setName('')
       onOpen(a.id)
     } catch (e) {
@@ -112,6 +118,20 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
             onKeyDown={(e) => e.key === 'Enter' && create()}
             data-testid="app-name"
           />
+          <select
+            className="input"
+            value={presetID}
+            onChange={(e) => setPresetID(e.target.value)}
+            data-testid="app-preset"
+            title="App type — generates a sandbox.yaml so it boots"
+          >
+            <option value="">App type (default)…</option>
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
           <button
             className="btn btn-primary"
             onClick={create}

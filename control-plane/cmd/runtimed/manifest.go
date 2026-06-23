@@ -2,11 +2,39 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/sandboxd/control-plane/internal/preset"
 	"gopkg.in/yaml.v3"
 )
+
+// applyPreset prepares an app from a runtime preset on first boot: seed the
+// preset's starter template into an EMPTY workspace, then write the preset's
+// sandbox.yaml only when none exists. It never overwrites existing app files
+// (seedTemplateApp only seeds an empty dir) or an existing sandbox.yaml.
+func applyPreset(appDir string, p preset.Preset, log *slog.Logger) {
+	seedTemplateApp(appDir, p.Template, log) // no-op if Template=="" or dir non-empty
+	writeManifestIfMissing(appDir, p.Manifest, log)
+}
+
+// writeManifestIfMissing writes sandbox.yaml only when it doesn't already
+// exist — an existing manifest (user/agent/snapshot) is always preserved.
+func writeManifestIfMissing(appDir, manifest string, log *slog.Logger) {
+	if manifest == "" {
+		return
+	}
+	path := filepath.Join(appDir, ManifestFile)
+	if _, err := os.Stat(path); err == nil {
+		return // never overwrite an existing sandbox.yaml
+	}
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		log.Warn("write preset manifest failed", "err", err.Error())
+		return
+	}
+	log.Info("wrote preset sandbox.yaml")
+}
 
 // ManifestFile is the optional per-app runtime manifest in the workspace.
 // It lets an app declare how it builds, runs, exposes a preview, and reports
