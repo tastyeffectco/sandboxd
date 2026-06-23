@@ -232,14 +232,22 @@ func (a *app) runTask(t *task) {
 
 	// 5. post-task build check (skipped on cancel — keep cancel fast).
 	// a.build is always non-nil from LoadManifest; the guard is defensive so a
-	// hand-built app{} (e.g. in a test) can't panic here.
-	if status != runtime.TaskCancelled && a.build != nil {
+	// hand-built app{} (e.g. in a test) can't panic here. build_status is the
+	// honest outcome: a missing/empty build command is "skipped" (NOT a pass),
+	// and build_ok stays true only for a real "passed".
+	res.BuildStatus = runtime.BuildSkipped
+	if status != runtime.TaskCancelled && a.build != nil && a.build.Command != "" {
 		t.setPhase("build_check")
 		ok, bmsg := buildCheck(a.appDir, a.build.Command, time.Duration(a.build.TimeoutSeconds)*time.Second, a.log)
-		res.BuildOK = ok
 		res.BuildErrorMessage = bmsg
-		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_error_message": bmsg})
+		if ok {
+			res.BuildStatus = runtime.BuildPassed
+		} else {
+			res.BuildStatus = runtime.BuildFailed
+		}
+		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_status": res.BuildStatus, "build_error_message": bmsg})
 	}
+	res.BuildOK = res.BuildStatus == runtime.BuildPassed
 
 	// 5.5 post-task health pipeline (skipped on cancel): remediate
 	// dev-server state the build check can't see (e.g. stale config →
@@ -251,12 +259,36 @@ func (a *app) runTask(t *task) {
 		res.PreviewErrorMessage = a.runPostTaskChecks(ctx, res.FilesChanged)
 	}
 
-	// 6. preview state after the task — now reflects entry-asset health,
-	// not just the HTML shell's 200.
+	// 6. preview state + overall app health after the task — preview now
+	// reflects entry-asset health, not just the HTML shell's 200.
 	a.probe()
-	res.PreviewStatusAfter = a.status().Preview.Status
+	st := a.status()
+	res.PreviewStatusAfter = st.Preview.Status
+	if status != runtime.TaskCancelled {
+		res.AppHealthy, res.PreviewOK = postTaskHealth(a.web == nil, res.BuildStatus, st)
+	}
 
 	a.finishTask(t, &res, status, reason, errMsg)
+}
+
+// postTaskHealth derives overall app health and the preview_ok signal.
+// A web app is healthy when the build did not fail and the preview is
+// serving; previewOK is set (pointer) for web apps. A worker-only app has
+// no public endpoint (previewOK nil/omitted) and is healthy when the build
+// did not fail and a worker process is running.
+func postTaskHealth(isWorkerOnly bool, buildStatus string, st runtime.Status) (appHealthy bool, previewOK *bool) {
+	buildNotFailed := buildStatus != runtime.BuildFailed
+	if isWorkerOnly {
+		anyWorker := false
+		for _, p := range st.Processes {
+			if p.Kind == "worker" && p.Running {
+				anyWorker = true
+			}
+		}
+		return buildNotFailed && anyWorker, nil
+	}
+	po := st.Preview.Status == runtime.PreviewReady
+	return buildNotFailed && po, &po
 }
 
 func (a *app) finishTask(t *task, res *runtime.TaskResult, status runtime.TaskStatus, reason, errMsg string) {

@@ -792,9 +792,12 @@ components:
         failure_reason: { type: string }
         error_message: { type: string }
         files_changed: { type: array, items: { type: string } }
-        build_ok: { type: boolean }
+        build_ok: { type: boolean, description: "Backward-compat; true only when build_status=passed." }
+        build_status: { type: string, enum: [passed, failed, skipped] }
         build_error_message: { type: string }
         preview_status_after: { type: string }
+        preview_ok: { type: boolean, description: "Web apps only; omitted for worker-only." }
+        app_healthy: { type: boolean }
         duration_ms: { type: integer }
     Event:
       type: object

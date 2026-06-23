@@ -50,19 +50,37 @@ type Event struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
+// Build outcomes for TaskResult.BuildStatus.
+const (
+	BuildPassed  = "passed"
+	BuildFailed  = "failed"
+	BuildSkipped = "skipped"
+)
+
 // TaskResult is the canonical task outcome — carried by the terminal
 // `done` event and persisted to result.json. The upstream renders the
 // final outcome from this alone, with no event replay.
 type TaskResult struct {
-	ID                 string        `json:"id"`
-	Status             TaskStatus    `json:"status"`
-	FailureReason      string        `json:"failure_reason,omitempty"`
-	ErrorMessage       string        `json:"error_message,omitempty"`
-	FilesChanged       []string      `json:"files_changed"`
-	AgentMessageFinal  string        `json:"agent_message_final,omitempty"`
-	BuildOK            bool          `json:"build_ok"`
+	ID                string     `json:"id"`
+	Status            TaskStatus `json:"status"`
+	FailureReason     string     `json:"failure_reason,omitempty"`
+	ErrorMessage      string     `json:"error_message,omitempty"`
+	FilesChanged      []string   `json:"files_changed"`
+	AgentMessageFinal string     `json:"agent_message_final,omitempty"`
+	// BuildOK is kept for backward compatibility; it is true ONLY when
+	// BuildStatus is "passed". A skipped build is never build_ok=true.
+	BuildOK bool `json:"build_ok"`
+	// BuildStatus is the honest build outcome: "passed", "failed", or
+	// "skipped" (no build command declared — e.g. the Next.js preset).
+	BuildStatus        string        `json:"build_status,omitempty"`
 	BuildErrorMessage  string        `json:"build_error_message,omitempty"`
 	PreviewStatusAfter PreviewStatus `json:"preview_status_after,omitempty"`
+	// PreviewOK is whether the public endpoint is serving after the task.
+	// nil/omitted for worker-only apps (no public endpoint).
+	PreviewOK *bool `json:"preview_ok,omitempty"`
+	// AppHealthy is overall post-task health: build not failed AND
+	// (web: preview serving) / (worker-only: a worker process running).
+	AppHealthy bool `json:"app_healthy"`
 	// PreviewErrorMessage is the live dev-server error when the app
 	// fails to render despite a clean build (e.g. a stale-config 500 on
 	// the CSS/TS entry). Set by the post-task health pipeline; empty

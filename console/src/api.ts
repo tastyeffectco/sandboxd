@@ -79,6 +79,9 @@ export interface TaskResult {
   id: string
   status: string
   build_ok?: boolean
+  build_status?: 'passed' | 'failed' | 'skipped'
+  preview_ok?: boolean // omitted for worker-only apps (no public endpoint)
+  app_healthy?: boolean
   files_changed?: string[]
   error_message?: string
   preview_status_after?: string
