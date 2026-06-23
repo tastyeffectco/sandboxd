@@ -1,0 +1,488 @@
+openapi: 3.0.3
+info:
+  title: sandboxd /v1 API
+  version: "0.2.0"
+  description: >
+    The public, tenant-scoped API for sandboxd. This is the only surface a
+    console or external integration should use — the internal /sandbox and
+    /wake endpoints are not part of this contract. Scoped by the API token
+    (Bearer); when auth is disabled (the single-user default) the whole
+    surface is reachable without a token.
+servers:
+  - url: http://127.0.0.1:9090
+    description: Default loopback bind (docker-compose maps SANDBOXD_API_BIND here)
+security:
+  - bearerAuth: []
+  - {} # auth disabled by default (single-user)
+
+tags:
+  - name: apps
+  - name: sandboxes
+  - name: tasks
+  - name: snapshots
+
+paths:
+  /v1/apps:
+    get:
+      tags: [apps]
+      summary: List apps (tenant-scoped)
+      parameters:
+        - in: query
+          name: external_user_id
+          schema: { type: string }
+          description: Optional integration-tag filter.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apps:
+                    type: array
+                    items: { $ref: "#/components/schemas/App" }
+    post:
+      tags: [apps]
+      summary: Create an app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAppRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/App" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: Get an app
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/App" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [apps]
+      summary: Update an app (partial)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchAppRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/App" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/sandbox:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Create the app's current sandbox (one live sandbox per app)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template: { type: string, description: "Template name; omit for react-standard, 'blank' for empty." }
+                ports: { type: array, items: { type: integer }, default: [3000] }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The app already has a live sandbox.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/sandboxes:
+    post:
+      tags: [sandboxes]
+      summary: Create a sandbox (programmatic; apps usually use /v1/apps/{id}/sandbox)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSandboxRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /v1/sandboxes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [sandboxes]
+      summary: Get a sandbox (status + live preview state)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [sandboxes]
+      summary: Destroy the sandbox (container + workspace)
+      responses:
+        "200": { description: Destroyed }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/sandboxes/{id}/start:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      tags: [sandboxes]
+      summary: Start (wake) a stopped sandbox. Idempotent when running.
+      responses:
+        "200":
+          description: Running
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503":
+          description: Capacity pushback (Retry-After).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/sandboxes/{id}/stop:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      tags: [sandboxes]
+      summary: Stop a running sandbox (frees RAM; wakes on start). Idempotent when stopped.
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "409":
+          description: A task is in progress; cancel it first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/sandboxes/{id}/tasks:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      tags: [tasks]
+      summary: Submit a coding-agent task (wakes a stopped sandbox first)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitTaskRequest" }
+      responses:
+        "202":
+          description: Accepted (task running)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  sandbox_id: { type: string }
+                  status: { type: string, example: running }
+                  agent: { type: string }
+                  events_url: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "409":
+          description: A task is already in progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/sandboxes/{id}/tasks/{taskId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - in: path
+        name: taskId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [tasks]
+      summary: Get a task's canonical result
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskResult" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/sandboxes/{id}/tasks/{taskId}/events:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - in: path
+        name: taskId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [tasks]
+      summary: Live task event stream (Server-Sent Events)
+      description: >
+        text/event-stream of status/message/tool/build/done events. The
+        console consumes this with EventSource for live status + logs.
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /v1/sandboxes/{id}/tasks/{taskId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - in: path
+        name: taskId
+        required: true
+        schema: { type: string }
+    post:
+      tags: [tasks]
+      summary: Cancel a running task
+      responses:
+        "200": { description: Cancelled }
+
+  /v1/sandboxes/{id}/files:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      tags: [sandboxes]
+      summary: List workspace files
+      responses:
+        "200": { description: OK }
+    put:
+      tags: [sandboxes]
+      summary: Write a workspace file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, content]
+              properties:
+                path: { type: string }
+                content: { type: string }
+                append: { type: boolean }
+      responses:
+        "200": { description: Written }
+
+  /v1/sandboxes/{id}/files/content:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      tags: [sandboxes]
+      summary: Read a workspace file
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /v1/sandboxes/{id}/export:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      tags: [sandboxes]
+      summary: Export the workspace as a zip
+      responses:
+        "200":
+          description: zip archive
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+
+  /v1/snapshots:
+    get:
+      tags: [snapshots]
+      summary: List snapshots (tenant-scoped)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots:
+                    type: array
+                    items: { $ref: "#/components/schemas/Snapshot" }
+    post:
+      tags: [snapshots]
+      summary: Capture a snapshot of a stopped sandbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_sandbox_id, name]
+              properties:
+                source_sandbox_id: { type: string }
+                name: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Snapshot" }
+        "409":
+          description: Source sandbox is running; stop it first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/snapshots/{id}:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      tags: [snapshots]
+      summary: Get a snapshot
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Snapshot" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [snapshots]
+      summary: Delete a snapshot
+      responses:
+        "204": { description: Deleted }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
+    App:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        external_user_id: { type: string }
+        external_project_id: { type: string }
+        current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateAppRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        external_user_id: { type: string }
+        external_project_id: { type: string }
+    PatchAppRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+    Sandbox:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [creating, running, stopped, error] }
+        template: { type: string }
+        preview: { $ref: "#/components/schemas/Preview" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Preview:
+      type: object
+      properties:
+        url: { type: string }
+        status: { type: string, enum: [starting, up, down, error] }
+        last_checked_at: { type: string, format: date-time }
+    CreateSandboxRequest:
+      type: object
+      properties:
+        template: { type: string }
+        from_snapshot: { type: string }
+        visibility: { type: string, enum: [public, private] }
+        project:
+          type: object
+          properties:
+            id: { type: string }
+            user_id: { type: string }
+    SubmitTaskRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string }
+        agent: { type: string, enum: [opencode], default: opencode }
+        timeout_s: { type: integer, description: "0/omitted = 10m default; max 86400." }
+    TaskResult:
+      type: object
+      properties:
+        id: { type: string }
+        sandbox_id: { type: string }
+        status: { type: string, enum: [running, succeeded, failed, cancelled] }
+        failure_reason: { type: string }
+        error_message: { type: string }
+        files_changed: { type: array, items: { type: string } }
+        build_ok: { type: boolean }
+        build_error_message: { type: string }
+        preview_status_after: { type: string }
+        duration_ms: { type: integer }
+    Snapshot:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string }
+        source_sandbox_id: { type: string }
+        base_image: { type: string }
+        visibility: { type: string }
+        size_bytes: { type: integer }
+        created_at: { type: string, format: date-time }

@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, console]
   pull_request:
 
 jobs:
@@ -61,3 +61,11 @@ jobs:
           SANDBOXD_IMAGE: sandboxed-base:ci
           SANDBOXD_BIN: /tmp/sandboxd
         run: bash scripts/e2e.sh
+
+  # Build the console SPA + image so a TypeScript or build break is caught.
+  console:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build console image
+        run: docker build -t sandboxd-console:ci ./console
