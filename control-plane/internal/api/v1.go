@@ -102,7 +102,14 @@ func (s *Server) delegate(r *http.Request, h http.HandlerFunc, method, path stri
 }
 
 func (s *Server) previewURL(id string) string {
-	return fmt.Sprintf("https://s-%s-3000.preview.%s", id, s.PreviewDomain)
+	// Reflect the actual scheme: previews are served over plain HTTP
+	// unless PreviewTLS is configured (so a local/default deploy returns
+	// a reachable http:// URL the console can iframe).
+	scheme := "http"
+	if s.PreviewTLS {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://s-%s-3000.preview.%s", scheme, id, s.PreviewDomain)
 }
 
 // v1SandboxFromRow reshapes a stored sandbox to the v1 object, folding
@@ -292,6 +299,43 @@ func (s *Server) v1StopSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditAction(r, audit.Entry{Action: "sandbox.stop", Target: id})
 	sb, _ = s.Store.Get(r.Context(), id)
+	writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb))
+}
+
+// --- POST /v1/sandboxes/{id}/start ----------------------------------
+
+// v1StartSandbox wakes a stopped sandbox. It is the public counterpart
+// of /stop, so a console (API-only) need not reach the internal wake
+// path. Idempotent when already running.
+func (s *Server) v1StartSandbox(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sb, err := s.Store.Get(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such sandbox")
+		return
+	}
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if sb.Status == "running" {
+		writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb)) // idempotent
+		return
+	}
+	if sb.Status != "stopped" {
+		writeV1Err(w, http.StatusConflict, "conflict", "sandbox is "+sb.Status+" — cannot start")
+		return
+	}
+	code, body := s.delegate(r, s.handleWakeJSON, http.MethodPost, "/wake/"+id,
+		map[string]string{"id": id}, nil)
+	if code != http.StatusOK {
+		relayV1Error(w, code, body) // 503 -> sandbox_capacity, etc.
+		return
+	}
+	if sb, err = s.Store.Get(r.Context(), id); err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb))
 }
 
