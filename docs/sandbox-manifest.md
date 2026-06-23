@@ -184,17 +184,28 @@ The task result no longer reports a skipped build as a pass. `TaskResult` now ha
 The console shows "build skipped" / "build passed" / "build failed" (and
 "unhealthy" when `app_healthy=false`) instead of the old unconditional "build ok".
 
+#### Snapshot ignore-list — implemented (2026-06-23)
+Correction to an earlier note: in the OSS build the workspace is a plain
+bind-mounted **directory** (the loopback `.img` model is legacy — `internal/
+snapshot`'s zstd-`.img` path is dead in dir mode). The public `/v1`
+snapshot/fork/restore subsystem captures by **copying that directory** into the
+snapshot store (`captureImage`), so the ignore-list lives right in that copy.
+`captureImage` now uses `copyTreeExcluding`, which:
+- skips `node_modules`, `.next`, `out`, `.venv`, `__pycache__`, `.cache` by base
+  name at **any depth** (conservative generated/dependency dirs only — `dist`/
+  `build` are **not** ignored, as the current templates don't treat them as
+  generated);
+- copies symlinks **verbatim** and never follows them → no path-traversal /
+  symlink escape during the staging copy;
+- preserves mode + ownership (so the restore path's `cp -a` keeps the sandbox
+  user's files writable).
+
+Restore/fork are **unchanged** (they `cp -a` the snapshot dir). Restored
+workspaces re-create the ignored dirs on first boot (`[ -d node_modules ] ||
+pnpm install`, `rm -rf .next`, venv install). Tested: exclusion incl. a nested
+`node_modules`, source + `sandbox.yaml` preserved, and symlink-escape safety.
+
 #### Known follow-ups (not implemented here)
-- **Snapshots are not filtered (size bloat only).** Snapshot capture is a `zstd`
-  of the raw loopback **`.img`** (a block filesystem image), *not* a file-tree
-  copy — so `.gitignore`/`--exclude` can't slot into the capture path. A real
-  ignore-list needs reflink-copy → loop-mount → prune (`node_modules`, `.next`,
-  `out`, `.venv`, `__pycache__`, `.cache`, `dist`/`build`) → compress, or a
-  redesign of capture to a filtered tar. **Deferred** (not small / mount risk for
-  an RC). Note: the **correctness** worry (stale `.next` carried into a
-  fork/restore) is already handled — the web command runs `rm -rf .next` before
-  `pnpm dev`, and `node_modules` carried over only *helps* boot speed. So this is
-  a size optimization, not a bug.
 - **Per-task `agent.log` empty on timeout** — agent transcript persistence on task
   timeout needs investigation.
 
