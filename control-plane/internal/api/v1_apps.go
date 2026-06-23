@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
@@ -91,6 +92,8 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditAction(r, audit.Entry{Action: "app.create", Target: app.ID})
+	s.recordEvent(r, events.Event{Type: events.AppCreated, Severity: events.SeverityInfo,
+		Message: "App created: " + app.Name, AppID: app.ID})
 	writeJSON(w, http.StatusCreated, v1AppFromRow(app, ""))
 }
 
@@ -157,6 +160,8 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditAction(r, audit.Entry{Action: "app.update", Target: id})
+	s.recordEvent(r, events.Event{Type: events.AppUpdated, Severity: events.SeverityInfo,
+		Message: "App updated", AppID: id})
 	writeJSON(w, http.StatusOK, v1AppFromRow(app, s.currentSandboxID(r, id)))
 }
 

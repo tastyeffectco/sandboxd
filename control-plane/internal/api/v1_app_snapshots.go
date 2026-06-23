@@ -21,6 +21,7 @@ import (
 	"net/http"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
@@ -126,6 +127,8 @@ func (s *Server) v1RestoreApp(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditAction(r, audit.Entry{Action: "app.restore", Target: app.ID,
 		Detail: map[string]any{"snapshot_id": snap.ID}})
+	s.recordEvent(r, events.Event{Type: events.SnapshotRestored, Severity: events.SeverityInfo,
+		Message: "App restored from snapshot: " + snap.Name, AppID: app.ID, SnapshotID: snap.ID})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(body)
@@ -177,6 +180,9 @@ func (s *Server) v1ForkApp(w http.ResponseWriter, r *http.Request) {
 	code, body := s.createAppSandboxFromSnapshot(r, newApp, snap)
 	s.auditAction(r, audit.Entry{Action: "app.fork", Target: newApp.ID,
 		Detail: map[string]any{"source_app_id": srcApp.ID, "snapshot_id": snap.ID}})
+	s.recordEvent(r, events.Event{Type: events.SnapshotForked, Severity: events.SeverityInfo,
+		Message: "App forked from snapshot: " + newApp.Name, AppID: newApp.ID, SnapshotID: snap.ID,
+		Payload: map[string]any{"source_app_id": srcApp.ID}})
 	if code != http.StatusCreated {
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"app":           v1AppFromRow(newApp, ""),

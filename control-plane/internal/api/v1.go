@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/runtime"
 	"github.com/sandboxd/control-plane/internal/store"
 )
@@ -309,6 +310,8 @@ func (s *Server) v1StopSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditAction(r, audit.Entry{Action: "sandbox.stop", Target: id})
 	sb, _ = s.Store.Get(r.Context(), id)
+	s.recordEvent(r, events.Event{Type: events.SandboxStopped, Severity: events.SeverityInfo,
+		Message: "Sandbox stopped", AppID: sb.AppID.String, SandboxID: id})
 	writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb))
 }
 
@@ -346,6 +349,8 @@ func (s *Server) v1StartSandbox(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	s.recordEvent(r, events.Event{Type: events.SandboxStarted, Severity: events.SeverityInfo,
+		Message: "Sandbox started", AppID: sb.AppID.String, SandboxID: id})
 	writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb))
 }
 

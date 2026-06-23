@@ -191,6 +191,63 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/apps/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: App activity timeline (newest-first, tenant-scoped)
+      description: >
+        Durable app/sandbox/task/config/snapshot events for the app. Newest-first;
+        paginate with `before` (an event id from a prior page's `next_before`).
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: before
+          schema: { type: string }
+          description: Event id (ULID) cursor; returns events strictly older than it.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+                  next_before: { type: string, description: "Cursor for the next page; absent when empty." }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/tasks/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [tasks]
+      summary: Task activity timeline (newest-first, tenant-scoped)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: before
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+                  next_before: { type: string }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -667,6 +724,20 @@ components:
         build_error_message: { type: string }
         preview_status_after: { type: string }
         duration_ms: { type: integer }
+    Event:
+      type: object
+      description: One entry in the durable activity timeline.
+      properties:
+        id: { type: string, description: "ULID; also the pagination cursor." }
+        type: { type: string, description: "Stable machine-readable, e.g. task.failed, snapshot.restored." }
+        severity: { type: string, enum: [info, warning, error] }
+        message: { type: string, description: "Human-readable; not for programmatic logic." }
+        app_id: { type: string }
+        sandbox_id: { type: string }
+        task_id: { type: string }
+        snapshot_id: { type: string }
+        payload: { type: object, additionalProperties: true, description: "Small JSON; no secrets or large logs." }
+        created_at: { type: string, format: date-time }
     Snapshot:
       type: object
       properties:

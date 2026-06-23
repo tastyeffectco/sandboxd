@@ -36,6 +36,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
 	"github.com/sandboxd/control-plane/internal/egress"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/logging"
 	"github.com/sandboxd/control-plane/internal/loopback"
@@ -177,6 +178,7 @@ func main() {
 	// initial config is read from the process environment (systemd has
 	// already loaded the EnvironmentFile); SIGHUP re-reads the file.
 	auditLog := audit.New(st, log.With("component", "audit"))
+	eventRec := events.New(st, log.With("component", "events"))
 	envFile := envDefault("SANDBOXD_ENV_FILE", "/etc/sandboxed/sandboxd.env")
 	authMw := auth.NewMiddleware(auth.ParseConfig(os.Getenv), auditLog, log.With("component", "auth"))
 	denyMode := envDefault("SANDBOXD_FORWARD_AUTH_DENY_MODE", "redirect")
@@ -357,6 +359,7 @@ func main() {
 		Locks:               idLocks,
 		Auth:                authMw,
 		Audit:               auditLog,
+		Events:              eventRec,
 		SnapshotsRoot:       snapshotsRoot,
 		ForwardAuthDenyMode: denyMode,
 		TemplatesDir:        envDefault("SANDBOXD_TEMPLATES_DIR", templatesRoot),

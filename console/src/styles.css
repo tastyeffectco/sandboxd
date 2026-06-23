@@ -330,3 +330,43 @@ h2 {
   border-color: var(--green);
   bottom: 70px;
 }
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+.tl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-left: 3px solid var(--border);
+  background: var(--card);
+}
+.tl-row.ev-error {
+  border-left-color: var(--red);
+}
+.tl-row.ev-warn {
+  border-left-color: var(--amber);
+}
+.tl-row.ev-info {
+  border-left-color: var(--green);
+}
+.tl-time {
+  font-size: 11px;
+  min-width: 150px;
+}
+.tl-type {
+  color: var(--muted-foreground);
+}
+.tl-msg {
+  flex: 1 1 200px;
+}
+.tl-ids {
+  font-size: 11px;
+}
