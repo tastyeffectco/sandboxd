@@ -17,6 +17,18 @@ export interface Preview {
   status: string
 }
 
+export type AccessPolicy = 'control_plane_only' | 'agent_access' | 'runtime_access' | 'both'
+
+export interface ConfigItem {
+  key: string
+  sensitive: boolean
+  access_policy: AccessPolicy
+  value_set: boolean
+  value?: string // non-sensitive entries only; secrets are never returned
+  created_at: string
+  updated_at: string
+}
+
 export interface Sandbox {
   id: string
   status: string
@@ -59,6 +71,22 @@ export const api = {
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
   createAppSandbox: (id: string, body: { template?: string } = {}) =>
     req<Sandbox>('POST', `/v1/apps/${id}/sandbox`, body),
+
+  // App config & secrets. Sensitive values are write-only: the server
+  // never returns them, so the UI shows metadata (value_set) only.
+  listConfig: (appId: string) =>
+    req<{ config: ConfigItem[] }>('GET', `/v1/apps/${appId}/config`).then((r) => r.config || []),
+  createConfig: (
+    appId: string,
+    body: { key: string; value: string; sensitive: boolean; access_policy: AccessPolicy },
+  ) => req<ConfigItem>('POST', `/v1/apps/${appId}/config`, body),
+  patchConfig: (
+    appId: string,
+    key: string,
+    body: { value?: string; sensitive?: boolean; access_policy?: AccessPolicy },
+  ) => req<ConfigItem>('PATCH', `/v1/apps/${appId}/config/${encodeURIComponent(key)}`, body),
+  deleteConfig: (appId: string, key: string) =>
+    req<unknown>('DELETE', `/v1/apps/${appId}/config/${encodeURIComponent(key)}`),
 
   getSandbox: (id: string) => req<Sandbox>('GET', `/v1/sandboxes/${id}`),
   startSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/start`),

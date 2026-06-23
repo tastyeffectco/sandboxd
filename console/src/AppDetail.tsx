@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox } from './api'
+import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy } from './api'
 import { StatusBadge } from './ui'
+
+const ACCESS_POLICIES: AccessPolicy[] = ['control_plane_only', 'agent_access', 'runtime_access', 'both']
 
 export function AppDetail({ appId, onError }: { appId: string; onError: (m: string) => void }) {
   const [app, setApp] = useState<TApp | null>(null)
@@ -110,6 +112,170 @@ export function AppDetail({ appId, onError }: { appId: string; onError: (m: stri
         </div>
 
         <TaskPanel sandboxId={sb?.id} running={status === 'running'} onError={onError} />
+      </div>
+
+      <ConfigPanel appId={appId} onError={onError} />
+    </div>
+  )
+}
+
+// ConfigPanel manages an app's config & secrets. Secrets are write-only:
+// the API never returns a sensitive value, so a stored secret shows as
+// "•••• set" and can only be replaced, never read back.
+function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) => void }) {
+  const [items, setItems] = useState<ConfigItem[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [key, setKey] = useState('')
+  const [value, setValue] = useState('')
+  const [sensitive, setSensitive] = useState(true)
+  const [policy, setPolicy] = useState<AccessPolicy>('control_plane_only')
+
+  const load = useCallback(() => {
+    api
+      .listConfig(appId)
+      .then(setItems)
+      .catch((e) => onError((e as Error).message))
+  }, [appId, onError])
+  useEffect(load, [load])
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true)
+    try {
+      await fn()
+      load()
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const add = async () => {
+    if (!key.trim()) return
+    await act(async () => {
+      await api.createConfig(appId, { key: key.trim(), value, sensitive, access_policy: policy })
+      setKey('')
+      setValue('')
+    })
+  }
+
+  return (
+    <div className="card" data-testid="config-panel">
+      <div className="row">
+        <h2 className="card-title">Config &amp; Secrets</h2>
+        <div className="spacer" />
+        <span className="muted" style={{ fontSize: 12 }}>
+          Secrets are encrypted at rest and never shown again.
+        </span>
+      </div>
+
+      {items === null ? (
+        <p className="muted">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="muted" data-testid="config-empty">
+          No config yet. Add a key below.
+        </p>
+      ) : (
+        <table className="config-table" data-testid="config-list">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Value</th>
+              <th>Access policy</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it) => (
+              <tr key={it.key} data-testid={`config-row-${it.key}`}>
+                <td className="mono">{it.key}</td>
+                <td className="mono">
+                  {it.sensitive ? (
+                    <span className="tag" title="Encrypted at rest; write-only">
+                      •••• {it.value_set ? 'set' : 'empty'}
+                    </span>
+                  ) : (
+                    <span>{it.value}</span>
+                  )}
+                </td>
+                <td>
+                  <select
+                    className="input"
+                    value={it.access_policy}
+                    disabled={busy}
+                    data-testid={`config-policy-${it.key}`}
+                    onChange={(e) =>
+                      act(() => api.patchConfig(appId, it.key, { access_policy: e.target.value as AccessPolicy }))
+                    }
+                  >
+                    {ACCESS_POLICIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy}
+                    data-testid={`config-delete-${it.key}`}
+                    onClick={() => act(() => api.deleteConfig(appId, it.key))}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="row config-add" style={{ marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
+        <input
+          className="input mono"
+          placeholder="KEY"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          data-testid="config-key"
+        />
+        <input
+          className="input mono"
+          type={sensitive ? 'password' : 'text'}
+          placeholder={sensitive ? 'secret value' : 'value'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          data-testid="config-value"
+        />
+        <select
+          className="input"
+          value={policy}
+          onChange={(e) => setPolicy(e.target.value as AccessPolicy)}
+          data-testid="config-new-policy"
+        >
+          {ACCESS_POLICIES.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <label className="muted" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={sensitive}
+            onChange={(e) => setSensitive(e.target.checked)}
+            data-testid="config-sensitive"
+          />
+          secret
+        </label>
+        <button
+          className="btn btn-primary"
+          disabled={busy || !key.trim()}
+          onClick={add}
+          data-testid="config-add"
+        >
+          Add
+        </button>
       </div>
     </div>
   )

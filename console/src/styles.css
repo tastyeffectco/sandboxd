@@ -304,3 +304,25 @@ h2 {
 .linklike:hover {
   color: var(--foreground);
 }
+.config-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.config-table th {
+  text-align: left;
+  color: var(--muted-foreground);
+  font-weight: 500;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.config-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.config-add .input {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
