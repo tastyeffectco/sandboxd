@@ -115,6 +115,82 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/apps/{id}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: List snapshots captured from this app (tenant-scoped, newest first)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots:
+                    type: array
+                    items: { $ref: "#/components/schemas/Snapshot" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Restore the app from a snapshot (REPLACES its current sandbox)
+      description: >
+        Destructive: purges the app's current sandbox (container + workspace)
+        and creates a fresh one cloned from the snapshot. Un-snapshotted work
+        is lost, so the console confirms before calling.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshot_id]
+              properties:
+                snapshot_id: { type: string }
+      responses:
+        "201":
+          description: New sandbox created from the snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sandbox" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/fork:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Fork a snapshot into a new app (source app untouched)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshot_id]
+              properties:
+                snapshot_id: { type: string }
+                name: { type: string, description: "New app name; defaults to '<source> (fork)'." }
+      responses:
+        "201":
+          description: New app, with its sandbox spun from the snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app: { $ref: "#/components/schemas/App" }
+                  sandbox: { $ref: "#/components/schemas/Sandbox" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -598,6 +674,7 @@ components:
         name: { type: string }
         status: { type: string }
         source_sandbox_id: { type: string }
+        source_app_id: { type: string, description: "App the snapshot was captured from." }
         base_image: { type: string }
         visibility: { type: string }
         size_bytes: { type: integer }
