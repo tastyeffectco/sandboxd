@@ -110,6 +110,10 @@ type Server struct {
 	Events              *events.Recorder // Phase 5 — durable app_events timeline
 	SnapshotsRoot       string           // per-sandbox purge of _snapshots/<id>/
 	ForwardAuthDenyMode string           // "redirect" (default) | "meta-refresh"
+
+	// Phase 8A — static, safe instance metadata for GET /v1/settings.
+	// Populated in main; contains no secrets.
+	Instance InstanceInfo
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -158,6 +162,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sandboxes/{id}/processes/{name}/logs", s.observe("GET /v1/sandboxes/{id}/processes/{name}/logs", s.v1ProcessLogs))
 
 	// Durable apps above sandboxes (Phase 1).
+	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
 	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))

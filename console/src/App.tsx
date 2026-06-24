@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, App as TApp, Preset } from './api'
 import { AppDetail } from './AppDetail'
+import { Settings } from './Settings'
 import { StatusBadge } from './ui'
 
 export default function App() {
   const [appId, setAppId] = useState<string | null>(null)
+  const [view, setView] = useState<'apps' | 'settings'>('apps')
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+
+  const goApps = () => {
+    setView('apps')
+    setAppId(null)
+  }
 
   useEffect(() => {
     if (!error) return
@@ -22,18 +29,25 @@ export default function App() {
   return (
     <>
       <div className="topbar">
-        <div className="brand" style={{ cursor: 'pointer' }} onClick={() => setAppId(null)}>
+        <div className="brand" style={{ cursor: 'pointer' }} onClick={goApps}>
           sandboxd <span className="dot">/</span> console
         </div>
         <div className="spacer" />
-        {appId && (
-          <button className="btn btn-ghost btn-sm" onClick={() => setAppId(null)}>
+        {(appId || view === 'settings') && (
+          <button className="btn btn-ghost btn-sm" onClick={goApps}>
             ← Apps
+          </button>
+        )}
+        {view !== 'settings' && (
+          <button className="btn btn-ghost btn-sm" data-testid="nav-settings" onClick={() => setView('settings')}>
+            Settings
           </button>
         )}
       </div>
       <div className="container">
-        {appId ? (
+        {view === 'settings' ? (
+          <Settings onError={setError} />
+        ) : appId ? (
           <AppDetail appId={appId} onError={setError} onInfo={setInfo} />
         ) : (
           <AppList onOpen={setAppId} onError={setError} />

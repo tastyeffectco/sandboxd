@@ -180,7 +180,8 @@ func main() {
 	auditLog := audit.New(st, log.With("component", "audit"))
 	eventRec := events.New(st, log.With("component", "events"))
 	envFile := envDefault("SANDBOXD_ENV_FILE", "/etc/sandboxed/sandboxd.env")
-	authMw := auth.NewMiddleware(auth.ParseConfig(os.Getenv), auditLog, log.With("component", "auth"))
+	authCfg := auth.ParseConfig(os.Getenv)
+	authMw := auth.NewMiddleware(authCfg, auditLog, log.With("component", "auth"))
 	denyMode := envDefault("SANDBOXD_FORWARD_AUTH_DENY_MODE", "redirect")
 	{
 		ac := authMw.Snapshot()
@@ -366,6 +367,16 @@ func main() {
 		TemplatesDir:        envDefault("SANDBOXD_TEMPLATES_DIR", templatesRoot),
 		LibraryRoot:         envDefault("SANDBOXD_LIBRARY_DIR", libraryRoot),
 		LLMTxtPath:          envDefault("SANDBOXD_LLM_TXT_PATH", "/etc/sandboxed/llm.txt"),
+		Instance: api.InstanceInfo{
+			Version:              version,
+			GitCommit:            gitCommit,
+			AuthEnabled:          !authCfg.Disabled,
+			StorageMode:          "directory", // OSS bind-mounted workspaces (see internal/loopback)
+			EgressMode:           egressModeLabel(egressMgr),
+			AgentProviders:       []string{"opencode"},
+			IdleReapEnabled:      idleInterval > 0,
+			IdleThresholdSeconds: int(idleThreshold.Seconds()),
+		},
 	}
 
 	// Finalize any coding task left `running` by a previous sandboxd
@@ -728,6 +739,15 @@ func pollerModeLabel(re *regexp.Regexp) string {
 		return "fallback"
 	}
 	return "active"
+}
+
+// egressModeLabel is the safe egress mode string for GET /v1/settings. A nil
+// manager (the OSS default) means no egress policy is enforced.
+func egressModeLabel(m *egress.Manager) string {
+	if m == nil {
+		return "disabled"
+	}
+	return "enabled"
 }
 
 func buildIdent() (version, gitCommit string) {

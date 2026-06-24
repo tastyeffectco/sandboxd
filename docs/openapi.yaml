@@ -22,6 +22,58 @@ tags:
   - name: snapshots
 
 paths:
+  /v1/settings:
+    get:
+      tags: [apps]
+      summary: Read-only instance/settings summary (safe metadata only; no secrets)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  git_commit: { type: string }
+                  networking:
+                    type: object
+                    properties:
+                      preview_domain: { type: string }
+                      public_http_port: { type: string }
+                      preview_base: { type: string }
+                      preview_tls: { type: boolean }
+                      preview_entrypoint: { type: string }
+                  auth:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                  runtime:
+                    type: object
+                    properties:
+                      storage_mode: { type: string }
+                      base_image: { type: string }
+                  lifecycle:
+                    type: object
+                    properties:
+                      idle_reap_enabled: { type: boolean }
+                      idle_threshold_seconds: { type: integer }
+                      keepalive_max_seconds: { type: integer }
+                  egress:
+                    type: object
+                    properties:
+                      mode: { type: string }
+                  agents:
+                    type: object
+                    properties:
+                      providers: { type: array, items: { type: string } }
+                  presets:
+                    type: array
+                    items: { $ref: "#/components/schemas/Preset" }
+                  capabilities:
+                    type: object
+                    additionalProperties: { type: boolean }
+
   /v1/presets:
     get:
       tags: [apps]
