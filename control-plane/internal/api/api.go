@@ -17,6 +17,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/egress"
 	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
+	"github.com/sandboxd/control-plane/internal/instancecfg"
 	"github.com/sandboxd/control-plane/internal/loopback"
 	"github.com/sandboxd/control-plane/internal/metrics"
 	"github.com/sandboxd/control-plane/internal/secrets"
@@ -114,6 +115,11 @@ type Server struct {
 	// Phase 8A — static, safe instance metadata for GET /v1/settings.
 	// Populated in main; contains no secrets.
 	Instance InstanceInfo
+
+	// Phase 8B — live, runtime-editable lifecycle tunables (idle/keepalive),
+	// shared with the reaper. nil-safe: PATCH /v1/settings returns 503 when
+	// unset, and the static KeepaliveMax is used as a fallback.
+	Live *instancecfg.Live
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -163,6 +169,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Durable apps above sandboxes (Phase 1).
 	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
+	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
 	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))

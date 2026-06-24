@@ -1,15 +1,28 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, Settings as TSettings } from './api'
 
-// Read-only instance settings/operability view (Phase 8A). Renders the safe
-// metadata from GET /v1/settings — no editing, no secrets.
+// Instance settings/operability view (Phase 8A read-only + 8B editable lifecycle
+// tunables). Only the lifecycle section is editable (and only if the server says
+// so via `editable`); everything else is read-only / env-managed.
 export function Settings({ onError }: { onError: (m: string) => void }) {
   const [s, setS] = useState<TSettings | null>(null)
+  const [idleEnabled, setIdleEnabled] = useState(true)
+  const [idleSec, setIdleSec] = useState(0)
+  const [keepSec, setKeepSec] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const apply = (d: TSettings) => {
+    setS(d)
+    setIdleEnabled(d.lifecycle.idle_reap_enabled)
+    setIdleSec(d.lifecycle.idle_threshold_seconds)
+    setKeepSec(d.lifecycle.keepalive_max_seconds)
+  }
 
   useEffect(() => {
     api
       .getSettings()
-      .then(setS)
+      .then(apply)
       .catch((e) => onError((e as Error).message))
   }, [onError])
 
@@ -24,18 +37,92 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
     )
   }
 
+  const canEdit = (s.editable || []).some((e) => e.startsWith('lifecycle.'))
+
+  const save = async () => {
+    setSaving(true)
+    setSaved(false)
+    try {
+      const updated = await api.patchSettings({
+        lifecycle: {
+          idle_reap_enabled: idleEnabled,
+          idle_threshold_seconds: idleSec,
+          keepalive_max_seconds: keepSec,
+        },
+      })
+      apply(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="stack" data-testid="settings-page">
       <h1>Settings</h1>
-      <p className="muted">Read-only instance overview. Configuration is set via environment / install.</p>
+      <p className="muted">
+        Most settings are read-only (set via environment / install). Only the lifecycle tunables below can be edited.
+      </p>
 
       <Section title="System overview" testid="settings-system">
         <Row k="Version" v={s.version} />
         {s.git_commit && <Row k="Build" v={s.git_commit} />}
         <Row k="Storage mode" v={s.runtime.storage_mode} />
         <Row k="Base image" v={s.runtime.base_image} />
-        <Row k="Idle reaper" v={s.lifecycle.idle_reap_enabled ? `on (${s.lifecycle.idle_threshold_seconds}s)` : 'off'} />
-        <Row k="Keepalive max" v={`${s.lifecycle.keepalive_max_seconds}s`} />
+      </Section>
+
+      <Section title="Lifecycle" testid="settings-lifecycle">
+        {canEdit ? (
+          <>
+            <label className="row" style={{ justifyContent: 'space-between' }}>
+              <span className="muted">Idle reaping</span>
+              <input
+                type="checkbox"
+                data-testid="settings-idle-enabled"
+                checked={idleEnabled}
+                onChange={(e) => setIdleEnabled(e.target.checked)}
+              />
+            </label>
+            <label className="row" style={{ justifyContent: 'space-between' }}>
+              <span className="muted">Idle threshold (seconds)</span>
+              <input
+                className="input"
+                type="number"
+                data-testid="settings-idle-threshold"
+                value={idleSec}
+                onChange={(e) => setIdleSec(Number(e.target.value))}
+              />
+            </label>
+            <label className="row" style={{ justifyContent: 'space-between' }}>
+              <span className="muted">Keepalive max (seconds)</span>
+              <input
+                className="input"
+                type="number"
+                data-testid="settings-keepalive"
+                value={keepSec}
+                onChange={(e) => setKeepSec(Number(e.target.value))}
+              />
+            </label>
+            <div className="row">
+              <button className="btn btn-primary" data-testid="settings-save" disabled={saving} onClick={save}>
+                {saving ? 'Saving…' : 'Save lifecycle settings'}
+              </button>
+              {saved && (
+                <span className="muted" data-testid="settings-saved">
+                  Saved — applied live.
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <Row k="Idle reaping" v={s.lifecycle.idle_reap_enabled ? `on (${s.lifecycle.idle_threshold_seconds}s)` : 'off'} />
+            <Row k="Keepalive max" v={`${s.lifecycle.keepalive_max_seconds}s`} />
+          </>
+        )}
       </Section>
 
       <Section title="Networking / previews" testid="settings-networking">
@@ -75,7 +162,7 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
       <Section title="Security / auth" testid="settings-security">
         <Row k="API auth" v={s.auth.enabled ? 'enabled' : 'disabled'} />
         <p className="muted" data-testid="settings-security-note">
-          This summary never includes tokens or secret values.
+          Auth tokens, the secrets key, and egress are env/file-only and never shown or editable here.
         </p>
       </Section>
 

@@ -73,6 +73,37 @@ paths:
                   capabilities:
                     type: object
                     additionalProperties: { type: boolean }
+                  editable:
+                    type: array
+                    items: { type: string }
+    patch:
+      tags: [apps]
+      summary: Edit the runtime-editable lifecycle tunables only (allowlisted)
+      description: >
+        Accepts ONLY lifecycle tunables. Any other key (auth, egress, networking,
+        secrets, version, …) is rejected with 400. Persisted and hot-applied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lifecycle:
+                  type: object
+                  properties:
+                    idle_reap_enabled: { type: boolean }
+                    idle_threshold_seconds: { type: integer }
+                    keepalive_max_seconds: { type: integer }
+      responses:
+        "200":
+          description: Updated settings (same shape as GET /v1/settings).
+        "400": { $ref: "#/components/responses/Error" }
+        "503":
+          description: Settings are not editable on this instance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /v1/presets:
     get:
