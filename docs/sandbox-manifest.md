@@ -172,7 +172,7 @@ collision). **All five presets boot.**
 | **react-vite** | ✅ pass | ~31s | `GET / → 200` |
 | **nextjs** | ✅ pass | ~30–39s | `GET / → 200`; `_next/static` asset `→ 200`. *Cold boot may be slower*. See Next.js post-task fix below. |
 | **node-express** | ✅ pass | ~30s | `GET /health → 200` |
-| **fastapi** | ✅ pass | ~37s | `GET /health → 200` — runtime **venv + pip install works** on first boot |
+| **fastapi** | ✅ pass | ~15–37s | `GET /health → 200` on **port 3000** (the preview port); runtime venv/pip install works; `--reload` picks up post-task edits |
 | **worker** | ✅ pass | ~28s | preview `none` + worker process running |
 
 Confirmed across all presets:
@@ -295,6 +295,23 @@ default; under userns-remap it would move into a container like the seed.)
 Live-verified: Next.js snapshot → fork → `$HOME` `1000:1000`, preview `/` + assets
 `200`, `node_modules` reinstalled and `~/.cache` writable (no EACCES); FastAPI fork
 boots with venv/pip reinstall + `/health 200`.
+
+#### FastAPI preset — port 3000 + live reload (2026-06-23)
+Two FastAPI bugs fixed:
+- **Port mismatch:** the public preview routes to **3000**, but uvicorn ran on
+  8000 — so the external preview was **502** even though the internal probe said
+  ready. The preset now serves on 3000 (`--port 3000`, `web.port: 3000`).
+- **Stale after task:** uvicorn didn't reload, so an agent-added route 404'd until
+  a manual restart. The command now runs with **`--reload`**, and the template's
+  `requirements.txt` adds **`watchfiles`** so the reloader works. (No
+  `restart_after_task` — reload is reliable; kept for Next.js only.)
+
+`health_path` stays `/health`; build stays skipped.
+
+Live-verified (portless; external check via the container-IP:3000 path Traefik
+uses): create → public `/health 200`; agent adds `/hello` → `/hello 200` with **no
+manual restart**; snapshot → fork → fork public `/health 200` and **`/hello`
+preserved**, venv reinstalled.
 
 #### Known follow-ups (not implemented here)
 - **Per-task `agent.log` empty on timeout** — agent transcript persistence on task

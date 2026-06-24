@@ -82,10 +82,13 @@ build:
 		ID: "fastapi", Label: "Python / FastAPI",
 		Description: "Python REST API with FastAPI + uvicorn. Health at /health.",
 		Template:    "fastapi-standard",
+		// Serve on 3000 (the port the public preview routes to — 8000 would
+		// 502 externally) and run with --reload so edits made by a coding task
+		// are picked up live (watchfiles, from the template's requirements).
 		Manifest: `version: 1
 web:
-  command: "[ -d .venv ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt); .venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000"
-  port: 8000
+  command: "[ -d .venv ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt); .venv/bin/uvicorn main:app --host 0.0.0.0 --port 3000 --reload"
+  port: 3000
   health_path: "/health"
 build:
   command: ""
