@@ -79,6 +79,10 @@ type BuildSpec struct {
 type Worker struct {
 	Name    string `yaml:"name"`
 	Command string `yaml:"command"`
+	// RestartAfterTask restarts this worker after every coding task so it
+	// re-runs its command and picks up code the task changed (a long-running
+	// worker otherwise keeps the old behavior until restart). Default false.
+	RestartAfterTask bool `yaml:"restart_after_task"`
 }
 
 // Defaults preserve the pre-manifest Vite/React behavior. Sourced from the

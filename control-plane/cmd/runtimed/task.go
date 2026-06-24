@@ -258,8 +258,11 @@ func (a *app) runTask(t *task) {
 	// command re-runs (e.g. `rm -rf .next; pnpm dev`), cleaning the artifact.
 	// Done before the health/probe steps so PreviewStatusAfter reflects the
 	// restarted server.
-	if status != runtime.TaskCancelled && a.web != nil && a.webRestart {
-		a.restartWebAndWait(ctx)
+	if status != runtime.TaskCancelled {
+		if a.web != nil && a.web.restartAfterTask {
+			a.restartWebAndWait(ctx)
+		}
+		a.restartWorkersAfterTask()
 	}
 
 	// 5.5 post-task health pipeline (skipped on cancel): remediate
@@ -282,6 +285,19 @@ func (a *app) runTask(t *task) {
 	}
 
 	a.finishTask(t, &res, status, reason, errMsg)
+}
+
+// restartWorkersAfterTask bounces any worker flagged restart_after_task so it
+// re-runs its command and picks up code the task changed (a long-running worker
+// otherwise keeps the old behavior). Workers have no readiness probe, so we
+// just stop() them — the supervisor re-runs the command after its backoff.
+func (a *app) restartWorkersAfterTask() {
+	for _, wp := range a.workers {
+		if wp.restartAfterTask {
+			a.log.Info("restarting worker after task (restart_after_task)", "worker", wp.name)
+			wp.stop()
+		}
+	}
 }
 
 // webRestartReadyTimeout bounds how long restartWebAndWait waits for the

@@ -68,11 +68,14 @@ build:
 		ID: "node-express", Label: "Node / Express API",
 		Description: "Node.js REST API with Express. Health at /health.",
 		Template:    "node-express-standard",
+		// restart_after_task: `node server.js` has no live reload, so the web
+		// process is bounced after each task to pick up route/code changes.
 		Manifest: `version: 1
 web:
   command: "[ -d node_modules ] || pnpm install; node server.js"
   port: 3000
   health_path: "/health"
+  restart_after_task: true
 build:
   command: ""
 `,
@@ -98,15 +101,17 @@ build:
 	"worker": {
 		ID: "worker", Label: "Worker (no public endpoint)",
 		Description: "A background worker process with no web preview.",
-		Template:    "", // no starter files; the agent/user fills in the worker
-		// build.command "" explicitly skips the post-task build check — a
-		// worker has no web build to verify (and no Node project to `pnpm build`).
+		Template:    "worker-standard", // ships an editable worker.sh
+		// build.command "" explicitly skips the post-task build check — a worker
+		// has no web build to verify. restart_after_task bounces the worker after
+		// each task so edits to worker.sh take effect without a manual restart.
 		Manifest: `version: 1
 build:
   command: ""
 workers:
   - name: worker
-    command: "echo 'worker started — edit sandbox.yaml or ask the agent to set the real command'; while true; do sleep 30; done"
+    command: "bash worker.sh"
+    restart_after_task: true
 `,
 		Capabilities: nil,
 	},

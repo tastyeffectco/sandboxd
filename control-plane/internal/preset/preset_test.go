@@ -35,6 +35,44 @@ func TestNextjsPresetNoBuildPoisoning(t *testing.T) {
 	}
 }
 
+// node-express bounces the web process after each task (Node has no live reload).
+func TestNodeExpressRestartsAfterTask(t *testing.T) {
+	p, _ := Get("node-express")
+	if !strings.Contains(p.Manifest, "restart_after_task: true") {
+		t.Errorf("node-express web should set restart_after_task: true:\n%s", p.Manifest)
+	}
+}
+
+// worker preset ships an editable worker.sh and restarts the worker after each
+// task so code edits take effect without a manual restart.
+func TestWorkerPresetRestartsAfterTask(t *testing.T) {
+	p, _ := Get("worker")
+	if p.Template != "worker-standard" {
+		t.Errorf("worker preset should use the worker-standard template, got %q", p.Template)
+	}
+	if !strings.Contains(p.Manifest, "bash worker.sh") {
+		t.Error("worker preset should run an editable script (bash worker.sh)")
+	}
+	if !strings.Contains(p.Manifest, "restart_after_task: true") {
+		t.Error("worker preset should set restart_after_task: true on the worker")
+	}
+}
+
+// Reload-by-restart is opt-in: React/Vite and FastAPI must NOT restart after a
+// task (Vite + uvicorn --reload handle live reload), and Next.js keeps its
+// restart behavior unchanged.
+func TestRestartAfterTaskScoping(t *testing.T) {
+	for _, id := range []string{"react-vite", "fastapi"} {
+		p, _ := Get(id)
+		if strings.Contains(p.Manifest, "restart_after_task") {
+			t.Errorf("%s must not use restart_after_task (has live reload):\n%s", id, p.Manifest)
+		}
+	}
+	if nx, _ := Get("nextjs"); !strings.Contains(nx.Manifest, "restart_after_task: true") {
+		t.Error("nextjs should still set restart_after_task: true (unchanged)")
+	}
+}
+
 // FastAPI preset serves on 3000 (the preview port) with --reload, keeps
 // /health, and never falls back to a Node build.
 func TestFastapiPreset(t *testing.T) {

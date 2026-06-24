@@ -34,7 +34,6 @@ type app struct {
 	previewPort   int        // web process's HTTP port
 	webHealthPath string     // path probed for web readiness
 	defaultWeb    bool       // web is the built-in default => run the Vite asset deep-probe
-	webRestart    bool       // restart the web process after every task (manifest web.restart_after_task)
 	build         *BuildSpec // post-task build check (from manifest)
 	appDir        string
 	runtimeDir    string
@@ -122,14 +121,15 @@ func main() {
 	}
 	if m.Web != nil {
 		a.web = newProcess("web", "web", appDir, m.Web.Command, filepath.Join(runtimeDir, "web.log"), log)
+		a.web.restartAfterTask = m.Web.RestartAfterTask
 		a.previewPort = m.Web.Port
 		a.webHealthPath = m.Web.HealthPath
 		a.defaultWeb = m.isDefaultWeb(manifestDefaults)
-		a.webRestart = m.Web.RestartAfterTask
 	}
 	for _, w := range m.Workers {
-		a.workers = append(a.workers,
-			newProcess(w.Name, "worker", appDir, w.Command, filepath.Join(runtimeDir, w.Name+".log"), log))
+		wp := newProcess(w.Name, "worker", appDir, w.Command, filepath.Join(runtimeDir, w.Name+".log"), log)
+		wp.restartAfterTask = w.RestartAfterTask
+		a.workers = append(a.workers, wp)
 	}
 
 	// Finalize any task interrupted by a previous stop/crash before

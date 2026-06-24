@@ -33,6 +33,8 @@ type process struct {
 	logPath string
 	log     *slog.Logger
 
+	restartAfterTask bool // bounce this process after each task (manifest restart_after_task)
+
 	mu       sync.Mutex
 	proc     *os.Process
 	running  bool
