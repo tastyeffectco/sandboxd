@@ -121,8 +121,22 @@ export function AppDetail({
           </button>
         )}
         {sb && (
-          <button className="btn btn-ghost" disabled={busy} data-testid="delete-sandbox" onClick={() => act(() => api.deleteSandbox(sb.id))}>
-            Delete sandbox
+          <button
+            className="btn btn-ghost"
+            disabled={busy}
+            data-testid="delete-sandbox"
+            onClick={() => {
+              if (
+                !window.confirm(
+                  'Delete this sandbox AND its workspace?\n\nThis permanently removes the workspace — your code, installed dependencies, and generated files. Snapshot first if you want to keep it. Continue?',
+                )
+              ) {
+                return
+              }
+              act(() => api.deleteSandbox(sb.id))
+            }}
+          >
+            Delete sandbox and workspace
           </button>
         )}
       </div>
