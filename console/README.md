@@ -35,6 +35,19 @@ pnpm build
 pnpm test:e2e       # Playwright — needs the stack up (see above)
 ```
 
+## App detail screen
+
+Per app: live **Preview / endpoint** (worker-only apps show endpoint `none`,
+which is valid), agent **task** submit + streamed logs, **start/stop**,
+**Config & Secrets** (sensitive values are write-only — set once, never shown),
+**Snapshots** (capture, plus confirm-gated restore/fork), an **Activity**
+timeline (durable app events, newest-first), and a **Processes** panel
+(name/kind/running/pid/restarts with per-process recent logs).
+
+New App offers a **runtime preset** picker (React/Vite, Next.js, Node/Express,
+FastAPI, Worker), data-driven from `GET /v1/presets`; the chosen preset is stored
+on the app and applied to its sandbox.
+
 ## Scope (MVP)
 
 Single-user, auth-off, public previews. Multi-user auth, private-preview
