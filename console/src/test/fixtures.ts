@@ -35,6 +35,14 @@ export const workerSandboxFixture: Sandbox = {
   processes: [{ name: 'worker', kind: 'worker', running: true, pid: 50, restarts: 0 }],
 }
 
+// Unhealthy sandbox: stopped, preview down, web process NOT running (and churning
+// on restarts). The UI must not present this as healthy/running.
+export const unhealthySandboxFixture: Sandbox = {
+  id: '01SBBADAAAAAAAAAAAAAAAAAAA', status: 'stopped',
+  preview: { url: '', status: 'down' },
+  processes: [{ name: 'web', kind: 'web', running: false, pid: 0, restarts: 3 }],
+}
+
 export const eventsFixture: AppEvent[] = [
   { id: 'ev1', type: 'app.created', severity: 'info', message: 'App created: My App', created_at: '2026-06-23T00:00:00Z' },
 ]

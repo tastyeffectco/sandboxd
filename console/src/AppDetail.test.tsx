@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AppDetail } from './AppDetail'
-import { installFetch, appDetailRoutes, webSandboxFixture, workerSandboxFixture } from './test/fixtures'
+import { installFetch, appDetailRoutes, webSandboxFixture, workerSandboxFixture, unhealthySandboxFixture } from './test/fixtures'
 
 const noop = () => {}
 
@@ -27,12 +27,28 @@ describe('app detail — web app', () => {
     expect(screen.getByText('debug')).toBeTruthy()        // non-sensitive value shown
   })
 
-  it('shows a Delete sandbox control (wording surfaced for review)', async () => {
+  it('delete control says it removes the workspace (v1 DELETE purges)', async () => {
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
     const del = await screen.findByTestId('delete-sandbox')
-    // NOTE: v1 DELETE purges the workspace; the button currently reads
-    // "Delete sandbox" and does not say "purge" — see known limitations.
-    expect(del.textContent).toMatch(/delete/i)
+    // v1 DELETE purges the workspace, so the wording must say so — not just "Delete sandbox".
+    expect(del.textContent).toMatch(/delete sandbox and workspace/i)
+  })
+})
+
+describe('app detail — unhealthy sandbox', () => {
+  beforeEach(() => installFetch(appDetailRoutes(unhealthySandboxFixture)))
+
+  it('does not present a stopped/unhealthy sandbox as running', async () => {
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('processes-list')
+    // no live preview iframe for a non-serving sandbox
+    expect(screen.queryByTestId('preview')).toBeNull()
+    expect(screen.getByTestId('preview-empty')).toBeTruthy()
+    expect(screen.getByText(/Sandbox not running/i)).toBeTruthy()
+    // the web process is shown stopped, never running
+    const row = screen.getByTestId('process-web')
+    expect(row.textContent).toMatch(/stopped/i)
+    expect(row.textContent).not.toMatch(/\brunning\b/i)
   })
 })
 

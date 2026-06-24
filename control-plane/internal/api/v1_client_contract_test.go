@@ -55,13 +55,23 @@ func TestV1PresetsResponseShape(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &d); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
-	if len(d.Presets) != 5 {
-		t.Fatalf("want 5 presets, got %d", len(d.Presets))
-	}
+	// Assert the REQUIRED preset ids exist with the fields the picker renders —
+	// not an exact count, so adding a preset later doesn't break this test.
+	byID := map[string]map[string]any{}
 	for _, p := range d.Presets {
+		if id, ok := p["id"].(string); ok {
+			byID[id] = p
+		}
+	}
+	for _, id := range []string{"react-vite", "nextjs", "node-express", "fastapi", "worker"} {
+		p, ok := byID[id]
+		if !ok {
+			t.Errorf("required preset %q missing", id)
+			continue
+		}
 		for _, k := range []string{"id", "label", "description"} {
-			if _, ok := p[k]; !ok {
-				t.Errorf("preset %v missing %q", p["id"], k)
+			if v, ok := p[k].(string); !ok || v == "" {
+				t.Errorf("preset %q missing/empty %q", id, k)
 			}
 		}
 	}
