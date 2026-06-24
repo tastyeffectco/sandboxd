@@ -3,7 +3,7 @@
 // (control-plane/internal/api/v1_client_contract_test.go and friends). If a
 // server shape changes, update these to match (and the Go test should fail first).
 import { vi } from 'vitest'
-import type { App, Preset, Sandbox, AppEvent, ConfigItem } from '../api'
+import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings } from '../api'
 
 export const presetsFixture: Preset[] = [
   { id: 'react-vite', label: 'React / Vite', description: 'React + Vite SPA', template: 'react-standard', capabilities: ['node', 'pnpm'] },
@@ -53,6 +53,26 @@ export const configFixture: ConfigItem[] = [
   { key: 'API_KEY', sensitive: true, value_set: true, access_policy: 'agent_access', created_at: '2026-06-23T00:00:00Z', updated_at: '2026-06-23T00:00:00Z' },
   { key: 'LOG_LEVEL', sensitive: false, value_set: true, value: 'debug', access_policy: 'runtime_access', created_at: '2026-06-23T00:00:00Z', updated_at: '2026-06-23T00:00:00Z' },
 ]
+
+// Instance settings summary — safe metadata only (mirrors GET /v1/settings).
+export const settingsFixture: Settings = {
+  version: 'v0.4.0',
+  git_commit: 'abc1234',
+  networking: {
+    preview_domain: 'localhost',
+    public_http_port: '18080',
+    preview_base: 'http://*.preview.localhost:18080',
+    preview_tls: false,
+    preview_entrypoint: 'web',
+  },
+  auth: { enabled: false },
+  runtime: { storage_mode: 'directory', base_image: 'sandboxd-base:1.0.0' },
+  lifecycle: { idle_reap_enabled: true, idle_threshold_seconds: 2100, keepalive_max_seconds: 86400 },
+  egress: { mode: 'disabled' },
+  agents: { providers: ['opencode'] },
+  presets: presetsFixture,
+  capabilities: { snapshots: true, config_secrets: true, templates: false, forward_auth: true },
+}
 
 // --- fetch mock ------------------------------------------------------
 

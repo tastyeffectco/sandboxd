@@ -21,6 +21,27 @@ export interface Preset {
   capabilities?: string[]
 }
 
+// Read-only instance/settings summary (GET /v1/settings). Safe metadata only —
+// the server never includes secrets/tokens/keys here.
+export interface Settings {
+  version: string
+  git_commit?: string
+  networking: {
+    preview_domain: string
+    public_http_port?: string
+    preview_base: string
+    preview_tls: boolean
+    preview_entrypoint?: string
+  }
+  auth: { enabled: boolean }
+  runtime: { storage_mode: string; base_image: string }
+  lifecycle: { idle_reap_enabled: boolean; idle_threshold_seconds: number; keepalive_max_seconds: number }
+  egress: { mode: string }
+  agents: { providers: string[] }
+  presets: Preset[]
+  capabilities: Record<string, boolean>
+}
+
 export interface Preview {
   url: string
   status: string
@@ -112,6 +133,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 export const api = {
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
+  getSettings: () => req<Settings>('GET', '/v1/settings'),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
