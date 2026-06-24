@@ -35,6 +35,36 @@ func TestNextjsPresetNoBuildPoisoning(t *testing.T) {
 	}
 }
 
+// FastAPI preset serves on 3000 (the preview port) with --reload, keeps
+// /health, and never falls back to a Node build.
+func TestFastapiPreset(t *testing.T) {
+	p, ok := Get("fastapi")
+	if !ok {
+		t.Fatal("fastapi preset missing")
+	}
+	if !strings.Contains(p.Manifest, "port: 3000") {
+		t.Errorf("fastapi web.port should be 3000:\n%s", p.Manifest)
+	}
+	if !strings.Contains(p.Manifest, "--port 3000") {
+		t.Error("uvicorn should bind --port 3000 (public preview routes to 3000)")
+	}
+	if !strings.Contains(p.Manifest, "--reload") {
+		t.Error("uvicorn should run with --reload so post-task edits are picked up")
+	}
+	if !strings.Contains(p.Manifest, `health_path: "/health"`) {
+		t.Error("fastapi health_path should be /health")
+	}
+	if strings.Contains(p.Manifest, "pnpm build") {
+		t.Error("fastapi must not fall back to pnpm build")
+	}
+	if !strings.Contains(p.Manifest, "build:\n  command: \"\"") {
+		t.Error("fastapi build should be explicitly skipped")
+	}
+	if strings.Contains(p.Manifest, "port: 8000") || strings.Contains(p.Manifest, "--port 8000") {
+		t.Error("fastapi must not reference the old 8000 port")
+	}
+}
+
 // The Next.js template ships a .gitignore so node_modules/.next don't become
 // checkpoint noise (the workspace git repo relies on the committed .gitignore).
 func TestNextjsTemplateHasGitignore(t *testing.T) {
