@@ -38,6 +38,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/egress"
 	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
+	"github.com/sandboxd/control-plane/internal/instancecfg"
 	"github.com/sandboxd/control-plane/internal/logging"
 	"github.com/sandboxd/control-plane/internal/loopback"
 	"github.com/sandboxd/control-plane/internal/metrics"
@@ -280,6 +281,23 @@ func main() {
 	wakeGrace := durationFromEnvSec("SANDBOXD_WAKE_GRACE_SECONDS", defaultWakeGraceSec)
 	keepaliveMax := durationFromEnvSec("SANDBOXD_KEEPALIVE_MAX_SECONDS", defaultKeepaliveMaxSec)
 
+	// Phase 8B — live, runtime-editable lifecycle tunables. Start from env
+	// defaults, then overlay any persisted edits (PATCH /v1/settings) so they
+	// survive restart. The reaper + keepalive path read this live.
+	live := instancecfg.New(instancecfg.Snapshot{
+		IdleEnabled:          idleInterval > 0,
+		IdleThresholdSeconds: int(idleThreshold.Seconds()),
+		KeepaliveMaxSeconds:  int(keepaliveMax.Seconds()),
+	})
+	if persisted, perr := st.GetInstanceSettings(ctx); perr == nil {
+		live.Set(instancecfg.Snapshot{
+			IdleEnabled:          persisted.IdleReapEnabled,
+			IdleThresholdSeconds: persisted.IdleThresholdSeconds,
+			KeepaliveMaxSeconds:  persisted.KeepaliveMaxSeconds,
+		})
+		log.Info("instance settings: loaded persisted lifecycle tunables")
+	}
+
 	inflight := activity.NewInflightExec()
 	refused := &atomic.Bool{}
 
@@ -377,6 +395,7 @@ func main() {
 			IdleReapEnabled:      idleInterval > 0,
 			IdleThresholdSeconds: int(idleThreshold.Seconds()),
 		},
+		Live: live,
 	}
 
 	// Finalize any coding task left `running` by a previous sandboxd
@@ -432,6 +451,9 @@ func main() {
 		Inflight: inflight,
 		Egress:   egressMgr,
 		Log:      log.With("component", "idle-reaper"),
+		// Phase 8B — hot-read the runtime-editable threshold + enable toggle.
+		ThresholdFn: live.IdleThreshold,
+		EnabledFn:   live.IdleEnabled,
 	}
 	go func() {
 		if err := idle.Run(gctx); err != nil {

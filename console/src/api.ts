@@ -40,6 +40,15 @@ export interface Settings {
   agents: { providers: string[] }
   presets: Preset[]
   capabilities: Record<string, boolean>
+  editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
+}
+
+export interface SettingsPatch {
+  lifecycle?: {
+    idle_reap_enabled?: boolean
+    idle_threshold_seconds?: number
+    keepalive_max_seconds?: number
+  }
 }
 
 export interface Preview {
@@ -134,6 +143,7 @@ export const api = {
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
   getSettings: () => req<Settings>('GET', '/v1/settings'),
+  patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),

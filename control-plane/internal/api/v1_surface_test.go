@@ -12,6 +12,7 @@ import (
 // deleted together. This test pins the surface so a removal fails loudly.
 var requiredPublicSurface = []string{
 	"GET /v1/settings",
+	"PATCH /v1/settings",
 	"GET /v1/presets",
 	"GET /v1/apps",
 	"POST /v1/apps",

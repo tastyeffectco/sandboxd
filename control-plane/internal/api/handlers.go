@@ -892,7 +892,7 @@ func (s *Server) handleKeepalive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	max := s.KeepaliveMax
+	max := s.keepaliveMax() // Phase 8B — live, runtime-editable
 	if max <= 0 {
 		max = 24 * time.Hour
 	}

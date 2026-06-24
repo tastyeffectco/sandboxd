@@ -72,6 +72,7 @@ export const settingsFixture: Settings = {
   agents: { providers: ['opencode'] },
   presets: presetsFixture,
   capabilities: { snapshots: true, config_secrets: true, templates: false, forward_auth: true },
+  editable: ['lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds'],
 }
 
 // --- fetch mock ------------------------------------------------------
