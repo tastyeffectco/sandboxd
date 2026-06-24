@@ -275,3 +275,17 @@ func TestManifestWebRestartAfterTask(t *testing.T) {
 		t.Error("restart_after_task should default to false when absent")
 	}
 }
+
+// worker.restart_after_task parses; default (absent) is false.
+func TestManifestWorkerRestartAfterTask(t *testing.T) {
+	dir := writeManifest(t, "version: 1\nworkers:\n  - name: w\n    command: \"bash worker.sh\"\n    restart_after_task: true\n")
+	m, err := LoadManifest(dir, testDefaults)
+	if err != nil || len(m.Workers) != 1 || !m.Workers[0].RestartAfterTask {
+		t.Errorf("worker restart_after_task should be true: %+v (err %v)", m.Workers, err)
+	}
+	dir = writeManifest(t, "version: 1\nworkers:\n  - name: w\n    command: x\n")
+	m, _ = LoadManifest(dir, testDefaults)
+	if m.Workers[0].RestartAfterTask {
+		t.Error("worker restart_after_task should default to false when absent")
+	}
+}

@@ -97,17 +97,27 @@ but the **coding agent itself** can run `next build` (or any production build)
 during a task. That writes production `.next/` while `next dev` is live and
 poisons it — `_next/static/chunks/*` start returning 404/500.
 
-`web.restart_after_task: true` makes runtimed **restart the web process after
-every task** (success or failure; skipped on cancel). The web command re-runs, so
-a start-time clean step takes effect — for Next.js the command is
-`… rm -rf .next; pnpm dev …`, so the restart wipes any agent-written production
-build and brings dev back up clean. runtimed waits (up to 90s) for the restarted
-server to serve a 200 before reporting the task's final preview/health, so
-`preview_status_after` reflects the healed server. Each restart increments the
-process's `restarts` count in `GET /status`.
+`restart_after_task: true` makes runtimed **restart that process after every
+task** (success or failure; skipped on cancel) so it re-runs its command and
+picks up whatever the agent changed. It is a per-process flag on **`web`** and on
+each **worker**:
+- **web** — runtimed waits (up to 90s) for the restarted server to serve a 200 on
+  the health path before reporting the task's final preview/health, so
+  `preview_status_after` reflects the restarted server.
+- **worker** — no readiness probe, so the worker is simply bounced; the supervisor
+  re-runs its command (re-reading any edited script).
 
-The **Next.js preset sets this to true**; most stacks (Vite, Express, FastAPI)
-don't need it and leave it `false` (a restart is just wasted time for them).
+Each restart increments the process's `restarts` count in `GET /status`.
+
+It is **opt-in**, used only where the runtime has no live reload of its own:
+
+| Preset | Reload mechanism |
+|---|---|
+| React/Vite | Vite HMR (no restart) |
+| FastAPI | `uvicorn --reload` (no restart) |
+| Next.js | `web.restart_after_task: true` (also heals agent `next build` poison) |
+| Node/Express | `web.restart_after_task: true` (`node server.js` has no reload) |
+| Worker | worker `restart_after_task: true` (re-runs the editable `worker.sh`) |
 
 ## Process model
 runtimed supervises each declared process — one web process (optional) plus any
@@ -313,9 +323,32 @@ uses): create → public `/health 200`; agent adds `/hello` → `/hello 200` wit
 manual restart**; snapshot → fork → fork public `/health 200` and **`/hello`
 preserved**, venv reinstalled.
 
-#### Known follow-ups (not implemented here)
+#### node-express + worker reload via restart_after_task (2026-06-23)
+Closed the last two preset reload gaps (neither has a live reloader):
+- **node-express** now sets `web.restart_after_task: true` — `node server.js` is
+  bounced after each task so route/code changes go live.
+- **worker** now ships an **editable `worker.sh`** (template `worker-standard`,
+  command `bash worker.sh`) and sets the worker's `restart_after_task: true`. The
+  restart mechanism was extended from web to **worker processes** (a per-process
+  flag; workers are bounced without a readiness wait). Not a generic policy
+  framework — just the per-process flag.
+
+Live-verified (portless): node-express agent adds `/ping` → `pong` 200 after the
+task, no manual restart (web `restarts: 1`); worker `worker.sh` output changed →
+`worker.log` shows the new line after the task, no manual restart (worker
+`restarts: 1`). React/Vite, FastAPI, Next.js behavior unchanged.
+
+#### Known follow-ups (documented, not implemented)
 - **Per-task `agent.log` empty on timeout** — agent transcript persistence on task
   timeout needs investigation.
+- **DELETE semantics differ** — v1 `DELETE /v1/sandboxes/{id}` purges the
+  workspace, while the legacy internal `DELETE /sandbox/{id}` stops and keeps it.
+  Reconcile/clarify (an intentional purge vs stop distinction, but undocumented).
+- **`keepalive_until` missing from v1 GET** — the internal row exposes it but
+  `GET /v1/sandboxes/{id}` does not surface it.
+- **Warming interstitial returns 200** — the wake/warming interstitial responds
+  `200`; it should likely be a non-200 (e.g. 503 + Retry-After) so callers don't
+  treat "still warming" as "ready".
 
 ## Security
 The manifest is **declarative config for processes that already run inside the
