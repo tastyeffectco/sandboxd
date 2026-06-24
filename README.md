@@ -231,6 +231,28 @@ The console never touches the database or workspaces — it's a pure `/v1` clien
 (contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
 [`console/README.md`](console/README.md).
 
+## Runtime presets & `sandbox.yaml`
+
+Create a working app of a common type in one step. `GET /v1/presets` lists the
+built-in presets and you pass `runtime_preset` when creating an app/sandbox (the
+console has a New-App picker):
+
+| Preset | Serves | Post-task reload |
+|---|---|---|
+| `react-vite` | Vite SPA on :3000 | Vite HMR |
+| `nextjs` | Next.js on :3000 | restart (also heals an agent `next build`) |
+| `node-express` | Express API on :3000 (`/health`) | restart |
+| `fastapi` | FastAPI on :3000 (`/health`) | `uvicorn --reload` |
+| `worker` | no public endpoint | restart (editable `worker.sh`) |
+
+A preset seeds starter files and writes a **`sandbox.yaml`** describing how the
+app runs — its `web` process (command/port/health_path), background `workers`, a
+post-task `build` check, and `restart_after_task`. Advanced users edit
+`sandbox.yaml` directly; it lives in the workspace so snapshots preserve it.
+Process status is on `GET /v1/sandboxes/{id}` (`processes[]`) and per-process
+logs at `GET /v1/sandboxes/{id}/processes/{name}/logs`. Full schema:
+[`docs/sandbox-manifest.md`](docs/sandbox-manifest.md).
+
 ## API
 
 Base URL = `http://127.0.0.1:9090` (set by `SANDBOXD_API_BIND`). Auth is **off
@@ -341,6 +363,17 @@ Plain version:
 (2) **turn on API auth** and lock down the host, and (3) **plan for more than one
 machine**. Everything else above is a config change, not a rewrite. Start lean,
 revisit these as you grow — and PRs are very welcome ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
+
+### Known limitations (v0.4.0)
+
+Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md):
+
+- `DELETE /v1/sandboxes/{id}` **purges** the workspace, while the legacy internal
+  `DELETE /sandbox/{id}` **stops and keeps** it.
+- `keepalive_until` is honored but not surfaced in `GET /v1/sandboxes/{id}`.
+- The wake/warming interstitial returns HTTP `200` (callers can't distinguish
+  "warming" from "ready" by status code alone).
+- Per-task `agent.log` can be empty on task timeout (transcript persistence WIP).
 
 ## License
 

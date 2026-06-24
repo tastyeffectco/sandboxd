@@ -5,6 +5,68 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.0 (integration: `release/v0.4-apps-console`)
+
+One release-candidate integration of all accepted v0.3 + v0.4 work. Linearly
+stacked on `console` → `feat/v0.4-snapshots-observability` → `feat/runtime-manifest`.
+`main` stays at 0.2.0 until this is cut.
+
+### Added
+- **Snapshots, fork & restore.** Public `POST/GET/DELETE /v1/snapshots`,
+  app-scoped history `GET /v1/apps/{id}/snapshots`, `POST /v1/apps/{id}/restore`,
+  and `POST /v1/apps/{id}/fork` (with `source_app_id`). Restore replaces the
+  app's current sandbox; fork clones into a new app. Console gets a Snapshots
+  panel with confirm-gated restore/fork.
+- **Snapshot ignore-list.** Snapshot capture excludes generated/dependency dirs
+  (`node_modules`, `.next`, `out`, `.venv`, `__pycache__`, `.cache`) so snapshots
+  and forks stay small and free of stale build output (symlink-safe copy).
+- **Observability / activity timeline.** Durable `app_events` (centralized
+  recorder, monotonic ULIDs) surfaced at `GET /v1/apps/{id}/events` and rendered
+  as a newest-first Activity timeline in the console.
+- **Runtime manifest (`sandbox.yaml`).** A generalized in-sandbox process model
+  (one optional `web` process + N `workers`) supervised by runtimed, with a
+  post-task build check. No manifest = the existing default Vite app.
+- **Process API + logs.** `GET /v1/sandboxes/{id}` now includes `processes[]`
+  (name/kind/running/pid/restarts); `GET /v1/sandboxes/{id}/processes/{name}/logs`
+  tails a process's log (read-only, name-validated, tail-only). Console shows a
+  Processes panel and per-process logs; the preview pane reads "Preview /
+  endpoint" and worker-only apps show preview status `none` (valid, not an error).
+- **Runtime presets.** `GET /v1/presets` and `runtime_preset` on
+  `POST /v1/apps`, `POST /v1/apps/{id}/sandbox`, `POST /v1/sandboxes`. Five
+  accepted presets, each booting and reloading after agent tasks:
+  **react-vite** (Vite HMR), **nextjs** (`restart_after_task`, heals an agent
+  `next build`), **node-express** (`restart_after_task`), **fastapi**
+  (port 3000 + `uvicorn --reload`), **worker** (no preview; editable `worker.sh`
+  + `restart_after_task`). A New-App preset picker in the console.
+- **Honest build/health semantics.** Task results expose `build_status`
+  (`passed`/`failed`/`skipped`), `preview_ok` (omitted for worker-only), and
+  `app_healthy`; `build_ok` stays for back-compat (true only when `passed`).
+- **`web.restart_after_task` / worker `restart_after_task`.** Per-process
+  reload-by-restart for runtimes without live reload.
+- **Shared-host installer & preview port.** `scripts/dev/install-v04-ubuntu.sh`
+  with shared-host mode (loopback API, configurable `HTTP_PORT`), and preview
+  URLs that include the public port when `HTTP_PORT` ≠ 80.
+- **Docs.** `docs/sandbox-manifest.md`, OpenAPI updates (`/v1/presets`,
+  process logs, `runtime_preset`, `processes`, task health fields).
+
+### Fixed
+- **Explicit `build.command: ""` now skips the build check** (was overwritten by
+  the default `pnpm build`), so presets can disable build checks.
+- **Next.js post-task `.next` poisoning** — the agent's `next build` no longer
+  leaves `next dev` serving 404/500 on `_next/static` (build skipped + `rm -rf
+  .next` on start + `restart_after_task`).
+- **Fork/restore ownership** — restored/forked workspaces are normalized to the
+  sandbox user (uid 1000); apps no longer hit EACCES on `~/.cache`, deps, venv.
+
+### Known limitations (non-blocking; see `docs/sandbox-manifest.md`)
+- `DELETE /v1/sandboxes/{id}` **purges** the workspace while the legacy internal
+  `DELETE /sandbox/{id}` **stops and keeps** it — same verb, different data outcome.
+- `keepalive_until` is set/honored but not surfaced in `GET /v1/sandboxes/{id}`.
+- The wake/warming interstitial returns HTTP `200` (a status-only health check
+  can't tell "warming" from "ready").
+- Per-task `agent.log` transcript can be empty on task timeout — persistence
+  needs investigation.
+
 ## [Unreleased] — v0.3.0 (integration: `console`)
 
 Backend and console landing together as one incremental release. Tracked on
