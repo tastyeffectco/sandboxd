@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/activity"
+	"github.com/sandboxd/control-plane/internal/agentauth"
 	"github.com/sandboxd/control-plane/internal/api"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
@@ -356,9 +357,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Phase 10B A0 — host-side agent auth store (read-only here). Best-effort
+	// root creation; never fatal.
+	agentAuth := agentauth.NewStore(dataDir)
+	if err := agentAuth.EnsureRoot(); err != nil {
+		log.Warn("agent-auth: could not create store root", "err", err.Error())
+	}
+
 	server := &api.Server{
 		Store:               st,
 		Secrets:             secretsCipher,
+		AgentAuth:           agentAuth,
 		Docker:              dockerClient,
 		Loopback:            loopMgr,
 		Log:                 log.With("component", "api"),

@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api, Settings as TSettings } from './api'
+import { api, Settings as TSettings, Agent } from './api'
 
 // Instance settings/operability view (Phase 8A read-only + 8B editable lifecycle
 // tunables). Only the lifecycle section is editable (and only if the server says
 // so via `editable`); everything else is read-only / env-managed.
 export function Settings({ onError }: { onError: (m: string) => void }) {
   const [s, setS] = useState<TSettings | null>(null)
+  const [agents, setAgents] = useState<Agent[]>([])
   const [idleEnabled, setIdleEnabled] = useState(true)
   const [idleSec, setIdleSec] = useState(0)
   const [keepSec, setKeepSec] = useState(0)
@@ -23,6 +24,10 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
     api
       .getSettings()
       .then(apply)
+      .catch((e) => onError((e as Error).message))
+    api
+      .getAgents()
+      .then(setAgents)
       .catch((e) => onError((e as Error).message))
   }, [onError])
 
@@ -155,8 +160,36 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
         </table>
       </Section>
 
-      <Section title="Agents" testid="settings-agents">
-        <Row k="Providers" v={s.agents.providers.join(', ') || 'none'} />
+      <Section title="AI Agents" testid="settings-agents">
+        <table className="config-table" data-testid="settings-agents-list">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Installed</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agents.map((a) => (
+              <tr key={a.id} data-testid={`agent-${a.id}`}>
+                <td>{a.label}</td>
+                <td className="muted">
+                  {a.installed_state === 'installed'
+                    ? 'yes'
+                    : a.installed_state === 'not_installed'
+                      ? 'not installed'
+                      : 'unknown'}
+                </td>
+                <td>
+                  <span className={`badge ${a.status === 'connected' ? 'running' : 'stopped'}`}>
+                    {a.status === 'connected' ? 'connected' : 'needs login'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted">Read-only. Connecting agents (login) comes in a later release.</p>
       </Section>
 
       <Section title="Security / auth" testid="settings-security">

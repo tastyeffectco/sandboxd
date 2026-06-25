@@ -3,7 +3,14 @@
 // (control-plane/internal/api/v1_client_contract_test.go and friends). If a
 // server shape changes, update these to match (and the Go test should fail first).
 import { vi } from 'vitest'
-import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings } from '../api'
+import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings, Agent } from '../api'
+
+// Read-only AI Agents status (mirrors GET /v1/agents). No tokens.
+export const agentsFixture: Agent[] = [
+  { id: 'opencode', label: 'OpenCode', installed_state: 'installed', status: 'connected' },
+  { id: 'claude-code', label: 'Claude Code', installed_state: 'installed', status: 'needs_login' },
+  { id: 'codex', label: 'Codex', installed_state: 'not_installed', status: 'needs_login' },
+]
 
 export const presetsFixture: Preset[] = [
   { id: 'react-vite', label: 'React / Vite', description: 'React + Vite SPA', template: 'react-standard', capabilities: ['node', 'pnpm'] },

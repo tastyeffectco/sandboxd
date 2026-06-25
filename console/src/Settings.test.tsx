@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Settings } from './Settings'
-import { installFetch, settingsFixture } from './test/fixtures'
+import { installFetch, settingsFixture, agentsFixture } from './test/fixtures'
 
 const noop = () => {}
 
 describe('console — Settings page', () => {
   beforeEach(() => {
     installFetch((m, p) => {
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined
     })
@@ -29,7 +30,7 @@ describe('console — Settings page', () => {
     // safe values surfaced (unique strings)
     expect(screen.getByText('v0.4.0')).toBeTruthy()
     expect(screen.getByText('http://*.preview.localhost:18080')).toBeTruthy()
-    expect(screen.getByText('opencode')).toBeTruthy()
+    expect(screen.getByTestId('settings-agents-list')).toBeTruthy() // AI Agents from /v1/agents
     expect(screen.getByTestId('settings-presets')).toBeTruthy()
     // egress mode rendered as a mode word
     expect(screen.getByTestId('settings-egress').textContent).toMatch(/disabled/i)
@@ -48,6 +49,22 @@ describe('console — Settings page', () => {
     expect(page.querySelector('input[type="password"]')).toBeNull()
   })
 
+  it('AI Agents section is read-only status (installed/connected), no Connect, no token', async () => {
+    render(<Settings onError={noop} />)
+    expect(await screen.findByTestId('settings-agents-list')).toBeTruthy()
+    // all three providers shown
+    for (const a of agentsFixture) expect(screen.getByTestId(`agent-${a.id}`)).toBeTruthy()
+    // codex shown as not installed
+    expect(screen.getByTestId('agent-codex').textContent).toMatch(/not installed/i)
+    // claude-code needs login; opencode connected
+    expect(screen.getByTestId('agent-claude-code').textContent).toMatch(/needs login/i)
+    expect(screen.getByTestId('agent-opencode').textContent).toMatch(/connected/i)
+    // read-only: no buttons / inputs in the agents section
+    const sec = screen.getByTestId('settings-agents')
+    expect(sec.querySelector('button')).toBeNull()
+    expect(sec.querySelector('input')).toBeNull()
+  })
+
   it('lifecycle is editable; protected sections have no inputs', async () => {
     render(<Settings onError={noop} />)
     // lifecycle section exposes editable inputs (server marked them editable)
@@ -63,6 +80,7 @@ describe('console — Settings page', () => {
   it('Save sends a PATCH with only the lifecycle fields', async () => {
     let patched: { method: string; body: unknown } | null = null
     installFetch((m, p) => {
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       if (m === 'PATCH' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined
