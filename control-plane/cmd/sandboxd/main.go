@@ -363,11 +363,15 @@ func main() {
 	if err := agentAuth.EnsureRoot(); err != nil {
 		log.Warn("agent-auth: could not create store root", "err", err.Error())
 	}
+	// A1 — which provider's auth dir gets mounted into new sandboxes (as the
+	// agent's HOME). Must match the agent runtimed runs; "opencode" today.
+	defaultAgent := envDefault("SANDBOXD_DEFAULT_AGENT", "opencode")
 
 	server := &api.Server{
 		Store:               st,
 		Secrets:             secretsCipher,
 		AgentAuth:           agentAuth,
+		DefaultAgent:        defaultAgent,
 		Docker:              dockerClient,
 		Loopback:            loopMgr,
 		Log:                 log.With("component", "api"),
