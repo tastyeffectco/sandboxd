@@ -49,20 +49,43 @@ describe('console — Settings page', () => {
     expect(page.querySelector('input[type="password"]')).toBeNull()
   })
 
-  it('AI Agents section is read-only status (installed/connected), no Connect, no token', async () => {
+  it('AI Agents: only Claude Code is connectable; no token rendered', async () => {
     render(<Settings onError={noop} />)
     expect(await screen.findByTestId('settings-agents-list')).toBeTruthy()
-    // all three providers shown
     for (const a of agentsFixture) expect(screen.getByTestId(`agent-${a.id}`)).toBeTruthy()
-    // codex shown as not installed
     expect(screen.getByTestId('agent-codex').textContent).toMatch(/not installed/i)
-    // claude-code needs login; opencode connected
-    expect(screen.getByTestId('agent-claude-code').textContent).toMatch(/needs login/i)
-    expect(screen.getByTestId('agent-opencode').textContent).toMatch(/connected/i)
-    // read-only: no buttons / inputs in the agents section
-    const sec = screen.getByTestId('settings-agents')
-    expect(sec.querySelector('button')).toBeNull()
-    expect(sec.querySelector('input')).toBeNull()
+    // claude-code (needs_login) shows the subscription Connect button…
+    const connect = screen.getByTestId('agent-connect')
+    expect(connect.textContent).toMatch(/use your claude subscription/i)
+    // …but opencode/codex are NOT connectable in A2 (claude-code only).
+    expect(screen.getByTestId('agent-opencode').querySelector('button')).toBeNull()
+    expect(screen.getByTestId('agent-codex').querySelector('button')).toBeNull()
+    // no token-looking value anywhere on the page
+    expect(screen.getByTestId('settings-page').textContent || '').not.toMatch(/sk-[A-Za-z0-9]{8,}/)
+  })
+
+  it('Connect Claude Code: shows login URL, accepts pasted code, connects', async () => {
+    const url = 'https://claude.ai/oauth/authorize?response_type=code&state=x'
+    installFetch((m, p) => {
+      if (p.startsWith('/v1/agents/claude-code/connect')) {
+        if (m === 'POST' && p.endsWith('/code')) return { session_id: 's1', status: 'connected' }
+        if (m === 'POST') return { session_id: 's1', status: 'awaiting_code', url }
+        if (m === 'GET') return { session_id: 's1', status: 'awaiting_code', url }
+      }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
+      if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
+      return undefined
+    })
+    render(<Settings onError={noop} />)
+    fireEvent.click(await screen.findByTestId('agent-connect'))
+    // modal opens and surfaces the login URL (not a token)
+    const link = await screen.findByTestId('claude-connect-url')
+    expect((link as HTMLAnchorElement).href).toContain('response_type=code')
+    // paste code + submit
+    fireEvent.change(screen.getByTestId('claude-code-input'), { target: { value: 'THECODE' } })
+    fireEvent.click(screen.getByTestId('claude-code-submit'))
+    // on success the modal closes
+    await waitFor(() => expect(screen.queryByTestId('claude-connect-modal')).toBeNull())
   })
 
   it('lifecycle is editable; protected sections have no inputs', async () => {

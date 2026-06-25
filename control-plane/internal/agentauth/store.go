@@ -42,3 +42,40 @@ func (s *Store) Connected(provider string) bool {
 	}
 	return len(entries) > 0
 }
+
+// Delete removes a provider's auth dir (Disconnect). Opaque; no parsing.
+func (s *Store) Delete(provider string) error {
+	return os.RemoveAll(s.Dir(provider))
+}
+
+// NewStaging creates a fresh, isolated staging dir under the store root for an
+// in-progress login. It is chowned to the sandbox uid (best-effort) so the
+// ephemeral auth container (uid 1000) can write its credential files there.
+func (s *Store) NewStaging() (string, error) {
+	if err := s.EnsureRoot(); err != nil {
+		return "", err
+	}
+	dir, err := os.MkdirTemp(s.root, ".staging-")
+	if err != nil {
+		return "", err
+	}
+	_ = os.Chmod(dir, 0o700)
+	_ = os.Chown(dir, 1000, 1000) // best-effort; sandboxd runs as root in prod
+	return dir, nil
+}
+
+// Promote atomically replaces a provider's auth dir with the staging dir. Same
+// filesystem (both under the store root), so the rename is atomic.
+func (s *Store) Promote(staging, provider string) error {
+	final := s.Dir(provider)
+	_ = os.RemoveAll(final)
+	return os.Rename(staging, final)
+}
+
+// CredentialPresent reports whether a non-empty file exists at rel within dir —
+// presence only, never opened/parsed. Used as the success signal for a login
+// (the CLI writes its long-lived token there), since exit codes are unreliable.
+func (s *Store) CredentialPresent(dir, rel string) bool {
+	fi, err := os.Stat(filepath.Join(dir, rel))
+	return err == nil && !fi.IsDir() && fi.Size() > 0
+}

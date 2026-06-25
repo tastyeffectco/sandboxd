@@ -127,6 +127,47 @@ paths:
                         installed_state: { type: string, enum: [installed, not_installed, unknown] }
                         status: { type: string, enum: [connected, needs_login] }
 
+  /v1/agents/claude-code/connect:
+    post:
+      tags: [apps]
+      summary: Start a console-driven Claude Code login (ephemeral auth container). Returns a session + login URL. No tokens.
+      responses:
+        "201": { description: Login session started }
+        "503": { description: Agent auth not configured }
+  /v1/agents/claude-code/connect/{id}:
+    get:
+      tags: [apps]
+      summary: Poll a Claude Code login session (status + url). No tokens.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Session status }
+        "404": { description: No such session }
+  /v1/agents/claude-code/connect/{id}/code:
+    post:
+      tags: [apps]
+      summary: Submit the pasted authorization code for a Claude Code login session.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string }
+      responses:
+        "200": { description: Code accepted; status updated }
+        "400": { description: Missing code or not awaiting a code }
+  /v1/agents/claude-code/disconnect:
+    post:
+      tags: [apps]
+      summary: Disconnect Claude Code — deletes the stored auth dir.
+      responses:
+        "204": { description: Disconnected }
+        "503": { description: Agent auth not configured }
+
   /v1/presets:
     get:
       tags: [apps]
