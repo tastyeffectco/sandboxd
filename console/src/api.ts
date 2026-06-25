@@ -51,6 +51,15 @@ export interface Agent {
   status: 'connected' | 'needs_login'
 }
 
+// A console-driven Claude Code login session. `url` is the login URL to open;
+// no token is ever returned.
+export interface ConnectSession {
+  session_id: string
+  status: 'starting' | 'awaiting_code' | 'finalizing' | 'connected' | 'failed'
+  url?: string
+  error?: string
+}
+
 export interface SettingsPatch {
   lifecycle?: {
     idle_reap_enabled?: boolean
@@ -152,6 +161,14 @@ export const api = {
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
   getSettings: () => req<Settings>('GET', '/v1/settings'),
   getAgents: () => req<{ providers: Agent[] }>('GET', '/v1/agents').then((r) => r.providers || []),
+
+  // Claude Code connect (console-driven; uses the owner's Claude subscription).
+  connectClaude: () => req<ConnectSession>('POST', '/v1/agents/claude-code/connect'),
+  getClaudeConnect: (id: string) =>
+    req<ConnectSession>('GET', `/v1/agents/claude-code/connect/${id}`),
+  submitClaudeCode: (id: string, code: string) =>
+    req<ConnectSession>('POST', `/v1/agents/claude-code/connect/${id}/code`, { code }),
+  disconnectClaude: () => req<unknown>('POST', '/v1/agents/claude-code/disconnect'),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),
