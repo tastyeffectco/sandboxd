@@ -129,6 +129,26 @@ type Server struct {
 	agentProbeOnce sync.Once
 	agentProbe     map[string]string                    // binary -> installed|not_installed (nil => unknown)
 	agentProbeFn   func(image string) map[string]string // test override
+
+	// Phase 10B A1 — the provider whose auth dir is bind-mounted into each new
+	// sandbox (as the agent's HOME) when it is connected. Must match the agent
+	// runtimed actually runs (opencode today). Empty disables the mount.
+	DefaultAgent string
+}
+
+// agentHomeMount is the fixed in-container path where the selected provider's
+// auth dir is bind-mounted. Deliberately NOT under /home/sandbox (the
+// workspace), so credentials never land in a workspace or a snapshot.
+const agentHomeMount = "/run/agent-home"
+
+// agentAuthMount returns the extra (-v volume, --env) the create path should add
+// so the spawned agent finds its credentials. Empty results mean "no managed
+// auth mounted" (provider not configured/connected) — the agent runs as before.
+func (s *Server) agentAuthMount() (volume, env string) {
+	if s.AgentAuth == nil || s.DefaultAgent == "" || !s.AgentAuth.Connected(s.DefaultAgent) {
+		return "", ""
+	}
+	return s.AgentAuth.Dir(s.DefaultAgent) + ":" + agentHomeMount, "RUNTIMED_AGENT_HOME=" + agentHomeMount
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
