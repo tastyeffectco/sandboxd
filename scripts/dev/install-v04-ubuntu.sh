@@ -37,7 +37,7 @@ die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 # ── config (override via env) ────────────────────────────────────────
 DATA_DIR="${SANDBOXD_DATA_DIR:-/var/lib/sandboxd-v04-test}"
 LOG_DIR="${SANDBOXD_LOG_DIR:-$DATA_DIR/log}"
-BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:0.4.0-test}"
+BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:0.4.0}"
 CONSOLE_USER="${CONSOLE_USER:-demo}"
 CONSOLE_PASS="${CONSOLE_PASS:-}"   # generated if empty
 

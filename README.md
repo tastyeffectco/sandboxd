@@ -2,9 +2,10 @@
 
 
 <p align="center">
-  <b>The open-source engine for AI app-builder products.</b><br/>
+  <b>Self-hosted control plane for AI-built apps.</b><br/>
   Give every user an isolated cloud dev environment, a built-in coding agent,
-  and a live preview URL — self-hosted, on one machine, in one command.
+  and a live preview URL — with a web console to drive it all. Self-hosted, on
+  one machine, in one command.
 </p>
 
 <p align="center">
@@ -18,6 +19,17 @@
 
 <img width="1100" height="816" alt="sandboxd-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
 
+## What you get
+
+- **Web console** — create and open apps, watch previews, run agent tasks, manage everything from a browser (or drive the same `/v1` API directly).
+- **Runtime presets** — one-step React/Vite, Next.js, Node/Express, FastAPI, or Worker apps (`GET /v1/presets`); each boots and reloads after agent edits.
+- **Live preview URLs** — each app is reachable at its own shareable link; sleeps when idle, wakes on request.
+- **Agent tasks** — submit a prompt, stream the agent's progress, get the build/health result.
+- **App config & secrets** — per-app key/values; sensitive values are write-only (set once, encrypted at rest, never returned).
+- **Snapshots / fork / restore** — capture a workspace, fork it into a new app, or restore in place.
+- **Activity / events** — a durable per-app timeline of what happened.
+- **Process logs** — per-process status (web + workers) and tail-able logs.
+- **Settings / lifecycle controls** — a read-only instance overview, with editable idle-reap / keepalive tuning, applied live.
 
 ## What is sandboxd? (start here)
 
@@ -374,6 +386,10 @@ Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-m
 - The wake/warming interstitial returns HTTP `200` (callers can't distinguish
   "warming" from "ready" by status code alone).
 - Per-task `agent.log` can be empty on task timeout (transcript persistence WIP).
+- **Docker backend only** (OCI/containerd/Kata are a future provider; see
+  [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md)).
+- **Not yet:** Git/GitHub import, a managed-database/sidecar story, and
+  Docker-Compose-inside-the-sandbox are deliberately out of scope for v0.4.
 
 ## License
 
