@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/runtime"
 )
 
@@ -73,7 +74,7 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 		}
 		if attempt >= taskWatchAttempts {
 			log.Warn("task watcher: cannot reach runtimed; marking failed", "err", err.Error())
-			s.finishWatchedTask(taskID, failedResult(taskID, "sandbox_unavailable",
+			s.finishWatchedTask(sandboxID, taskID, failedResult(taskID, "sandbox_unavailable",
 				"task watcher could not reach runtimed"))
 			return
 		}
@@ -98,21 +99,73 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 	})
 	if result == nil {
 		log.Warn("task watcher: event stream ended without a terminal event")
-		s.finishWatchedTask(taskID, failedResult(taskID, "internal",
+		s.finishWatchedTask(sandboxID, taskID, failedResult(taskID, "internal",
 			"task event stream ended without a terminal event"))
 		return
 	}
-	s.finishWatchedTask(taskID, result)
+	s.finishWatchedTask(sandboxID, taskID, result)
 	log.Info("task watcher: result persisted", "status", result.Status)
 
 }
 
-func (s *Server) finishWatchedTask(taskID string, result *runtime.TaskResult) {
+func (s *Server) finishWatchedTask(sandboxID, taskID string, result *runtime.TaskResult) {
 	raw, _ := json.Marshal(result)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.Store.FinishTask(ctx, taskID, string(result.Status), string(raw)); err != nil {
 		s.Log.Warn("task watcher: FinishTask failed", "task", taskID, "err", err.Error())
+	}
+	s.recordTaskEvents(sandboxID, taskID, result)
+}
+
+// recordTaskEvents appends the durable timeline entries for a finished task.
+// It runs in a background path (no request), so it resolves the owning tenant
+// + app from the sandbox itself. Payloads carry reasons/counts only — never
+// agent output or secrets.
+func (s *Server) recordTaskEvents(sandboxID, taskID string, result *runtime.TaskResult) {
+	if s.Events == nil {
+		return
+	}
+	ctx := context.Background()
+	ownerToken, appID := "", ""
+	if sb, err := s.Store.Get(ctx, sandboxID); err == nil && sb.AppID.Valid {
+		appID = sb.AppID.String
+		if app, aerr := s.Store.GetApp(ctx, appID); aerr == nil {
+			ownerToken = app.OwnerToken
+		}
+	}
+	base := events.Event{OwnerToken: ownerToken, AppID: appID, SandboxID: sandboxID, TaskID: taskID}
+
+	rec := func(typ, sev, msg string, payload map[string]any) {
+		e := base
+		e.Type, e.Severity, e.Message, e.Payload = typ, sev, msg, payload
+		s.Events.Record(ctx, e)
+	}
+
+	// Payloads carry safe STRUCTURED flags/reasons only — never the raw
+	// build/dev-server/agent output (which can echo secrets the user's app
+	// printed). The full text stays in the task's result.json.
+	if result.Status == runtime.TaskSucceeded {
+		rec(events.TaskCompleted, events.SeverityInfo, "Task completed",
+			map[string]any{"files_changed": len(result.FilesChanged), "duration_ms": result.DurationMS, "build_ok": result.BuildOK})
+	} else {
+		rec(events.TaskFailed, events.SeverityError, "Task failed: "+string(result.Status),
+			map[string]any{"failure_reason": result.FailureReason, "has_error": result.ErrorMessage != ""})
+	}
+	// A real build failure (distinct from infra failures, which leave
+	// BuildErrorMessage empty).
+	if result.BuildErrorMessage != "" {
+		rec(events.TaskBuildFailed, events.SeverityError, "Task build failed",
+			map[string]any{"reason": "build_failed", "has_build_error": true})
+	}
+	// Preview health after the task: report only a clear signal. preview_status
+	// is the structured enum (down/starting/ready/error), not raw output.
+	switch {
+	case result.PreviewErrorMessage != "" || result.PreviewStatusAfter == runtime.PreviewError:
+		rec(events.PreviewHealthFailed, events.SeverityWarning, "Preview unhealthy after task",
+			map[string]any{"preview_status": string(result.PreviewStatusAfter), "has_preview_error": result.PreviewErrorMessage != ""})
+	case result.PreviewStatusAfter == runtime.PreviewReady:
+		rec(events.PreviewHealthOK, events.SeverityInfo, "Preview healthy after task", nil)
 	}
 }
 
@@ -139,7 +192,7 @@ func (s *Server) ReconcileTasks(ctx context.Context) {
 		if raw, rerr := os.ReadFile(resultPath); rerr == nil {
 			var tr runtime.TaskResult
 			if json.Unmarshal(raw, &tr) == nil && tr.Status != "" {
-				s.finishWatchedTask(t.TaskID, &tr)
+				s.finishWatchedTask(t.SandboxID, t.TaskID, &tr)
 				s.Log.Info("task reconcile: finalized from runtimed result.json",
 					"task", t.TaskID, "status", tr.Status)
 				continue
@@ -150,7 +203,7 @@ func (s *Server) ReconcileTasks(ctx context.Context) {
 			go s.watchTask(t.SandboxID, t.TaskID, t.TimeoutS)
 			continue
 		}
-		s.finishWatchedTask(t.TaskID, failedResult(t.TaskID, "sandbox_unavailable",
+		s.finishWatchedTask(t.SandboxID, t.TaskID, failedResult(t.TaskID, "sandbox_unavailable",
 			"task interrupted by a sandboxd restart; the sandbox was unavailable to resume or report it"))
 		s.Log.Info("task reconcile: finalized interrupted task", "task", t.TaskID)
 	}

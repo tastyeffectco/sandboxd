@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, console, "release/**"]
   pull_request:
 
 jobs:
@@ -61,3 +61,29 @@ jobs:
           SANDBOXD_IMAGE: sandboxed-base:ci
           SANDBOXD_BIN: /tmp/sandboxd
         run: bash scripts/e2e.sh
+
+  # Console is a /v1 client: typecheck, unit-test, and build it directly (not
+  # only via docker) so a TS/test/build break is caught with clear output.
+  console:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: enable pnpm
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - name: install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: typecheck
+        run: pnpm exec tsc --noEmit
+      - name: unit tests
+        run: pnpm test
+      - name: build
+        run: pnpm build
+      - name: build console image
+        working-directory: .
+        run: docker build -t sandboxd-console:ci ./console

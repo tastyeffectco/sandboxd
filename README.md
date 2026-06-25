@@ -2,9 +2,10 @@
 
 
 <p align="center">
-  <b>The open-source engine for AI app-builder products.</b><br/>
+  <b>Self-hosted control plane for AI-built apps.</b><br/>
   Give every user an isolated cloud dev environment, a built-in coding agent,
-  and a live preview URL — self-hosted, on one machine, in one command.
+  and a live preview URL — with a web console to drive it all. Self-hosted, on
+  one machine, in one command.
 </p>
 
 <p align="center">
@@ -18,6 +19,17 @@
 
 <img width="1100" height="816" alt="sandboxd-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
 
+## What you get
+
+- **Web console** — create and open apps, watch previews, run agent tasks, manage everything from a browser (or drive the same `/v1` API directly).
+- **Runtime presets** — one-step React/Vite, Next.js, Node/Express, FastAPI, or Worker apps (`GET /v1/presets`); each boots and reloads after agent edits.
+- **Live preview URLs** — each app is reachable at its own shareable link; sleeps when idle, wakes on request.
+- **Agent tasks** — submit a prompt, stream the agent's progress, get the build/health result.
+- **App config & secrets** — per-app key/values; sensitive values are write-only (set once, encrypted at rest, never returned).
+- **Snapshots / fork / restore** — capture a workspace, fork it into a new app, or restore in place.
+- **Activity / events** — a durable per-app timeline of what happened.
+- **Process logs** — per-process status (web + workers) and tail-able logs.
+- **Settings / lifecycle controls** — a read-only instance overview, with editable idle-reap / keepalive tuning, applied live.
 
 ## What is sandboxd? (start here)
 
@@ -209,6 +221,50 @@ real domain you get `https://s-<id>-3000.preview.yourdomain.com`
 > `curl -XPOST $API/sandbox/$ID/exec -d '{"cmd":["bash","-lc","cd ~/workspace/app && python3 -m http.server 3000"]}'`
 > then open the same preview URL.
 
+## Web console (optional UI)
+
+Prefer a UI to curl? sandboxd ships an optional web console — a small React SPA
+that talks **only** to the public `/v1` API. From it you can create and open
+apps, watch the live preview, submit agent tasks and stream their logs,
+start/stop the sandbox, and manage per-app **config & secrets** (sensitive
+values are write-only: set once, never shown again).
+
+```bash
+docker compose --profile console up -d        # core stack + console
+```
+
+Then open **http://console.localhost** (or `console.<PREVIEW_DOMAIN>:<HTTP_PORT>`
+if you changed them). It's routed through the same Traefik as the previews, by
+Host header — `console.<domain>` → console, `*.preview.<domain>` → previews — so
+it shares one entrypoint, no extra port. Plain `docker compose up -d` (no
+profile) runs sandboxd without the console.
+
+The console never touches the database or workspaces — it's a pure `/v1` client
+(contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
+[`console/README.md`](console/README.md).
+
+## Runtime presets & `sandbox.yaml`
+
+Create a working app of a common type in one step. `GET /v1/presets` lists the
+built-in presets and you pass `runtime_preset` when creating an app/sandbox (the
+console has a New-App picker):
+
+| Preset | Serves | Post-task reload |
+|---|---|---|
+| `react-vite` | Vite SPA on :3000 | Vite HMR |
+| `nextjs` | Next.js on :3000 | restart (also heals an agent `next build`) |
+| `node-express` | Express API on :3000 (`/health`) | restart |
+| `fastapi` | FastAPI on :3000 (`/health`) | `uvicorn --reload` |
+| `worker` | no public endpoint | restart (editable `worker.sh`) |
+
+A preset seeds starter files and writes a **`sandbox.yaml`** describing how the
+app runs — its `web` process (command/port/health_path), background `workers`, a
+post-task `build` check, and `restart_after_task`. Advanced users edit
+`sandbox.yaml` directly; it lives in the workspace so snapshots preserve it.
+Process status is on `GET /v1/sandboxes/{id}` (`processes[]`) and per-process
+logs at `GET /v1/sandboxes/{id}/processes/{name}/logs`. Full schema:
+[`docs/sandbox-manifest.md`](docs/sandbox-manifest.md).
+
 ## API
 
 Base URL = `http://127.0.0.1:9090` (set by `SANDBOXD_API_BIND`). Auth is **off
@@ -319,6 +375,21 @@ Plain version:
 (2) **turn on API auth** and lock down the host, and (3) **plan for more than one
 machine**. Everything else above is a config change, not a rewrite. Start lean,
 revisit these as you grow — and PRs are very welcome ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
+
+### Known limitations (v0.4.0)
+
+Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md):
+
+- `DELETE /v1/sandboxes/{id}` **purges** the workspace, while the legacy internal
+  `DELETE /sandbox/{id}` **stops and keeps** it.
+- `keepalive_until` is honored but not surfaced in `GET /v1/sandboxes/{id}`.
+- The wake/warming interstitial returns HTTP `200` (callers can't distinguish
+  "warming" from "ready" by status code alone).
+- Per-task `agent.log` can be empty on task timeout (transcript persistence WIP).
+- **Docker backend only** (OCI/containerd/Kata are a future provider; see
+  [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md)).
+- **Not yet:** Git/GitHub import, a managed-database/sidecar story, and
+  Docker-Compose-inside-the-sandbox are deliberately out of scope for v0.4.
 
 ## License
 

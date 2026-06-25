@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
+	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/runtime"
 	"github.com/sandboxd/control-plane/internal/store"
 )
@@ -35,13 +37,24 @@ type v1Preview struct {
 }
 
 type v1Sandbox struct {
-	ID           string    `json:"id"`
-	Status       string    `json:"status"`
-	Preview      v1Preview `json:"preview"`
-	ActiveTaskID string    `json:"active_task_id,omitempty"`
-	Template     string    `json:"template"`
-	CreatedAt    string    `json:"created_at"`
-	UpdatedAt    string    `json:"updated_at,omitempty"`
+	ID           string      `json:"id"`
+	Status       string      `json:"status"`
+	Preview      v1Preview   `json:"preview"`
+	Processes    []v1Process `json:"processes"`
+	ActiveTaskID string      `json:"active_task_id,omitempty"`
+	Template     string      `json:"template"`
+	CreatedAt    string      `json:"created_at"`
+	UpdatedAt    string      `json:"updated_at,omitempty"`
+}
+
+// v1Process is one supervised process (the web dev server or a worker) from the
+// app's runtime manifest, surfaced for the console process panel.
+type v1Process struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind"` // "web" | "worker"
+	Running  bool   `json:"running"`
+	Pid      int    `json:"pid,omitempty"`
+	Restarts int    `json:"restarts"`
 }
 
 // --- helpers --------------------------------------------------------
@@ -102,7 +115,24 @@ func (s *Server) delegate(r *http.Request, h http.HandlerFunc, method, path stri
 }
 
 func (s *Server) previewURL(id string) string {
-	return fmt.Sprintf("https://s-%s-3000.preview.%s", id, s.PreviewDomain)
+	// Reflect the actual scheme: previews are served over plain HTTP
+	// unless PreviewTLS is configured (so a local/default deploy returns
+	// a reachable http:// URL the console can iframe).
+	scheme := "http"
+	defaultPort := "80"
+	if s.PreviewTLS {
+		scheme = "https"
+		defaultPort = "443"
+	}
+	host := fmt.Sprintf("s-%s-3000.preview.%s", id, s.PreviewDomain)
+	// Append the host-facing port unless it's the scheme default. On a
+	// shared host published on e.g. :18080, the bare URL would hit whatever
+	// owns :80 (a front proxy), so the port must be in the URL the browser,
+	// console iframe, and open-in-tab link all use.
+	if p := s.PublicHTTPPort; p != "" && p != defaultPort {
+		host += ":" + p
+	}
+	return scheme + "://" + host
 }
 
 // v1SandboxFromRow reshapes a stored sandbox to the v1 object, folding
@@ -115,27 +145,46 @@ func (s *Server) v1SandboxFromRow(r *http.Request, sb *store.Sandbox) v1Sandbox 
 		CreatedAt: sb.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: sb.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	prev := v1Preview{URL: s.previewURL(sb.ID)}
 	_, mnt := s.Loopback.Paths(sb.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	if rs, err := runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock")).Status(ctx); err == nil {
+	var rs *runtime.Status
+	if got, err := runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock")).Status(ctx); err == nil {
+		rs = got
+	}
+	out.Preview, out.Processes = s.v1RuntimeView(sb.ID, sb.Status, rs)
+	if rs != nil && rs.ActiveTask != nil {
+		out.ActiveTaskID = rs.ActiveTask.ID
+	}
+	return out
+}
+
+// v1RuntimeView maps a runtimed Status into the public preview + process shape.
+// rs is nil when runtimed is unreachable; then preview reflects the row status.
+// A worker-only app (preview status "none") has no public endpoint, so its
+// preview URL is cleared. Pure given the Server config — unit-tested.
+func (s *Server) v1RuntimeView(id, rowStatus string, rs *runtime.Status) (v1Preview, []v1Process) {
+	prev := v1Preview{URL: s.previewURL(id)}
+	var procs []v1Process
+	if rs != nil {
 		prev.Status = string(rs.Preview.Status)
 		prev.LastHTTPStatus = rs.Preview.LastHTTPStatus
 		if rs.Preview.LastCheckedAt != nil {
 			prev.LastCheckedAt = rs.Preview.LastCheckedAt.UTC().Format(time.RFC3339)
 		}
 		prev.BuildErrorMessage = rs.Preview.BuildErrorMessage
-		if rs.ActiveTask != nil {
-			out.ActiveTaskID = rs.ActiveTask.ID
+		for _, p := range rs.Processes {
+			procs = append(procs, v1Process{Name: p.Name, Kind: p.Kind, Running: p.Running, Pid: p.Pid, Restarts: p.Restarts})
 		}
-	} else if sb.Status == "running" {
+	} else if rowStatus == "running" {
 		prev.Status = "starting" // running but runtimed not yet answering
 	} else {
 		prev.Status = "down"
 	}
-	out.Preview = prev
-	return out
+	if prev.Status == string(runtime.PreviewNone) {
+		prev.URL = "" // worker-only: no public endpoint to advertise
+	}
+	return prev, procs
 }
 
 // --- POST /v1/sandboxes ---------------------------------------------
@@ -151,6 +200,9 @@ type v1CreateReq struct {
 	// snapshot the caller's tenant owns (ops/design/snapshots-as-templates.md)
 	// instead of the default template. Mutually exclusive with Template.
 	FromSnapshot string `json:"from_snapshot,omitempty"`
+	// RuntimePreset selects a runtime preset (react-vite, nextjs, …). Applied
+	// by runtimed on first boot; takes precedence over Template.
+	RuntimePreset string `json:"runtime_preset,omitempty"`
 }
 
 func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +258,12 @@ func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		createBody["template_path"] = snap.ImagePath
+	} else if req.RuntimePreset != "" {
+		if !preset.Valid(req.RuntimePreset) {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown runtime_preset")
+			return
+		}
+		createBody["runtime_preset"] = req.RuntimePreset
 	} else if req.Template != "" {
 		// An explicit template clones that golden workspace. With no
 		// template the sandbox is provisioned empty (handleCreate seeds
@@ -292,6 +350,47 @@ func (s *Server) v1StopSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditAction(r, audit.Entry{Action: "sandbox.stop", Target: id})
 	sb, _ = s.Store.Get(r.Context(), id)
+	s.recordEvent(r, events.Event{Type: events.SandboxStopped, Severity: events.SeverityInfo,
+		Message: "Sandbox stopped", AppID: sb.AppID.String, SandboxID: id})
+	writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb))
+}
+
+// --- POST /v1/sandboxes/{id}/start ----------------------------------
+
+// v1StartSandbox wakes a stopped sandbox. It is the public counterpart
+// of /stop, so a console (API-only) need not reach the internal wake
+// path. Idempotent when already running.
+func (s *Server) v1StartSandbox(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sb, err := s.Store.Get(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such sandbox")
+		return
+	}
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if sb.Status == "running" {
+		writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb)) // idempotent
+		return
+	}
+	if sb.Status != "stopped" {
+		writeV1Err(w, http.StatusConflict, "conflict", "sandbox is "+sb.Status+" — cannot start")
+		return
+	}
+	code, body := s.delegate(r, s.handleWakeJSON, http.MethodPost, "/wake/"+id,
+		map[string]string{"id": id}, nil)
+	if code != http.StatusOK {
+		relayV1Error(w, code, body) // 503 -> sandbox_capacity, etc.
+		return
+	}
+	if sb, err = s.Store.Get(r.Context(), id); err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	s.recordEvent(r, events.Event{Type: events.SandboxStarted, Severity: events.SeverityInfo,
+		Message: "Sandbox started", AppID: sb.AppID.String, SandboxID: id})
 	writeJSON(w, http.StatusOK, s.v1SandboxFromRow(r, sb))
 }
 

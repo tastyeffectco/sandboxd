@@ -231,12 +231,38 @@ func (a *app) runTask(t *task) {
 	}
 
 	// 5. post-task build check (skipped on cancel — keep cancel fast).
-	if status != runtime.TaskCancelled {
+	// a.build is always non-nil from LoadManifest; the guard is defensive so a
+	// hand-built app{} (e.g. in a test) can't panic here. build_status is the
+	// honest outcome: a missing/empty build command is "skipped" (NOT a pass),
+	// and build_ok stays true only for a real "passed".
+	res.BuildStatus = runtime.BuildSkipped
+	buildCmd := ""
+	if a.build != nil && a.build.Command != nil {
+		buildCmd = *a.build.Command
+	}
+	if status != runtime.TaskCancelled && buildCmd != "" {
 		t.setPhase("build_check")
-		ok, bmsg := buildCheck(a.appDir, a.log)
-		res.BuildOK = ok
+		ok, bmsg := buildCheck(a.appDir, buildCmd, time.Duration(a.build.TimeoutSeconds)*time.Second, a.log)
 		res.BuildErrorMessage = bmsg
-		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_error_message": bmsg})
+		if ok {
+			res.BuildStatus = runtime.BuildPassed
+		} else {
+			res.BuildStatus = runtime.BuildFailed
+		}
+		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_status": res.BuildStatus, "build_error_message": bmsg})
+	}
+	res.BuildOK = res.BuildStatus == runtime.BuildPassed
+
+	// 5.3 restart_after_task (skipped on cancel): bounce the web process so an
+	// agent-written production build can't poison a live dev server. The web
+	// command re-runs (e.g. `rm -rf .next; pnpm dev`), cleaning the artifact.
+	// Done before the health/probe steps so PreviewStatusAfter reflects the
+	// restarted server.
+	if status != runtime.TaskCancelled {
+		if a.web != nil && a.web.restartAfterTask {
+			a.restartWebAndWait(ctx)
+		}
+		a.restartWorkersAfterTask()
 	}
 
 	// 5.5 post-task health pipeline (skipped on cancel): remediate
@@ -249,12 +275,81 @@ func (a *app) runTask(t *task) {
 		res.PreviewErrorMessage = a.runPostTaskChecks(ctx, res.FilesChanged)
 	}
 
-	// 6. preview state after the task — now reflects entry-asset health,
-	// not just the HTML shell's 200.
+	// 6. preview state + overall app health after the task — preview now
+	// reflects entry-asset health, not just the HTML shell's 200.
 	a.probe()
-	res.PreviewStatusAfter = a.status().Preview.Status
+	st := a.status()
+	res.PreviewStatusAfter = st.Preview.Status
+	if status != runtime.TaskCancelled {
+		res.AppHealthy, res.PreviewOK = postTaskHealth(a.web == nil, res.BuildStatus, st)
+	}
 
 	a.finishTask(t, &res, status, reason, errMsg)
+}
+
+// restartWorkersAfterTask bounces any worker flagged restart_after_task so it
+// re-runs its command and picks up code the task changed (a long-running worker
+// otherwise keeps the old behavior). Workers have no readiness probe, so we
+// just stop() them — the supervisor re-runs the command after its backoff.
+func (a *app) restartWorkersAfterTask() {
+	for _, wp := range a.workers {
+		if wp.restartAfterTask {
+			a.log.Info("restarting worker after task (restart_after_task)", "worker", wp.name)
+			wp.stop()
+		}
+	}
+}
+
+// webRestartReadyTimeout bounds how long restartWebAndWait waits for the
+// bounced web process to serve again (a Next.js dev recompile can take a while).
+const webRestartReadyTimeout = 90 * time.Second
+
+// restartWebAndWait restarts the web process (via stop(); the supervisor then
+// re-runs its start command) and waits until it serves a 200 on the health
+// path again, so the post-task preview/health reflects the fresh server rather
+// than the mid-restart gap. Best-effort: returns on ctx cancel or timeout.
+func (a *app) restartWebAndWait(ctx context.Context) {
+	if a.web == nil {
+		return
+	}
+	a.log.Info("restarting web process after task (restart_after_task)")
+	a.web.stop() // blocks until the child is dead; supervisor re-runs the start cmd
+	deadline := time.Now().Add(webRestartReadyTimeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		if code, _ := a.devGet(ctx, a.webHealthPath); code == 200 {
+			a.log.Info("web process restarted and serving")
+			return
+		}
+		if time.Now().After(deadline) {
+			a.log.Warn("web process not ready after restart before timeout")
+			return
+		}
+	}
+}
+
+// postTaskHealth derives overall app health and the preview_ok signal.
+// A web app is healthy when the build did not fail and the preview is
+// serving; previewOK is set (pointer) for web apps. A worker-only app has
+// no public endpoint (previewOK nil/omitted) and is healthy when the build
+// did not fail and a worker process is running.
+func postTaskHealth(isWorkerOnly bool, buildStatus string, st runtime.Status) (appHealthy bool, previewOK *bool) {
+	buildNotFailed := buildStatus != runtime.BuildFailed
+	if isWorkerOnly {
+		anyWorker := false
+		for _, p := range st.Processes {
+			if p.Kind == "worker" && p.Running {
+				anyWorker = true
+			}
+		}
+		return buildNotFailed && anyWorker, nil
+	}
+	po := st.Preview.Status == runtime.PreviewReady
+	return buildNotFailed && po, &po
 }
 
 func (a *app) finishTask(t *task, res *runtime.TaskResult, status runtime.TaskStatus, reason, errMsg string) {

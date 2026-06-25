@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/sandboxd/control-plane/internal/events"
+	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
@@ -22,6 +24,7 @@ type v1App struct {
 	Tags              []string `json:"tags"`
 	ExternalUserID    string   `json:"external_user_id,omitempty"`
 	ExternalProjectID string   `json:"external_project_id,omitempty"`
+	RuntimePreset     string   `json:"runtime_preset,omitempty"`
 	CurrentSandboxID  string   `json:"current_sandbox_id,omitempty"`
 	CreatedAt         string   `json:"created_at"`
 	UpdatedAt         string   `json:"updated_at"`
@@ -46,7 +49,19 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 	if a.ExternalProjectID.Valid {
 		out.ExternalProjectID = a.ExternalProjectID.String
 	}
+	if a.RuntimePreset.Valid {
+		out.RuntimePreset = a.RuntimePreset.String
+	}
 	return out
+}
+
+// resolveRuntimePreset picks the explicit per-request preset if given, else the
+// app's stored default.
+func resolveRuntimePreset(explicit, appDefault string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return appDefault
 }
 
 // currentSandboxID returns the app's current sandbox id, or "" if none.
@@ -64,6 +79,7 @@ type v1CreateAppReq struct {
 	Tags              []string `json:"tags"`
 	ExternalUserID    string   `json:"external_user_id"`
 	ExternalProjectID string   `json:"external_project_id"`
+	RuntimePreset     string   `json:"runtime_preset"`
 }
 
 // v1CreateApp — POST /v1/apps.
@@ -77,6 +93,10 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "name is required")
 		return
 	}
+	if req.RuntimePreset != "" && !preset.Valid(req.RuntimePreset) {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown runtime_preset")
+		return
+	}
 	app := &store.App{
 		ID:                newULID(),
 		OwnerToken:        tenantToken(r),
@@ -85,12 +105,15 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 		Tags:              req.Tags,
 		ExternalUserID:    nullStr(req.ExternalUserID),
 		ExternalProjectID: nullStr(req.ExternalProjectID),
+		RuntimePreset:     nullStr(req.RuntimePreset),
 	}
 	if err := s.Store.CreateApp(r.Context(), app); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	s.auditAction(r, audit.Entry{Action: "app.create", Target: app.ID})
+	s.recordEvent(r, events.Event{Type: events.AppCreated, Severity: events.SeverityInfo,
+		Message: "App created: " + app.Name, AppID: app.ID})
 	writeJSON(w, http.StatusCreated, v1AppFromRow(app, ""))
 }
 
@@ -157,12 +180,15 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditAction(r, audit.Entry{Action: "app.update", Target: id})
+	s.recordEvent(r, events.Event{Type: events.AppUpdated, Severity: events.SeverityInfo,
+		Message: "App updated", AppID: id})
 	writeJSON(w, http.StatusOK, v1AppFromRow(app, s.currentSandboxID(r, id)))
 }
 
 type v1CreateAppSandboxReq struct {
-	Template string `json:"template,omitempty"`
-	Ports    []int  `json:"ports,omitempty"`
+	Template      string `json:"template,omitempty"`
+	Ports         []int  `json:"ports,omitempty"`
+	RuntimePreset string `json:"runtime_preset,omitempty"`
 }
 
 // v1CreateAppSandbox — POST /v1/apps/{id}/sandbox. Creates the app's
@@ -201,7 +227,17 @@ func (s *Server) v1CreateAppSandbox(w http.ResponseWriter, r *http.Request) {
 			"project_id": app.ExternalProjectID.String,
 		},
 	}
-	if req.Template != "" {
+	// Resolve the runtime preset: explicit on the request, else the app's
+	// stored default. A preset supplies the template, so it takes precedence
+	// over an explicit `template`.
+	rp := resolveRuntimePreset(req.RuntimePreset, app.RuntimePreset.String)
+	if rp != "" {
+		if !preset.Valid(rp) {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown runtime_preset")
+			return
+		}
+		createBody["runtime_preset"] = rp
+	} else if req.Template != "" {
 		createBody["template"] = req.Template
 	}
 	internal, _ := json.Marshal(createBody)

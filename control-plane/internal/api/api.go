@@ -15,9 +15,12 @@ import (
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
 	"github.com/sandboxd/control-plane/internal/egress"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
+	"github.com/sandboxd/control-plane/internal/instancecfg"
 	"github.com/sandboxd/control-plane/internal/loopback"
 	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/sandboxd/control-plane/internal/secrets"
 	"github.com/sandboxd/control-plane/internal/snapshot"
 	"github.com/sandboxd/control-plane/internal/store"
 	"github.com/sandboxd/control-plane/internal/wake"
@@ -46,7 +49,13 @@ type Server struct {
 	Userns            string
 	PreviewEntrypoint string
 	PreviewTLS        bool
-	SetMemoryHigh     bool
+	// PublicHTTPPort is the HOST-facing port that preview/console URLs are
+	// reached on (the host side of Traefik's published port). previewURL
+	// appends it unless it's the default for the scheme (80 for http, 443
+	// for https), so on a shared host with HTTP_PORT=18080 the API returns
+	// a reachable ":18080" URL instead of a bare :80 one. Empty = default.
+	PublicHTTPPort string
+	SetMemoryHigh  bool
 
 	// AgentCfg is the in-memory cache of the platform's agent
 	// configuration (model + AGENTS.md) — the source of truth for
@@ -73,6 +82,11 @@ type Server struct {
 	// GET /llm.txt (the API contract for integrators). Empty → 404.
 	LLMTxtPath string
 
+	// Secrets encrypts sensitive app_config values at rest (Slice 1 of
+	// app config/secrets). nil-safe: sensitive config writes return 503
+	// when unset, but main.go always configures it.
+	Secrets *secrets.Cipher
+
 	// Phase 5 additions — nil-safe so existing tests that build a
 	// Server without these still work.
 	Inflight     *activity.InflightExec
@@ -94,8 +108,18 @@ type Server struct {
 	// main.go around this mux).
 	Auth                *auth.Middleware
 	Audit               *audit.Logger
-	SnapshotsRoot       string // per-sandbox purge of _snapshots/<id>/
-	ForwardAuthDenyMode string // "redirect" (default) | "meta-refresh"
+	Events              *events.Recorder // Phase 5 — durable app_events timeline
+	SnapshotsRoot       string           // per-sandbox purge of _snapshots/<id>/
+	ForwardAuthDenyMode string           // "redirect" (default) | "meta-refresh"
+
+	// Phase 8A — static, safe instance metadata for GET /v1/settings.
+	// Populated in main; contains no secrets.
+	Instance InstanceInfo
+
+	// Phase 8B — live, runtime-editable lifecycle tunables (idle/keepalive),
+	// shared with the reaper. nil-safe: PATCH /v1/settings returns 503 when
+	// unset, and the static KeepaliveMax is used as a fallback.
+	Live *instancecfg.Live
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -131,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes", s.observe("POST /v1/sandboxes", s.v1CreateSandbox))
 	mux.HandleFunc("GET /v1/sandboxes/{id}", s.observe("GET /v1/sandboxes/{id}", s.v1GetSandbox))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/stop", s.observe("POST /v1/sandboxes/{id}/stop", s.v1StopSandbox))
+	mux.HandleFunc("POST /v1/sandboxes/{id}/start", s.observe("POST /v1/sandboxes/{id}/start", s.v1StartSandbox))
 	mux.HandleFunc("DELETE /v1/sandboxes/{id}", s.observe("DELETE /v1/sandboxes/{id}", s.v1DeleteSandbox))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/tasks", s.observe("POST /v1/sandboxes/{id}/tasks", s.v1SubmitTask))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/tasks/{taskId}", s.observe("GET /v1/sandboxes/{id}/tasks/{taskId}", s.v1GetTask))
@@ -140,13 +165,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sandboxes/{id}/files/content", s.observe("GET /v1/sandboxes/{id}/files/content", s.v1FileContent))
 	mux.HandleFunc("PUT /v1/sandboxes/{id}/files", s.observe("PUT /v1/sandboxes/{id}/files", s.v1PutFile))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/export", s.observe("GET /v1/sandboxes/{id}/export", s.v1Export))
+	mux.HandleFunc("GET /v1/sandboxes/{id}/processes/{name}/logs", s.observe("GET /v1/sandboxes/{id}/processes/{name}/logs", s.v1ProcessLogs))
 
 	// Durable apps above sandboxes (Phase 1).
+	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
+	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
+	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
 	mux.HandleFunc("POST /v1/apps/{id}/sandbox", s.observe("POST /v1/apps/{id}/sandbox", s.v1CreateAppSandbox))
+	mux.HandleFunc("GET /v1/apps/{id}/snapshots", s.observe("GET /v1/apps/{id}/snapshots", s.v1ListAppSnapshots))
+	mux.HandleFunc("POST /v1/apps/{id}/restore", s.observe("POST /v1/apps/{id}/restore", s.v1RestoreApp))
+	mux.HandleFunc("POST /v1/apps/{id}/fork", s.observe("POST /v1/apps/{id}/fork", s.v1ForkApp))
+	mux.HandleFunc("GET /v1/apps/{id}/events", s.observe("GET /v1/apps/{id}/events", s.v1ListAppEvents))
+	mux.HandleFunc("GET /v1/tasks/{id}/events", s.observe("GET /v1/tasks/{id}/events", s.v1ListTaskEvents))
+	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
+	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
+	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
+	mux.HandleFunc("DELETE /v1/apps/{id}/config/{key}", s.observe("DELETE /v1/apps/{id}/config/{key}", s.v1DeleteAppConfig))
 
 	// Snapshots-as-templates (ops/design/snapshots-as-templates.md).
 	mux.HandleFunc("POST /v1/snapshots", s.observe("POST /v1/snapshots", s.v1CreateSnapshot))

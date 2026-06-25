@@ -42,8 +42,19 @@ data directory mounted. It:
 
 ### runtimed (in-sandbox supervisor)
 Built into the base image as the container's main process (`cmd/runtimed`). It
-supervises the user's dev server and runs coding tasks submitted through the
+supervises the user's processes and runs coding tasks submitted through the
 API. It's compiled in the base image's build stage, so the host needs no Go.
+
+On boot runtimed reads an optional **`sandbox.yaml`** (the runtime manifest) from
+the app dir and runs a generalized process model: one optional `web` process
+(previewed) plus N background `workers`, each supervised with restart-on-exit
+backoff. No manifest = the default Vite app (backward compatible). It also runs a
+post-task `build` check and, for runtimes without live reload, a per-process
+`restart_after_task` that bounces the process after each task so agent edits go
+live. **Runtime presets** (`internal/preset`) are the create-time bundles —
+template + generated `sandbox.yaml` + capabilities — behind `GET /v1/presets` and
+the `runtime_preset` create field. Process state and per-process logs are exposed
+over the API. Schema + rules: `docs/sandbox-manifest.md`.
 
 ### Traefik (edge)
 Docker label provider, scoped by a `sandboxd.managed=true` constraint so it
