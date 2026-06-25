@@ -43,6 +43,14 @@ export interface Settings {
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
 }
 
+// Read-only AI Agents status (GET /v1/agents). No tokens are ever returned.
+export interface Agent {
+  id: string
+  label: string
+  installed_state: 'installed' | 'not_installed' | 'unknown'
+  status: 'connected' | 'needs_login'
+}
+
 export interface SettingsPatch {
   lifecycle?: {
     idle_reap_enabled?: boolean
@@ -143,6 +151,7 @@ export const api = {
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
   getSettings: () => req<Settings>('GET', '/v1/settings'),
+  getAgents: () => req<{ providers: Agent[] }>('GET', '/v1/agents').then((r) => r.providers || []),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),

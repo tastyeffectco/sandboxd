@@ -105,6 +105,28 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/agents:
+    get:
+      tags: [apps]
+      summary: List coding-agent providers with installed + connected status (read-only, no tokens)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        installed_state: { type: string, enum: [installed, not_installed, unknown] }
+                        status: { type: string, enum: [connected, needs_login] }
+
   /v1/presets:
     get:
       tags: [apps]

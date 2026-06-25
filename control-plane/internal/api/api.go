@@ -6,11 +6,13 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/sandboxd/control-plane/internal/activity"
+	"github.com/sandboxd/control-plane/internal/agentauth"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
@@ -120,6 +122,13 @@ type Server struct {
 	// shared with the reaper. nil-safe: PATCH /v1/settings returns 503 when
 	// unset, and the static KeepaliveMax is used as a fallback.
 	Live *instancecfg.Live
+
+	// Phase 10B A0 — host-side agent auth store (read-only here) + a lazy,
+	// cached, best-effort "installed" probe. nil-safe.
+	AgentAuth      *agentauth.Store
+	agentProbeOnce sync.Once
+	agentProbe     map[string]string                    // binary -> installed|not_installed (nil => unknown)
+	agentProbeFn   func(image string) map[string]string // test override
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -170,6 +179,7 @@ func (s *Server) Handler() http.Handler {
 	// Durable apps above sandboxes (Phase 1).
 	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
 	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
+	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
 	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
