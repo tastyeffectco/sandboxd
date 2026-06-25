@@ -5,11 +5,19 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
-## [Unreleased] — v0.4.0 (integration: `release/v0.4-apps-console`)
+## [0.4.0] — 2026-06-25
 
-One release-candidate integration of all accepted v0.3 + v0.4 work. Linearly
-stacked on `console` → `feat/v0.4-snapshots-observability` → `feat/runtime-manifest`.
-`main` stays at 0.2.0 until this is cut.
+**Self-hosted control plane for AI-built apps** — adds a web console, runtime
+presets, snapshots/fork/restore, observability, process logs, and a read-only
+(plus editable lifecycle) settings view on top of the v0.3 app/config/secrets
+foundation. Integration of all accepted v0.3 + v0.4 work, validated by a
+from-zero VPS release-candidate QA pass.
+
+### Highlights
+Web console · runtime presets (React/Vite, Next.js, Node/Express, FastAPI,
+Worker) · live preview URLs · agent tasks · app config & secrets (write-only
+secrets) · snapshots / fork / restore · activity/events timeline · per-process
+logs · settings with editable idle/keepalive lifecycle controls.
 
 ### Added
 - **Snapshots, fork & restore.** Public `POST/GET/DELETE /v1/snapshots`,
@@ -43,11 +51,25 @@ stacked on `console` → `feat/v0.4-snapshots-observability` → `feat/runtime-m
   `app_healthy`; `build_ok` stays for back-compat (true only when `passed`).
 - **`web.restart_after_task` / worker `restart_after_task`.** Per-process
   reload-by-restart for runtimes without live reload.
+- **Settings / instance overview.** `GET /v1/settings` — a read-only, safe
+  instance summary (version, networking/preview, auth mode, runtime/storage,
+  lifecycle, egress mode, agent providers, presets, capabilities; never any
+  secret). A console **Settings** page renders it.
+- **Editable lifecycle tunables.** `PATCH /v1/settings` edits ONLY the idle-reap
+  enable/threshold and keepalive-max (strict allowlist; any other key → 400),
+  persisted and **hot-applied** to the running reaper/keepalive; the console
+  Settings page edits them. Everything else stays read-only / env-managed.
+- **Base image contract.** `docs/base-image.md` documents what a custom base
+  image must provide (runtimed, `sandbox` uid/gid 1000, workspace path, no
+  privileged/Docker socket) and how to select one via `SANDBOXD_IMAGE`.
 - **Shared-host installer & preview port.** `scripts/dev/install-v04-ubuntu.sh`
   with shared-host mode (loopback API, configurable `HTTP_PORT`), and preview
   URLs that include the public port when `HTTP_PORT` ≠ 80.
+- **Test foundation.** Public-surface + JSON-shape contract tests (sandboxd is
+  the contract), a console unit-test runner (vitest) with API-mirroring fixtures,
+  and `docs/release-checklist.md` for manual VPS sign-off.
 - **Docs.** `docs/sandbox-manifest.md`, OpenAPI updates (`/v1/presets`,
-  process logs, `runtime_preset`, `processes`, task health fields).
+  `/v1/settings`, process logs, `runtime_preset`, `processes`, task health fields).
 
 ### Fixed
 - **Explicit `build.command: ""` now skips the build check** (was overwritten by
@@ -66,6 +88,14 @@ stacked on `console` → `feat/v0.4-snapshots-observability` → `feat/runtime-m
   can't tell "warming" from "ready").
 - Per-task `agent.log` transcript can be empty on task timeout — persistence
   needs investigation.
+- **Docker backend only** — OCI/containerd/Kata are a future runtime provider.
+- **Out of scope for v0.4:** Git/GitHub import, managed databases/sidecars, and
+  Docker-Compose-inside-the-sandbox.
+
+---
+
+> v0.4.0 rolls up the v0.3.0 work below (app config & secrets, web console +
+> `/v1` OpenAPI) — kept here for detail.
 
 ## [Unreleased] — v0.3.0 (integration: `console`)
 
