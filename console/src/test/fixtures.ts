@@ -7,9 +7,9 @@ import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings, Agent } from
 
 // Read-only AI Agents status (mirrors GET /v1/agents). No tokens.
 export const agentsFixture: Agent[] = [
-  { id: 'opencode', label: 'OpenCode', installed_state: 'installed', status: 'connected' },
-  { id: 'claude-code', label: 'Claude Code', installed_state: 'installed', status: 'needs_login' },
-  { id: 'codex', label: 'Codex', installed_state: 'not_installed', status: 'needs_login' },
+  { id: 'opencode', label: 'OpenCode', installed_state: 'installed', status: 'connected', runnable: true },
+  { id: 'claude-code', label: 'Claude Code', installed_state: 'installed', status: 'needs_login', runnable: false },
+  { id: 'codex', label: 'Codex', installed_state: 'not_installed', status: 'needs_login', runnable: false },
 ]
 
 export const presetsFixture: Preset[] = [

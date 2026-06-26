@@ -19,6 +19,9 @@ type v1Agent struct {
 	Label          string `json:"label"`
 	InstalledState string `json:"installed_state"` // installed | not_installed | unknown
 	Status         string `json:"status"`          // connected | needs_login
+	// Runnable: runtimed has a task adapter for this provider. When connected
+	// but NOT runnable, the credentials are "imported, runner not enabled yet".
+	Runnable bool `json:"runnable"`
 }
 
 // v1ListAgents — GET /v1/agents.
@@ -36,7 +39,13 @@ func (s *Server) v1ListAgents(w http.ResponseWriter, _ *http.Request) {
 		if s.AgentAuth != nil && s.AgentAuth.Connected(p.ID) {
 			status = "connected"
 		}
-		out = append(out, v1Agent{ID: p.ID, Label: p.Label, InstalledState: state, Status: status})
+		out = append(out, v1Agent{
+			ID:             p.ID,
+			Label:          p.Label,
+			InstalledState: state,
+			Status:         status,
+			Runnable:       agentauth.Runnable(p.ID),
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"providers": out})
 }

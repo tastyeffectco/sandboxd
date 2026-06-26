@@ -3,42 +3,86 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sandboxd/control-plane/internal/agentauth"
 )
 
-// With no session manager configured, every connect endpoint is nil-safe (503).
-func TestAgentConnectNilSafe(t *testing.T) {
-	s := &Server{} // AgentSessions nil
-	cases := []struct {
-		method, path string
-		fn           http.HandlerFunc
-	}{
-		{"POST", "/v1/agents/claude-code/connect", s.v1AgentConnect},
-		{"GET", "/v1/agents/claude-code/connect/x", s.v1AgentConnectStatus},
-		{"POST", "/v1/agents/claude-code/connect/x/code", s.v1AgentConnectCode},
-		{"POST", "/v1/agents/claude-code/disconnect", s.v1AgentDisconnect},
+func newImportServer(t *testing.T) (*Server, *agentauth.Store) {
+	t.Helper()
+	st := agentauth.NewStore(t.TempDir())
+	if err := st.EnsureRoot(); err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
+	return &Server{AgentAuth: st}, st
+}
+
+// Import writes the pasted credential opaquely, promotes it, and reports
+// connected — without ever echoing the credential back.
+func TestAgentImportStoresOpaquelyAndConnects(t *testing.T) {
+	s, st := newImportServer(t)
+	secret := `{"claudeAiOauth":{"accessToken":"SECRET-DO-NOT-LEAK"}}`
+	w := httptest.NewRecorder()
+	s.v1AgentImport(w, httptest.NewRequest("POST", "/v1/agents/claude-code/import",
+		strings.NewReader(`{"credentials":`+jsonString(secret)+`}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "SECRET-DO-NOT-LEAK") {
+		t.Fatal("import response echoed the credential")
+	}
+	if !st.Connected("claude-code") {
+		t.Fatal("claude-code should be connected after import")
+	}
+	// Stored at the provider's opaque credential path, verbatim.
+	b, err := os.ReadFile(filepath.Join(st.Dir("claude-code"), ".claude", ".credentials.json"))
+	if err != nil || string(b) != secret {
+		t.Fatalf("credential not stored verbatim: err=%v", err)
+	}
+}
+
+func TestAgentImportRejectsEmpty(t *testing.T) {
+	s, _ := newImportServer(t)
+	w := httptest.NewRecorder()
+	s.v1AgentImport(w, httptest.NewRequest("POST", "/v1/agents/claude-code/import",
+		strings.NewReader(`{"credentials":""}`)))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("got %d; want 400", w.Code)
+	}
+}
+
+func TestAgentDisconnectDeletes(t *testing.T) {
+	s, st := newImportServer(t)
+	_ = st.ImportCredential("claude-code", ".claude/.credentials.json", []byte("x"))
+	if !st.Connected("claude-code") {
+		t.Fatal("precondition: should be connected")
+	}
+	w := httptest.NewRecorder()
+	s.v1AgentDisconnect(w, httptest.NewRequest("POST", "/v1/agents/claude-code/disconnect", nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("got %d; want 204", w.Code)
+	}
+	if st.Connected("claude-code") {
+		t.Error("should be disconnected after delete")
+	}
+}
+
+func TestAgentImportNilSafe(t *testing.T) {
+	s := &Server{} // no AgentAuth
+	for _, fn := range []http.HandlerFunc{s.v1AgentImport, s.v1AgentDisconnect} {
 		w := httptest.NewRecorder()
-		c.fn(w, httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`)))
+		fn(w, httptest.NewRequest("POST", "/x", strings.NewReader(`{}`)))
 		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("%s %s: got %d; want 503", c.method, c.path, w.Code)
+			t.Errorf("got %d; want 503", w.Code)
 		}
 	}
 }
 
-// An unknown session id returns 404 (no token, no leak).
-func TestAgentConnectStatusUnknown(t *testing.T) {
-	store := agentauth.NewStore(t.TempDir())
-	s := &Server{AgentSessions: agentauth.NewSessionManager(store, "img", "true", "")}
-	r := httptest.NewRequest("GET", "/v1/agents/claude-code/connect/nope", nil)
-	r.SetPathValue("id", "nope")
-	w := httptest.NewRecorder()
-	s.v1AgentConnectStatus(w, r)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("got %d; want 404", w.Code)
-	}
+// jsonString quotes a string as a JSON literal for embedding in a request body.
+func jsonString(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	return `"` + r.Replace(s) + `"`
 }

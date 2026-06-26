@@ -178,17 +178,18 @@ func toolTarget(raw json.RawMessage) string {
 		return ""
 	}
 	var in struct {
-		FilePath string `json:"filePath"`
-		Path     string `json:"path"`
-		File     string `json:"file"`
-		Pattern  string `json:"pattern"`
-		Command  string `json:"command"`
+		FilePath  string `json:"filePath"`
+		FilePathS string `json:"file_path"` // claude tools use snake_case
+		Path      string `json:"path"`
+		File      string `json:"file"`
+		Pattern   string `json:"pattern"`
+		Command   string `json:"command"`
 	}
 	if json.Unmarshal(raw, &in) != nil {
 		return ""
 	}
 	t := in.FilePath
-	for _, c := range []string{in.Path, in.File, in.Pattern, in.Command} {
+	for _, c := range []string{in.FilePathS, in.Path, in.File, in.Pattern, in.Command} {
 		if t == "" {
 			t = c
 		}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/sandboxd/control-plane/internal/agentauth"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/runtime"
@@ -77,9 +78,12 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	if agent == "" {
 		agent = "opencode"
 	}
-	if agent != "opencode" {
+	// Only providers runtimed can actually run as a task agent are accepted.
+	// claude-code requires its credentials to be mounted (created with
+	// SANDBOXD_DEFAULT_AGENT=claude-code); see docs/agent-auth.md.
+	if !agentauth.Runnable(agent) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			"only the 'opencode' agent is supported")
+			"unsupported agent (supported: opencode, claude-code)")
 		return
 	}
 	if req.TimeoutS < 0 {

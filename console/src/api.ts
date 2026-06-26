@@ -44,20 +44,14 @@ export interface Settings {
 }
 
 // Read-only AI Agents status (GET /v1/agents). No tokens are ever returned.
+// `runnable` = runtimed has a task adapter for this provider; a connected but
+// not-runnable provider means "credentials imported, runner not enabled yet".
 export interface Agent {
   id: string
   label: string
   installed_state: 'installed' | 'not_installed' | 'unknown'
   status: 'connected' | 'needs_login'
-}
-
-// A console-driven Claude Code login session. `url` is the login URL to open;
-// no token is ever returned.
-export interface ConnectSession {
-  session_id: string
-  status: 'starting' | 'awaiting_code' | 'finalizing' | 'connected' | 'failed'
-  url?: string
-  error?: string
+  runnable: boolean
 }
 
 export interface SettingsPatch {
@@ -162,12 +156,9 @@ export const api = {
   getSettings: () => req<Settings>('GET', '/v1/settings'),
   getAgents: () => req<{ providers: Agent[] }>('GET', '/v1/agents').then((r) => r.providers || []),
 
-  // Claude Code connect (console-driven; uses the owner's Claude subscription).
-  connectClaude: () => req<ConnectSession>('POST', '/v1/agents/claude-code/connect'),
-  getClaudeConnect: (id: string) =>
-    req<ConnectSession>('GET', `/v1/agents/claude-code/connect/${id}`),
-  submitClaudeCode: (id: string, code: string) =>
-    req<ConnectSession>('POST', `/v1/agents/claude-code/connect/${id}/code`, { code }),
+  // Claude Code credentials: import an existing bundle opaquely / disconnect.
+  importClaude: (credentials: string) =>
+    req<{ provider: string; status: string }>('POST', '/v1/agents/claude-code/import', { credentials }),
   disconnectClaude: () => req<unknown>('POST', '/v1/agents/claude-code/disconnect'),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
@@ -202,8 +193,8 @@ export const api = {
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
 
-  submitTask: (id: string, prompt: string) =>
-    req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, { prompt, agent: 'opencode' }),
+  submitTask: (id: string, prompt: string, agent: string = 'opencode') =>
+    req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, { prompt, agent }),
   getTask: (id: string, taskId: string) =>
     req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
   taskEventsURL: (id: string, taskId: string) =>

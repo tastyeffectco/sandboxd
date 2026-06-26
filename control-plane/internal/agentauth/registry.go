@@ -36,3 +36,28 @@ func Get(id string) (Provider, bool) {
 	}
 	return Provider{}, false
 }
+
+// runnable is the set of providers runtimed can actually run as a task agent.
+// MUST be kept in sync with runtimed's selectAgent. claude-code joins this when
+// its adapter lands (Phase 10B slice 3); until then a connected claude-code is
+// "imported, runner not enabled yet".
+var runnable = map[string]bool{
+	"opencode":    true,
+	"claude-code": true,
+}
+
+// Runnable reports whether a provider has a runtimed task adapter.
+func Runnable(id string) bool { return runnable[id] }
+
+// credentialFiles maps a provider to the HOME-relative file its login writes the
+// long-lived token to. Used as the opaque target for credential import and the
+// presence check. The file is never opened or parsed.
+var credentialFiles = map[string]string{
+	"claude-code": ".claude/.credentials.json",
+}
+
+// CredentialFile returns the provider's credential file path (relative to HOME).
+func CredentialFile(id string) (string, bool) {
+	f, ok := credentialFiles[id]
+	return f, ok
+}
