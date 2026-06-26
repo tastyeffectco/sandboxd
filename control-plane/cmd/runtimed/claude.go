@@ -50,9 +50,34 @@ type claudeEvent struct {
 			Input json.RawMessage `json:"input"` // tool args
 		} `json:"content"`
 	} `json:"message"`
-	Error struct {
+	// Error is tolerated as string | object | null: real claude puts a bare
+	// string here on the assistant turn (e.g. "authentication_failed"), so a
+	// strongly-typed struct would fail the whole line's unmarshal.
+	Error json.RawMessage `json:"error"`
+}
+
+// hasError reports whether a raw `error` field is present and non-null.
+func hasError(raw json.RawMessage) bool {
+	s := strings.TrimSpace(string(raw))
+	return s != "" && s != "null" && s != `""`
+}
+
+// errString renders a raw `error` (string or {message:…} object) as a message.
+func errString(raw json.RawMessage) string {
+	if !hasError(raw) {
+		return "claude error"
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil && s != "" {
+		return s
+	}
+	var obj struct {
 		Message string `json:"message"`
-	} `json:"error"`
+	}
+	if json.Unmarshal(raw, &obj) == nil && obj.Message != "" {
+		return obj.Message
+	}
+	return "claude error"
 }
 
 type claudeParseResult struct {
@@ -86,14 +111,25 @@ func parseClaudeStream(r io.Reader, emit eventSink) claudeParseResult {
 		}
 		switch ev.Type {
 		case "assistant":
+			// An assistant turn carrying a top-level error (e.g. auth failure)
+			// is NOT real output: capture its text as the failure reason and do
+			// not emit it as a normal agent message.
+			errTurn := hasError(ev.Error)
 			for _, blk := range ev.Message.Content {
 				switch blk.Type {
 				case "text":
-					if blk.Text != "" {
-						pr.SawText = true
-						acc.WriteString(blk.Text)
-						emit(runtime.EventMessage, map[string]any{"role": "agent", "text": blk.Text})
+					if blk.Text == "" {
+						continue
 					}
+					if errTurn {
+						if pr.APIErr == "" {
+							pr.APIErr = blk.Text
+						}
+						continue
+					}
+					pr.SawText = true
+					acc.WriteString(blk.Text)
+					emit(runtime.EventMessage, map[string]any{"role": "agent", "text": blk.Text})
 				case "tool_use":
 					if blk.Name != "" {
 						pr.SawTool = true
@@ -128,11 +164,7 @@ func parseClaudeStream(r io.Reader, emit eventSink) claudeParseResult {
 			}
 		case "error":
 			if pr.APIErr == "" {
-				if ev.Error.Message != "" {
-					pr.APIErr = ev.Error.Message
-				} else {
-					pr.APIErr = "claude error"
-				}
+				pr.APIErr = errString(ev.Error)
 			}
 		}
 	}

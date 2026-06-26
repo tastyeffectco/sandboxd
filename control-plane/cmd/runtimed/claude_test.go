@@ -75,6 +75,32 @@ func TestParseClaudeStreamNotLoggedIn(t *testing.T) {
 	}
 }
 
+// Real claude 2.1.x output for an unauthenticated `-p … --output-format
+// stream-json` run: the assistant turn carries a bare-string top-level
+// `"error"`, and the result is subtype:"success" with is_error:true. The
+// auth-error text must become the failure reason, NOT a normal agent message.
+func TestParseClaudeStreamRealNotLoggedIn(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"type":"system","subtype":"init","apiKeySource":"none","claude_code_version":"2.1.177"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Not logged in · Please run /login"}]},"error":"authentication_failed"}`,
+		`{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","total_cost_usd":0,"usage":{"input_tokens":0,"output_tokens":0}}`,
+	}, "\n")
+	sink, evs := collectSink()
+	pr := parseClaudeStream(strings.NewReader(stream), sink)
+
+	if !strings.Contains(pr.APIErr, "Not logged in") {
+		t.Errorf("APIErr = %q; want the auth message", pr.APIErr)
+	}
+	if pr.SawText || pr.SawTool {
+		t.Error("auth-error text must not count as real output")
+	}
+	for _, e := range *evs {
+		if e.typ == "message" {
+			t.Errorf("auth-error text must not be emitted as an agent message: %+v", e.data)
+		}
+	}
+}
+
 func TestParseClaudeStreamResultError(t *testing.T) {
 	sink, _ := collectSink()
 	pr := parseClaudeStream(strings.NewReader(
