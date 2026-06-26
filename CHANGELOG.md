@@ -5,6 +5,24 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — post-v0.4 (branch `feat/phase-10b-agent-auth`, NOT in v0.4)
+
+> Not released and **not merged** into `release/v0.4-apps-console`. Listed here
+> for accuracy; these features ship in a **future release**, not v0.4.
+
+### Added (post-v0.4, on the branch)
+- **Managed agent auth + Claude Code provider** (accepted, live-verified on a real
+  Claude subscription). `GET /v1/agents` (installed/connected/`runnable` status);
+  opaque **credential import** `POST /v1/agents/claude-code/import` +
+  `…/disconnect`; per-provider auth dirs under `SANDBOXD_DATA_DIR/agent-auth/<provider>/`
+  mounted at `/run/agent-auth/<provider>` (outside workspaces). A **real Claude
+  Code task adapter**: `agent:"claude-code"` runs `claude -p … --output-format
+  stream-json …`, normalized into status/message/tool/build/done. OpenCode remains
+  supported. Credentials never enter workspaces, snapshots, Docker env, logs,
+  events, or task results. **No custom OAuth / no `setup-token` browser flow.**
+  Guided in-console login (`setup-token` PTY/xterm), Codex, and stronger per-task
+  auth isolation are deferred. See [`docs/agent-auth.md`](docs/agent-auth.md).
+
 ## [0.4.0] — 2026-06-25
 
 **Self-hosted control plane for AI-built apps** — adds a web console, runtime
