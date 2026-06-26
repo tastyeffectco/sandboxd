@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -205,17 +204,10 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	cmd := exec.Command("opencode", "run",
 		"--format", "json", "--dangerously-skip-permissions", spec.prompt)
 	cmd.Dir = spec.workDir
-	// Phase 10B A1 — scrub secret-shaped vars from the inherited env and point
-	// HOME at the mounted agent-auth dir (if sandboxd mounted one). Credentials
-	// come from files under HOME, never from inherited container env.
-	overlay := make(map[string]string, len(spec.env)+1)
-	for k, v := range spec.env {
-		overlay[k] = v
-	}
-	if h := os.Getenv("RUNTIMED_AGENT_HOME"); h != "" {
-		overlay["HOME"] = h
-	}
-	cmd.Env = buildAgentEnv(os.Environ(), overlay)
+	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's
+	// mounted auth dir (/run/agent-auth/opencode), if any. Credentials come from
+	// files under HOME, never from inherited container env.
+	cmd.Env = agentEnv(o.name(), spec.env)
 	// Own process group so cancel/timeout kills the whole agent tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 

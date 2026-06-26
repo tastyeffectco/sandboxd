@@ -1,6 +1,46 @@
 package main
 
-import "strings"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// agentAuthBaseDir is the in-container parent of per-provider auth mounts
+// (sandboxd mounts <data>/agent-auth/<provider> at /run/agent-auth/<provider>).
+// Overridable for tests.
+func agentAuthBaseDir() string {
+	if b := os.Getenv("RUNTIMED_AGENT_AUTH_BASE"); b != "" {
+		return b
+	}
+	return "/run/agent-auth"
+}
+
+// agentAuthHome returns the HOME an agent should use to find its credentials —
+// /run/agent-auth/<agent> — but only if that dir is actually mounted. Empty
+// means "no auth mounted for this agent": the agent runs with its default HOME.
+func agentAuthHome(agentName string) string {
+	p := filepath.Join(agentAuthBaseDir(), agentName)
+	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+		return p
+	}
+	return ""
+}
+
+// agentEnv builds the spawned agent's environment: scrub secret-shaped vars,
+// apply the task's injected env, and point HOME at the selected agent's mounted
+// auth dir (if any). HOME is keyed on the AGENT NAME, so a claude-code task gets
+// the claude-code creds even when the sandbox's default agent is opencode.
+func agentEnv(agentName string, specEnv map[string]string) []string {
+	overlay := make(map[string]string, len(specEnv)+1)
+	for k, v := range specEnv {
+		overlay[k] = v
+	}
+	if h := agentAuthHome(agentName); h != "" {
+		overlay["HOME"] = h
+	}
+	return buildAgentEnv(os.Environ(), overlay)
+}
 
 // buildAgentEnv constructs the environment for a spawned coding-agent process.
 // It (1) SCRUBS secret-shaped variables out of the inherited process env so an

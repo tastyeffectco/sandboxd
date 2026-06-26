@@ -554,16 +554,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// 2. docker run with the locked flag set + traefik labels.
 	labels := traefik.Labels(req.ID, req.Ports, s.PreviewDomain, visibility, s.PreviewEntrypoint, s.PreviewTLS)
-	// Phase 10B A1 — bind-mount the selected provider's auth dir (as the agent's
-	// HOME) only when it's connected. The mount is outside the workspace, so
-	// credentials never enter the workspace or snapshots. Empty when no managed
-	// auth is configured: the sandbox runs exactly as before.
-	runEnv := envFlags
-	volumes := []string{mntPath + ":/home/sandbox"}
-	if authVol, authEnv := s.agentAuthMount(); authVol != "" {
-		volumes = append(volumes, authVol)
-		runEnv = append(append([]string{}, envFlags...), authEnv)
-	}
+	// Phase 10B — bind-mount EVERY connected provider's auth dir at
+	// /run/agent-auth/<provider> (outside the workspace). runtimed selects the
+	// right one per task by the requested agent, so an explicit agent:"claude-code"
+	// task works regardless of the default. No credential is ever in env.
+	volumes := append([]string{mntPath + ":/home/sandbox"}, s.agentAuthMounts()...)
 	startRun := time.Now()
 	var runErr error
 	containerID, runErr := s.Docker.Run(r.Context(), docker.RunSpec{
@@ -580,7 +575,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		PidsLimit:   1024,
 		Ulimits:     []string{"nofile=65536:65536"},
 		Tmpfs:       []string{"/tmp:size=512m", "/var/tmp:size=128m"},
-		Env:         runEnv,
+		Env:         envFlags,
 		Volumes:     volumes,
 		Labels:      labels,
 		Image:       s.Image,

@@ -9,65 +9,56 @@ import (
 	"github.com/sandboxd/control-plane/internal/agentauth"
 )
 
-// agentAuthMount mounts ONLY the connected default provider's dir, at a path
-// outside the workspace, and never exposes the token via env (only a path).
-func TestAgentAuthMountConnectedOnly(t *testing.T) {
-	data := t.TempDir()
-	st := agentauth.NewStore(data)
+func connect(t *testing.T, st *agentauth.Store, provider string) {
+	t.Helper()
+	if err := os.MkdirAll(st.Dir(provider), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.Dir(provider), "cred"), []byte("OPAQUE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Every CONNECTED provider is mounted at /run/agent-auth/<provider>, outside the
+// workspace; the env carries no token.
+func TestAgentAuthMountsAllConnected(t *testing.T) {
+	st := agentauth.NewStore(t.TempDir())
 	if err := st.EnsureRoot(); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{AgentAuth: st, DefaultAgent: "opencode"}
 
-	// Not connected (no dir) => no mount.
-	if vol, env := s.agentAuthMount(); vol != "" || env != "" {
-		t.Fatalf("unconnected provider should not mount: vol=%q env=%q", vol, env)
+	// Nothing connected → no mounts.
+	if v := s.agentAuthMounts(); len(v) != 0 {
+		t.Fatalf("expected no mounts; got %v", v)
 	}
 
-	// Connect opencode with an opaque blob.
-	token := "OPAQUE-DO-NOT-LEAK"
-	if err := os.MkdirAll(st.Dir("opencode"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(st.Dir("opencode"), "auth.json"), []byte(token), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	connect(t, st, "opencode")
+	connect(t, st, "claude-code")
+	vols := s.agentAuthMounts()
+	joined := strings.Join(vols, " ")
 
-	vol, env := s.agentAuthMount()
-	if vol != st.Dir("opencode")+":/run/agent-home" {
-		t.Errorf("vol = %q", vol)
+	for _, p := range []string{"opencode", "claude-code"} {
+		want := st.Dir(p) + ":/run/agent-auth/" + p
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing mount for %s: %q", p, joined)
+		}
 	}
-	if env != "RUNTIMED_AGENT_HOME=/run/agent-home" {
-		t.Errorf("env = %q", env)
+	// codex is NOT connected → not mounted.
+	if strings.Contains(joined, "/run/agent-auth/codex") {
+		t.Error("unconnected codex must not be mounted")
 	}
-	// The mount target is OUTSIDE the workspace (/home/sandbox).
-	if strings.Contains(vol, ":/home/sandbox") {
-		t.Error("auth mount must not target the workspace")
+	// Never targets the workspace, and never carries the opaque token.
+	if strings.Contains(joined, ":/home/sandbox") {
+		t.Error("auth mounts must not target the workspace")
 	}
-	// The env carries only a path — never the opaque token.
-	if strings.Contains(env, token) {
-		t.Error("auth env leaked the token")
-	}
-
-	// Mounts ONLY the default provider, even if another is connected.
-	if err := os.MkdirAll(st.Dir("claude-code"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(st.Dir("claude-code"), "c"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if vol, _ := s.agentAuthMount(); !strings.Contains(vol, "agent-auth/opencode:") {
-		t.Errorf("should mount only the default provider (opencode); got %q", vol)
+	if strings.Contains(joined, "OPAQUE") {
+		t.Error("mount spec leaked credential contents")
 	}
 }
 
-// nil-safe: no store / empty default => no mount (sandbox runs as before).
-func TestAgentAuthMountDisabled(t *testing.T) {
-	if vol, _ := (&Server{}).agentAuthMount(); vol != "" {
-		t.Error("nil AgentAuth should not mount")
-	}
-	st := agentauth.NewStore(t.TempDir())
-	if vol, _ := (&Server{AgentAuth: st, DefaultAgent: ""}).agentAuthMount(); vol != "" {
-		t.Error("empty DefaultAgent should not mount")
+func TestAgentAuthMountsNilSafe(t *testing.T) {
+	if v := (&Server{}).agentAuthMounts(); v != nil {
+		t.Error("nil AgentAuth should mount nothing")
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -182,17 +181,10 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 		"--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions",
 		spec.prompt)
 	cmd.Dir = spec.workDir
-
-	// Same env policy as the opencode adapter: scrub secret-shaped vars and
-	// point HOME at the mounted agent-auth dir (the imported Claude creds).
-	overlay := make(map[string]string, len(spec.env)+1)
-	for k, v := range spec.env {
-		overlay[k] = v
-	}
-	if h := os.Getenv("RUNTIMED_AGENT_HOME"); h != "" {
-		overlay["HOME"] = h
-	}
-	cmd.Env = buildAgentEnv(os.Environ(), overlay)
+	// Scrub secret-shaped vars and point HOME at THIS agent's mounted auth dir
+	// (/run/agent-auth/claude-code = the imported Claude creds), keyed on the
+	// agent name so it works even when the sandbox default is opencode.
+	cmd.Env = agentEnv(c.name(), spec.env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	stdout, err := cmd.StdoutPipe()
