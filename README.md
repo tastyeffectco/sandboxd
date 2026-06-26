@@ -224,10 +224,17 @@ real domain you get `https://s-<id>-3000.preview.yourdomain.com`
 ## Web console (optional UI)
 
 Prefer a UI to curl? sandboxd ships an optional web console — a small React SPA
-that talks **only** to the public `/v1` API. From it you can create and open
-apps, watch the live preview, submit agent tasks and stream their logs,
-start/stop the sandbox, and manage per-app **config & secrets** (sensitive
-values are write-only: set once, never shown again).
+that talks **only** to the public `/v1` API. From it you can:
+
+- **create apps** and **choose a runtime preset**;
+- **create / start / stop / delete** a sandbox and **open its live preview**;
+- **submit agent tasks** and **view task status + streamed logs**;
+- **manage per-app config & secrets** (sensitive values are write-only: set
+  once, never shown again);
+- **view the activity/events timeline** and **runtime processes + their logs**;
+- **snapshot / fork / restore** an app's workspace;
+- **read instance settings** and **edit the lifecycle tunables only** (idle
+  reaping + keepalive — see [Settings](#settings)).
 
 ```bash
 docker compose --profile console up -d        # core stack + console
@@ -242,6 +249,22 @@ profile) runs sandboxd without the console.
 The console never touches the database or workspaces — it's a pure `/v1` client
 (contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
 [`console/README.md`](console/README.md).
+
+## Settings
+
+Most settings are **env/install-managed** and read-only at runtime
+(`GET /v1/settings` exposes a safe, secret-free summary). The **only**
+values editable from the console/API (`PATCH /v1/settings`, hot-applied to the
+running reaper) are the lifecycle tunables:
+
+| Editable (console / `PATCH /v1/settings`) | Read-only (env / install-managed) |
+|---|---|
+| `idle_reap_enabled` | API auth, egress mode |
+| `idle_threshold_seconds` | networking, preview domain/port |
+| `keepalive_max_seconds` | base image, agent providers, secrets key |
+
+Auth tokens, the secrets-encryption key, and egress are **env/file-only** and
+are never shown or editable through the API.
 
 ## Runtime presets & `sandbox.yaml`
 
@@ -386,10 +409,18 @@ Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-m
 - The wake/warming interstitial returns HTTP `200` (callers can't distinguish
   "warming" from "ready" by status code alone).
 - Per-task `agent.log` can be empty on task timeout (transcript persistence WIP).
-- **Docker backend only** (OCI/containerd/Kata are a future provider; see
-  [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md)).
-- **Not yet:** Git/GitHub import, a managed-database/sidecar story, and
-  Docker-Compose-inside-the-sandbox are deliberately out of scope for v0.4.
+- **Docker is the only runtime provider today** (OCI/containerd/Kata are a future
+  provider; see [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md)).
+- **Compose / local service stacks are not first-class yet**, and there is no
+  built-in database/sidecar story — run **Postgres/Supabase/Neon etc. as remote
+  services** for now.
+- **No in-sandbox terminal yet**, and **no Git/private-repo import** yet.
+- **Claude Code *subscription* support is post-v0.4** — the managed agent-auth
+  store + Claude Code task adapter are **accepted on the `feat/phase-10b-agent-auth`
+  branch, not part of the v0.4 release** (documented in
+  [`docs/agent-auth.md`](docs/agent-auth.md)). v0.4 ships the OpenCode/Claude Code
+  CLIs in the image and the OpenCode task agent; an API-key agent works via the
+  sandbox `env` on v0.4.
 
 ## License
 

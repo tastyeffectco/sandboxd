@@ -1,17 +1,29 @@
 # Managed agent auth (Phase 10B)
 
+> **⚠️ Post-v0.4 / next release — not in the v0.4 release.** Everything in this
+> document lives on the **`feat/phase-10b-agent-auth`** branch, which is **not
+> merged** into `release/v0.4-apps-console`. The **credential import** + the
+> **`claude-code` task adapter** are **accepted and live-verified** on a real
+> Claude subscription, but they ship in a **future release**, not v0.4. v0.4
+> itself ships only the OpenCode/Claude Code CLIs in the base image and the
+> OpenCode task agent.
+
 How sandboxd gives a sandbox's coding agent its credentials **without** putting
 them in the workspace, snapshots, container env, logs, events, or task results.
 
-> **Status: import + adapter.** The store + runtime delivery (A1), opaque
-> **credential import** for claude-code, and the **Claude Code task adapter**
-> exist. The guided in-console login (`setup-token` PTY/xterm) is a later slice —
-> the old stdout-scrape automation was removed because claude v2's Ink/TUI
-> `setup-token` can't be driven by piped stdin.
+> **Status (accepted on the branch):** the store + runtime delivery, opaque
+> **credential import** for claude-code, and the **Claude Code task adapter** are
+> done and verified. There is **no custom OAuth and no `setup-token` browser
+> flow** implemented — credentials are obtained by **importing** an existing
+> `~/.claude/.credentials.json`. A guided in-console login (`setup-token`
+> PTY/xterm), **Codex** support, and **stronger per-task auth isolation** are
+> **deferred** (the old stdout-scrape `setup-token` automation was removed because
+> claude v2's Ink/TUI flow can't be driven by piped stdin).
 >
-> **Product model:** the `opencode` provider runs OpenCode; the `claude-code`
-> provider runs the Claude Code CLI. Claude credentials are only meaningful for
-> `claude-code` — they are never fed to OpenCode.
+> **Product model:** the `opencode` provider runs OpenCode (still supported); the
+> `claude-code` provider runs the real Claude Code CLI adapter. Claude
+> credentials are only meaningful for `claude-code` — they are never fed to
+> OpenCode.
 
 ## How credentials reach the agent
 

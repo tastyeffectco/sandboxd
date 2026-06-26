@@ -10,15 +10,17 @@ host, a real agent, and real time (idle/wake) — which CI deliberately does not
 
 ## 0. Prerequisites
 - [ ] Fresh Ubuntu VPS (not prod, not a shared host with another sandboxd/Traefik).
-- [ ] An agent credential available in the sandbox env (e.g. `ANTHROPIC_API_KEY`)
-      — required for the "run agent task" steps; without it the post-task pipeline
-      still runs but the agent itself fails.
+- [ ] An agent credential for the "run agent task" steps. **On v0.4** this is an
+      API key in the sandbox `env` (e.g. `ANTHROPIC_API_KEY`); without it the
+      post-task pipeline still runs but the agent itself fails. (The managed
+      agent-auth store + Claude Code subscription path is **post-v0.4** — see the
+      optional §11.)
 
 ## 1. Install
 - [ ] `scripts/dev/install-v04-ubuntu.sh` completes; stack healthy.
 - [ ] `curl -fsS http://127.0.0.1:<API_PORT>/healthz` → `ok`.
 - [ ] `GET /v1/presets` lists all five presets.
-- [ ] (console) `console.<domain>` loads and shows the app list.
+- [ ] (console) `console.<domain>` loads (console "login"/landing) and shows the app list.
 
 ## 2. React / Vite
 - [ ] Create an app with `runtime_preset=react-vite` (console New App, or `POST /v1/apps`).
@@ -71,6 +73,24 @@ host, a real agent, and real time (idle/wake) — which CI deliberately does not
 - [ ] **Wake-on-request**: hitting a stopped app's preview wakes it (~1–2s) and serves.
 - [ ] **Keepalive**: `POST /sandbox/{id}/keepalive {"until":<ts>}` keeps a sandbox
       alive past the idle threshold; a non-kept control is reaped.
+- [ ] **Lifecycle settings hot-apply**: edit `idle_threshold_seconds` (or
+      `idle_reap_enabled` / `keepalive_max_seconds`) via the console Settings page
+      or `PATCH /v1/settings`; the running reaper picks up the new value **without
+      a restart**. Read-only settings (auth/egress/networking/base image) reject edits.
+
+## 11. (Optional) Claude Code credential import — **post-v0.4 branch only**
+
+Only on `feat/phase-10b-agent-auth` (NOT v0.4). Needs a real Claude subscription.
+- [ ] On a logged-in machine, `POST /v1/agents/claude-code/import` with the
+      contents of `~/.claude/.credentials.json` (or console → AI Agents → Import).
+- [ ] `GET /v1/agents` shows `claude-code: connected, runnable: true`.
+- [ ] Submit a task with `agent:"claude-code"` → the real Claude Code CLI runs on
+      the subscription and the task **succeeds** (creates/edits a file); stream
+      normalizes into status/message/tool/build/done; usage/cost reported.
+- [ ] **No credential leak**: token absent from the workspace, a snapshot,
+      `docker inspect` env, runtimed logs, events, and the task result.
+- [ ] `POST /v1/agents/claude-code/disconnect` → `GET /v1/agents` returns
+      `needs_login`.
 
 ## Known limitations (acceptable for v0.4.0)
 - `DELETE /v1/sandboxes/{id}` **purges** the workspace; legacy `DELETE /sandbox/{id}`
