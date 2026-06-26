@@ -1,6 +1,7 @@
 package agentauth
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -78,4 +79,44 @@ func (s *Store) Promote(staging, provider string) error {
 func (s *Store) CredentialPresent(dir, rel string) bool {
 	fi, err := os.Stat(filepath.Join(dir, rel))
 	return err == nil && !fi.IsDir() && fi.Size() > 0
+}
+
+// ImportCredential writes opaque credential bytes to relPath under a fresh
+// staging dir and atomically promotes it to the provider's auth dir. The bytes
+// are written verbatim and NEVER parsed. Ownership is set to the sandbox uid so
+// the agent (uid 1000) can read it at task time.
+func (s *Store) ImportCredential(provider, relPath string, data []byte) error {
+	if len(data) == 0 {
+		return errors.New("empty credential")
+	}
+	staging, err := s.NewStaging()
+	if err != nil {
+		return err
+	}
+	dst := filepath.Join(staging, relPath)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	_ = chownTree(staging, 1000, 1000) // best-effort; sandboxd runs as root in prod
+	if err := s.Promote(staging, provider); err != nil {
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	return nil
+}
+
+// chownTree best-effort recursively chowns a tree (no-op failure off-root).
+func chownTree(root string, uid, gid int) error {
+	return filepath.Walk(root, func(p string, _ os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		_ = os.Chown(p, uid, gid)
+		return nil
+	})
 }

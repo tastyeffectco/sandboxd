@@ -49,43 +49,59 @@ describe('console — Settings page', () => {
     expect(page.querySelector('input[type="password"]')).toBeNull()
   })
 
-  it('AI Agents: only Claude Code is connectable; no token rendered', async () => {
+  it('AI Agents: only Claude Code is importable; no token rendered', async () => {
     render(<Settings onError={noop} />)
     expect(await screen.findByTestId('settings-agents-list')).toBeTruthy()
     for (const a of agentsFixture) expect(screen.getByTestId(`agent-${a.id}`)).toBeTruthy()
     expect(screen.getByTestId('agent-codex').textContent).toMatch(/not installed/i)
-    // claude-code (needs_login) shows the subscription Connect button…
-    const connect = screen.getByTestId('agent-connect')
-    expect(connect.textContent).toMatch(/use your claude subscription/i)
-    // …but opencode/codex are NOT connectable in A2 (claude-code only).
+    // claude-code (needs_login) shows the Import button…
+    expect(screen.getByTestId('agent-import').textContent).toMatch(/import claude credentials/i)
+    // …opencode/codex have no import/connect action (claude-code only).
     expect(screen.getByTestId('agent-opencode').querySelector('button')).toBeNull()
     expect(screen.getByTestId('agent-codex').querySelector('button')).toBeNull()
-    // no token-looking value anywhere on the page
     expect(screen.getByTestId('settings-page').textContent || '').not.toMatch(/sk-[A-Za-z0-9]{8,}/)
   })
 
-  it('Connect Claude Code: shows login URL, accepts pasted code, connects', async () => {
-    const url = 'https://claude.ai/oauth/authorize?response_type=code&state=x'
+  it('shows "runner not enabled yet" when claude-code is connected but not runnable', async () => {
+    const connectedNotRunnable = agentsFixture.map((a) =>
+      a.id === 'claude-code' ? { ...a, status: 'connected', runnable: false } : a,
+    )
     installFetch((m, p) => {
-      if (p.startsWith('/v1/agents/claude-code/connect')) {
-        if (m === 'POST' && p.endsWith('/code')) return { session_id: 's1', status: 'connected' }
-        if (m === 'POST') return { session_id: 's1', status: 'awaiting_code', url }
-        if (m === 'GET') return { session_id: 's1', status: 'awaiting_code', url }
-      }
-      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: connectedNotRunnable }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined
     })
     render(<Settings onError={noop} />)
-    fireEvent.click(await screen.findByTestId('agent-connect'))
-    // modal opens and surfaces the login URL (not a token)
-    const link = await screen.findByTestId('claude-connect-url')
-    expect((link as HTMLAnchorElement).href).toContain('response_type=code')
-    // paste code + submit
-    fireEvent.change(screen.getByTestId('claude-code-input'), { target: { value: 'THECODE' } })
-    fireEvent.click(screen.getByTestId('claude-code-submit'))
-    // on success the modal closes
-    await waitFor(() => expect(screen.queryByTestId('claude-connect-modal')).toBeNull())
+    expect(await screen.findByTestId('agent-runner-disabled')).toBeTruthy()
+    expect(screen.getByTestId('agent-runner-disabled').textContent).toMatch(/runner not enabled yet/i)
+    // disconnect is offered; no token shown
+    expect(screen.getByTestId('agent-disconnect')).toBeTruthy()
+  })
+
+  it('Import Claude credentials: posts the pasted bundle opaquely', async () => {
+    let posted: unknown = null
+    installFetch((m, p) => {
+      if (m === 'POST' && p === '/v1/agents/claude-code/import') return { provider: 'claude-code', status: 'connected' }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
+      if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
+      return undefined
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).endsWith('/import')) {
+        posted = init?.body ? JSON.parse(init.body) : null
+      }
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<Settings onError={noop} />)
+    fireEvent.click(await screen.findByTestId('agent-import'))
+    const ta = await screen.findByTestId('claude-import-input')
+    fireEvent.change(ta, { target: { value: '{"claudeAiOauth":{"x":1}}' } })
+    fireEvent.click(screen.getByTestId('claude-import-submit'))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect((posted as { credentials: string }).credentials).toContain('claudeAiOauth')
+    await waitFor(() => expect(screen.queryByTestId('claude-import-modal')).toBeNull())
   })
 
   it('lifecycle is editable; protected sections have no inputs', async () => {

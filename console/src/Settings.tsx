@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api, Settings as TSettings, Agent, ConnectSession } from './api'
+import { api, Settings as TSettings, Agent } from './api'
 
 // Instance settings/operability view (Phase 8A read-only + 8B editable lifecycle
 // tunables). Only the lifecycle section is editable (and only if the server says
@@ -7,7 +7,7 @@ import { api, Settings as TSettings, Agent, ConnectSession } from './api'
 export function Settings({ onError }: { onError: (m: string) => void }) {
   const [s, setS] = useState<TSettings | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
-  const [connectOpen, setConnectOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [idleEnabled, setIdleEnabled] = useState(true)
   const [idleSec, setIdleSec] = useState(0)
   const [keepSec, setKeepSec] = useState(0)
@@ -191,9 +191,11 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
                   {a.id === 'claude-code' ? (
                     a.status === 'connected' ? (
                       <span className="agent-actions">
-                        <button data-testid="agent-reconnect" onClick={() => setConnectOpen(true)}>
-                          Reconnect
-                        </button>
+                        {!a.runnable && (
+                          <span className="muted" data-testid="agent-runner-disabled">
+                            credentials imported, runner not enabled yet
+                          </span>
+                        )}
                         <button
                           data-testid="agent-disconnect"
                           onClick={async () => {
@@ -209,8 +211,8 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
                         </button>
                       </span>
                     ) : (
-                      <button data-testid="agent-connect" onClick={() => setConnectOpen(true)}>
-                        Use your Claude subscription
+                      <button data-testid="agent-import" onClick={() => setImportOpen(true)}>
+                        Import Claude credentials
                       </button>
                     )
                   ) : (
@@ -222,16 +224,16 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
           </tbody>
         </table>
         <p className="muted">
-          Only Claude Code supports console login today. No token is ever shown or stored in the
-          browser.
+          Claude Code uses your own Claude subscription via an imported credential. No token is shown
+          or stored in the browser. The guided login flow is coming in a later release.
         </p>
       </Section>
 
-      {connectOpen && (
-        <ClaudeConnectModal
-          onClose={() => setConnectOpen(false)}
-          onConnected={() => {
-            setConnectOpen(false)
+      {importOpen && (
+        <ClaudeImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            setImportOpen(false)
             api.getAgents().then(setAgents)
           }}
           onError={onError}
@@ -276,59 +278,30 @@ function Row({ k, v }: { k: string; v: string }) {
   )
 }
 
-// Console-driven Claude Code login. sandboxd runs the official `claude
-// setup-token` flow in an ephemeral auth container; we only show the login URL
-// and relay the pasted code. No token is ever shown or stored in the browser.
-function ClaudeConnectModal({
+// Import an existing Claude Code credential. The owner pastes the contents of
+// their ~/.claude/.credentials.json (from a machine where they've already run
+// `claude setup-token` / logged in). sandboxd stores it opaquely. The guided
+// in-console login (setup-token PTY) is a later slice. No token is ever shown
+// back; the textarea is write-only.
+function ClaudeImportModal({
   onClose,
-  onConnected,
+  onImported,
   onError,
 }: {
   onClose: () => void
-  onConnected: () => void
+  onImported: () => void
   onError: (m: string) => void
 }) {
-  const [session, setSession] = useState<ConnectSession | null>(null)
-  const [code, setCode] = useState('')
+  const [creds, setCreds] = useState('')
   const [busy, setBusy] = useState(false)
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        let s = await api.connectClaude()
-        if (!cancelled) setSession(s)
-        let tries = 0
-        while (!cancelled && s.status === 'starting' && tries < 40) {
-          await sleep(800)
-          s = await api.getClaudeConnect(s.session_id)
-          if (!cancelled) setSession(s)
-          tries++
-        }
-      } catch (e) {
-        if (!cancelled) onError((e as Error).message)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [onError])
-
-  async function submit() {
-    if (!session || !code.trim()) return
+  async function doImport() {
+    if (!creds.trim()) return
     setBusy(true)
     try {
-      let s = await api.submitClaudeCode(session.session_id, code.trim())
-      setSession(s)
-      let tries = 0
-      while (s.status === 'finalizing' && tries < 40) {
-        await sleep(800)
-        s = await api.getClaudeConnect(session.session_id)
-        setSession(s)
-        tries++
-      }
-      if (s.status === 'connected') onConnected()
+      await api.importClaude(creds)
+      setCreds('')
+      onImported()
     } catch (e) {
       onError((e as Error).message)
     } finally {
@@ -336,54 +309,29 @@ function ClaudeConnectModal({
     }
   }
 
-  const status = session?.status ?? 'starting'
   return (
-    <div className="modal-backdrop" data-testid="claude-connect-modal">
+    <div className="modal-backdrop" data-testid="claude-import-modal">
       <div className="card">
-        <h2 className="card-title">Connect Claude Code</h2>
+        <h2 className="card-title">Import Claude Code credentials</h2>
         <p className="muted">
-          Use your Claude subscription. No token is shown or stored in the browser.
+          Paste the contents of <span className="mono">~/.claude/.credentials.json</span> from a
+          machine where you have signed in to Claude Code. It is stored opaquely on the server
+          (owner-only, never parsed) and never shown again here.
         </p>
-        {status === 'starting' && <p data-testid="claude-starting">Starting login…</p>}
-        {(status === 'awaiting_code' || status === 'finalizing') && (
-          <>
-            <p>1. Open this URL, sign in with your Claude subscription, and copy the code:</p>
-            {session?.url && (
-              <a
-                href={session.url}
-                target="_blank"
-                rel="noreferrer"
-                className="mono"
-                data-testid="claude-connect-url"
-              >
-                {session.url}
-              </a>
-            )}
-            <p>2. Paste the code here:</p>
-            <input
-              data-testid="claude-code-input"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="authorization code"
-            />
-            <button
-              data-testid="claude-code-submit"
-              disabled={busy || !code.trim()}
-              onClick={submit}
-            >
-              {busy ? 'Finishing…' : 'Submit code'}
-            </button>
-          </>
-        )}
-        {status === 'connected' && <p data-testid="claude-connected">Connected.</p>}
-        {status === 'failed' && (
-          <p data-testid="claude-failed" className="error">
-            {session?.error || 'Login failed.'}
-          </p>
-        )}
+        <textarea
+          data-testid="claude-import-input"
+          value={creds}
+          onChange={(e) => setCreds(e.target.value)}
+          placeholder='{"claudeAiOauth": { ... }}'
+          rows={6}
+          style={{ width: '100%' }}
+        />
         <div className="row">
-          <button data-testid="claude-connect-close" onClick={onClose}>
-            Close
+          <button data-testid="claude-import-submit" disabled={busy || !creds.trim()} onClick={doImport}>
+            {busy ? 'Importing…' : 'Import'}
+          </button>
+          <button data-testid="claude-import-close" onClick={onClose}>
+            Cancel
           </button>
         </div>
       </div>

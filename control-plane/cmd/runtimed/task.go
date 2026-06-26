@@ -132,10 +132,13 @@ func (t *task) finish(res runtime.TaskResult) {
 // --- task manager (methods on app) ---------------------------------
 
 func selectAgent(name string, log *slog.Logger) (agent, error) {
-	if name == "" || name == "opencode" {
+	switch name {
+	case "", "opencode":
 		return &opencodeAgent{log: log}, nil
+	case "claude-code":
+		return &claudeCodeAgent{log: log}, nil
 	}
-	return nil, fmt.Errorf("unsupported agent %q (this slice supports opencode only)", name)
+	return nil, fmt.Errorf("unsupported agent %q (supported: opencode, claude-code)", name)
 }
 
 // startTask enforces one active task per sandbox and launches the run.

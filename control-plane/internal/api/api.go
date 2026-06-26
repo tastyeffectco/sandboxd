@@ -134,10 +134,6 @@ type Server struct {
 	// sandbox (as the agent's HOME) when it is connected. Must match the agent
 	// runtimed actually runs (opencode today). Empty disables the mount.
 	DefaultAgent string
-
-	// Phase 10B A2 — console-driven Connect login sessions (claude-code).
-	// nil-safe: the connect endpoints return 503 when unset.
-	AgentSessions *agentauth.SessionManager
 }
 
 // agentHomeMount is the fixed in-container path where the selected provider's
@@ -204,9 +200,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
 	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
 	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
-	mux.HandleFunc("POST /v1/agents/claude-code/connect", s.observe("POST /v1/agents/claude-code/connect", s.v1AgentConnect))
-	mux.HandleFunc("GET /v1/agents/claude-code/connect/{id}", s.observe("GET /v1/agents/claude-code/connect/{id}", s.v1AgentConnectStatus))
-	mux.HandleFunc("POST /v1/agents/claude-code/connect/{id}/code", s.observe("POST /v1/agents/claude-code/connect/{id}/code", s.v1AgentConnectCode))
+	mux.HandleFunc("POST /v1/agents/claude-code/import", s.observe("POST /v1/agents/claude-code/import", s.v1AgentImport))
 	mux.HandleFunc("POST /v1/agents/claude-code/disconnect", s.observe("POST /v1/agents/claude-code/disconnect", s.v1AgentDisconnect))
 	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))

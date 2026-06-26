@@ -3,9 +3,15 @@
 How sandboxd gives a sandbox's coding agent its credentials **without** putting
 them in the workspace, snapshots, container env, logs, events, or task results.
 
-> **Status: A2.** The store, the runtime delivery mechanism (A1), and the
-> console-driven **Connect Claude Code** flow (A2) exist. OpenCode/Codex connect
-> and per-task hardening are later slices.
+> **Status: import + adapter.** The store + runtime delivery (A1), opaque
+> **credential import** for claude-code, and the **Claude Code task adapter**
+> exist. The guided in-console login (`setup-token` PTY/xterm) is a later slice —
+> the old stdout-scrape automation was removed because claude v2's Ink/TUI
+> `setup-token` can't be driven by piped stdin.
+>
+> **Product model:** the `opencode` provider runs OpenCode; the `claude-code`
+> provider runs the Claude Code CLI. Claude credentials are only meaningful for
+> `claude-code` — they are never fed to OpenCode.
 
 ## How credentials reach the agent
 
@@ -56,45 +62,49 @@ workspace tree), the container env / `docker inspect` (only the *path*
   sandbox (re)create, not on an already-running one. A3's per-task copy removes
   this constraint.
 
-## Connecting Claude Code (A2, console-driven)
+## Connecting Claude Code: credential import
 
-Fully console-driven — owners never run the login inside an app sandbox:
+Until the guided login lands, claude-code is connected by **importing an existing
+credential**:
 
-1. Console **"Use your Claude subscription"** → `POST /v1/agents/claude-code/connect`.
-2. sandboxd starts an **ephemeral auth container** from the base image (used only
-   because it carries the `claude` binary): no workspace mounted, `HOME` → a
-   staging dir, a PTY via `script`, runs `claude setup-token`.
-3. sandboxd captures the **login URL** and returns it; the console shows it.
-4. The owner opens it in their **own** browser, signs in with their Claude
-   subscription, and copies the code (`redirect_uri` is a hosted page, not
-   localhost — so this works for a remote server).
-5. Console submits the code → `POST …/connect/{id}/code` → sandboxd writes it to
-   the CLI's stdin.
-6. **Success = the credential file is present and non-empty** (`claude` exits 0
-   even when not logged in, so the exit code is not trusted). On success the
-   staging dir is atomically **promoted** to `<DataDir>/agent-auth/claude-code`;
-   on failure/timeout it is deleted.
-7. `GET /v1/agents` then reports `claude-code: connected`; the next sandbox
-   created with `SANDBOXD_DEFAULT_AGENT=claude-code` mounts it (A1).
+1. On a machine where you've signed in to Claude Code (`claude setup-token` or a
+   normal login), copy the contents of `~/.claude/.credentials.json`.
+2. Console → AI Agents → **Import Claude credentials** → paste it. (Or
+   `POST /v1/agents/claude-code/import` with `{"credentials":"<contents>"}`.)
+3. sandboxd writes the bytes **verbatim** (opaque, never parsed) to a staging
+   dir at `.claude/.credentials.json`, then atomically **promotes** it to
+   `<DataDir>/agent-auth/claude-code/`.
+4. `GET /v1/agents` reports `claude-code: connected, runnable: true`.
 
 **Disconnect** (`POST /v1/agents/claude-code/disconnect`) deletes the auth dir.
-The login **URL/code/state are sensitive-ish session data**: returned to the
-console, but never logged, persisted, or emitted in events. No token is parsed.
+The imported credential is never logged, echoed back, or emitted in events.
 
-> The exact credential file (`~/.claude/.credentials.json`) is the success
-> signal; confirm it against the installed `claude` version with the live
-> checklist below.
+## Runnable vs connected
+
+`GET /v1/agents` reports `runnable` per provider — whether runtimed has a task
+adapter for it. A provider that is `connected` but **not** `runnable` shows
+"credentials imported, runner not enabled yet". With the Claude Code adapter,
+`claude-code` is runnable.
+
+## Running tasks as Claude Code
+
+- Create the sandbox with `SANDBOXD_DEFAULT_AGENT=claude-code` so A1 mounts the
+  claude-code auth dir as the agent's `HOME` (`/run/agent-home`).
+- Submit a task with `agent: "claude-code"`. runtimed runs
+  `claude -p <prompt> --output-format stream-json --verbose --dangerously-skip-permissions`
+  with `HOME` on the mounted creds, and maps the stream to task events + a final
+  result.
 
 ## Live verification checklist (real Claude subscription)
 
-A2 is tested with a **fake claude** (no subscription). Validate the real flow:
+Tested with a **fake claude** (no subscription). Validate the real flow:
 
-- [ ] Console → AI Agents → **Use your Claude subscription** → URL appears.
-- [ ] Open URL, sign in, paste the code → status becomes **connected**.
-- [ ] `GET /v1/agents` shows `claude-code: connected`; the credential file exists
-      under `<DataDir>/agent-auth/claude-code/` (e.g. `.claude/.credentials.json`).
-- [ ] Create a sandbox with `SANDBOXD_DEFAULT_AGENT=claude-code`, run a task →
-      the agent uses your subscription.
+- [ ] Import `~/.claude/.credentials.json` → `GET /v1/agents` shows
+      `claude-code: connected, runnable: true`; the file exists under
+      `<DataDir>/agent-auth/claude-code/.claude/.credentials.json`.
+- [ ] Create a sandbox with `SANDBOXD_DEFAULT_AGENT=claude-code`; submit a task
+      with `agent:"claude-code"` → the Claude Code CLI runs on your subscription
+      and the task produces a final result.
 - [ ] Token is **absent** from: the workspace, a snapshot, `docker inspect` env,
       logs, events, and task results.
 - [ ] **Disconnect** → the dir is gone; `GET /v1/agents` shows `needs_login`.
