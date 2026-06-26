@@ -76,11 +76,14 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	}
 	agent := req.Agent
 	if agent == "" {
+		agent = s.DefaultAgent // operator default (SANDBOXD_DEFAULT_AGENT)
+	}
+	if agent == "" {
 		agent = "opencode"
 	}
 	// Only providers runtimed can actually run as a task agent are accepted.
-	// claude-code requires its credentials to be mounted (created with
-	// SANDBOXD_DEFAULT_AGENT=claude-code); see docs/agent-auth.md.
+	// An explicit agent is honored regardless of the default; the provider's
+	// creds are mounted at sandbox create if connected. See docs/agent-auth.md.
 	if !agentauth.Runnable(agent) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
 			"unsupported agent (supported: opencode, claude-code)")

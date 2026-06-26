@@ -19,16 +19,19 @@ them in the workspace, snapshots, container env, logs, events, or task results.
    sandboxd data root: `<DataDir>/agent-auth/<provider>/`. This is **outside**
    any sandbox workspace, so it can never be copied into a workspace or a
    snapshot. sandboxd never opens or parses these files.
-2. When a sandbox is created, sandboxd bind-mounts the **selected provider's**
-   auth dir (only if it's connected — i.e. the dir is non-empty) to a fixed
-   in-container path, **`/run/agent-home`**, and sets `RUNTIMED_AGENT_HOME` so
-   runtimed knows where it is. The path is deliberately **not** under
-   `/home/sandbox` (the workspace).
-3. When runtimed spawns the agent, it points the agent's **`HOME`** at
-   `/run/agent-home`, so the CLI finds its credential files there.
+2. When a sandbox is created, sandboxd bind-mounts **every connected provider's**
+   auth dir at **`/run/agent-auth/<provider>`** (e.g.
+   `/run/agent-auth/opencode`, `/run/agent-auth/claude-code`) — only for
+   providers that are connected, and deliberately **not** under `/home/sandbox`
+   (the workspace).
+3. When runtimed spawns the agent for a task, it points the agent's **`HOME`** at
+   **`/run/agent-auth/<the task's agent>`** if that dir is mounted. So a
+   `claude-code` task gets the claude-code credentials even when the sandbox's
+   default agent is opencode.
 
-The selected provider is `SANDBOXD_DEFAULT_AGENT` (default `opencode`). It must
-match the agent runtimed actually runs (opencode today).
+`SANDBOXD_DEFAULT_AGENT` (default `opencode`, settable in `docker-compose.yml`)
+only chooses the agent for tasks that **don't** specify one. An explicit
+`agent:"claude-code"` task always works (its creds are mounted at create).
 
 ## Env scrub
 
@@ -47,20 +50,21 @@ Non-secret config (`PATH`, `HOME`, `LANG`, `*_MODEL`, `*_BASE_URL`, …) is kept
 ## What's guaranteed (verified)
 
 Credentials are **not** present in: the workspace, snapshots (which copy only the
-workspace tree), the container env / `docker inspect` (only the *path*
-`RUNTIMED_AGENT_HOME=/run/agent-home` appears), task results, events, or logs.
+workspace tree), the container env / `docker inspect` (no token and no auth path
+in env at all), task results, events, or logs. (Verified live with the real
+`claude` CLI reading from `/run/agent-auth/claude-code/.claude`.)
 
 ## Known limitations (owner-operated mode)
 
-- **Same-container isolation is not guaranteed yet.** The agent runs inside the
-  sandbox, so during a task the credential files exist on that container's
-  filesystem. A future same-container terminal/process could read them. The
-  terminal feature and a per-task ephemeral copy (tmpfs in/out) that closes this
-  gap are deferred to **A3**.
-- **Auth changes require a sandbox recreate.** The mount is fixed at create time,
-  so connecting or changing a provider's auth takes effect on the **next**
-  sandbox (re)create, not on an already-running one. A3's per-task copy removes
-  this constraint.
+- **All connected providers' auth dirs are present in the sandbox while it
+  runs.** For simplicity in this slice every connected provider is mounted at
+  create (read-write), so during a task those credential files exist on the
+  container's filesystem and a future same-container terminal/process could read
+  them. Stronger isolation — a **per-task copy** that mounts only the selected
+  agent's creds onto a tmpfs and removes them after — is **A3**.
+- **Auth changes require a sandbox recreate.** The mounts are fixed at create
+  time, so connecting/changing a provider's auth takes effect on the **next**
+  sandbox (re)create. A3's per-task copy removes this too.
 
 ## Connecting Claude Code: credential import
 
@@ -88,12 +92,14 @@ adapter for it. A provider that is `connected` but **not** `runnable` shows
 
 ## Running tasks as Claude Code
 
-- Create the sandbox with `SANDBOXD_DEFAULT_AGENT=claude-code` so A1 mounts the
-  claude-code auth dir as the agent's `HOME` (`/run/agent-home`).
+- Import the claude-code credential (above). It's then mounted into **every** new
+  sandbox at `/run/agent-auth/claude-code` — no need to change the default agent.
 - Submit a task with `agent: "claude-code"`. runtimed runs
   `claude -p <prompt> --output-format stream-json --verbose --dangerously-skip-permissions`
-  with `HOME` on the mounted creds, and maps the stream to task events + a final
-  result.
+  with `HOME=/run/agent-auth/claude-code`, and maps the stream to task events + a
+  final result.
+- Optionally set `SANDBOXD_DEFAULT_AGENT=claude-code` (compose) to make
+  claude-code the default for tasks that don't specify an agent.
 
 ## Live verification checklist (real Claude subscription)
 
@@ -102,9 +108,10 @@ Tested with a **fake claude** (no subscription). Validate the real flow:
 - [ ] Import `~/.claude/.credentials.json` → `GET /v1/agents` shows
       `claude-code: connected, runnable: true`; the file exists under
       `<DataDir>/agent-auth/claude-code/.claude/.credentials.json`.
-- [ ] Create a sandbox with `SANDBOXD_DEFAULT_AGENT=claude-code`; submit a task
-      with `agent:"claude-code"` → the Claude Code CLI runs on your subscription
-      and the task produces a final result.
+- [ ] Create a sandbox (claude-code is mounted automatically once connected);
+      submit a task with `agent:"claude-code"` **even with the default left at
+      opencode** → the Claude Code CLI runs on your subscription and the task
+      produces a final result.
 - [ ] Token is **absent** from: the workspace, a snapshot, `docker inspect` env,
       logs, events, and task results.
 - [ ] **Disconnect** → the dir is gone; `GET /v1/agents` shows `needs_login`.

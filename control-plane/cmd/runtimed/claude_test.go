@@ -133,8 +133,13 @@ func TestClaudeAgentRunWithFakeBinary(t *testing.T) {
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Per-agent auth home: claude-code -> <base>/claude-code.
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "claude-code"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	t.Setenv("RUNTIMED_AGENT_HOME", "/run/agent-home")
+	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", base)
 	// A secret in the inherited env must NOT reach the agent.
 	t.Setenv("ANTHROPIC_API_KEY", "sk-should-be-scrubbed")
 
@@ -145,8 +150,8 @@ func TestClaudeAgentRunWithFakeBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run err: %v", err)
 	}
-	if final != "home=/run/agent-home" {
-		t.Errorf("HOME not injected into agent; final = %q", final)
+	if final != "home="+filepath.Join(base, "claude-code") {
+		t.Errorf("HOME not set to the claude-code auth dir; final = %q", final)
 	}
 	if usage.Total == 0 {
 		t.Error("usage not parsed")

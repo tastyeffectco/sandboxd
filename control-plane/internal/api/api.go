@@ -130,25 +130,32 @@ type Server struct {
 	agentProbe     map[string]string                    // binary -> installed|not_installed (nil => unknown)
 	agentProbeFn   func(image string) map[string]string // test override
 
-	// Phase 10B A1 — the provider whose auth dir is bind-mounted into each new
-	// sandbox (as the agent's HOME) when it is connected. Must match the agent
-	// runtimed actually runs (opencode today). Empty disables the mount.
+	// Phase 10B — default agent for tasks that don't specify one. Does NOT
+	// control credential mounting (every connected provider is mounted); an
+	// explicit agent:"claude-code" task works regardless of this. Empty → opencode.
 	DefaultAgent string
 }
 
-// agentHomeMount is the fixed in-container path where the selected provider's
-// auth dir is bind-mounted. Deliberately NOT under /home/sandbox (the
-// workspace), so credentials never land in a workspace or a snapshot.
-const agentHomeMount = "/run/agent-home"
+// agentAuthBaseMount is the in-container parent dir under which each connected
+// provider's auth dir is bind-mounted, as /run/agent-auth/<provider>.
+// Deliberately NOT under /home/sandbox (the workspace), so credentials never
+// land in a workspace or a snapshot. runtimed picks the right one per task by
+// the selected agent's name.
+const agentAuthBaseMount = "/run/agent-auth"
 
-// agentAuthMount returns the extra (-v volume, --env) the create path should add
-// so the spawned agent finds its credentials. Empty results mean "no managed
-// auth mounted" (provider not configured/connected) — the agent runs as before.
-func (s *Server) agentAuthMount() (volume, env string) {
-	if s.AgentAuth == nil || s.DefaultAgent == "" || !s.AgentAuth.Connected(s.DefaultAgent) {
-		return "", ""
+// agentAuthMounts returns one -v spec per CONNECTED provider, mounting its auth
+// dir at /run/agent-auth/<provider>. Empty when nothing is connected.
+func (s *Server) agentAuthMounts() []string {
+	if s.AgentAuth == nil {
+		return nil
 	}
-	return s.AgentAuth.Dir(s.DefaultAgent) + ":" + agentHomeMount, "RUNTIMED_AGENT_HOME=" + agentHomeMount
+	var vols []string
+	for _, p := range agentauth.Providers() {
+		if s.AgentAuth.Connected(p.ID) {
+			vols = append(vols, s.AgentAuth.Dir(p.ID)+":"+agentAuthBaseMount+"/"+p.ID)
+		}
+	}
+	return vols
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.

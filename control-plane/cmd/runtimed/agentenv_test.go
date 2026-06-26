@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,6 +52,29 @@ func TestBuildAgentEnvNoOverlayKeepsHome(t *testing.T) {
 	got := envMap(buildAgentEnv([]string{"HOME=/home/sandbox", "PATH=/usr/bin"}, nil))
 	if got["HOME"] != "/home/sandbox" {
 		t.Errorf("HOME = %q; want inherited", got["HOME"])
+	}
+}
+
+// agentEnv keys HOME on the AGENT NAME, so each agent gets its own mounted auth
+// dir — claude-code works even when opencode is also (or only) present.
+func TestAgentEnvPerAgentHome(t *testing.T) {
+	base := t.TempDir()
+	for _, p := range []string{"opencode", "claude-code"} {
+		if err := os.MkdirAll(filepath.Join(base, p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", base)
+
+	if got := envMap(agentEnv("claude-code", nil))["HOME"]; got != filepath.Join(base, "claude-code") {
+		t.Errorf("claude-code HOME = %q", got)
+	}
+	if got := envMap(agentEnv("opencode", nil))["HOME"]; got != filepath.Join(base, "opencode") {
+		t.Errorf("opencode HOME = %q", got)
+	}
+	// Unmounted agent → no HOME override (runs with default HOME).
+	if got := envMap(agentEnv("codex", nil))["HOME"]; got == filepath.Join(base, "codex") {
+		t.Error("codex has no mounted auth dir; HOME must not point there")
 	}
 }
 
