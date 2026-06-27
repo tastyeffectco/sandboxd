@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { AppDetail } from './AppDetail'
 import {
@@ -46,11 +46,11 @@ describe('app detail — web app', () => {
     expect(panel.textContent).toMatch(/Advisory only/i)
   })
 
-  it('shows read-only Git status, splits user vs runtime files, and loads a diff', async () => {
+  it('shows Git status, splits user vs runtime files, and loads a diff', async () => {
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
     const panel = await screen.findByTestId('git-panel')
-    expect(panel.textContent).toMatch(/read-only/i) // clearly labelled
-    expect(panel.textContent).toMatch(/main/)        // branch
+    expect(panel.textContent).toMatch(/no push yet/i) // local commit only; clearly no push
+    expect(panel.textContent).toMatch(/main/)         // branch
     // user files listed
     expect(await screen.findByTestId('git-files')).toBeTruthy()
     expect(screen.getByTestId('git-files').textContent).toMatch(/src\/App\.tsx/)
@@ -60,12 +60,45 @@ describe('app detail — web app', () => {
     expect(rt.textContent).toMatch(/not your edits/i)
     // sandbox.yaml must NOT appear among user files
     expect(screen.getByTestId('git-files').textContent).not.toMatch(/sandbox\.yaml/)
-    // no commit/push controls in this slice
-    expect(screen.queryByText(/commit/i)).toBeNull()
-    expect(screen.queryByText(/push/i)).toBeNull()
+    // commit exists (B1) but NO push control yet
+    expect(screen.getByTestId('git-commit')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /push/i })).toBeNull()
     // diff loads on demand (the fixed diff endpoint)
     fireEvent.click(screen.getByTestId('git-view-diff'))
     expect((await screen.findByTestId('git-diff')).textContent).toMatch(/const x = 1/)
+  })
+
+  it('commits selected user files (default), runtime unchecked, posts the right body, shows sha', async () => {
+    let posted: { message: string; paths: string[]; runtime_paths: string[] } | null = null
+    installFetch((m, p) => {
+      if (m === 'POST' && /\/v1\/apps\/[^/]+\/git\/commit/.test(p)) {
+        return { committed: true, sha: 'deadbeefcafe', branch: 'main', files_committed: ['src/App.tsx'] }
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).includes('/git/commit')) {
+        posted = init?.body ? JSON.parse(init.body) : null
+      }
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-commit-box')
+    // user file is checked by default; runtime file is NOT
+    expect((screen.getByTestId('git-pick-src/App.tsx') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByTestId('git-rtpick-sandbox.yaml') as HTMLInputElement).checked).toBe(false)
+    // commit disabled until a message is entered
+    expect((screen.getByTestId('git-commit') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByTestId('git-commit-message'), { target: { value: 'my change' } })
+    expect((screen.getByTestId('git-commit') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByTestId('git-commit'))
+    await screen.findByTestId('git-committed-sha')
+    expect(posted!.message).toBe('my change')
+    expect(posted!.paths).toContain('src/App.tsx')
+    expect(posted!.paths).toContain('notes.md')
+    expect(posted!.runtime_paths).toEqual([]) // runtime excluded by default
+    expect(screen.getByTestId('git-committed-sha').textContent).toMatch(/deadbeef/)
   })
 
   it('represents a pristine import honestly (clean to the user, runtime files surfaced)', async () => {

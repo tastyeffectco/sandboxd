@@ -99,6 +99,13 @@ export interface GitDiff {
   diff?: string
   truncated?: boolean
 }
+export interface GitCommitResult {
+  committed: boolean
+  reason?: string
+  sha?: string
+  branch?: string
+  files_committed?: string[]
+}
 
 // Git credential metadata (GET /v1/git-credentials). The token is write-only —
 // it is sent on create and never returned.
@@ -216,6 +223,10 @@ export const api = {
   gitStatus: (appId: string) => req<GitStatus>('GET', `/v1/apps/${appId}/git/status`),
   gitDiff: (appId: string, path?: string) =>
     req<GitDiff>('GET', `/v1/apps/${appId}/git/diff${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  gitCommit: (
+    appId: string,
+    body: { message: string; paths?: string[]; runtime_paths?: string[]; author_name?: string; author_email?: string },
+  ) => req<GitCommitResult>('POST', `/v1/apps/${appId}/git/commit`, body),
   createApp: (b: {
     name: string
     description?: string

@@ -507,6 +507,47 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/apps/{id}/git/commit:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Local Git commit of selected workspace changes (B1). Runs in-sandbox; no credentials, no network, no push.
+      description: >
+        Stages exactly the selected (and actually-changed) paths and makes a
+        path-scoped commit (--no-verify, ephemeral author via -c, never git add -A).
+        Defaults to the current user files[] from git/status; runtime_files are
+        excluded unless listed in runtime_paths. Requires a running sandbox and an
+        existing HEAD (empty repos are not supported in this slice).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, description: "Commit message (required, <4KiB)." }
+                paths: { type: array, items: { type: string }, description: "User paths to commit; default = all user files[]. No absolute paths or ..." }
+                runtime_paths: { type: array, items: { type: string }, description: "Explicit runtime/platform files to include (excluded by default)." }
+                author_name: { type: string, description: "Ephemeral committer name (default sandbox-agent); never written to git config." }
+                author_email: { type: string, description: "Ephemeral committer email (default agent@sandboxd.local)." }
+      responses:
+        "200":
+          description: Commit result, or { committed:false, reason } when nothing was committed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  committed: { type: boolean }
+                  reason: { type: string, description: "no_changes | sandbox_not_running | not_a_git_repo | empty_repo_unsupported | git_error | exec_failed" }
+                  sha: { type: string }
+                  branch: { type: string }
+                  files_committed: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"

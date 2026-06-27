@@ -274,27 +274,61 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
   const [loaded, setLoaded] = useState(false)
   const [diff, setDiff] = useState<GitDiff | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
+  // commit (B1): user files default-selected, runtime files default-unselected.
+  const [userSel, setUserSel] = useState<Set<string>>(new Set())
+  const [rtSel, setRtSel] = useState<Set<string>>(new Set())
+  const [message, setMessage] = useState('')
+  const [committing, setCommitting] = useState(false)
+  const [committedSha, setCommittedSha] = useState('')
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .gitStatus(appId)
       .then((s) => {
         setSt(s)
         setLoaded(true)
+        setUserSel(new Set((s.files || []).map((f) => f.path))) // user files checked
+        setRtSel(new Set()) // runtime files unchecked
       })
       .catch((e) => onError((e as Error).message))
   }, [appId, onError])
+  useEffect(load, [load])
 
   const viewDiff = () => {
     setDiffOpen(true)
     api.gitDiff(appId).then(setDiff).catch((e) => onError((e as Error).message))
   }
 
+  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, p: string) => {
+    const next = new Set(set)
+    next.has(p) ? next.delete(p) : next.add(p)
+    setter(next)
+  }
+
+  const commit = () => {
+    if (!message.trim() || userSel.size + rtSel.size === 0) return
+    setCommitting(true)
+    setCommittedSha('')
+    api
+      .gitCommit(appId, { message: message.trim(), paths: [...userSel], runtime_paths: [...rtSel] })
+      .then((r) => {
+        if (r.committed) {
+          setCommittedSha(r.sha || '')
+          setMessage('')
+          load() // refresh — committed files leave the change set
+        } else {
+          onError(`Commit failed: ${r.reason || 'unknown'}`)
+        }
+      })
+      .catch((e) => onError((e as Error).message))
+      .finally(() => setCommitting(false))
+  }
+
   if (!loaded) return null
 
   const reasonText: Record<string, string> = {
     no_sandbox: 'No sandbox yet — create one to inspect changes.',
-    sandbox_not_running: 'Start the sandbox to inspect Git changes.',
+    sandbox_not_running: 'Start the sandbox to inspect or commit Git changes.',
     not_a_git_repo: 'This workspace is not a Git repository.',
     git_error: 'Git could not read the workspace.',
     exec_failed: 'Could not reach the sandbox.',
@@ -303,7 +337,7 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
   return (
     <div className="card" data-testid="git-panel">
       <h2>
-        Git <span className="muted" style={{ fontSize: 12 }}>(read-only)</span>
+        Git <span className="muted" style={{ fontSize: 12 }}>(local commit — no push yet)</span>
       </h2>
 
       {!st?.available ? (
@@ -316,8 +350,6 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
             branch <strong>{st.branch || '—'}</strong>
             {st.head_sha ? ` @ ${st.head_sha.slice(0, 8)}` : ''}
             {' · '}
-            {/* user_clean drives the headline: runtime-generated files don't count
-                as user edits, so a pristine import reads as clean. */}
             {st.user_clean ? (
               <span data-testid="git-clean">clean</span>
             ) : (
@@ -328,11 +360,18 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
           </div>
 
           {st.files && st.files.length > 0 && (
-            <ul data-testid="git-files" style={{ marginTop: 8, fontSize: 13 }}>
+            <ul data-testid="git-files" style={{ marginTop: 8, fontSize: 13, listStyle: 'none', paddingLeft: 0 }}>
               {st.files.map((f) => (
                 <li key={f.path} className="mono">
-                  <span className="muted">{f.status}</span>
-                  {f.staged ? ' (staged)' : ''} — {f.path}
+                  <label>
+                    <input
+                      type="checkbox"
+                      data-testid={`git-pick-${f.path}`}
+                      checked={userSel.has(f.path)}
+                      onChange={() => toggle(userSel, setUserSel, f.path)}
+                    />{' '}
+                    <span className="muted">{f.status}</span> — {f.path}
+                  </label>
                 </li>
               ))}
             </ul>
@@ -342,12 +381,20 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
             <details data-testid="git-runtime-files" style={{ marginTop: 8 }}>
               <summary className="muted" style={{ fontSize: 12 }}>
                 {st.runtime_files.length} runtime-generated file
-                {st.runtime_files.length === 1 ? '' : 's'} (sandbox.yaml, lockfiles, caches — not your edits)
+                {st.runtime_files.length === 1 ? '' : 's'} (sandbox.yaml, lockfiles, caches — not your edits, excluded by default)
               </summary>
-              <ul style={{ fontSize: 13 }}>
+              <ul style={{ fontSize: 13, listStyle: 'none', paddingLeft: 0 }}>
                 {st.runtime_files.map((f) => (
                   <li key={f.path} className="mono">
-                    <span className="muted">{f.status}</span> — {f.path}
+                    <label>
+                      <input
+                        type="checkbox"
+                        data-testid={`git-rtpick-${f.path}`}
+                        checked={rtSel.has(f.path)}
+                        onChange={() => toggle(rtSel, setRtSel, f.path)}
+                      />{' '}
+                      <span className="muted">{f.status}</span> — {f.path}
+                    </label>
                   </li>
                 ))}
               </ul>
@@ -370,6 +417,33 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
               <pre className="mono" data-testid="git-diff" style={{ fontSize: 12, maxHeight: 320, overflow: 'auto' }}>
                 {diff.diff || '(no diff)'}
               </pre>
+            </div>
+          )}
+
+          {!st.clean && (
+            <div data-testid="git-commit-box" style={{ marginTop: 12, borderTop: '1px solid var(--border, #ddd)', paddingTop: 8 }}>
+              <input
+                className="input"
+                placeholder="Commit message…"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                data-testid="git-commit-message"
+                style={{ width: '100%' }}
+              />
+              <button
+                className="btn btn-primary"
+                data-testid="git-commit"
+                disabled={committing || !message.trim() || userSel.size + rtSel.size === 0}
+                onClick={commit}
+                style={{ marginTop: 8 }}
+              >
+                Commit {userSel.size + rtSel.size} file{userSel.size + rtSel.size === 1 ? '' : 's'} (local)
+              </button>
+              {committedSha && (
+                <div className="mono" data-testid="git-committed-sha" style={{ fontSize: 12, marginTop: 8 }}>
+                  ✓ committed {committedSha.slice(0, 8)}
+                </div>
+              )}
             </div>
           )}
         </>
