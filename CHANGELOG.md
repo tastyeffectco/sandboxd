@@ -9,6 +9,15 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.4); not part of the v0.4.0 launch.
 
+### Fixed
+- **Pre-A2 hardening (review follow-up).** `handleCreate` now **aborts** the
+  sandbox create if persisting the resolved `web_port` fails, instead of silently
+  continuing (which could route one port via Traefik while `previewURL` later read
+  a stale DB port). Added a parser-drift guard (`cmd/runtimed`) asserting the
+  control-plane minimal manifest parser and runtimed's parser resolve the same
+  `web.port` for every built-in preset (sentinel default catches a silent
+  tag-rename fallback).
+
 ### Added
 - **Advisory runtime detection (A1.5b).** New read-only endpoint
   `GET /v1/apps/{id}/runtime-inspect` inspects the app's workspace **host-side**

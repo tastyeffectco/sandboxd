@@ -655,7 +655,14 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if wp := workspaceWebPort(filepath.Join(mntPath, "workspace", "app")); wp > 0 && wp != webPort {
 		webPort = wp
 		sb.WebPort = sql.NullInt64{Int64: int64(webPort), Valid: true}
-		_ = s.Store.SetWebPort(r.Context(), req.ID, webPort)
+		// Must not silently continue: if this UPDATE fails, Traefik would route
+		// the resolved port while previewURL later reads the stale DB port. Abort
+		// the create so the row + container state stay consistent.
+		if err := s.Store.SetWebPort(r.Context(), req.ID, webPort); err != nil {
+			abort("web_port persist: " + err.Error())
+			writeErr(w, http.StatusInternalServerError, "web_port persist: "+err.Error())
+			return
+		}
 	}
 
 	// Build the optional env injection (e.g. agent API keys). Validate
