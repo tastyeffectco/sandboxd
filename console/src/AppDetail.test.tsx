@@ -27,6 +27,18 @@ describe('app detail — web app', () => {
     expect(screen.getByText('debug')).toBeTruthy()        // non-sensitive value shown
   })
 
+  it('renders advisory runtime detection (suggestion, confidence, detect-only + warning)', async () => {
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    const panel = await screen.findByTestId('runtime-inspect')
+    expect(panel.textContent).toMatch(/nextjs/)
+    expect(panel.textContent).toMatch(/high/)
+    expect(panel.textContent).toMatch(/suggested/) // default_suggestion marker
+    // astro is detect-only and warns; never presented as a runnable default
+    expect(panel.textContent).toMatch(/detect-only/)
+    expect(panel.textContent).toMatch(/4321/)
+    expect(panel.textContent).toMatch(/Advisory only/i)
+  })
+
   it('delete control says it removes the workspace (v1 DELETE purges)', async () => {
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
     const del = await screen.findByTestId('delete-sandbox')

@@ -51,6 +51,30 @@ export interface SettingsPatch {
   }
 }
 
+// Advisory runtime detection (GET /v1/apps/{id}/runtime-inspect). Suggestions
+// only — never applied; the console renders, it owns no detection logic.
+export interface RuntimeSuggestion {
+  preset: string
+  runnable: boolean
+  confidence: 'high' | 'medium' | 'low'
+  reasons: string[]
+  warnings?: string[]
+}
+export interface RuntimeManifestSummary {
+  present: boolean
+  authoritative?: boolean
+  web_command?: string
+  web_port?: number
+  health_path?: string
+}
+export interface RuntimeInspect {
+  existing_manifest: RuntimeManifestSummary
+  suggestions: RuntimeSuggestion[]
+  alternatives?: string[]
+  default_suggestion?: string
+  warnings?: string[]
+}
+
 // Git credential metadata (GET /v1/git-credentials). The token is write-only —
 // it is sent on create and never returned.
 export interface GitCredential {
@@ -163,6 +187,7 @@ export const api = {
   createGitCredential: (b: { name: string; host?: string; username?: string; token: string }) =>
     req<GitCredential>('POST', '/v1/git-credentials', b),
   deleteGitCredential: (id: string) => req<unknown>('DELETE', `/v1/git-credentials/${id}`),
+  runtimeInspect: (appId: string) => req<RuntimeInspect>('GET', `/v1/apps/${appId}/runtime-inspect`),
   createApp: (b: {
     name: string
     description?: string

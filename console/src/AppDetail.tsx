@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy, Snapshot, AppEvent } from './api'
+import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy, Snapshot, AppEvent, RuntimeInspect } from './api'
 import { StatusBadge } from './ui'
 
 const ACCESS_POLICIES: AccessPolicy[] = ['control_plane_only', 'agent_access', 'runtime_access', 'both']
@@ -169,6 +169,8 @@ export function AppDetail({
 
       <ProcessesPanel sandbox={sb} onError={onError} />
 
+      <RuntimeInspectPanel appId={appId} onError={onError} />
+
       <SnapshotsPanel
         appId={appId}
         appName={app.name}
@@ -181,6 +183,72 @@ export function AppDetail({
       <ConfigPanel appId={appId} onError={onError} />
 
       <ActivityPanel appId={appId} reloadKey={snapReload} onError={onError} />
+    </div>
+  )
+}
+
+// RuntimeInspectPanel renders ADVISORY runtime detection (GET
+// /v1/apps/{id}/runtime-inspect). The console only renders the server's result —
+// it owns no detection logic, and nothing here is applied automatically: the
+// user always overrides manually (the preset dropdown on app/sandbox create).
+function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: string) => void }) {
+  const [ins, setIns] = useState<RuntimeInspect | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const load = () => {
+    api
+      .runtimeInspect(appId)
+      .then((r) => {
+        setIns(r)
+        setLoaded(true)
+      })
+      .catch((e) => onError((e as Error).message))
+  }
+  useEffect(load, [appId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!loaded) return null
+  const em = ins?.existing_manifest
+  return (
+    <div className="card" data-testid="runtime-inspect">
+      <h2>Runtime (detected)</h2>
+      <p className="muted" style={{ fontSize: 12 }}>
+        Advisory only — pick a preset when creating the sandbox to override.
+      </p>
+
+      {em?.present ? (
+        <div data-testid="ri-manifest" className="mono" style={{ fontSize: 12 }}>
+          <strong>sandbox.yaml found</strong> (authoritative)
+          {em.web_command ? <div>command: {em.web_command}</div> : null}
+          {em.web_port ? <div>port: {em.web_port}</div> : null}
+          {em.health_path ? <div>health: {em.health_path}</div> : null}
+        </div>
+      ) : (
+        <div data-testid="ri-no-manifest" className="muted" style={{ fontSize: 12 }}>
+          No sandbox.yaml in the workspace.
+        </div>
+      )}
+
+      {ins && ins.suggestions.length > 0 && (
+        <ul data-testid="ri-suggestions" style={{ marginTop: 8 }}>
+          {ins.suggestions.map((s) => (
+            <li key={s.preset}>
+              <strong>{s.preset}</strong>{' '}
+              <span className="muted">
+                ({s.confidence}
+                {s.preset === ins.default_suggestion ? ', suggested' : ''}
+                {s.runnable ? '' : ', detect-only'})
+              </span>
+              {s.reasons.length > 0 && <div className="muted" style={{ fontSize: 12 }}>{s.reasons.join('; ')}</div>}
+              {s.warnings?.map((w, i) => (
+                <div key={i} className="warn" style={{ fontSize: 12 }}>⚠ {w}</div>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {ins?.warnings?.map((w, i) => (
+        <div key={i} className="warn" data-testid="ri-warning" style={{ fontSize: 12 }}>⚠ {w}</div>
+      ))}
     </div>
   )
 }

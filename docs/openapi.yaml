@@ -402,6 +402,43 @@ paths:
                     items: { $ref: "#/components/schemas/Event" }
                   next_before: { type: string }
 
+  /v1/apps/{id}/runtime-inspect:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: Advisory runtime detection for the app's workspace (read-only; no code run, no credentials). Suggestions only — never applied.
+      responses:
+        "200":
+          description: Detection result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  existing_manifest:
+                    type: object
+                    properties:
+                      present: { type: boolean }
+                      authoritative: { type: boolean }
+                      web_command: { type: string }
+                      web_port: { type: integer }
+                      health_path: { type: string }
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        preset: { type: string }
+                        runnable: { type: boolean, description: "A built-in preset exists to run this (astro/docusaurus are detect-only)." }
+                        confidence: { type: string, enum: [high, medium, low] }
+                        reasons: { type: array, items: { type: string } }
+                        warnings: { type: array, items: { type: string } }
+                  alternatives: { type: array, items: { type: string } }
+                  default_suggestion: { type: string, description: "Set only when one high-confidence runnable stack is unambiguous." }
+                  warnings: { type: array, items: { type: string } }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"

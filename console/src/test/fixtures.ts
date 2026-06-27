@@ -106,8 +106,25 @@ export function installFetch(handler: (method: string, path: string) => unknown)
 }
 
 // appDetailRoutes wires the GETs AppDetail issues on mount for a given sandbox.
+export const runtimeInspectFixture = {
+  existing_manifest: { present: false },
+  suggestions: [
+    { preset: 'nextjs', runnable: true, confidence: 'high', reasons: ['next is a dependency'] },
+    {
+      preset: 'astro',
+      runnable: false,
+      confidence: 'high',
+      reasons: ['astro is a dependency'],
+      warnings: ['Astro dev defaults to port 4321 and blocks unknown hosts; there is no built-in Astro preset yet'],
+    },
+  ],
+  default_suggestion: 'nextjs',
+  alternatives: ['astro'],
+}
+
 export function appDetailRoutes(sandbox: Sandbox) {
   return (_m: string, p: string): unknown => {
+    if (/\/v1\/apps\/[^/]+\/runtime-inspect/.test(p)) return runtimeInspectFixture
     if (/\/v1\/apps\/[^/]+\/config/.test(p)) return { config: configFixture }
     if (/\/v1\/apps\/[^/]+\/events/.test(p)) return { events: eventsFixture }
     if (/\/v1\/apps\/[^/]+\/snapshots/.test(p)) return { snapshots: [] }
