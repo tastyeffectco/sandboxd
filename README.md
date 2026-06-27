@@ -237,6 +237,8 @@ that talks **only** to the public `/v1` API. From it you can:
   reaping + keepalive — see [Settings](#settings)).
 
 ```bash
+# the console is gated by basic auth and ships FAIL-CLOSED — set a login first:
+export CONSOLE_BASIC_AUTH="admin:$(openssl passwd -apr1 'choose-a-password')"
 docker compose --profile console up -d        # core stack + console
 ```
 
@@ -245,6 +247,14 @@ if you changed them). It's routed through the same Traefik as the previews, by
 Host header — `console.<domain>` → console, `*.preview.<domain>` → previews — so
 it shares one entrypoint, no extra port. Plain `docker compose up -d` (no
 profile) runs sandboxd without the console.
+
+> **Console auth.** The console is protected by Traefik HTTP basic auth and is
+> **fail-closed**: without `CONSOLE_BASIC_AUTH` it returns `401` (the default is
+> a locked, unknown password) — it is never exposed open. Set
+> `CONSOLE_BASIC_AUTH="user:HASH"` (`HASH` from `htpasswd -nbB` or
+> `openssl passwd -apr1`; in a `.env` file double every `$` → `$$`). The
+> [installer](#1-install) generates and prints one for you. This is **separate
+> from API auth** — see [Authentication](#authentication).
 
 The console never touches the database or workspaces — it's a pure `/v1` client
 (contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
@@ -340,6 +350,37 @@ The defaults run a complete local stack. The knobs you'll touch most:
 | `SANDBOXD_DATA_DIR` | `/var/lib/sandboxed` | where workspaces + state live |
 | `SANDBOXD_API_BIND` | `127.0.0.1:9090` | where the control-plane API is published |
 | `SANDBOXD_API_AUTH_DISABLED` | `true` | open API for local use; set `false` + tokens for prod |
+| `CONSOLE_BASIC_AUTH` | *(locked)* | `user:htpasswd-hash` gating the optional console; fail-closed default |
+
+## Authentication
+
+sandboxd has **two independent** auth layers. They are separate knobs — neither
+is required for core use, and there is **no token-management UI in v0.4**.
+
+**API auth — protects the sandboxd `/v1` API (application layer).**
+- **Off by default** (`SANDBOXD_API_AUTH_DISABLED=true`). To enable:
+  ```bash
+  SANDBOXD_API_AUTH_DISABLED=false
+  SANDBOXD_API_TOKENS=admin=your-token,ci=another-token   # NAME=VALUE, comma-separated
+  ```
+  then call the API with `Authorization: Bearer your-token`.
+- Tokens are **env/file-only** — never stored in the database, **never returned
+  by any endpoint, and never shown in the console** (Settings shows only whether
+  auth is on/off). There is no create/list/revoke API and no `last_used`.
+
+**Console auth — protects the optional web UI at the edge (Traefik basic auth).**
+- The console (`--profile console`) is **fail-closed**: the default
+  `CONSOLE_BASIC_AUTH` is a locked entry with an unknown password, so an
+  un-configured console returns `401` — it is **never exposed open**.
+- Set your own: `CONSOLE_BASIC_AUTH="user:HASH"` (`HASH` from `htpasswd -nbB user 'pass'`
+  or `openssl passwd -apr1 'pass'`). In a `.env` file, **double every `$` → `$$`**.
+- The [installer](#1-install) generates a random password, wires it, and prints
+  it once. Override with `CONSOLE_USER` / `CONSOLE_PASS` before running it.
+- This is a **separate gate** from API auth; the console reaches `/v1` over an
+  internal proxy, so the basic-auth login is what stands in front of the browser.
+
+> Core-only users running `docker compose up` (no console) are unaffected by
+> either setting; both default to a safe state.
 
 ## Production / TLS
 
