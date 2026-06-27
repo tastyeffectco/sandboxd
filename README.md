@@ -265,6 +265,22 @@ Process status is on `GET /v1/sandboxes/{id}` (`processes[]`) and per-process
 logs at `GET /v1/sandboxes/{id}/processes/{name}/logs`. Full schema:
 [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md).
 
+## Git import & push (optional)
+
+An optional workflow on top of core: import a private repo into an app, let an
+agent work on it, then commit and push the changes back — all through `/v1` (the
+console adds a Git panel). Store an encrypted **personal access token** once
+(`POST /v1/git-credentials`), create an app from a repo URL (`POST /v1/apps` with
+a `git` block), then `git/status` · `git/diff` · `git/commit` · `git/push` under
+`/v1/apps/{id}`.
+
+The token stays **control-plane-only**: network git (clone, push) runs host-side
+and feeds the token to git via `GIT_ASKPASS` + a `0600` file — never into the
+sandbox, argv, env, `.git/config`, snapshots, or logs — while local git
+(status/diff/commit) runs credential-free in the sandbox. Push goes to a **new
+branch only** (no force, no PR), HTTPS + PAT only. Full guide + security
+boundaries + limitations: [`docs/git-workflow.md`](docs/git-workflow.md).
+
 ## API
 
 Base URL = `http://127.0.0.1:9090` (set by `SANDBOXD_API_BIND`). Auth is **off
