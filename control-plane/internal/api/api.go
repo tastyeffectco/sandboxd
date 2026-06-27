@@ -57,6 +57,10 @@ type Server struct {
 	PublicHTTPPort string
 	SetMemoryHigh  bool
 
+	// GitPush runs the host-side git read+push ops (B2). Nil in production →
+	// the handler uses the real gitimport.Runner; tests inject a fake.
+	GitPush pushRunner
+
 	// AgentCfg is the in-memory cache of the platform's agent
 	// configuration (model + AGENTS.md) — the source of truth for
 	// what each sandbox's coding agent uses. Reads are lock-free
@@ -189,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{id}/git/status", s.observe("GET /v1/apps/{id}/git/status", s.v1GitStatus))
 	mux.HandleFunc("GET /v1/apps/{id}/git/diff", s.observe("GET /v1/apps/{id}/git/diff", s.v1GitDiff))
 	mux.HandleFunc("POST /v1/apps/{id}/git/commit", s.observe("POST /v1/apps/{id}/git/commit", s.v1GitCommit))
+	mux.HandleFunc("POST /v1/apps/{id}/git/push", s.observe("POST /v1/apps/{id}/git/push", s.v1GitPush))
 	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
 	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
 	mux.HandleFunc("DELETE /v1/apps/{id}/config/{key}", s.observe("DELETE /v1/apps/{id}/config/{key}", s.v1DeleteAppConfig))

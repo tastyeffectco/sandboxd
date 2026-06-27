@@ -10,6 +10,7 @@ import {
   RuntimeInspect,
   GitStatus,
   GitDiff,
+  GitPushResult,
 } from './api'
 import { StatusBadge } from './ui'
 
@@ -182,7 +183,7 @@ export function AppDetail({
 
       <RuntimeInspectPanel appId={appId} onError={onError} />
 
-      <GitPanel appId={appId} onError={onError} />
+      <GitPanel appId={appId} repoURL={app.git?.repo_url} onError={onError} />
 
       <SnapshotsPanel
         appId={appId}
@@ -269,11 +270,24 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
 // GitPanel shows READ-ONLY Git status/diff for an imported repo (A2). No
 // commit/push — those come later. Status/diff run in-sandbox, so they need a
 // running sandbox; otherwise we show the reason.
-function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => void }) {
+function GitPanel({
+  appId,
+  repoURL,
+  onError,
+}: {
+  appId: string
+  repoURL?: string
+  onError: (m: string) => void
+}) {
   const [st, setSt] = useState<GitStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [diff, setDiff] = useState<GitDiff | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
+  // push (B2): remote write — explicit confirm.
+  const [pushBranch, setPushBranch] = useState('')
+  const [pushConfirm, setPushConfirm] = useState(false)
+  const [pushing, setPushing] = useState(false)
+  const [pushResult, setPushResult] = useState<GitPushResult | null>(null)
   // commit (B1): user files default-selected, runtime files default-unselected.
   const [userSel, setUserSel] = useState<Set<string>>(new Set())
   const [rtSel, setRtSel] = useState<Set<string>>(new Set())
@@ -322,6 +336,20 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
       })
       .catch((e) => onError((e as Error).message))
       .finally(() => setCommitting(false))
+  }
+
+  const push = () => {
+    setPushing(true)
+    setPushResult(null)
+    api
+      .gitPush(appId, { branch: pushBranch.trim() || undefined })
+      .then((r) => {
+        setPushResult(r)
+        setPushConfirm(false)
+        if (r.pushed) load()
+      })
+      .catch((e) => onError((e as Error).message))
+      .finally(() => setPushing(false))
   }
 
   if (!loaded) return null
@@ -444,6 +472,59 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
                   ✓ committed {committedSha.slice(0, 8)}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Push (B2) — REMOTE WRITE. Only for git-imported apps; explicit confirm. */}
+          {repoURL && (
+            <div
+              data-testid="git-push-box"
+              style={{ marginTop: 12, borderTop: '2px solid var(--warn, #e0a800)', paddingTop: 8 }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Push to remote</div>
+              <div className="muted" data-testid="git-push-explain" style={{ fontSize: 12, marginTop: 2 }}>
+                Pushes your local commits to <span className="mono">{repoURL}</span> as a <strong>new branch</strong>{' '}
+                (auto-named if blank). Won’t touch the import branch. No force. No PR.
+              </div>
+              <input
+                className="input"
+                placeholder="new branch (auto)"
+                value={pushBranch}
+                onChange={(e) => setPushBranch(e.target.value)}
+                data-testid="git-push-branch"
+                style={{ width: '100%', marginTop: 8 }}
+              />
+              {!pushConfirm ? (
+                <button
+                  className="btn btn-outline"
+                  data-testid="git-push-start"
+                  onClick={() => setPushConfirm(true)}
+                  style={{ marginTop: 8 }}
+                >
+                  Push to remote…
+                </button>
+              ) : (
+                <div data-testid="git-push-confirm" style={{ marginTop: 8 }}>
+                  <span style={{ fontSize: 13 }}>This writes to the remote repository. Continue?</span>{' '}
+                  <button className="btn btn-primary" data-testid="git-push-confirm-yes" disabled={pushing} onClick={push}>
+                    Confirm push
+                  </button>{' '}
+                  <button className="btn btn-outline" data-testid="git-push-cancel" onClick={() => setPushConfirm(false)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+              {pushResult &&
+                (pushResult.pushed ? (
+                  <div className="mono" data-testid="git-push-result" style={{ fontSize: 12, marginTop: 8 }}>
+                    ✓ pushed {pushResult.commits} commit{pushResult.commits === 1 ? '' : 's'} to{' '}
+                    <strong>{pushResult.branch}</strong> — open a PR on your Git host.
+                  </div>
+                ) : (
+                  <div className="warn" data-testid="git-push-reason" style={{ fontSize: 12, marginTop: 8 }}>
+                    Push not completed: {pushResult.reason}
+                  </div>
+                ))}
             </div>
           )}
         </>

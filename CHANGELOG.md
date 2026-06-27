@@ -5,6 +5,31 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.8 (branch `feat/v0.4.8-git-push`, stacked on v0.4.7; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.7); not part of the v0.4.0 launch.
+
+### Added
+- **Git push (B2).** New endpoint `POST /v1/apps/{id}/git/push` pushes locally-
+  committed changes to the app's remote, **host-side/control-plane** (never in the
+  sandbox). The push target comes from `app.git_repo_url` + `app.git_credential_id`
+  metadata — **never `.git/config` origin**. The token is decrypted **only** in the
+  push path and reaches git solely via a **host-checking GIT_ASKPASS** (emits the
+  token only when the credential prompt resolves to the exact expected host; any
+  mismatch/unparsable prompt emits nothing) + a `0600` file — never in argv, env,
+  logs, events, `.git/config`, workspace, snapshots, or `docker inspect`. A
+  pre-flight **config audit refuses** dangerous repo-local config
+  (`insteadOf`/`pushInsteadOf`/`sshCommand`/`fsmonitor`/`hooksPath`/proxy →
+  `unsafe_repo_config`). Invocation is hardened: hooks disabled,
+  `protocol.ext/file.allow=never`, `GIT_ALLOW_PROTOCOL=https`, clean
+  `HOME`/global/system config, no `credential.helper`, argv-only. **New branch
+  only** (default `sandboxd/<slug>-<shortsha>`; `main`/`master` and the import
+  branch are rejected), **no force**, no PR. Refuses with `no_local_commits` when
+  there's nothing to push (computed locally, no network). **Works when the sandbox
+  is stopped** (reads the workspace host-side). No fetch/pull/deepen — a shallow-
+  update rejection returns `shallow_push_unsupported` (deepen is a later B2.1).
+  Console Git panel gains a Push section with an **explicit remote-write confirm**.
+
 ## [Unreleased] — v0.4.7 (branch `feat/v0.4.7-git-commit`, stacked on v0.4.6; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.6); not part of the v0.4.0 launch.

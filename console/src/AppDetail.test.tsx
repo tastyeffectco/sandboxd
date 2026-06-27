@@ -8,6 +8,7 @@ import {
   workerSandboxFixture,
   unhealthySandboxFixture,
   gitStatusPristineFixture,
+  appsFixture,
 } from './test/fixtures'
 
 const noop = () => {}
@@ -113,6 +114,41 @@ describe('app detail — web app', () => {
     // no user-file list, but the runtime files are disclosed
     expect(screen.queryByTestId('git-files')).toBeNull()
     expect(screen.getByTestId('git-runtime-files').textContent).toMatch(/pnpm-lock\.yaml/)
+  })
+
+  it('git push: shown for imported apps, requires explicit confirm, posts branch, shows result', async () => {
+    let pushed: { branch?: string } | null = null
+    installFetch((m, p) => {
+      if (m === 'POST' && /\/v1\/apps\/[^/]+\/git\/push/.test(p)) {
+        return { pushed: true, branch: 'my-feature', commits: 2, remote_url: 'https://github.com/o/r' }
+      }
+      if (/\/v1\/apps\/[^/]+$/.test(p)) {
+        return { ...appsFixture[0], git: { repo_url: 'https://github.com/o/r', branch: 'main' } }
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).includes('/git/push')) {
+        pushed = init?.body ? JSON.parse(init.body) : null
+      }
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    const box = await screen.findByTestId('git-push-box')
+    expect(box.textContent).toMatch(/new branch/i) // explicit remote-write framing
+    expect(box.textContent).toMatch(/github\.com/)
+    // requires explicit confirm: no push happens on the first click
+    fireEvent.change(screen.getByTestId('git-push-branch'), { target: { value: 'my-feature' } })
+    fireEvent.click(screen.getByTestId('git-push-start'))
+    expect(pushed).toBeNull()
+    expect(screen.getByTestId('git-push-confirm')).toBeTruthy()
+    // confirm -> posts
+    fireEvent.click(screen.getByTestId('git-push-confirm-yes'))
+    await screen.findByTestId('git-push-result')
+    expect(pushed!.branch).toBe('my-feature')
+    expect(screen.getByTestId('git-push-result').textContent).toMatch(/my-feature/)
   })
 
   it('delete control says it removes the workspace (v1 DELETE purges)', async () => {
