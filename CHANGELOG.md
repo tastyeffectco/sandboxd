@@ -5,6 +5,19 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.2 (branch `feat/v0.4.2-git-credentials`, NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch; not part of the v0.4.0 launch.
+
+### Added
+- **Git credential store (Git A0).** Owner-scoped, encrypted-at-rest Git access
+  tokens with `POST`/`GET`/`DELETE /v1/git-credentials` and a console Settings
+  section to add/list/delete. The token is write-only — sealed with the existing
+  secrets cipher and **never returned by the API or shown in the console**.
+  **These credentials are stored encrypted and are not used by anything until
+  Git import lands in a later v0.4.x release** (clone/diff/commit/push are
+  separate, later slices).
+
 ## [0.4.0] — 2026-06-25
 
 **Self-hosted control plane for AI-built apps** — adds a web console, runtime
