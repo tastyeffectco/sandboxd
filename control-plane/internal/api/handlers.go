@@ -21,6 +21,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/cgroup"
 	"github.com/sandboxd/control-plane/internal/docker"
 	"github.com/sandboxd/control-plane/internal/events"
+	"github.com/sandboxd/control-plane/internal/gitimport"
 	"github.com/sandboxd/control-plane/internal/logging"
 	"github.com/sandboxd/control-plane/internal/metrics"
 	"github.com/sandboxd/control-plane/internal/preset"
@@ -81,6 +82,18 @@ type createReq struct {
 	// node-express, fastapi, worker). runtimed applies the preset's template +
 	// sandbox.yaml on first boot. Takes precedence over Template.
 	RuntimePreset string `json:"runtime_preset,omitempty"`
+
+	// Git carries tokenless import metadata for a private-repo app (the token is
+	// referenced by credential_id and decrypted control-plane-side, never sent
+	// inline). Set by v1CreateAppSandbox; nil for blank/preset apps.
+	Git *createGitReq `json:"git,omitempty"`
+}
+
+type createGitReq struct {
+	RepoURL      string `json:"repo_url"`
+	Branch       string `json:"branch"`
+	CredentialID string `json:"credential_id"`
+	Owner        string `json:"owner"` // owner_token for the owner-scoped decrypt
 }
 
 type sandboxResp struct {
@@ -524,6 +537,62 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Info("create: reset .git on snapshot spin-up (clean ownerless repo)")
 		}
+	}
+
+	// 1c. Git import (A1): clone a private HTTPS repo into the workspace app dir,
+	//     host-side, BEFORE the container starts — so the token (decrypted only
+	//     here) never enters the sandbox. The cloned dir is non-empty, so
+	//     runtimed skips the template seed but still writes the preset sandbox.yaml.
+	if req.Git != nil && req.Git.RepoURL != "" {
+		s.recordEvent(r, events.Event{Type: events.GitRepoCloneStarted, Severity: events.SeverityInfo,
+			Message: "Cloning repository", AppID: req.AppID, SandboxID: req.ID,
+			Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch}})
+		failClone := func(reason string) {
+			s.recordEvent(r, events.Event{Type: events.GitRepoCloneFailed, Severity: events.SeverityError,
+				Message: "Repository clone failed", AppID: req.AppID, SandboxID: req.ID,
+				Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch, "reason": reason}})
+			abort("git clone: " + reason)
+		}
+		// Decrypt the owner-scoped credential here and nowhere else.
+		if s.Secrets == nil {
+			failClone("credential store unavailable")
+			writeErr(w, http.StatusServiceUnavailable, "git clone: credential store unavailable")
+			return
+		}
+		enc, nonce, found, err := s.Store.GetGitCredentialSecret(r.Context(), req.Git.Owner, req.Git.CredentialID)
+		if err != nil || !found {
+			failClone("credential not found")
+			writeErr(w, http.StatusBadRequest, "git clone: credential not found")
+			return
+		}
+		token, derr := s.Secrets.Open(enc, nonce)
+		if derr != nil {
+			failClone("credential decrypt failed")
+			writeErr(w, http.StatusInternalServerError, "git clone: credential decrypt failed")
+			return
+		}
+		appDir := filepath.Join(mntPath, "workspace", "app")
+		_ = os.MkdirAll(filepath.Dir(appDir), 0o755) // ensure workspace/ exists; clone creates app/
+		cerr := gitimport.Clone(r.Context(), gitimport.Spec{
+			RepoURL: req.Git.RepoURL, Branch: req.Git.Branch, Token: string(token), DestDir: appDir,
+		})
+		for i := range token { // best-effort scrub of the decrypted token
+			token[i] = 0
+		}
+		if cerr != nil {
+			failClone(cerr.Error()) // gitimport already redacts the token from messages
+			writeErr(w, http.StatusBadGateway, "git clone failed")
+			return
+		}
+		if oerr := s.Loopback.NormalizeOwnership(appDir); oerr != nil {
+			failClone("ownership normalize: " + oerr.Error())
+			writeErr(w, http.StatusInternalServerError, "git clone: ownership")
+			return
+		}
+		_ = s.Store.SetAppImported(r.Context(), req.AppID, time.Now().Unix())
+		s.recordEvent(r, events.Event{Type: events.GitRepoCloned, Severity: events.SeverityInfo,
+			Message: "Repository cloned", AppID: req.AppID, SandboxID: req.ID,
+			Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch}})
 	}
 
 	// Build the optional env injection (e.g. agent API keys). Validate

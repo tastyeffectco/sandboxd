@@ -5,6 +5,25 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.3 (branch `feat/v0.4.3-git-import`, stacked on v0.4.2; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.2); not part of the v0.4.0 launch.
+
+### Added
+- **Import an app from a private Git repo (Git A1).** `POST /v1/apps` accepts a
+  `git: {repo_url, branch, credential_id}` block; on sandbox create the control
+  plane clones the HTTPS repo **host-side** into the workspace (`--depth=1`,
+  `--no-recurse-submodules`, single branch) using the stored credential via
+  `GIT_ASKPASS`, then rewrites the remote tokenless and normalizes ownership to
+  uid/gid 1000 — all **before the container starts**, so the **token never enters
+  the sandbox, workspace, snapshots, Docker env, logs, events, or task results**
+  (it appears in no argv, env, or `.git/config`). Tokenless repo metadata is
+  stored on the app; events `git.repo.clone_started|cloned|clone_failed` carry
+  only `repo_url`/`branch`/`reason`. `git` added to the control-plane image.
+  Console New App gains an "Import from Git URL" mode (repo URL + branch +
+  credential dropdown). HTTPS only; no SSH/GitHub App/OAuth; no status/diff/
+  commit/push yet.
+
 ## [Unreleased] — v0.4.2 (branch `feat/v0.4.2-git-credentials`, NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch; not part of the v0.4.0 launch.

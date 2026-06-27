@@ -43,9 +43,14 @@ const (
 
 	SandboxCreateStarted = "sandbox.create.started"
 	SandboxCreateFailed  = "sandbox.create.failed"
-	SandboxStarted       = "sandbox.started"
-	SandboxStopped       = "sandbox.stopped"
-	SandboxDeleted       = "sandbox.deleted"
+
+	// Git import (A1). Payloads carry repo_url (tokenless) + branch — NEVER a token.
+	GitRepoCloneStarted = "git.repo.clone_started"
+	GitRepoCloned       = "git.repo.cloned"
+	GitRepoCloneFailed  = "git.repo.clone_failed"
+	SandboxStarted      = "sandbox.started"
+	SandboxStopped      = "sandbox.stopped"
+	SandboxDeleted      = "sandbox.deleted"
 
 	TaskStarted     = "task.started"
 	TaskCompleted   = "task.completed"

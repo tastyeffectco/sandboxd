@@ -835,6 +835,14 @@ components:
         external_user_id: { type: string }
         external_project_id: { type: string }
         runtime_preset: { type: string, description: "Runtime preset id; see GET /v1/presets." }
+        git:
+          type: object
+          description: "Import from a private HTTPS repo (Git A1). The token is referenced by credential_id (from /v1/git-credentials), never inline; it is decrypted control-plane-side at clone time and never enters the sandbox."
+          required: [repo_url, credential_id]
+          properties:
+            repo_url: { type: string, description: "HTTPS repo URL, tokenless (no credentials in the URL)." }
+            branch: { type: string, description: "Branch to clone (default main)." }
+            credential_id: { type: string, description: "Owner-scoped git_credential id." }
     PatchAppRequest:
       type: object
       properties:
