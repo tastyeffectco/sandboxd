@@ -177,6 +177,11 @@ func (m *Manager) ProvisionFromTemplate(ctx context.Context, id, templatePath st
 // does NOT follow symlinks — WalkDir lstat's each entry and never descends into
 // a symlinked directory, so a symlink pointing outside the workspace cannot
 // redirect the chown to a path outside the tree.
+//
+// NormalizeOwnership exposes this for the Git import path (a host-side clone is
+// owned by the control-plane root and must be chowned to the sandbox uid/gid).
+func (m *Manager) NormalizeOwnership(dir string) error { return m.normalizeOwnership(dir) }
+
 func (m *Manager) normalizeOwnership(dir string) error {
 	n := 0
 	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {

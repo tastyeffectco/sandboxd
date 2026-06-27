@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, App as TApp, Preset } from './api'
+import { api, App as TApp, Preset, GitCredential } from './api'
 import { AppDetail } from './AppDetail'
 import { Settings } from './Settings'
 import { StatusBadge } from './ui'
@@ -77,9 +77,16 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
   const [presets, setPresets] = useState<Preset[]>([])
   const [presetID, setPresetID] = useState('')
   const [busy, setBusy] = useState(false)
+  // Git import (A1): blank-from-preset by default; "git" imports a private repo.
+  const [mode, setMode] = useState<'blank' | 'git'>('blank')
+  const [gitCreds, setGitCreds] = useState<GitCredential[]>([])
+  const [repoURL, setRepoURL] = useState('')
+  const [branch, setBranch] = useState('main')
+  const [credId, setCredId] = useState('')
 
   useEffect(() => {
     api.listPresets().then(setPresets).catch(() => setPresets([]))
+    api.listGitCredentials().then(setGitCreds).catch(() => setGitCreds([]))
   }, [])
 
   const load = useCallback(() => {
@@ -107,10 +114,19 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
 
   const create = async () => {
     if (!name.trim()) return
+    if (mode === 'git' && (!repoURL.trim() || !credId)) return
     setBusy(true)
     try {
-      const a = await api.createApp({ name: name.trim(), runtime_preset: presetID || undefined })
+      const a = await api.createApp({
+        name: name.trim(),
+        runtime_preset: presetID || undefined,
+        git:
+          mode === 'git'
+            ? { repo_url: repoURL.trim(), branch: branch.trim() || 'main', credential_id: credId }
+            : undefined,
+      })
       setName('')
+      setRepoURL('')
       onOpen(a.id)
     } catch (e) {
       onError((e as Error).message)
@@ -149,12 +165,69 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
           <button
             className="btn btn-primary"
             onClick={create}
-            disabled={busy || !name.trim()}
+            disabled={busy || !name.trim() || (mode === 'git' && (!repoURL.trim() || !credId))}
             data-testid="create-app"
           >
             Create app
           </button>
         </div>
+        <div className="row" style={{ marginTop: 8 }}>
+          <label>
+            <input
+              type="radio"
+              data-testid="mode-blank"
+              checked={mode === 'blank'}
+              onChange={() => setMode('blank')}
+            />{' '}
+            Blank from preset
+          </label>
+          <label>
+            <input
+              type="radio"
+              data-testid="mode-git"
+              checked={mode === 'git'}
+              onChange={() => setMode('git')}
+            />{' '}
+            Import from Git URL
+          </label>
+        </div>
+        {mode === 'git' && (
+          <div className="row" data-testid="git-import-fields" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="input"
+              placeholder="https://github.com/org/repo.git"
+              value={repoURL}
+              onChange={(e) => setRepoURL(e.target.value)}
+              data-testid="git-repo-url"
+            />
+            <input
+              className="input"
+              placeholder="branch"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              data-testid="git-branch"
+            />
+            <select
+              className="input"
+              value={credId}
+              onChange={(e) => setCredId(e.target.value)}
+              data-testid="git-credential"
+            >
+              <option value="">Credential…</option>
+              {gitCreds.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.host ? ` (${c.host})` : ''}
+                </option>
+              ))}
+            </select>
+            {gitCreds.length === 0 && (
+              <span className="muted" data-testid="git-no-creds">
+                Add a Git credential in Settings first.
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {apps === null ? (

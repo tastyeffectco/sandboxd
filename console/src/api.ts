@@ -163,8 +163,13 @@ export const api = {
   createGitCredential: (b: { name: string; host?: string; username?: string; token: string }) =>
     req<GitCredential>('POST', '/v1/git-credentials', b),
   deleteGitCredential: (id: string) => req<unknown>('DELETE', `/v1/git-credentials/${id}`),
-  createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
-    req<App>('POST', '/v1/apps', b),
+  createApp: (b: {
+    name: string
+    description?: string
+    tags?: string[]
+    runtime_preset?: string
+    git?: { repo_url: string; branch?: string; credential_id: string }
+  }) => req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
   createAppSandbox: (id: string, body: { template?: string; runtime_preset?: string } = {}) =>
     req<Sandbox>('POST', `/v1/apps/${id}/sandbox`, body),

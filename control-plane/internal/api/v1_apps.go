@@ -13,21 +13,32 @@ import (
 
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/events"
+	"github.com/sandboxd/control-plane/internal/gitimport"
 	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
+// v1AppGit is the git block on create (token referenced by credential_id, never
+// inline) and the tokenless git metadata on read.
+type v1AppGit struct {
+	RepoURL      string `json:"repo_url"`
+	Branch       string `json:"branch,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
+	LastImportAt string `json:"last_import_at,omitempty"`
+}
+
 type v1App struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	Description       string   `json:"description"`
-	Tags              []string `json:"tags"`
-	ExternalUserID    string   `json:"external_user_id,omitempty"`
-	ExternalProjectID string   `json:"external_project_id,omitempty"`
-	RuntimePreset     string   `json:"runtime_preset,omitempty"`
-	CurrentSandboxID  string   `json:"current_sandbox_id,omitempty"`
-	CreatedAt         string   `json:"created_at"`
-	UpdatedAt         string   `json:"updated_at"`
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	Tags              []string  `json:"tags"`
+	ExternalUserID    string    `json:"external_user_id,omitempty"`
+	ExternalProjectID string    `json:"external_project_id,omitempty"`
+	RuntimePreset     string    `json:"runtime_preset,omitempty"`
+	Git               *v1AppGit `json:"git,omitempty"`
+	CurrentSandboxID  string    `json:"current_sandbox_id,omitempty"`
+	CreatedAt         string    `json:"created_at"`
+	UpdatedAt         string    `json:"updated_at"`
 }
 
 func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
@@ -52,6 +63,16 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 	if a.RuntimePreset.Valid {
 		out.RuntimePreset = a.RuntimePreset.String
 	}
+	if a.GitRepoURL.Valid && a.GitRepoURL.String != "" {
+		g := &v1AppGit{RepoURL: a.GitRepoURL.String, Branch: a.GitBranch.String}
+		if a.GitCredentialID.Valid {
+			g.CredentialID = a.GitCredentialID.String
+		}
+		if a.LastImportAt.Valid {
+			g.LastImportAt = time.Unix(a.LastImportAt.Int64, 0).UTC().Format(time.RFC3339)
+		}
+		out.Git = g
+	}
 	return out
 }
 
@@ -74,12 +95,13 @@ func (s *Server) currentSandboxID(r *http.Request, appID string) string {
 }
 
 type v1CreateAppReq struct {
-	Name              string   `json:"name"`
-	Description       string   `json:"description"`
-	Tags              []string `json:"tags"`
-	ExternalUserID    string   `json:"external_user_id"`
-	ExternalProjectID string   `json:"external_project_id"`
-	RuntimePreset     string   `json:"runtime_preset"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	Tags              []string  `json:"tags"`
+	ExternalUserID    string    `json:"external_user_id"`
+	ExternalProjectID string    `json:"external_project_id"`
+	RuntimePreset     string    `json:"runtime_preset"`
+	Git               *v1AppGit `json:"git,omitempty"`
 }
 
 // v1CreateApp — POST /v1/apps.
@@ -106,6 +128,45 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 		ExternalUserID:    nullStr(req.ExternalUserID),
 		ExternalProjectID: nullStr(req.ExternalProjectID),
 		RuntimePreset:     nullStr(req.RuntimePreset),
+	}
+	// Optional Git import: validate the tokenless repo URL + branch and that the
+	// referenced credential exists for this owner. The token itself is NOT stored
+	// on the app — only the credential id; it is decrypted control-plane-side at
+	// clone time (sandbox create).
+	if req.Git != nil && req.Git.RepoURL != "" {
+		if err := gitimport.ValidateRepoURL(req.Git.RepoURL); err != nil {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid git.repo_url (https only, no credentials)")
+			return
+		}
+		branch := req.Git.Branch
+		if branch == "" {
+			branch = "main"
+		}
+		if err := gitimport.ValidateBranch(branch); err != nil {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid git.branch")
+			return
+		}
+		if req.Git.CredentialID == "" {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "git.credential_id is required for import")
+			return
+		}
+		// owner-scoped existence check (cross-owner / unknown -> 404)
+		if s.Secrets == nil {
+			writeV1Err(w, http.StatusServiceUnavailable, "unavailable", "credential store not configured")
+			return
+		}
+		_, _, found, err := s.Store.GetGitCredentialSecret(r.Context(), tenantToken(r), req.Git.CredentialID)
+		if err != nil {
+			writeV1Err(w, http.StatusInternalServerError, "internal", "credential lookup failed")
+			return
+		}
+		if !found {
+			writeV1Err(w, http.StatusNotFound, "not_found", "no such git credential")
+			return
+		}
+		app.GitRepoURL = nullStr(req.Git.RepoURL)
+		app.GitBranch = nullStr(branch)
+		app.GitCredentialID = nullStr(req.Git.CredentialID)
 	}
 	if err := s.Store.CreateApp(r.Context(), app); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
@@ -226,6 +287,18 @@ func (s *Server) v1CreateAppSandbox(w http.ResponseWriter, r *http.Request) {
 			"user_id":    app.ExternalUserID.String,
 			"project_id": app.ExternalProjectID.String,
 		},
+	}
+	// Git-imported app: pass the tokenless repo metadata + credential id (and the
+	// owner, for the owner-scoped decrypt) so the control plane clones the repo
+	// into the new workspace before the container starts. The TOKEN is never put
+	// here — handleCreate decrypts it from the credential store.
+	if app.GitRepoURL.Valid && app.GitRepoURL.String != "" {
+		createBody["git"] = map[string]string{
+			"repo_url":      app.GitRepoURL.String,
+			"branch":        app.GitBranch.String,
+			"credential_id": app.GitCredentialID.String,
+			"owner":         app.OwnerToken,
+		}
 	}
 	// Resolve the runtime preset: explicit on the request, else the app's
 	// stored default. A preset supplies the template, so it takes precedence
