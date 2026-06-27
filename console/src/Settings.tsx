@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api, Settings as TSettings } from './api'
+import { api, Settings as TSettings, GitCredential } from './api'
 
 // Instance settings/operability view (Phase 8A read-only + 8B editable lifecycle
 // tunables). Only the lifecycle section is editable (and only if the server says
@@ -11,6 +11,7 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
   const [keepSec, setKeepSec] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [gitCreds, setGitCreds] = useState<GitCredential[]>([])
 
   const apply = (d: TSettings) => {
     setS(d)
@@ -19,11 +20,19 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
     setKeepSec(d.lifecycle.keepalive_max_seconds)
   }
 
+  const reloadGitCreds = () =>
+    api
+      .listGitCredentials()
+      .then(setGitCreds)
+      .catch((e) => onError((e as Error).message))
+
   useEffect(() => {
     api
       .getSettings()
       .then(apply)
       .catch((e) => onError((e as Error).message))
+    reloadGitCreds()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onError])
 
   if (!s) {
@@ -175,6 +184,105 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
           <Row key={k} k={k} v={v ? 'yes' : 'no'} />
         ))}
       </Section>
+
+      <Section title="Git credentials" testid="settings-git">
+        <p className="muted">
+          Personal access tokens for <b>importing private repos</b> (Git import lands in a later
+          v0.4.x release). Stored encrypted on the server; the token is never shown again.
+        </p>
+        <table className="config-table" data-testid="git-cred-list">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Host</th>
+              <th>Username</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {gitCreds.map((g) => (
+              <tr key={g.id} data-testid={`git-cred-${g.id}`}>
+                <td>{g.name}</td>
+                <td className="muted">{g.host || '—'}</td>
+                <td className="muted">{g.username || '—'}</td>
+                <td>
+                  <button
+                    data-testid={`git-cred-delete-${g.id}`}
+                    onClick={async () => {
+                      try {
+                        await api.deleteGitCredential(g.id)
+                        reloadGitCreds()
+                      } catch (e) {
+                        onError((e as Error).message)
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {gitCreds.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  No Git credentials yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <GitCredentialForm onAdded={reloadGitCreds} onError={onError} />
+      </Section>
+    </div>
+  )
+}
+
+// Add-credential form. The token field is write-only: it is cleared on success
+// and never populated from server data, so a token is never rendered after creation.
+function GitCredentialForm({ onAdded, onError }: { onAdded: () => void; onError: (m: string) => void }) {
+  const [name, setName] = useState('')
+  const [host, setHost] = useState('')
+  const [username, setUsername] = useState('')
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function add() {
+    if (!name.trim() || !token.trim()) return
+    setBusy(true)
+    try {
+      await api.createGitCredential({
+        name: name.trim(),
+        host: host.trim() || undefined,
+        username: username.trim() || undefined,
+        token,
+      })
+      setName('')
+      setHost('')
+      setUsername('')
+      setToken('') // write-only: clear the token after submit
+      onAdded()
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="row" data-testid="git-cred-form" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <input data-testid="git-cred-name" placeholder="name (e.g. github)" value={name} onChange={(e) => setName(e.target.value)} />
+      <input data-testid="git-cred-host" placeholder="host (e.g. github.com)" value={host} onChange={(e) => setHost(e.target.value)} />
+      <input data-testid="git-cred-username" placeholder="username (optional)" value={username} onChange={(e) => setUsername(e.target.value)} />
+      <input
+        data-testid="git-cred-token"
+        type="password"
+        placeholder="access token (write-only)"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+      />
+      <button data-testid="git-cred-add" disabled={busy || !name.trim() || !token.trim()} onClick={add}>
+        {busy ? 'Adding…' : 'Add credential'}
+      </button>
     </div>
   )
 }

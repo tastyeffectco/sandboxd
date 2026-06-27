@@ -51,6 +51,17 @@ export interface SettingsPatch {
   }
 }
 
+// Git credential metadata (GET /v1/git-credentials). The token is write-only —
+// it is sent on create and never returned.
+export interface GitCredential {
+  id: string
+  name: string
+  host: string
+  username: string
+  token_set: boolean
+  created_at: string
+}
+
 export interface Preview {
   url: string
   status: string
@@ -144,6 +155,14 @@ export const api = {
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
   getSettings: () => req<Settings>('GET', '/v1/settings'),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
+
+  // Git credentials (for importing private repos in a later v0.4.x release).
+  // The token is write-only: sent on create, never returned.
+  listGitCredentials: () =>
+    req<{ credentials: GitCredential[] }>('GET', '/v1/git-credentials').then((r) => r.credentials || []),
+  createGitCredential: (b: { name: string; host?: string; username?: string; token: string }) =>
+    req<GitCredential>('POST', '/v1/git-credentials', b),
+  deleteGitCredential: (id: string) => req<unknown>('DELETE', `/v1/git-credentials/${id}`),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),

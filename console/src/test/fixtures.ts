@@ -3,7 +3,12 @@
 // (control-plane/internal/api/v1_client_contract_test.go and friends). If a
 // server shape changes, update these to match (and the Go test should fail first).
 import { vi } from 'vitest'
-import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings } from '../api'
+import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings, GitCredential } from '../api'
+
+// Git credential metadata (mirrors GET /v1/git-credentials). No token field.
+export const gitCredentialsFixture: GitCredential[] = [
+  { id: '01GITCREDAAAAAAAAAAAAAAAAA', name: 'github', host: 'github.com', username: 'x-access-token', token_set: true, created_at: '2026-06-26T00:00:00Z' },
+]
 
 export const presetsFixture: Preset[] = [
   { id: 'react-vite', label: 'React / Vite', description: 'React + Vite SPA', template: 'react-standard', capabilities: ['node', 'pnpm'] },

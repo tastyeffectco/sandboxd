@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Settings } from './Settings'
-import { installFetch, settingsFixture } from './test/fixtures'
+import { installFetch, settingsFixture, gitCredentialsFixture } from './test/fixtures'
 
 const noop = () => {}
 
 describe('console — Settings page', () => {
   beforeEach(() => {
     installFetch((m, p) => {
+      if (m === 'GET' && p.startsWith('/v1/git-credentials')) return { credentials: gitCredentialsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined
     })
@@ -42,10 +43,12 @@ describe('console — Settings page', () => {
     const sec = screen.getByTestId('settings-security')
     expect(sec.textContent).toMatch(/API auth/i)
     expect(sec.textContent).toMatch(/disabled/i)
-    // no api-key-looking value, and no password input anywhere on the page
+    // no api-key-looking value anywhere, and the security/auth section itself
+    // exposes no secret/password input (the Git-credential token field is a
+    // separate, intentional write-only input elsewhere on the page).
     const page = screen.getByTestId('settings-page')
     expect(page.textContent || '').not.toMatch(/sk-[A-Za-z0-9]{8,}/)
-    expect(page.querySelector('input[type="password"]')).toBeNull()
+    expect(sec.querySelector('input')).toBeNull()
   })
 
   it('lifecycle is editable; protected sections have no inputs', async () => {
@@ -63,6 +66,7 @@ describe('console — Settings page', () => {
   it('Save sends a PATCH with only the lifecycle fields', async () => {
     let patched: { method: string; body: unknown } | null = null
     installFetch((m, p) => {
+      if (m === 'GET' && p.startsWith('/v1/git-credentials')) return { credentials: gitCredentialsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       if (m === 'PATCH' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined
@@ -86,5 +90,45 @@ describe('console — Settings page', () => {
     expect((patched!.body as { lifecycle: { idle_threshold_seconds: number } }).lifecycle.idle_threshold_seconds).toBe(600)
     // body carries ONLY lifecycle (no protected keys)
     expect(Object.keys(patched!.body as object)).toEqual(['lifecycle'])
+  })
+
+  it('Git credentials: lists, adds (token write-only, cleared, never rendered), deletes', async () => {
+    let posted: { name: string; token: string } | null = null
+    let deleted = false
+    installFetch((m, p) => {
+      if (m === 'GET' && p.startsWith('/v1/git-credentials')) return { credentials: gitCredentialsFixture }
+      if (m === 'POST' && p === '/v1/git-credentials') return { id: 'newid', name: 'gl', host: '', username: '', token_set: true, created_at: 'x' }
+      if (m === 'DELETE' && p.startsWith('/v1/git-credentials/')) return {}
+      if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
+      return undefined
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      const method = (init?.method || 'GET').toUpperCase()
+      if (method === 'POST' && String(input).endsWith('/git-credentials')) posted = init?.body ? JSON.parse(init.body) : null
+      if (method === 'DELETE' && String(input).includes('/git-credentials/')) deleted = true
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<Settings onError={noop} />)
+    // existing credential is listed; the token is never present anywhere on the page
+    expect(await screen.findByTestId('git-cred-01GITCREDAAAAAAAAAAAAAAAAA')).toBeTruthy()
+    const SECRET = 'ghp_secret_never_render'
+    // add a credential
+    fireEvent.change(screen.getByTestId('git-cred-name'), { target: { value: 'gl' } })
+    const tokenInput = screen.getByTestId('git-cred-token') as HTMLInputElement
+    expect(tokenInput.type).toBe('password') // write-only field
+    fireEvent.change(tokenInput, { target: { value: SECRET } })
+    fireEvent.click(screen.getByTestId('git-cred-add'))
+
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted!.token).toBe(SECRET) // token IS sent in the request body
+    // …but cleared from the field afterwards and never rendered back
+    await waitFor(() => expect((screen.getByTestId('git-cred-token') as HTMLInputElement).value).toBe(''))
+    expect(screen.getByTestId('settings-page').textContent || '').not.toContain(SECRET)
+
+    // delete
+    fireEvent.click(screen.getByTestId('git-cred-delete-01GITCREDAAAAAAAAAAAAAAAAA'))
+    await waitFor(() => expect(deleted).toBe(true))
   })
 })

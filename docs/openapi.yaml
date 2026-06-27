@@ -105,6 +105,60 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/git-credentials:
+    post:
+      tags: [apps]
+      summary: Store an owner-scoped Git credential (token write-only, encrypted at rest). Returns metadata only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, token]
+              properties:
+                name: { type: string }
+                host: { type: string, description: e.g. github.com }
+                username: { type: string }
+                token: { type: string, description: PAT — write-only, never returned }
+      responses:
+        "201": { description: Created (metadata only; token never returned) }
+        "400": { description: Invalid request }
+        "409": { description: A credential with that name already exists }
+        "503": { description: Credential store not configured }
+    get:
+      tags: [apps]
+      summary: List the tenant's Git credentials (metadata only — no token)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        host: { type: string }
+                        username: { type: string }
+                        token_set: { type: boolean }
+                        created_at: { type: string }
+                        updated_at: { type: string }
+  /v1/git-credentials/{id}:
+    delete:
+      tags: [apps]
+      summary: Delete a Git credential (owner-scoped)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: No such credential }
+
   /v1/presets:
     get:
       tags: [apps]
