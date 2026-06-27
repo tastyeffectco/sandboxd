@@ -95,6 +95,29 @@ on a dedicated VM per trust domain.
 The only writable disk location inside a sandbox is `/home/sandbox`. Back up a
 workspace by copying its directory; back up state by copying the SQLite file.
 
+## Optional workflows on top of core
+
+The core engine is just sandboxes + previews + the `/v1` API. Everything else —
+durable **apps**, coding **agents**, and the **Git** workflow — is an optional
+layer a client opts into; none of it is required to run a sandbox, and the console
+is just one such `/v1` client.
+
+**Git** (optional; see [`docs/git-workflow.md`](docs/git-workflow.md)) follows the
+same boundary the rest of the system uses, split by who needs credentials and the
+network:
+
+- **Network git (clone on import, push) runs host-side in the control plane** —
+  it holds the encrypted, owner-scoped PAT (decrypted only in these paths and fed
+  to git only via `GIT_ASKPASS` + a `0600` file) and reaches the network. The
+  **sandbox never sees the token** and has no network.
+- **Local git (status, diff, commit) runs in-sandbox** (`docker exec`,
+  credential-free, offline), so an agent-controlled `.git` stays inside the
+  existing trust boundary instead of executing on the host.
+
+Push targets the app's stored repo URL (never the repo's `.git/config` origin),
+pushes only to a new branch, never force-pushes, and creates no PRs. PAT + HTTPS
+only — no SSH, App/OAuth, or provider APIs.
+
 ## Design choices & current limitations (v1)
 
 sandboxd v1 optimizes for "runs anywhere with just Docker, one command." A few

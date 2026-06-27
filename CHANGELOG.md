@@ -9,6 +9,14 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.7); not part of the v0.4.0 launch.
 
+### Docs
+- **Git workflow consolidated.** The full Git workflow (credentials → import →
+  runtime detect → status/diff → commit → push, spanning v0.4.2–v0.4.8) is
+  documented in [`docs/git-workflow.md`](docs/git-workflow.md) — end-to-end flow,
+  the host-side-network / in-sandbox-local execution split, security boundaries,
+  limitations, and explicit non-goals. `ARCHITECTURE.md` and the README now frame
+  Git as an **optional `/v1` workflow on top of sandboxd core**. No code changes.
+
 ### Fixed
 - **Git commit/push concurrency (QA).** Two commits (or a commit and a push) on
   the same workspace could race: one succeeds and the other failed with a scary
