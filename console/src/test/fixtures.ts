@@ -127,11 +127,30 @@ export const gitStatusFixture = {
   branch: 'main',
   head_sha: 'abc1234567',
   clean: false,
+  user_clean: false,
   ahead: null,
   behind: null,
   files: [
     { path: 'src/App.tsx', status: 'modified', staged: false },
     { path: 'notes.md', status: 'untracked', staged: false },
+  ],
+  runtime_files: [{ path: 'sandbox.yaml', status: 'modified', staged: false }],
+}
+
+// A pristine import: raw repo is not clean, but the only changes are
+// runtime-generated — so user_clean is true and there are no user files.
+export const gitStatusPristineFixture = {
+  available: true,
+  branch: 'main',
+  head_sha: 'abc1234567',
+  clean: false,
+  user_clean: true,
+  ahead: null,
+  behind: null,
+  files: [],
+  runtime_files: [
+    { path: 'sandbox.yaml', status: 'modified', staged: false },
+    { path: 'pnpm-lock.yaml', status: 'modified', staged: false },
   ],
 }
 export const gitDiffFixture = {

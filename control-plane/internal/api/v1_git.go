@@ -44,14 +44,22 @@ type v1GitFile struct {
 }
 
 type v1GitStatusResp struct {
-	Available bool        `json:"available"`
-	Reason    string      `json:"reason,omitempty"` // no_sandbox|sandbox_not_running|not_a_git_repo|git_error|exec_failed
-	Branch    string      `json:"branch,omitempty"`
-	HeadSHA   string      `json:"head_sha,omitempty"`
-	Clean     bool        `json:"clean"`
-	Ahead     *int        `json:"ahead"`  // null unless an upstream is locally known (no network)
-	Behind    *int        `json:"behind"` // null unless an upstream is locally known
-	Files     []v1GitFile `json:"files"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"` // no_sandbox|sandbox_not_running|not_a_git_repo|git_error|exec_failed
+	Branch    string `json:"branch,omitempty"`
+	HeadSHA   string `json:"head_sha,omitempty"`
+	// Clean is the RAW repo state (no changes at all). UserClean ignores known
+	// sandboxd/runtime-generated files (sandbox.yaml, lockfiles, framework caches)
+	// — so a pristine import whose only "changes" are runtime artifacts reports
+	// user_clean=true while clean stays truthfully false.
+	Clean     bool `json:"clean"`
+	UserClean bool `json:"user_clean"`
+	Ahead     *int `json:"ahead"`  // null unless an upstream is locally known (no network)
+	Behind    *int `json:"behind"` // null unless an upstream is locally known
+	// Files are user/repo changes; RuntimeFiles are known runtime-generated ones.
+	// Their union is the raw working-tree change set (status stays truthful).
+	Files        []v1GitFile `json:"files"`
+	RuntimeFiles []v1GitFile `json:"runtime_files"`
 }
 
 type v1GitDiffResp struct {
@@ -134,19 +142,65 @@ func gitStatus(ctx context.Context, ex sandboxExecer, sbID string) v1GitStatusRe
 	if st.ExitCode != 0 {
 		return v1GitStatusResp{Available: false, Reason: gitErrReason(st.Stderr), Files: []v1GitFile{}}
 	}
-	branch, ahead, behind, files := parsePorcelainZ(st.Stdout)
+	branch, ahead, behind, allFiles := parsePorcelainZ(st.Stdout)
+	user, runtime := splitRuntimeFiles(allFiles)
 	head := ""
 	if h, err := ex.Exec(ctx, "s-"+sbID, gitArgs("rev-parse", "HEAD")); err == nil && h.ExitCode == 0 {
 		head = strings.TrimSpace(h.Stdout)
 	}
 	return v1GitStatusResp{
 		Available: true, Branch: branch, HeadSHA: head,
-		Clean: len(files) == 0, Ahead: ahead, Behind: behind, Files: files,
+		Clean: len(allFiles) == 0, UserClean: len(user) == 0,
+		Ahead: ahead, Behind: behind,
+		Files: user, RuntimeFiles: runtime,
 	}
 }
 
+// runtimeExactFiles + runtimeDirPrefixes are files sandboxd or the runtime
+// toolchain generates (NOT user edits): the injected manifest, install lockfiles,
+// and framework build/cache dirs. Conservative on purpose — only well-known
+// artifacts, so a real user change is never hidden.
+var runtimeExactFiles = map[string]bool{
+	"sandbox.yaml":      true, // injected by sandboxd / written by runtimed
+	"pnpm-lock.yaml":    true,
+	"package-lock.json": true,
+	"yarn.lock":         true,
+	"bun.lockb":         true,
+}
+
+var runtimeDirPrefixes = []string{
+	"node_modules/", ".astro/", ".next/", ".svelte-kit/", ".turbo/", ".cache/", ".vite/",
+}
+
+func isRuntimeFile(p string) bool {
+	if runtimeExactFiles[p] {
+		return true
+	}
+	for _, pre := range runtimeDirPrefixes {
+		if strings.HasPrefix(p, pre) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitRuntimeFiles partitions the raw change set into user vs runtime-generated.
+func splitRuntimeFiles(all []v1GitFile) (user, runtime []v1GitFile) {
+	user, runtime = []v1GitFile{}, []v1GitFile{}
+	for _, f := range all {
+		if isRuntimeFile(f.Path) {
+			runtime = append(runtime, f)
+		} else {
+			user = append(user, f)
+		}
+	}
+	return user, runtime
+}
+
 func gitDiff(ctx context.Context, ex sandboxExecer, sbID, path string) v1GitDiffResp {
-	args := []string{"--no-ext-diff", "--no-textconv", "diff", "HEAD"}
+	// --no-ext-diff / --no-textconv are `git diff` options, NOT top-level git
+	// options — they must come AFTER the `diff` subcommand or git errors out.
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "HEAD"}
 	if path != "" {
 		args = append(args, "--", path)
 	}

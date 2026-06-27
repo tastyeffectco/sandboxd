@@ -457,11 +457,22 @@ paths:
                   reason: { type: string, description: "no_sandbox | sandbox_not_running | not_a_git_repo | git_error | exec_failed" }
                   branch: { type: string }
                   head_sha: { type: string }
-                  clean: { type: boolean }
+                  clean: { type: boolean, description: "Raw repo clean (no changes at all)." }
+                  user_clean: { type: boolean, description: "Clean ignoring runtime-generated files (sandbox.yaml, lockfiles, framework caches)." }
                   ahead: { type: integer, nullable: true, description: "Only if an upstream is locally known (no network)." }
                   behind: { type: integer, nullable: true }
                   files:
                     type: array
+                    description: "User/repo changes."
+                    items:
+                      type: object
+                      properties:
+                        path: { type: string }
+                        status: { type: string, enum: [modified, added, deleted, renamed, copied, untracked, unmerged] }
+                        staged: { type: boolean }
+                  runtime_files:
+                    type: array
+                    description: "Known sandboxd/runtime-generated changes (not user edits). Same item shape as files."
                     items:
                       type: object
                       properties:

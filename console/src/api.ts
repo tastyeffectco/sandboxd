@@ -86,10 +86,12 @@ export interface GitStatus {
   reason?: string
   branch?: string
   head_sha?: string
-  clean?: boolean
+  clean?: boolean // raw repo clean (no changes at all)
+  user_clean?: boolean // clean ignoring runtime-generated files
   ahead?: number | null
   behind?: number | null
-  files?: GitFile[]
+  files?: GitFile[] // user/repo changes
+  runtime_files?: GitFile[] // sandboxd/runtime-generated (sandbox.yaml, lockfiles, caches)
 }
 export interface GitDiff {
   available: boolean
