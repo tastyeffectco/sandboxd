@@ -439,6 +439,63 @@ paths:
                   warnings: { type: array, items: { type: string } }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/apps/{id}/git/status:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: Read-only Git status for the app's workspace (runs in-sandbox; no network, no credentials, no fetch/commit/push).
+      responses:
+        "200":
+          description: Git status, or { available:false, reason } when there is no running sandbox / no .git.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  reason: { type: string, description: "no_sandbox | sandbox_not_running | not_a_git_repo | git_error | exec_failed" }
+                  branch: { type: string }
+                  head_sha: { type: string }
+                  clean: { type: boolean }
+                  ahead: { type: integer, nullable: true, description: "Only if an upstream is locally known (no network)." }
+                  behind: { type: integer, nullable: true }
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path: { type: string }
+                        status: { type: string, enum: [modified, added, deleted, renamed, copied, untracked, unmerged] }
+                        staged: { type: boolean }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/git/diff:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: Read-only unified Git diff (working tree vs HEAD) for the app's workspace. In-sandbox; no network/credentials.
+      parameters:
+        - in: query
+          name: path
+          schema: { type: string }
+          description: Optional workspace-relative path filter. Absolute paths and `..` are rejected.
+      responses:
+        "200":
+          description: Unified diff (capped), or { available:false, reason }.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  reason: { type: string }
+                  diff: { type: string, description: "Unified diff; binary files show as 'Binary files differ'." }
+                  truncated: { type: boolean, description: "True when the diff was capped." }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"

@@ -5,6 +5,28 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.6 (branch `feat/v0.4.6-git-status-diff`, stacked on v0.4.5; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.5); not part of the v0.4.0 launch.
+
+### Added
+- **Read-only Git status/diff (A2).** New endpoints `GET /v1/apps/{id}/git/status`
+  and `GET /v1/apps/{id}/git/diff?path=` let you inspect an imported repo's
+  changes before any commit/push exists. Git runs **in-sandbox via `docker exec`**
+  (uid 1000, locked container, **no network**), never host-side — because the
+  workspace `.git`/`.gitattributes` are agent-controlled and `git status`/`diff`
+  can execute configured programs; the invocation is hardened
+  (`-c core.fsmonitor=`, `--no-ext-diff --no-textconv`, `-c safe.directory=*`) and
+  argv-only. **No token, no credential lookup, no network, no fetch/pull/commit/
+  push.** Status is structured (branch, head_sha, clean, ahead/behind when locally
+  known, files[] with status category + staged). Diff is a unified diff, capped
+  (256 KiB → `truncated:true`), binary-safe, optional `path` filter (absolute/`..`
+  rejected); diff bodies are **not logged** (they can contain secrets). When there
+  is no running sandbox / no `.git`, the endpoints return `{available:false,
+  reason}` (no auto-wake). Owner-scoped (cross-owner/unknown → 404). Console app
+  detail gains a read-only Git panel (status summary, changed files, on-demand
+  diff; no commit/push controls).
+
 ## [Unreleased] — v0.4.5 (branch `feat/v0.4.5-runtime-inspect`, stacked on v0.4.4; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.4); not part of the v0.4.0 launch.
