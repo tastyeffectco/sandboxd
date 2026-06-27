@@ -320,7 +320,8 @@ function GitPanel({
   }
 
   const commit = () => {
-    if (!message.trim() || userSel.size + rtSel.size === 0) return
+    // guard against double-submit (a second click before the disabled state lands)
+    if (committing || pushing || !message.trim() || userSel.size + rtSel.size === 0) return
     setCommitting(true)
     setCommittedSha('')
     api
@@ -339,6 +340,7 @@ function GitPanel({
   }
 
   const push = () => {
+    if (pushing || committing) return
     setPushing(true)
     setPushResult(null)
     api
@@ -461,7 +463,7 @@ function GitPanel({
               <button
                 className="btn btn-primary"
                 data-testid="git-commit"
-                disabled={committing || !message.trim() || userSel.size + rtSel.size === 0}
+                disabled={committing || pushing || !message.trim() || userSel.size + rtSel.size === 0}
                 onClick={commit}
                 style={{ marginTop: 8 }}
               >
@@ -498,6 +500,7 @@ function GitPanel({
                 <button
                   className="btn btn-outline"
                   data-testid="git-push-start"
+                  disabled={committing || pushing}
                   onClick={() => setPushConfirm(true)}
                   style={{ marginTop: 8 }}
                 >
@@ -506,7 +509,7 @@ function GitPanel({
               ) : (
                 <div data-testid="git-push-confirm" style={{ marginTop: 8 }}>
                   <span style={{ fontSize: 13 }}>This writes to the remote repository. Continue?</span>{' '}
-                  <button className="btn btn-primary" data-testid="git-push-confirm-yes" disabled={pushing} onClick={push}>
+                  <button className="btn btn-primary" data-testid="git-push-confirm-yes" disabled={pushing || committing} onClick={push}>
                     Confirm push
                   </button>{' '}
                   <button className="btn btn-outline" data-testid="git-push-cancel" onClick={() => setPushConfirm(false)}>

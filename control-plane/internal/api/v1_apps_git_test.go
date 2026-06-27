@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/secrets"
 	"github.com/sandboxd/control-plane/internal/store"
 )
@@ -18,7 +19,7 @@ func appsGitServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Server{Store: memStore(t), Secrets: cipher}
+	return &Server{Store: memStore(t), Secrets: cipher, Locks: idlock.New()}
 }
 
 // seedCred stores an owner-scoped git credential and returns its id.

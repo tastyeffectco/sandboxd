@@ -61,6 +61,10 @@ type Server struct {
 	// the handler uses the real gitimport.Runner; tests inject a fake.
 	GitPush pushRunner
 
+	// GitExec runs in-sandbox git (status/diff/commit) via docker exec. Nil in
+	// production → the handler uses s.Docker; tests inject a fake execer.
+	GitExec sandboxExecer
+
 	// AgentCfg is the in-memory cache of the platform's agent
 	// configuration (model + AGENTS.md) — the source of truth for
 	// what each sandbox's coding agent uses. Reads are lock-free
