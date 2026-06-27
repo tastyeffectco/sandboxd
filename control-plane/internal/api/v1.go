@@ -30,6 +30,7 @@ const defaultTemplate = "react-standard"
 
 type v1Preview struct {
 	URL               string `json:"url"`
+	Port              int    `json:"port,omitempty"` // A1.5a: the resolved web port the URL routes to
 	Status            string `json:"status"`
 	LastHTTPStatus    int    `json:"last_http_status,omitempty"`
 	LastCheckedAt     string `json:"last_checked_at,omitempty"`
@@ -114,7 +115,7 @@ func (s *Server) delegate(r *http.Request, h http.HandlerFunc, method, path stri
 	return rec.Code, rec.Body.Bytes()
 }
 
-func (s *Server) previewURL(id string) string {
+func (s *Server) previewURL(id string, webPort int) string {
 	// Reflect the actual scheme: previews are served over plain HTTP
 	// unless PreviewTLS is configured (so a local/default deploy returns
 	// a reachable http:// URL the console can iframe).
@@ -124,7 +125,13 @@ func (s *Server) previewURL(id string) string {
 		scheme = "https"
 		defaultPort = "443"
 	}
-	host := fmt.Sprintf("s-%s-3000.preview.%s", id, s.PreviewDomain)
+	if webPort <= 0 {
+		webPort = 3000 // backward-compatible default
+	}
+	// The preview hostname's port is the sandbox's RESOLVED web port (manifest /
+	// preset / 3000) — the same port the Traefik router serves — so a non-3000
+	// app (e.g. Astro on 4321) gets a reachable URL.
+	host := fmt.Sprintf("s-%s-%d.preview.%s", id, webPort, s.PreviewDomain)
 	// Append the host-facing port unless it's the scheme default. On a
 	// shared host published on e.g. :18080, the bare URL would hit whatever
 	// owns :80 (a front proxy), so the port must be in the URL the browser,
@@ -152,7 +159,7 @@ func (s *Server) v1SandboxFromRow(r *http.Request, sb *store.Sandbox) v1Sandbox 
 	if got, err := runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock")).Status(ctx); err == nil {
 		rs = got
 	}
-	out.Preview, out.Processes = s.v1RuntimeView(sb.ID, sb.Status, rs)
+	out.Preview, out.Processes = s.v1RuntimeView(sb.ID, sb.Status, rs, webPortOf(sb))
 	if rs != nil && rs.ActiveTask != nil {
 		out.ActiveTaskID = rs.ActiveTask.ID
 	}
@@ -163,8 +170,12 @@ func (s *Server) v1SandboxFromRow(r *http.Request, sb *store.Sandbox) v1Sandbox 
 // rs is nil when runtimed is unreachable; then preview reflects the row status.
 // A worker-only app (preview status "none") has no public endpoint, so its
 // preview URL is cleared. Pure given the Server config — unit-tested.
-func (s *Server) v1RuntimeView(id, rowStatus string, rs *runtime.Status) (v1Preview, []v1Process) {
-	prev := v1Preview{URL: s.previewURL(id)}
+func (s *Server) v1RuntimeView(id, rowStatus string, rs *runtime.Status, webPort int) (v1Preview, []v1Process) {
+	port := webPort
+	if port <= 0 {
+		port = 3000
+	}
+	prev := v1Preview{URL: s.previewURL(id, webPort), Port: port}
 	var procs []v1Process
 	if rs != nil {
 		prev.Status = string(rs.Preview.Status)

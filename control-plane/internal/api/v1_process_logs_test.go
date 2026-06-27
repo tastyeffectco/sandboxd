@@ -109,7 +109,7 @@ func TestV1RuntimeViewWorkerOnlyAndProcesses(t *testing.T) {
 		Preview:   runtime.PreviewState{Status: runtime.PreviewReady, LastHTTPStatus: 200},
 		Processes: []runtime.ProcessState{{Name: "web", Kind: "web", Running: true, Pid: 42, Restarts: 1}},
 	}
-	prev, procs := s.v1RuntimeView("01ABC", "running", web)
+	prev, procs := s.v1RuntimeView("01ABC", "running", web, 3000)
 	if prev.Status != "ready" || prev.URL == "" {
 		t.Errorf("web preview wrong: %+v", prev)
 	}
@@ -122,7 +122,7 @@ func TestV1RuntimeViewWorkerOnlyAndProcesses(t *testing.T) {
 		Preview:   runtime.PreviewState{Status: runtime.PreviewNone},
 		Processes: []runtime.ProcessState{{Name: "ticker", Kind: "worker", Running: true}},
 	}
-	prev, procs = s.v1RuntimeView("01ABC", "running", wo)
+	prev, procs = s.v1RuntimeView("01ABC", "running", wo, 3000)
 	if prev.Status != "none" {
 		t.Errorf("worker-only status = %q; want none", prev.Status)
 	}
@@ -134,10 +134,10 @@ func TestV1RuntimeViewWorkerOnlyAndProcesses(t *testing.T) {
 	}
 
 	// runtimed unreachable: reflects the row status.
-	if prev, _ := s.v1RuntimeView("01ABC", "running", nil); prev.Status != "starting" {
+	if prev, _ := s.v1RuntimeView("01ABC", "running", nil, 3000); prev.Status != "starting" {
 		t.Errorf("nil/running = %q; want starting", prev.Status)
 	}
-	if prev, _ := s.v1RuntimeView("01ABC", "stopped", nil); prev.Status != "down" {
+	if prev, _ := s.v1RuntimeView("01ABC", "stopped", nil, 3000); prev.Status != "down" {
 		t.Errorf("nil/stopped = %q; want down", prev.Status)
 	}
 }

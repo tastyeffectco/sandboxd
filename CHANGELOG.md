@@ -5,6 +5,24 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.4 (branch `feat/v0.4.4-preview-port`, stacked on v0.4.3; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.3); not part of the v0.4.0 launch.
+
+### Fixed
+- **Preview port correctness (A1.5a).** The preview URL and Traefik router now use
+  the sandbox's **resolved web port** instead of a hardcoded `3000`, so an app that
+  serves on a non-3000 port (e.g. an imported Astro repo on 4321) previews
+  correctly. The port is resolved at create from (1) the cloned/imported
+  workspace `sandbox.yaml` `web.port`, else (2) the selected runtime preset's
+  manifest `web.port`, else (3) `3000` (backward compatible), and persisted on the
+  sandbox (`web_port`, migration 0021). A shared `internal/manifest` parser lets
+  the control plane read `web.port` (runtimed unchanged). The sandbox `preview`
+  object now includes `port`. **Multi-port behavior is unchanged** — the resolved
+  port is added to the preview routers additively; requested ports are never
+  dropped, and a no-port sandbox stays preview-less. No detection/stack/Astro
+  preset here (that's A1.5b).
+
 ## [Unreleased] — v0.4.3 (branch `feat/v0.4.3-git-import`, stacked on v0.4.2; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.2); not part of the v0.4.0 launch.

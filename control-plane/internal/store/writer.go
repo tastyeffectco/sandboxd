@@ -55,6 +55,15 @@ func (s *Store) submit(ctx context.Context, fn func(*sql.DB) error) error {
 	}
 }
 
+// SetWebPort updates a sandbox's resolved preview web port (A1.5a). Used after a
+// Git clone reveals the repo's sandbox.yaml web.port.
+func (s *Store) SetWebPort(ctx context.Context, id string, port int) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE sandbox SET web_port = ? WHERE id = ?`, port, id)
+		return err
+	})
+}
+
 // --- Public write methods --------------------------------------------
 
 // Create inserts a new sandbox row + its ports atomically. Phase 8:
@@ -86,12 +95,12 @@ func (s *Store) Create(ctx context.Context, sb *Sandbox) error {
 			                    created_at, updated_at,
 			                    external_user_id, external_project_id,
 			                    external_workspace_id, visibility,
-			                    idle_policy, app_id)
-			VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			                    idle_policy, app_id, web_port)
+			VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			sb.ID, sb.Status, sb.Image, sb.WorkspaceImg, sb.WorkspaceMnt,
 			sb.MemoryHigh, now, now,
 			sb.ExternalUserID, sb.ExternalProjectID, sb.ExternalWorkspaceID, visibility, idlePolicy,
-			sb.AppID)
+			sb.AppID, sb.WebPort)
 
 		if err != nil {
 			if isUniqueViolation(err) {
