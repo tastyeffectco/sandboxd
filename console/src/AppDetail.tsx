@@ -316,7 +316,9 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
             branch <strong>{st.branch || '—'}</strong>
             {st.head_sha ? ` @ ${st.head_sha.slice(0, 8)}` : ''}
             {' · '}
-            {st.clean ? (
+            {/* user_clean drives the headline: runtime-generated files don't count
+                as user edits, so a pristine import reads as clean. */}
+            {st.user_clean ? (
               <span data-testid="git-clean">clean</span>
             ) : (
               <span data-testid="git-dirty">{st.files?.length || 0} changed</span>
@@ -334,6 +336,22 @@ function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => v
                 </li>
               ))}
             </ul>
+          )}
+
+          {st.runtime_files && st.runtime_files.length > 0 && (
+            <details data-testid="git-runtime-files" style={{ marginTop: 8 }}>
+              <summary className="muted" style={{ fontSize: 12 }}>
+                {st.runtime_files.length} runtime-generated file
+                {st.runtime_files.length === 1 ? '' : 's'} (sandbox.yaml, lockfiles, caches — not your edits)
+              </summary>
+              <ul style={{ fontSize: 13 }}>
+                {st.runtime_files.map((f) => (
+                  <li key={f.path} className="mono">
+                    <span className="muted">{f.status}</span> — {f.path}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
 
           {!st.clean && (

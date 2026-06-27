@@ -40,6 +40,15 @@ func (f *fakeExecer) Exec(_ context.Context, _ string, cmd []string) (docker.Exe
 
 const nul = "\x00"
 
+func indexOf(ss []string, want string) int {
+	for i, s := range ss {
+		if s == want {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestParsePorcelainZ(t *testing.T) {
 	// branch w/ upstream + ahead/behind, then: modified(unstaged), staged-add,
 	// deleted(unstaged), untracked, renamed (consumes old path).
@@ -136,6 +145,64 @@ func TestGitStatusLogic(t *testing.T) {
 	}
 }
 
+func TestIsRuntimeFile(t *testing.T) {
+	runtime := []string{"sandbox.yaml", "pnpm-lock.yaml", "package-lock.json", "yarn.lock",
+		"node_modules/x/y.js", ".astro/settings.json", ".next/cache", ".vite/deps"}
+	user := []string{"src/App.tsx", "README.md", "src/sandbox.yaml", "app/pnpm-lock.yaml", "package.json"}
+	for _, p := range runtime {
+		if !isRuntimeFile(p) {
+			t.Errorf("should be runtime-generated: %q", p)
+		}
+	}
+	for _, p := range user {
+		if isRuntimeFile(p) {
+			t.Errorf("should be a user file: %q", p)
+		}
+	}
+}
+
+// A pristine imported repo whose only changes are runtime-generated files must
+// report clean=false (truthful) but user_clean=true, with those files surfaced
+// under runtime_files rather than presented as user edits.
+func TestPristineImportClassification(t *testing.T) {
+	out := "## main" + nul +
+		" M sandbox.yaml" + nul +
+		" M pnpm-lock.yaml" + nul +
+		"?? .astro/settings.json" + nul
+	ex := &fakeExecer{
+		status: docker.ExecResult{Stdout: out, ExitCode: 0},
+		head:   docker.ExecResult{Stdout: "deadbeef\n", ExitCode: 0},
+	}
+	r := gitStatus(context.Background(), ex, "SB")
+	if r.Clean {
+		t.Error("raw clean must stay false (status is truthful)")
+	}
+	if !r.UserClean {
+		t.Error("user_clean should be true (only runtime files changed)")
+	}
+	if len(r.Files) != 0 {
+		t.Errorf("no user files expected, got %+v", r.Files)
+	}
+	if len(r.RuntimeFiles) != 3 {
+		t.Errorf("expected 3 runtime files, got %+v", r.RuntimeFiles)
+	}
+}
+
+func TestMixedUserAndRuntimeClassification(t *testing.T) {
+	out := "## main" + nul + " M src/App.tsx" + nul + " M pnpm-lock.yaml" + nul
+	ex := &fakeExecer{status: docker.ExecResult{Stdout: out, ExitCode: 0}}
+	r := gitStatus(context.Background(), ex, "SB")
+	if r.UserClean {
+		t.Error("user_clean should be false — src/App.tsx is a user change")
+	}
+	if len(r.Files) != 1 || r.Files[0].Path != "src/App.tsx" {
+		t.Errorf("user files = %+v", r.Files)
+	}
+	if len(r.RuntimeFiles) != 1 || r.RuntimeFiles[0].Path != "pnpm-lock.yaml" {
+		t.Errorf("runtime files = %+v", r.RuntimeFiles)
+	}
+}
+
 func TestGitStatusNotARepo(t *testing.T) {
 	ex := &fakeExecer{status: docker.ExecResult{Stderr: "fatal: not a git repository", ExitCode: 128}}
 	r := gitStatus(context.Background(), ex, "SB")
@@ -150,11 +217,14 @@ func TestGitDiffLogic(t *testing.T) {
 	if !r.Available || r.Truncated || !strings.Contains(r.Diff, "+hi") {
 		t.Errorf("diff = %+v", r)
 	}
-	joined := strings.Join(ex.gotCmd[0], " ")
-	for _, want := range []string{"--no-ext-diff", "--no-textconv", "diff HEAD"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("diff argv missing %q: %v", want, joined)
-		}
+	// Command-ordering regression (Blocker A): --no-ext-diff/--no-textconv are
+	// `git diff` options and MUST come AFTER the `diff` subcommand (and HEAD after
+	// them), else git rejects them as unknown top-level options.
+	argv := ex.gotCmd[0]
+	di, ni := indexOf(argv, "diff"), indexOf(argv, "--no-ext-diff")
+	ti, hi := indexOf(argv, "--no-textconv"), indexOf(argv, "HEAD")
+	if di < 0 || ni < 0 || ti < 0 || hi < 0 || !(di < ni && di < ti && ni < hi && ti < hi) {
+		t.Errorf("diff argv mis-ordered (diff must precede its flags, HEAD last): %v", argv)
 	}
 	// empty repo (no HEAD) -> available, empty diff
 	ex2 := &fakeExecer{diff: docker.ExecResult{Stderr: "fatal: bad revision 'HEAD'", ExitCode: 128}}

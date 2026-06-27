@@ -26,6 +26,21 @@ a patch is fixes only).
   reason}` (no auto-wake). Owner-scoped (cross-owner/unknown → 404). Console app
   detail gains a read-only Git panel (status summary, changed files, on-demand
   diff; no commit/push controls).
+- **Honest classification of runtime-generated changes (A2, QA follow-up).** A
+  pristine import isn't really "dirty" just because sandboxd/the toolchain wrote
+  `sandbox.yaml`, a lockfile, or a framework cache (`.astro/`, `.next/`, …). Status
+  now keeps `clean` truthful (raw) and adds `user_clean` (ignores runtime files)
+  plus a separate `runtime_files[]` list; `files[]` is now user/repo changes only.
+  Nothing is auto-committed, `.gitignore` is untouched, and no change is hidden —
+  runtime files are surfaced in their own bucket. Console renders them separately
+  (collapsed, "not your edits") and shows `user_clean` as the headline state.
+
+### Fixed
+- **A2 diff was broken (QA).** `--no-ext-diff`/`--no-textconv` were passed as
+  top-level git options *before* the `diff` subcommand, so `git` rejected them
+  (`unknown option`). Moved after `diff`
+  (`git … diff --no-ext-diff --no-textconv HEAD [-- path]`); added a command-
+  ordering regression test.
 
 ## [Unreleased] — v0.4.5 (branch `feat/v0.4.5-runtime-inspect`, stacked on v0.4.4; NOT in v0.4.0)
 

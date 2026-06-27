@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { AppDetail } from './AppDetail'
-import { installFetch, appDetailRoutes, webSandboxFixture, workerSandboxFixture, unhealthySandboxFixture } from './test/fixtures'
+import {
+  installFetch,
+  appDetailRoutes,
+  webSandboxFixture,
+  workerSandboxFixture,
+  unhealthySandboxFixture,
+  gitStatusPristineFixture,
+} from './test/fixtures'
 
 const noop = () => {}
 
@@ -39,19 +46,40 @@ describe('app detail — web app', () => {
     expect(panel.textContent).toMatch(/Advisory only/i)
   })
 
-  it('shows read-only Git status + changed files, and loads a diff on demand', async () => {
+  it('shows read-only Git status, splits user vs runtime files, and loads a diff', async () => {
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
     const panel = await screen.findByTestId('git-panel')
     expect(panel.textContent).toMatch(/read-only/i) // clearly labelled
     expect(panel.textContent).toMatch(/main/)        // branch
+    // user files listed
     expect(await screen.findByTestId('git-files')).toBeTruthy()
-    expect(panel.textContent).toMatch(/src\/App\.tsx/)
+    expect(screen.getByTestId('git-files').textContent).toMatch(/src\/App\.tsx/)
+    // runtime-generated files are shown SEPARATELY, labelled as not-your-edits
+    const rt = screen.getByTestId('git-runtime-files')
+    expect(rt.textContent).toMatch(/sandbox\.yaml/)
+    expect(rt.textContent).toMatch(/not your edits/i)
+    // sandbox.yaml must NOT appear among user files
+    expect(screen.getByTestId('git-files').textContent).not.toMatch(/sandbox\.yaml/)
     // no commit/push controls in this slice
     expect(screen.queryByText(/commit/i)).toBeNull()
     expect(screen.queryByText(/push/i)).toBeNull()
-    // diff loads on demand
+    // diff loads on demand (the fixed diff endpoint)
     fireEvent.click(screen.getByTestId('git-view-diff'))
     expect((await screen.findByTestId('git-diff')).textContent).toMatch(/const x = 1/)
+  })
+
+  it('represents a pristine import honestly (clean to the user, runtime files surfaced)', async () => {
+    installFetch((m, p) => {
+      if (/\/v1\/apps\/[^/]+\/git\/status/.test(p)) return gitStatusPristineFixture
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-panel')
+    // user-facing state is "clean" (no user edits) even though raw repo isn't
+    expect(await screen.findByTestId('git-clean')).toBeTruthy()
+    // no user-file list, but the runtime files are disclosed
+    expect(screen.queryByTestId('git-files')).toBeNull()
+    expect(screen.getByTestId('git-runtime-files').textContent).toMatch(/pnpm-lock\.yaml/)
   })
 
   it('delete control says it removes the workspace (v1 DELETE purges)', async () => {
