@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sandboxd/control-plane/internal/docker"
+	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
@@ -164,7 +165,7 @@ func TestCommitNotARepo(t *testing.T) {
 
 func commitServer(t *testing.T, running bool) (*Server, string) {
 	t.Helper()
-	s := &Server{Store: memStore(t)} // Secrets nil, Docker nil
+	s := &Server{Store: memStore(t), Locks: idlock.New()} // Secrets nil, Docker nil
 	app := &store.App{ID: newULID(), OwnerToken: "tenantA", Name: "imp"}
 	if err := s.Store.CreateApp(context.Background(), app); err != nil {
 		t.Fatal(err)

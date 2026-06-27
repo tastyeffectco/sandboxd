@@ -116,6 +116,25 @@ describe('app detail — web app', () => {
     expect(screen.getByTestId('git-runtime-files').textContent).toMatch(/pnpm-lock\.yaml/)
   })
 
+  it('double-clicking Commit sends only one request', async () => {
+    let commitCalls = 0
+    installFetch((m, p) => {
+      if (m === 'POST' && /\/v1\/apps\/[^/]+\/git\/commit/.test(p)) {
+        commitCalls++
+        return { committed: true, sha: 'abc12345', branch: 'main', files_committed: ['src/App.tsx'] }
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-commit-box')
+    fireEvent.change(screen.getByTestId('git-commit-message'), { target: { value: 'one commit' } })
+    const btn = screen.getByTestId('git-commit')
+    fireEvent.click(btn)
+    fireEvent.click(btn) // immediate second click before the request resolves
+    await screen.findByTestId('git-committed-sha')
+    expect(commitCalls).toBe(1)
+  })
+
   it('git push: shown for imported apps, requires explicit confirm, posts branch, shows result', async () => {
     let pushed: { branch?: string } | null = null
     installFetch((m, p) => {

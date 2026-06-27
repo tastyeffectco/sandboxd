@@ -117,7 +117,7 @@ func (s *Server) v1GitStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": reason})
 		return
 	}
-	writeJSON(w, http.StatusOK, gitStatus(r.Context(), s.Docker, sb.ID))
+	writeJSON(w, http.StatusOK, gitStatus(r.Context(), s.gitExec(), sb.ID))
 }
 
 // GET /v1/apps/{id}/git/diff?path=<optional relative path>
@@ -139,7 +139,7 @@ func (s *Server) v1GitDiff(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Clean(path)
 	}
 	// NOTE: do not log the diff body — it can contain secrets.
-	writeJSON(w, http.StatusOK, gitDiff(r.Context(), s.Docker, sb.ID, path))
+	writeJSON(w, http.StatusOK, gitDiff(r.Context(), s.gitExec(), sb.ID, path))
 }
 
 // --- commit (B1) ------------------------------------------------------
@@ -200,8 +200,28 @@ func (s *Server) v1GitCommit(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "too many paths; select a subset")
 		return
 	}
+	// Serialize git MUTATIONS (commit/push) per workspace so two concurrent
+	// commits can't race — the second re-evaluates under the lock and returns
+	// no_changes instead of a scary git_error, and a later push can't publish a
+	// stale HEAD. Read-only status/diff stay unlocked. Key is per-sandbox, not
+	// global, so different apps never block each other.
+	s.Locks.Lock(gitLockKey(sb.ID))
+	defer s.Locks.Unlock(gitLockKey(sb.ID))
 	// NOTE: do not log the message or path contents — they can carry secrets.
-	writeJSON(w, http.StatusOK, gitCommit(r.Context(), s.Docker, sb.ID, req))
+	writeJSON(w, http.StatusOK, gitCommit(r.Context(), s.gitExec(), sb.ID, req))
+}
+
+// gitLockKey namespaces the per-workspace git mutation lock so it never collides
+// with the sandbox lifecycle locks (which key on the bare id).
+func gitLockKey(sandboxID string) string { return "git:" + sandboxID }
+
+// gitExec is the in-sandbox executor for status/diff/commit (s.Docker in prod;
+// an injected fake in tests).
+func (s *Server) gitExec() sandboxExecer {
+	if s.GitExec != nil {
+		return s.GitExec
+	}
+	return s.Docker
 }
 
 // gitCommit stages exactly the selected (and actually-changed) paths and makes a
@@ -283,9 +303,23 @@ func gitCommit(ctx context.Context, ex sandboxExecer, sbID string, req v1GitComm
 	return v1GitCommitResp{Committed: true, SHA: sha, Branch: branch, FilesCommitted: toStage}
 }
 
+// gitErrReasonOf classifies a `git add`/`commit` failure. A benign concurrency
+// race — the selected paths were already committed (or otherwise cleaned) by a
+// commit/push that ran just before this one — surfaces as a "did not match" /
+// "nothing to commit" message; that is NOT a real error, so it maps to
+// no_changes (the per-workspace lock makes this rare, but the agent can also
+// commit in-sandbox outside our lock). Real failures stay git_error.
 func gitErrReasonOf(res docker.ExecResult, err error) string {
 	if err != nil {
 		return "exec_failed"
+	}
+	s := strings.ToLower(res.Stderr)
+	switch {
+	case strings.Contains(s, "did not match"),
+		strings.Contains(s, "nothing to commit"),
+		strings.Contains(s, "no changes added"),
+		strings.Contains(s, "nothing added to commit"):
+		return "no_changes"
 	}
 	return gitErrReason(res.Stderr)
 }

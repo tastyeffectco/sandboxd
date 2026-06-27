@@ -93,6 +93,12 @@ func (s *Server) v1GitPush(w http.ResponseWriter, r *http.Request) {
 		unavail("no_workspace")
 		return
 	}
+	// Acquire the SAME per-workspace git mutation lock as commit, so a push can't
+	// overlap a commit (which would let it publish a stale HEAD). Everything
+	// below — RepoState/HEAD, audit, unpushed, and the push itself — runs under
+	// the lock, so the HEAD we push is the one we evaluated.
+	s.Locks.Lock(gitLockKey(sb.ID))
+	defer s.Locks.Unlock(gitLockKey(sb.ID))
 	appDir := filepath.Join(sb.WorkspaceMnt, "workspace", "app")
 	runner := s.pusher()
 

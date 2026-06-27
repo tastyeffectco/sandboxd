@@ -9,6 +9,19 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.7); not part of the v0.4.0 launch.
 
+### Fixed
+- **Git commit/push concurrency (QA).** Two commits (or a commit and a push) on
+  the same workspace could race: one succeeds and the other failed with a scary
+  `git_error` because the selected path was already committed, and a push could
+  publish a stale HEAD. Commit and push now take the **same per-workspace
+  exclusive lock** (`git:<sandbox-id>` — per workspace, not global; different apps
+  never block each other). Commit re-evaluates the changed paths under the lock,
+  so a benign race returns `{committed:false, reason:"no_changes"}` instead of
+  `git_error`; the same git "did not match / nothing to commit" outputs are now
+  classified as `no_changes` (real failures stay `git_error`). Read-only
+  status/diff remain unlocked. Console disables Commit while a commit/push is in
+  flight (and guards against double-submit).
+
 ### Added
 - **Git push (B2).** New endpoint `POST /v1/apps/{id}/git/push` pushes locally-
   committed changes to the app's remote, **host-side/control-plane** (never in the
