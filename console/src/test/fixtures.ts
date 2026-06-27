@@ -122,8 +122,28 @@ export const runtimeInspectFixture = {
   alternatives: ['astro'],
 }
 
+export const gitStatusFixture = {
+  available: true,
+  branch: 'main',
+  head_sha: 'abc1234567',
+  clean: false,
+  ahead: null,
+  behind: null,
+  files: [
+    { path: 'src/App.tsx', status: 'modified', staged: false },
+    { path: 'notes.md', status: 'untracked', staged: false },
+  ],
+}
+export const gitDiffFixture = {
+  available: true,
+  diff: 'diff --git a/src/App.tsx b/src/App.tsx\n+const x = 1\n',
+  truncated: false,
+}
+
 export function appDetailRoutes(sandbox: Sandbox) {
   return (_m: string, p: string): unknown => {
+    if (/\/v1\/apps\/[^/]+\/git\/status/.test(p)) return gitStatusFixture
+    if (/\/v1\/apps\/[^/]+\/git\/diff/.test(p)) return gitDiffFixture
     if (/\/v1\/apps\/[^/]+\/runtime-inspect/.test(p)) return runtimeInspectFixture
     if (/\/v1\/apps\/[^/]+\/config/.test(p)) return { config: configFixture }
     if (/\/v1\/apps\/[^/]+\/events/.test(p)) return { events: eventsFixture }

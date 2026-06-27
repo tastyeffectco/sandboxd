@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, ConfigItem, AccessPolicy, Snapshot, AppEvent, RuntimeInspect } from './api'
+import {
+  api,
+  App as TApp,
+  Sandbox,
+  ConfigItem,
+  AccessPolicy,
+  Snapshot,
+  AppEvent,
+  RuntimeInspect,
+  GitStatus,
+  GitDiff,
+} from './api'
 import { StatusBadge } from './ui'
 
 const ACCESS_POLICIES: AccessPolicy[] = ['control_plane_only', 'agent_access', 'runtime_access', 'both']
@@ -171,6 +182,8 @@ export function AppDetail({
 
       <RuntimeInspectPanel appId={appId} onError={onError} />
 
+      <GitPanel appId={appId} onError={onError} />
+
       <SnapshotsPanel
         appId={appId}
         appName={app.name}
@@ -249,6 +262,100 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
       {ins?.warnings?.map((w, i) => (
         <div key={i} className="warn" data-testid="ri-warning" style={{ fontSize: 12 }}>⚠ {w}</div>
       ))}
+    </div>
+  )
+}
+
+// GitPanel shows READ-ONLY Git status/diff for an imported repo (A2). No
+// commit/push — those come later. Status/diff run in-sandbox, so they need a
+// running sandbox; otherwise we show the reason.
+function GitPanel({ appId, onError }: { appId: string; onError: (m: string) => void }) {
+  const [st, setSt] = useState<GitStatus | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [diff, setDiff] = useState<GitDiff | null>(null)
+  const [diffOpen, setDiffOpen] = useState(false)
+
+  useEffect(() => {
+    api
+      .gitStatus(appId)
+      .then((s) => {
+        setSt(s)
+        setLoaded(true)
+      })
+      .catch((e) => onError((e as Error).message))
+  }, [appId, onError])
+
+  const viewDiff = () => {
+    setDiffOpen(true)
+    api.gitDiff(appId).then(setDiff).catch((e) => onError((e as Error).message))
+  }
+
+  if (!loaded) return null
+
+  const reasonText: Record<string, string> = {
+    no_sandbox: 'No sandbox yet — create one to inspect changes.',
+    sandbox_not_running: 'Start the sandbox to inspect Git changes.',
+    not_a_git_repo: 'This workspace is not a Git repository.',
+    git_error: 'Git could not read the workspace.',
+    exec_failed: 'Could not reach the sandbox.',
+  }
+
+  return (
+    <div className="card" data-testid="git-panel">
+      <h2>
+        Git <span className="muted" style={{ fontSize: 12 }}>(read-only)</span>
+      </h2>
+
+      {!st?.available ? (
+        <div className="muted" data-testid="git-unavailable" style={{ fontSize: 13 }}>
+          {reasonText[st?.reason || ''] || 'Git status is unavailable.'}
+        </div>
+      ) : (
+        <>
+          <div className="mono" style={{ fontSize: 12 }}>
+            branch <strong>{st.branch || '—'}</strong>
+            {st.head_sha ? ` @ ${st.head_sha.slice(0, 8)}` : ''}
+            {' · '}
+            {st.clean ? (
+              <span data-testid="git-clean">clean</span>
+            ) : (
+              <span data-testid="git-dirty">{st.files?.length || 0} changed</span>
+            )}
+            {typeof st.ahead === 'number' ? ` · ahead ${st.ahead}` : ''}
+            {typeof st.behind === 'number' ? ` · behind ${st.behind}` : ''}
+          </div>
+
+          {st.files && st.files.length > 0 && (
+            <ul data-testid="git-files" style={{ marginTop: 8, fontSize: 13 }}>
+              {st.files.map((f) => (
+                <li key={f.path} className="mono">
+                  <span className="muted">{f.status}</span>
+                  {f.staged ? ' (staged)' : ''} — {f.path}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!st.clean && (
+            <button className="btn btn-outline" data-testid="git-view-diff" onClick={viewDiff} style={{ marginTop: 8 }}>
+              View diff
+            </button>
+          )}
+
+          {diffOpen && diff && (
+            <div style={{ marginTop: 8 }}>
+              {diff.truncated && (
+                <div className="warn" data-testid="git-diff-truncated" style={{ fontSize: 12 }}>
+                  ⚠ diff truncated (too large)
+                </div>
+              )}
+              <pre className="mono" data-testid="git-diff" style={{ fontSize: 12, maxHeight: 320, overflow: 'auto' }}>
+                {diff.diff || '(no diff)'}
+              </pre>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

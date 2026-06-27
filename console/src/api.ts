@@ -75,6 +75,29 @@ export interface RuntimeInspect {
   warnings?: string[]
 }
 
+// Read-only Git status/diff (A2). Runs in-sandbox; no network/credentials.
+export interface GitFile {
+  path: string
+  status: string // modified|added|deleted|renamed|copied|untracked|unmerged
+  staged: boolean
+}
+export interface GitStatus {
+  available: boolean
+  reason?: string
+  branch?: string
+  head_sha?: string
+  clean?: boolean
+  ahead?: number | null
+  behind?: number | null
+  files?: GitFile[]
+}
+export interface GitDiff {
+  available: boolean
+  reason?: string
+  diff?: string
+  truncated?: boolean
+}
+
 // Git credential metadata (GET /v1/git-credentials). The token is write-only —
 // it is sent on create and never returned.
 export interface GitCredential {
@@ -188,6 +211,9 @@ export const api = {
     req<GitCredential>('POST', '/v1/git-credentials', b),
   deleteGitCredential: (id: string) => req<unknown>('DELETE', `/v1/git-credentials/${id}`),
   runtimeInspect: (appId: string) => req<RuntimeInspect>('GET', `/v1/apps/${appId}/runtime-inspect`),
+  gitStatus: (appId: string) => req<GitStatus>('GET', `/v1/apps/${appId}/git/status`),
+  gitDiff: (appId: string, path?: string) =>
+    req<GitDiff>('GET', `/v1/apps/${appId}/git/diff${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   createApp: (b: {
     name: string
     description?: string

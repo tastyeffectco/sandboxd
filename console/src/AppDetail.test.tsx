@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { AppDetail } from './AppDetail'
 import { installFetch, appDetailRoutes, webSandboxFixture, workerSandboxFixture, unhealthySandboxFixture } from './test/fixtures'
 
@@ -37,6 +37,21 @@ describe('app detail — web app', () => {
     expect(panel.textContent).toMatch(/detect-only/)
     expect(panel.textContent).toMatch(/4321/)
     expect(panel.textContent).toMatch(/Advisory only/i)
+  })
+
+  it('shows read-only Git status + changed files, and loads a diff on demand', async () => {
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    const panel = await screen.findByTestId('git-panel')
+    expect(panel.textContent).toMatch(/read-only/i) // clearly labelled
+    expect(panel.textContent).toMatch(/main/)        // branch
+    expect(await screen.findByTestId('git-files')).toBeTruthy()
+    expect(panel.textContent).toMatch(/src\/App\.tsx/)
+    // no commit/push controls in this slice
+    expect(screen.queryByText(/commit/i)).toBeNull()
+    expect(screen.queryByText(/push/i)).toBeNull()
+    // diff loads on demand
+    fireEvent.click(screen.getByTestId('git-view-diff'))
+    expect((await screen.findByTestId('git-diff')).textContent).toMatch(/const x = 1/)
   })
 
   it('delete control says it removes the workspace (v1 DELETE purges)', async () => {
