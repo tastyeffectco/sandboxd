@@ -548,6 +548,46 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/apps/{id}/git/push:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [apps]
+      summary: Push locally-committed changes to the app's remote (B2). Host-side/control-plane; new branch only, no force, no PR.
+      description: >
+        Pushes HEAD to a NEW remote branch using app.git_repo_url + app.git_credential_id
+        (never .git/config origin). The token is decrypted control-plane-side and reaches
+        git only via a host-checking GIT_ASKPASS + 0600 file; hooks and unsafe protocols
+        are disabled; a dangerous repo-local config (insteadOf/sshCommand/fsmonitor/
+        hooksPath/proxy) refuses the push. Works whether the sandbox is running or stopped.
+        No fetch/pull/deepen in this slice (a shallow-update rejection returns
+        shallow_push_unsupported).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch: { type: string, description: "Target NEW branch (default sandboxd/<slug>-<shortsha>). main/master and the import branch are rejected." }
+      responses:
+        "200":
+          description: Push result, or { pushed:false, reason }.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pushed: { type: boolean }
+                  reason: { type: string, description: "no_workspace | not_a_git_repo | no_repo_url | no_credential | credential_not_found | unsafe_repo_config | empty_repo_unsupported | no_local_commits | refuses_default_branch | branch_exists | non_fast_forward | auth_failed | shallow_push_unsupported | push_failed" }
+                  branch: { type: string }
+                  remote_url: { type: string, description: "Tokenless." }
+                  commits: { type: integer }
+                  head_detached: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /v1/apps/{id}/config:
     parameters:
       - $ref: "#/components/parameters/Id"

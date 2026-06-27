@@ -9,6 +9,7 @@ export interface App {
   tags: string[]
   runtime_preset?: string
   current_sandbox_id?: string
+  git?: { repo_url: string; branch?: string; credential_id?: string }
   created_at: string
   updated_at: string
 }
@@ -105,6 +106,14 @@ export interface GitCommitResult {
   sha?: string
   branch?: string
   files_committed?: string[]
+}
+export interface GitPushResult {
+  pushed: boolean
+  reason?: string
+  branch?: string
+  remote_url?: string
+  commits?: number
+  head_detached?: boolean
 }
 
 // Git credential metadata (GET /v1/git-credentials). The token is write-only —
@@ -227,6 +236,8 @@ export const api = {
     appId: string,
     body: { message: string; paths?: string[]; runtime_paths?: string[]; author_name?: string; author_email?: string },
   ) => req<GitCommitResult>('POST', `/v1/apps/${appId}/git/commit`, body),
+  gitPush: (appId: string, body: { branch?: string }) =>
+    req<GitPushResult>('POST', `/v1/apps/${appId}/git/push`, body),
   createApp: (b: {
     name: string
     description?: string

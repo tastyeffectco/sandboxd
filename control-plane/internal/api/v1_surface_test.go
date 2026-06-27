@@ -21,6 +21,7 @@ var requiredPublicSurface = []string{
 	"GET /v1/apps/{id}/git/status",
 	"GET /v1/apps/{id}/git/diff",
 	"POST /v1/apps/{id}/git/commit",
+	"POST /v1/apps/{id}/git/push",
 	"GET /v1/apps",
 	"POST /v1/apps",
 	"POST /v1/apps/{id}/sandbox",
