@@ -13,6 +13,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -81,34 +82,39 @@ func gitArgs(args ...string) []string {
 
 // --- handlers ---------------------------------------------------------
 
-// resolveGitSandbox enforces owner scope + a running sandbox. On any not-ready
-// condition it writes the response itself and returns ok=false.
-func (s *Server) resolveGitSandbox(w http.ResponseWriter, r *http.Request) (*store.Sandbox, bool) {
+// gitSandbox enforces owner scope + a running sandbox. Three outcomes:
+//   - handled=true  -> a 404/500 was already written; the caller must return.
+//   - reason!=""    -> not ready (no_sandbox|sandbox_not_running); the caller
+//     renders its own shape (available:false for read; committed:false for commit).
+//   - else          -> sb is the running sandbox.
+func (s *Server) gitSandbox(w http.ResponseWriter, r *http.Request) (sb *store.Sandbox, reason string, handled bool) {
 	app, err := s.Store.GetAppForOwner(r.Context(), r.PathValue("id"), tenantToken(r))
 	if errors.Is(err, store.ErrNotFound) {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no such app")
-		return nil, false
+		return nil, "", true
 	}
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "lookup failed")
-		return nil, false
+		return nil, "", true
 	}
-	sb, err := s.Store.CurrentSandboxForApp(r.Context(), app.ID)
+	cur, err := s.Store.CurrentSandboxForApp(r.Context(), app.ID)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": "no_sandbox"})
-		return nil, false
+		return nil, "no_sandbox", false
 	}
-	if sb.Status != "running" {
-		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": "sandbox_not_running"})
-		return nil, false
+	if cur.Status != "running" {
+		return nil, "sandbox_not_running", false
 	}
-	return sb, true
+	return cur, "", false
 }
 
 // GET /v1/apps/{id}/git/status
 func (s *Server) v1GitStatus(w http.ResponseWriter, r *http.Request) {
-	sb, ok := s.resolveGitSandbox(w, r)
-	if !ok {
+	sb, reason, handled := s.gitSandbox(w, r)
+	if handled {
+		return
+	}
+	if reason != "" {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": reason})
 		return
 	}
 	writeJSON(w, http.StatusOK, gitStatus(r.Context(), s.Docker, sb.ID))
@@ -116,8 +122,12 @@ func (s *Server) v1GitStatus(w http.ResponseWriter, r *http.Request) {
 
 // GET /v1/apps/{id}/git/diff?path=<optional relative path>
 func (s *Server) v1GitDiff(w http.ResponseWriter, r *http.Request) {
-	sb, ok := s.resolveGitSandbox(w, r)
-	if !ok {
+	sb, reason, handled := s.gitSandbox(w, r)
+	if handled {
+		return
+	}
+	if reason != "" {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": reason})
 		return
 	}
 	path := r.URL.Query().Get("path")
@@ -130,6 +140,172 @@ func (s *Server) v1GitDiff(w http.ResponseWriter, r *http.Request) {
 	}
 	// NOTE: do not log the diff body — it can contain secrets.
 	writeJSON(w, http.StatusOK, gitDiff(r.Context(), s.Docker, sb.ID, path))
+}
+
+// --- commit (B1) ------------------------------------------------------
+
+const (
+	maxCommitMessageBytes = 4 << 10 // 4 KiB
+	maxCommitPaths        = 1000    // bound argv length
+)
+
+type v1GitCommitReq struct {
+	Message      string   `json:"message"`
+	Paths        []string `json:"paths"`         // default = current user files[]
+	RuntimePaths []string `json:"runtime_paths"` // explicit runtime/platform files to include
+	AuthorName   string   `json:"author_name"`
+	AuthorEmail  string   `json:"author_email"`
+}
+
+type v1GitCommitResp struct {
+	Committed      bool     `json:"committed"`
+	Reason         string   `json:"reason,omitempty"` // no_changes|sandbox_not_running|not_a_git_repo|empty_repo_unsupported|git_error|exec_failed
+	SHA            string   `json:"sha,omitempty"`
+	Branch         string   `json:"branch,omitempty"`
+	FilesCommitted []string `json:"files_committed,omitempty"`
+}
+
+// POST /v1/apps/{id}/git/commit
+func (s *Server) v1GitCommit(w http.ResponseWriter, r *http.Request) {
+	sb, reason, handled := s.gitSandbox(w, r)
+	if handled {
+		return
+	}
+	if reason != "" {
+		writeJSON(w, http.StatusOK, v1GitCommitResp{Committed: false, Reason: reason})
+		return
+	}
+	var req v1GitCommitReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid json: "+err.Error())
+		return
+	}
+	if msg, ok := validCommitMessage(req.Message); !ok {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "message is required and must be <4KiB with no NUL")
+		return
+	} else {
+		req.Message = msg
+	}
+	if !validAuthorField(req.AuthorName) || !validAuthorField(req.AuthorEmail) {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid author name/email")
+		return
+	}
+	for _, p := range append(append([]string{}, req.Paths...), req.RuntimePaths...) {
+		if !validGitPath(p) || p == "" {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid path (no absolute paths, .., or empty)")
+			return
+		}
+	}
+	if len(req.Paths)+len(req.RuntimePaths) > maxCommitPaths {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "too many paths; select a subset")
+		return
+	}
+	// NOTE: do not log the message or path contents — they can carry secrets.
+	writeJSON(w, http.StatusOK, gitCommit(r.Context(), s.Docker, sb.ID, req))
+}
+
+// gitCommit stages exactly the selected (and actually-changed) paths and makes a
+// path-scoped commit — never more than selected, never `git add -A`. Creds-free,
+// --no-verify, ephemeral author via -c (never written to .git/config).
+func gitCommit(ctx context.Context, ex sandboxExecer, sbID string, req v1GitCommitReq) v1GitCommitResp {
+	// 1. Resolve the actual change set (and the default user selection).
+	st := gitStatus(ctx, ex, sbID)
+	if !st.Available {
+		return v1GitCommitResp{Committed: false, Reason: st.Reason}
+	}
+	// B1 does not support an empty repo (no HEAD) — a path-scoped partial commit
+	// needs HEAD, and we must never widen to commit more than selected.
+	if h, err := ex.Exec(ctx, "s-"+sbID, gitArgs("rev-parse", "--verify", "HEAD")); err != nil || h.ExitCode != 0 {
+		return v1GitCommitResp{Committed: false, Reason: "empty_repo_unsupported"}
+	}
+
+	changed := map[string]bool{}
+	for _, f := range st.Files {
+		changed[f.Path] = true
+	}
+	for _, f := range st.RuntimeFiles {
+		changed[f.Path] = true
+	}
+
+	// 2. Requested selection: explicit paths, or default to all user files; plus
+	//    explicitly-opted-in runtime paths. Intersect with the real change set.
+	requested := req.Paths
+	if len(requested) == 0 {
+		for _, f := range st.Files { // default: user changes only
+			requested = append(requested, f.Path)
+		}
+	}
+	requested = append(requested, req.RuntimePaths...)
+
+	seen := map[string]bool{}
+	var toStage []string
+	for _, p := range requested {
+		if changed[p] && !seen[p] {
+			seen[p] = true
+			toStage = append(toStage, p)
+		}
+	}
+	if len(toStage) == 0 {
+		return v1GitCommitResp{Committed: false, Reason: "no_changes"}
+	}
+
+	// 3. Stage exactly toStage (explicit pathspecs; NEVER -A/.).
+	addArgs := append(gitArgs("add", "--"), toStage...)
+	if a, err := ex.Exec(ctx, "s-"+sbID, addArgs); err != nil || a.ExitCode != 0 {
+		return v1GitCommitResp{Committed: false, Reason: gitErrReasonOf(a, err)}
+	}
+
+	// 4. Path-scoped commit: --no-verify, ephemeral author via -c, trailing
+	//    `-- toStage` so any pre-staged agent changes are NOT swept in.
+	name := req.AuthorName
+	if name == "" {
+		name = "sandbox-agent"
+	}
+	email := req.AuthorEmail
+	if email == "" {
+		email = "agent@sandboxd.local"
+	}
+	commitArgs := gitArgs("-c", "user.name="+name, "-c", "user.email="+email,
+		"commit", "--no-verify", "-m", req.Message, "--")
+	commitArgs = append(commitArgs, toStage...)
+	if c, err := ex.Exec(ctx, "s-"+sbID, commitArgs); err != nil || c.ExitCode != 0 {
+		return v1GitCommitResp{Committed: false, Reason: gitErrReasonOf(c, err)}
+	}
+
+	// 5. Resolve sha + branch.
+	sha, branch := "", ""
+	if o, err := ex.Exec(ctx, "s-"+sbID, gitArgs("rev-parse", "HEAD")); err == nil && o.ExitCode == 0 {
+		sha = strings.TrimSpace(o.Stdout)
+	}
+	if o, err := ex.Exec(ctx, "s-"+sbID, gitArgs("rev-parse", "--abbrev-ref", "HEAD")); err == nil && o.ExitCode == 0 {
+		branch = strings.TrimSpace(o.Stdout)
+	}
+	return v1GitCommitResp{Committed: true, SHA: sha, Branch: branch, FilesCommitted: toStage}
+}
+
+func gitErrReasonOf(res docker.ExecResult, err error) string {
+	if err != nil {
+		return "exec_failed"
+	}
+	return gitErrReason(res.Stderr)
+}
+
+// validCommitMessage trims, requires non-empty, rejects NUL, caps length.
+func validCommitMessage(m string) (string, bool) {
+	m = strings.TrimSpace(m)
+	if m == "" || len(m) > maxCommitMessageBytes || strings.ContainsRune(m, 0) {
+		return "", false
+	}
+	return m, true
+}
+
+// validAuthorField rejects NUL/CR/LF and over-long values (empty is allowed →
+// the caller substitutes a default).
+func validAuthorField(v string) bool {
+	if len(v) > 256 {
+		return false
+	}
+	return !strings.ContainsAny(v, "\x00\r\n")
 }
 
 // --- git logic (testable with a fake execer) --------------------------

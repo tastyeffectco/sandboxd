@@ -5,6 +5,28 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.7 (branch `feat/v0.4.7-git-commit`, stacked on v0.4.6; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.6); not part of the v0.4.0 launch.
+
+### Added
+- **Local Git commit (B1).** New endpoint `POST /v1/apps/{id}/git/commit` commits
+  selected workspace changes **locally** — no push/fetch/pull, no credentials, no
+  network. Runs **in-sandbox** via `docker exec` (uid 1000, locked). It stages
+  **only the selected, actually-changed paths** (never `git add -A`) and makes a
+  **path-scoped commit** (`commit … -- <paths>`) so anything the agent pre-staged
+  is *not* swept in. Defaults to the A2 user `files[]`; `runtime_files` are
+  excluded unless named in `runtime_paths`. Uses `--no-verify` (no untrusted repo
+  hooks) and an **ephemeral author** via `git -c user.name=… -c user.email=…`
+  (default `sandbox-agent`/`agent@sandboxd.local`) — never written to
+  `.git/config`. Paths are validated (no absolute/`..`); message required. Returns
+  `{committed, sha, branch, files_committed}` or `{committed:false, reason}`
+  (`no_changes` | `sandbox_not_running` | `not_a_git_repo` | `empty_repo_unsupported`).
+  Requires a running sandbox and an existing HEAD (empty repos unsupported this
+  slice). Owner-scoped (cross-owner/unknown → 404). Console Git panel gains a
+  commit box (user files checked, runtime unchecked/collapsed, message required,
+  shows the resulting sha). **No push UI.**
+
 ## [Unreleased] — v0.4.6 (branch `feat/v0.4.6-git-status-diff`, stacked on v0.4.5; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.5); not part of the v0.4.0 launch.
