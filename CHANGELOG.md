@@ -5,6 +5,28 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.5 (branch `feat/v0.4.5-runtime-inspect`, stacked on v0.4.4; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.4); not part of the v0.4.0 launch.
+
+### Added
+- **Advisory runtime detection (A1.5b).** New read-only endpoint
+  `GET /v1/apps/{id}/runtime-inspect` inspects the app's workspace **host-side**
+  and returns: `existing_manifest` (summary + `authoritative` when a sandbox.yaml
+  is present), `suggestions[]` (`preset`, `runnable`, `confidence`, `reasons`,
+  `warnings`), `alternatives`, `default_suggestion`, and `warnings`. Detection
+  (`internal/detect`) is **purely advisory** — it never runs app code, installs
+  deps, reads a Git credential/token, or applies anything; the user always
+  overrides manually. Detects **nextjs, react-vite, node-express, fastapi,
+  worker** (runnable presets) and **astro, docusaurus** (detect-only — suggested
+  with a warning, no built-in preset). An existing `sandbox.yaml` is marked
+  authoritative and never overwritten; warnings flag a missing `web.port`, a
+  likely-localhost bind, or a referenced missing entry file. `default_suggestion`
+  is set only for a single unambiguous high-confidence **runnable** stack. The
+  endpoint is owner-scoped (cross-owner/unknown → 404). Console app detail shows
+  the result (suggestion + confidence + reasons + warnings); it owns no detection
+  logic. **Astro is detect-only in this slice** (no built-in preset/template).
+
 ## [Unreleased] — v0.4.4 (branch `feat/v0.4.4-preview-port`, stacked on v0.4.3; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.3); not part of the v0.4.0 launch.

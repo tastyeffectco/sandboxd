@@ -185,6 +185,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{id}/events", s.observe("GET /v1/apps/{id}/events", s.v1ListAppEvents))
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.observe("GET /v1/tasks/{id}/events", s.v1ListTaskEvents))
 	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
+	mux.HandleFunc("GET /v1/apps/{id}/runtime-inspect", s.observe("GET /v1/apps/{id}/runtime-inspect", s.v1RuntimeInspect))
 	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
 	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
 	mux.HandleFunc("DELETE /v1/apps/{id}/config/{key}", s.observe("DELETE /v1/apps/{id}/config/{key}", s.v1DeleteAppConfig))
