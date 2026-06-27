@@ -103,6 +103,16 @@ services:
   #   *.preview.<PREVIEW_DOMAIN> -> sandbox previews
   # one entrypoint (:${HTTP_PORT}), Traefik picks by the router rule.
   # Reachable at http://console.${PREVIEW_DOMAIN:-localhost}:${HTTP_PORT}.
+  #
+  # AUTH (important): the console is gated by Traefik HTTP basic auth and ships
+  # FAIL-CLOSED — the default `CONSOLE_BASIC_AUTH` is a locked htpasswd entry
+  # whose password is unknown, so the console returns 401 until you set your own:
+  #   CONSOLE_BASIC_AUTH='user:HASH'   # HASH from: htpasswd -nbB user 'pass'
+  #                                    #   (or: openssl passwd -apr1 'pass')
+  # In a .env file every literal `$` in the hash must be doubled (`$$`).
+  # The installer (scripts/dev/install-v04-ubuntu.sh) generates + prints these
+  # for you. Console basic auth is SEPARATE from the sandboxd API auth
+  # (SANDBOXD_API_TOKENS); see README → Configuration.
   console:
     profiles: [console]
     build:
@@ -117,6 +127,11 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.console.rule=Host(`console.${PREVIEW_DOMAIN:-localhost}`)"
       - "traefik.http.routers.console.entrypoints=web"
+      - "traefik.http.routers.console.middlewares=console-auth"
+      # Fail-closed default: a valid htpasswd entry for a random, discarded
+      # password, so an un-configured console is LOCKED (401), never open.
+      # Override with CONSOLE_BASIC_AUTH to set your own login.
+      - "traefik.http.middlewares.console-auth.basicauth.users=${CONSOLE_BASIC_AUTH:-locked:$$apr1$$2EfB2Fre$$nvNSji.PWUqGtooUqhspd.}"
       - "traefik.http.services.console.loadbalancer.server.port=80"
     networks:
       - sandboxd_net
