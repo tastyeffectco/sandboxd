@@ -906,7 +906,8 @@ components:
     Preview:
       type: object
       properties:
-        url: { type: string }
+        url: { type: string, description: "Preview URL; the hostname port is the resolved web port (manifest/preset/3000)." }
+        port: { type: integer, description: "Resolved web port the preview routes to (A1.5a)." }
         status: { type: string, enum: [starting, up, down, error] }
         last_checked_at: { type: string, format: date-time }
     CreateSandboxRequest:

@@ -23,6 +23,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/gitimport"
 	"github.com/sandboxd/control-plane/internal/logging"
+	"github.com/sandboxd/control-plane/internal/manifest"
 	"github.com/sandboxd/control-plane/internal/metrics"
 	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/runtime"
@@ -94,6 +95,55 @@ type createGitReq struct {
 	Branch       string `json:"branch"`
 	CredentialID string `json:"credential_id"`
 	Owner        string `json:"owner"` // owner_token for the owner-scoped decrypt
+}
+
+// --- A1.5a: resolved preview web port ---------------------------------
+
+// webPortOf returns a sandbox's resolved preview web port, defaulting to 3000
+// (backward compatible for rows created before web_port existed).
+func webPortOf(sb *store.Sandbox) int {
+	if sb.WebPort.Valid && sb.WebPort.Int64 > 0 {
+		return int(sb.WebPort.Int64)
+	}
+	return 3000
+}
+
+// presetWebPort returns the web.port a preset's manifest declares, or 3000.
+func presetWebPort(presetID string) int {
+	if presetID != "" {
+		if p, ok := preset.Get(presetID); ok {
+			if m, err := manifest.Parse([]byte(p.Manifest)); err == nil {
+				if wp := m.WebPort(); wp > 0 {
+					return wp
+				}
+			}
+		}
+	}
+	return 3000
+}
+
+// workspaceWebPort reads <appDir>/sandbox.yaml's web.port if present (>0), else
+// 0. Used post-clone to honor an imported repo's declared port.
+func workspaceWebPort(appDir string) int {
+	raw, err := os.ReadFile(filepath.Join(appDir, manifest.File))
+	if err != nil {
+		return 0
+	}
+	m, err := manifest.Parse(raw)
+	if err != nil {
+		return 0
+	}
+	return m.WebPort()
+}
+
+// ensurePort appends p to ports if absent (never removes a requested port).
+func ensurePort(ports []int, p int) []int {
+	for _, x := range ports {
+		if x == p {
+			return ports
+		}
+	}
+	return append(ports, p)
 }
 
 type sandboxResp struct {
@@ -463,6 +513,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imgPath, mntPath := s.Loopback.Paths(req.ID)
+	// A1.5a — resolve the preview web port. Start from the selected preset's
+	// manifest (or 3000); a cloned repo sandbox.yaml may override it post-clone.
+	webPort := presetWebPort(req.RuntimePreset)
 	sb := &store.Sandbox{
 		ID:                  req.ID,
 		Status:              "creating",
@@ -471,6 +524,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		WorkspaceMnt:        mntPath,
 		MemoryHigh:          req.MemoryHigh,
 		Ports:               req.Ports,
+		WebPort:             sql.NullInt64{Int64: int64(webPort), Valid: true},
 		Visibility:          visibility,
 		IdlePolicy:          idlePolicy,
 		ExternalUserID:      nullStr(req.External.UserID),
@@ -595,6 +649,15 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 			Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch}})
 	}
 
+	// A1.5a — if the workspace now has a sandbox.yaml (e.g. an imported repo)
+	// declaring a web.port, that is the source of truth: override the preset
+	// default so preview routing + URL match the app's actual port.
+	if wp := workspaceWebPort(filepath.Join(mntPath, "workspace", "app")); wp > 0 && wp != webPort {
+		webPort = wp
+		sb.WebPort = sql.NullInt64{Int64: int64(webPort), Valid: true}
+		_ = s.Store.SetWebPort(r.Context(), req.ID, webPort)
+	}
+
 	// Build the optional env injection (e.g. agent API keys). Validate
 	// keys so a bad entry can't smuggle extra docker flags or break the
 	// KEY=VALUE encoding.
@@ -622,7 +685,14 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. docker run with the locked flag set + traefik labels.
-	labels := traefik.Labels(req.ID, req.Ports, s.PreviewDomain, visibility, s.PreviewEntrypoint, s.PreviewTLS)
+	// A1.5a — ensure the resolved web port has a preview router. ADDITIVE: never
+	// drops a requested port (multi-port API unchanged); only adds web_port when
+	// the sandbox already has port(s). A no-port sandbox stays preview-less.
+	previewPorts := req.Ports
+	if len(previewPorts) > 0 {
+		previewPorts = ensurePort(previewPorts, webPort)
+	}
+	labels := traefik.Labels(req.ID, previewPorts, s.PreviewDomain, visibility, s.PreviewEntrypoint, s.PreviewTLS)
 	startRun := time.Now()
 	var runErr error
 	containerID, runErr := s.Docker.Run(r.Context(), docker.RunSpec{
