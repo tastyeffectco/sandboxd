@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/sandboxd/control-plane/internal/manifest"
+	"github.com/sandboxd/control-plane/internal/recipes"
 )
 
 // osReadFile/osExists read a workspace-relative file under root, refusing any
@@ -68,26 +69,10 @@ type Suggestion struct {
 	Warnings   []string `json:"warnings,omitempty"`
 	// SuggestedManifest is ADVISORY sandbox.yaml text for a detect-only stack that
 	// has no built-in preset yet. It is never written or applied — guidance only.
-	SuggestedManifest string   `json:"suggested_manifest,omitempty"`
-	Notes             []string `json:"notes,omitempty"`
+	SuggestedManifest string                  `json:"suggested_manifest,omitempty"`
+	Notes             []string                `json:"notes,omitempty"`
+	ConfigSnippets    []recipes.ConfigSnippet `json:"config_snippets,omitempty"`
 }
-
-// Advisory sandbox.yaml text for detect-only stacks (no built-in preset yet).
-const astroSuggestedManifest = `version: 1
-web:
-  command: "[ -d node_modules ] || pnpm install; pnpm exec astro dev --host 0.0.0.0 --port 3000"
-  port: 3000
-  health_path: "/"
-`
-
-const docusaurusSuggestedManifest = `version: 1
-web:
-  command: "[ -d node_modules ] || pnpm install; pnpm exec docusaurus start --host 0.0.0.0 --port 3000"
-  port: 3000
-  health_path: "/"
-`
-
-const astroAllowedHostsNote = "Astro allowedHosts belongs in astro.config.mjs under vite.server.allowedHosts, not as a CLI flag."
 
 // ManifestSummary describes an existing sandbox.yaml (authoritative when present).
 type ManifestSummary struct {
@@ -156,31 +141,36 @@ func Inspect(f Files) Result {
 
 	add := func(s Suggestion) { res.Suggestions = append(res.Suggestions, s) }
 
-	// Next.js
-	if cfg, ok := anyExists(f, "next.config.js", "next.config.mjs", "next.config.ts"); ok || pkg.has("next") {
-		add(framework("nextjs", true, pkg.has("next"), depReason(pkg, "next"), cfgReason(cfg, ok)))
+	// JS web frameworks come from the advisory recipe registry (data, not code) so
+	// contributors add a framework by adding a YAML file — no detection code here.
+	deps := map[string]bool{}
+	if pkg != nil {
+		for d := range pkg.Dependencies {
+			deps[d] = true
+		}
+		for d := range pkg.DevDependencies {
+			deps[d] = true
+		}
 	}
-	// Astro (detect-only)
-	if cfg, ok := anyExists(f, "astro.config.mjs", "astro.config.js", "astro.config.ts"); ok || pkg.has("astro") {
-		s := framework("astro", false, pkg.has("astro"), depReason(pkg, "astro"), cfgReason(cfg, ok))
-		s.Warnings = append(s.Warnings,
-			"Astro dev defaults to port 4321 and blocks unknown hosts; there is no built-in Astro preset yet — add a sandbox.yaml with `--host 0.0.0.0 --port 3000`, or pick another preset")
-		s.SuggestedManifest = astroSuggestedManifest // advisory only — never written
-		s.Notes = append(s.Notes, astroAllowedHostsNote)
-		add(s)
+	if matched, err := recipes.Match(deps, f.Exists); err == nil {
+		for _, mm := range matched {
+			conf := "medium"
+			if mm.StrongDep {
+				conf = "high"
+			}
+			add(Suggestion{
+				Preset:            mm.Recipe.ID,
+				Runnable:          mm.Recipe.Preset != "", // a built-in preset backs it
+				Confidence:        conf,
+				Reasons:           mm.Reasons,
+				SuggestedManifest: mm.Recipe.SuggestedManifest,
+				Notes:             mm.Recipe.Notes,
+				ConfigSnippets:    mm.Recipe.ConfigSnippets,
+			})
+		}
 	}
-	// Docusaurus (detect-only)
-	if cfg, ok := anyExists(f, "docusaurus.config.js", "docusaurus.config.ts"); ok || pkg.has("@docusaurus/core") {
-		s := framework("docusaurus", false, pkg.has("@docusaurus/core"), depReason(pkg, "@docusaurus/core"), cfgReason(cfg, ok))
-		s.Warnings = append(s.Warnings, "No built-in Docusaurus preset yet — configure sandbox.yaml manually.")
-		s.SuggestedManifest = docusaurusSuggestedManifest // advisory only — never written
-		add(s)
-	}
-	// React + Vite (only when NOT Next)
-	if !pkg.has("next") && pkg.has("vite") && (pkg.has("react") || pkg.has("react-dom")) {
-		add(framework("react-vite", true, true, "vite + react are dependencies", ""))
-	}
-	// Node / Express
+
+	// Node / Express — kept as code (entry-file detection, not a simple dep match).
 	if pkg.has("express") {
 		if entry, ok := anyExists(f, "server.js", "index.js", "app.js", "src/index.js", "src/server.js"); ok {
 			add(framework("node-express", true, true, "express is a dependency", "entry file "+entry+" present"))
@@ -217,19 +207,6 @@ func framework(id string, runnable, strongDep bool, reasons ...string) Suggestio
 		}
 	}
 	return s
-}
-
-func depReason(p *pkgJSON, dep string) string {
-	if p.has(dep) {
-		return dep + " is a dependency"
-	}
-	return ""
-}
-func cfgReason(cfg string, ok bool) string {
-	if ok {
-		return cfg + " present"
-	}
-	return ""
 }
 
 func fastapiDetected(f Files) bool {

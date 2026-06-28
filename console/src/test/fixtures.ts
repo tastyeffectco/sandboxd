@@ -117,8 +117,11 @@ export const runtimeInspectFixture = {
       reasons: ['astro is a dependency'],
       warnings: ['Astro dev defaults to port 4321 and blocks unknown hosts; there is no built-in Astro preset yet'],
       suggested_manifest:
-        'version: 1\nweb:\n  command: "[ -d node_modules ] || pnpm install; pnpm exec astro dev --host 0.0.0.0 --port 3000"\n  port: 3000\n  health_path: "/"\n',
-      notes: ['Astro allowedHosts belongs in astro.config.mjs under vite.server.allowedHosts, not as a CLI flag.'],
+        'version: 1\nweb:\n  command: "[ -x node_modules/.bin/astro ] || pnpm install; pnpm exec astro dev --host 0.0.0.0 --port 3000"\n  port: 3000\n  health_path: "/"\n',
+      config_snippets: [
+        { file: 'astro.config.mjs', note: 'Add vite.server.allowedHosts: true — allowedHosts belongs in config, NOT a CLI flag.' },
+      ],
+      notes: ["Astro's dev server defaults to port 4321; this manifest pins 3000."],
     },
   ],
   default_suggestion: 'nextjs',

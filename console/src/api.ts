@@ -54,6 +54,10 @@ export interface SettingsPatch {
 
 // Advisory runtime detection (GET /v1/apps/{id}/runtime-inspect). Suggestions
 // only — never applied; the console renders, it owns no detection logic.
+export interface ConfigSnippet {
+  file: string
+  note: string
+}
 export interface RuntimeSuggestion {
   preset: string
   runnable: boolean
@@ -62,6 +66,7 @@ export interface RuntimeSuggestion {
   warnings?: string[]
   suggested_manifest?: string // advisory sandbox.yaml text (detect-only stacks)
   notes?: string[]
+  config_snippets?: ConfigSnippet[]
 }
 
 // Manifest validation (POST /v1/runtime/manifest/validate) + effective view.

@@ -1,0 +1,15 @@
+id: nextjs
+display_name: Next.js
+preset: nextjs
+detect:
+  deps: [next]
+  config_files: [next.config.js, next.config.mjs, next.config.ts]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/next ] || pnpm install; pnpm exec next dev -H 0.0.0.0 -p 3000"
+    port: 3000
+    health_path: "/"
+verified:
+  starter: theodorusclarence/ts-nextjs-tailwind-starter
+  version: v0.4.9

@@ -10,6 +10,27 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **Web framework recipe registry (advisory).** An embedded, in-repo registry
+  (`internal/recipes/data/*.yaml`) of per-framework `sandbox.yaml` guidance for
+  imported apps with no matching preset — **data only, never executed/written/auto-
+  applied**. Seeded with Next.js, Vite+React, Vue+Vite, Astro, Docusaurus, Gatsby,
+  Nuxt 3, SvelteKit, Remix v2, Eleventy. Each recipe has detect rules
+  (deps/config_files/exclude_deps), a `suggested_manifest`, optional
+  `config_snippets` (e.g. Vite `allowedHosts`) + notes, and a verified starter.
+  `runtime-inspect` detection is now **data-driven** from this registry (JS
+  frameworks) so adding a framework is a one-file change with no core code; the
+  Python/express/worker detections stay code. Every recipe's `suggested_manifest`
+  is validated by core's `manifest.Validate` at load time (CI gate). New read-only
+  `GET /v1/runtime/recipes` lists the registry. Console Runtime panel renders the
+  suggested YAML + `config_snippets`, and the **Ask agent** prompt now includes the
+  config-file edits — still copy/ask only, no Apply, no task submission. Docs:
+  `docs/web-framework-recipes.md` (recipe ≠ preset, how to add one, the Vite
+  allowedHosts + install-guard gotchas, no secrets/DB/Compose).
+- **QA preset fixes.** The `react-vite` preset now pins `--port 3000` (Vite
+  defaults to 5173) and both `react-vite`/`nextjs` presets guard the install on the
+  framework binary (`[ -x node_modules/.bin/<bin> ]`) instead of the fragile
+  `[ -d node_modules ]` (an interrupted install left `node_modules/` without
+  `.bin/` and never reinstalled).
 - **Runtime manifest validation & guidance (slice 1).** sandboxd core now owns the
   `sandbox.yaml` contract and validates it, with no framework-specific execution
   logic and nothing auto-applied or written.

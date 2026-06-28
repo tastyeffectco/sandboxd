@@ -1,0 +1,17 @@
+id: vite-vue
+display_name: Vue + Vite
+detect:
+  deps: [vite, vue]
+  exclude_deps: [nuxt]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/vite ] || pnpm install; pnpm exec vite --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: "vite.config.*"
+    note: "Add server.allowedHosts: true — Vite (v5+) blocks unknown Host headers (HTTP 403)."
+verified:
+  starter: micahlt/vite-vue3-simple-starter
+  version: v0.4.9

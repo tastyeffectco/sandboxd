@@ -91,20 +91,23 @@ describe('app detail — web app', () => {
       return appDetailRoutes(webSandboxFixture)(m, p)
     })
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
-    // astro suggestion carries advisory YAML
+    // astro suggestion carries advisory YAML + a config snippet
     const yaml = await screen.findByTestId('ri-suggested-yaml-astro')
     expect(yaml.textContent).toMatch(/astro dev/)
     expect(yaml.textContent).toMatch(/--host 0\.0\.0\.0/)
+    expect(screen.getByTestId('ri-snippet-astro').textContent).toMatch(/astro\.config\.mjs/)
+    expect(screen.getByTestId('ri-snippet-astro').textContent).toMatch(/allowedHosts/)
     // Copy YAML
     fireEvent.click(screen.getByTestId('ri-copy-astro'))
     expect(writes[writes.length - 1]).toMatch(/astro dev/)
-    // Ask agent -> copies a prompt with schema + suggested YAML; submits NO task
+    // Ask agent -> copies a prompt with schema + suggested YAML + config snippet; submits NO task
     fireEvent.click(screen.getByTestId('ri-ask-astro'))
     const prompt = writes[writes.length - 1]
     expect(prompt).toMatch(/sandbox\.yaml schema/i)
     expect(prompt).toMatch(/web:/)
     expect(prompt).toMatch(/astro dev/)
-    expect(prompt).toMatch(/allowedHosts/) // astro note carried into the prompt
+    expect(prompt).toMatch(/allowedHosts/) // config snippet carried into the prompt
+    expect(prompt).toMatch(/astro\.config\.mjs/)
     expect(taskSubmitted).toBe(false)
   })
 

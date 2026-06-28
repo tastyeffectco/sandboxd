@@ -9,6 +9,7 @@ import {
   AppEvent,
   RuntimeInspect,
   AppManifest,
+  ConfigSnippet,
   GitStatus,
   GitDiff,
   GitFile,
@@ -209,14 +210,14 @@ export function AppDetail({
 // user always overrides manually (the preset dropdown on app/sandbox create).
 // askAgentPrompt builds a paste-ready prompt explaining the sandbox.yaml schema +
 // the suggested fix. It is NOT submitted — the user pastes it into the task box.
-function askAgentPrompt(suggested: string, notes?: string[]): string {
+function askAgentPrompt(suggested: string, notes?: string[], snippets?: ConfigSnippet[]): string {
   return [
     'Please create or fix `sandbox.yaml` in the workspace root so the preview works.',
     '',
     'sandbox.yaml schema:',
     '  version: 1',
     '  web:        # the previewed process',
-    '    command: "<start command — must bind 0.0.0.0>"',
+    '    command: "<start command — must bind 0.0.0.0 and pin port 3000>"',
     '    port: <number>',
     '    health_path: "/"',
     '  workers:    # optional background processes',
@@ -225,9 +226,12 @@ function askAgentPrompt(suggested: string, notes?: string[]): string {
     'Suggested starting point:',
     '',
     suggested.trim(),
+    ...(snippets && snippets.length
+      ? ['', 'Also edit these config files (NOT sandbox.yaml):', ...snippets.map((s) => `- ${s.file}: ${s.note}`)]
+      : []),
     ...(notes && notes.length ? ['', 'Notes:', ...notes.map((n) => `- ${n}`)] : []),
     '',
-    'Only write sandbox.yaml; do not run anything destructive.',
+    'Only write sandbox.yaml (and the config edits above); do not run anything destructive.',
   ].join('\n')
 }
 
@@ -327,6 +331,11 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
                   <pre className="mono" data-testid={`ri-suggested-yaml-${s.preset}`} style={{ fontSize: 12, background: 'var(--code-bg,#f6f8fa)', padding: 8, overflow: 'auto' }}>
                     {s.suggested_manifest}
                   </pre>
+                  {s.config_snippets?.map((c, i) => (
+                    <div key={`snip-${i}`} data-testid={`ri-snippet-${s.preset}`} className="muted" style={{ fontSize: 12 }}>
+                      ✎ also edit <span className="mono">{c.file}</span>: {c.note}
+                    </div>
+                  ))}
                   {s.notes?.map((n, i) => (
                     <div key={i} className="muted" style={{ fontSize: 12 }}>ℹ {n}</div>
                   ))}
@@ -341,7 +350,9 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
                   <button
                     className="btn btn-outline"
                     data-testid={`ri-ask-${s.preset}`}
-                    onClick={() => copy(`ask-${s.preset}`, askAgentPrompt(s.suggested_manifest as string, s.notes))}
+                    onClick={() =>
+                      copy(`ask-${s.preset}`, askAgentPrompt(s.suggested_manifest as string, s.notes, s.config_snippets))
+                    }
                     style={{ fontSize: 12 }}
                     title="Copies a prompt to paste into the task box — does not run a task"
                   >
