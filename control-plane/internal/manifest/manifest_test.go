@@ -153,6 +153,41 @@ func TestValidateParsedAlwaysPresent(t *testing.T) {
 	}
 }
 
+// version is required and must be 1 (QA footgun: a versionless manifest parsed
+// to empty {workers:[]} and returned valid:true).
+func TestValidateMissingVersionInvalid(t *testing.T) {
+	r := Validate([]byte("web:\n  command: \"pnpm dev --host 0.0.0.0\"\n  port: 3000\n"))
+	if r.Valid || !hasMatch(r.Errors, "version") {
+		t.Errorf("a manifest with no version must be invalid: %+v", r)
+	}
+	if r.Effective != nil {
+		t.Errorf("no effective view for an invalid (versionless) manifest: %+v", r.Effective)
+	}
+}
+
+func TestValidateUnsupportedVersionInvalid(t *testing.T) {
+	r := Validate([]byte("version: 2\nweb:\n  command: x\n  port: 3000\n"))
+	if r.Valid || !hasMatch(r.Errors, "unsupported version") {
+		t.Errorf("version 2 must be invalid: %+v", r)
+	}
+}
+
+func TestValidateVersion1Valid(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: \"node server.js\"\n  port: 3000\n"))
+	if !r.Valid {
+		t.Errorf("version 1 must be valid: %+v", r)
+	}
+}
+
+// An empty manifest is invalid (it has no version) — there is no supported
+// empty case.
+func TestValidateEmptyInvalid(t *testing.T) {
+	r := Validate([]byte(""))
+	if r.Valid || !hasMatch(r.Errors, "version") {
+		t.Errorf("empty manifest must be invalid (missing version): %+v", r)
+	}
+}
+
 func TestValidatePortMismatchWarns(t *testing.T) {
 	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host 0.0.0.0 --port 5173\"\n  port: 3000\n"))
 	if !hasMatch(r.Warnings, "5173") {

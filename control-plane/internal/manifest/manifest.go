@@ -135,6 +135,19 @@ func Validate(raw []byte) Result {
 	// Always expose what we parsed (as-declared), even if validation fails below.
 	res.Parsed = parsedOf(&m)
 
+	// version is REQUIRED and must be 1. Without this, a missing/empty manifest
+	// parses to an empty {workers:[]} and would misleadingly validate (QA footgun).
+	// Forward-compat: a future schema bump declares a new version, so an unknown
+	// version is invalid here rather than silently treated as v1.
+	switch m.Version {
+	case 1:
+		// supported
+	case 0:
+		res.Errors = append(res.Errors, "missing required 'version' — sandbox.yaml must declare 'version: 1'")
+	default:
+		res.Errors = append(res.Errors, fmt.Sprintf("unsupported version %d — only 'version: 1' is supported", m.Version))
+	}
+
 	for k := range top {
 		switch k {
 		case "command":

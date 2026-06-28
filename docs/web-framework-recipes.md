@@ -144,6 +144,23 @@ workspace (n8n: `~/.n8n/database.sqlite`). These are **dev/sandbox** recipes, no
 production deployment — and snapshots can be large. They are auto-detected only when
 there's a real signal (e.g. the `n8n` dependency), never for an empty app.
 
+### SQLite CMS/service recipes (deep-tested)
+
+These were verified beyond "200" — admin UI **plus** a real DB write **plus** the API:
+
+| Recipe | Proven | DB | Node 22 note |
+|---|---|---|---|
+| **Strapi** v5 (`@strapi/strapi`) | admin 200, `POST /admin/register-admin` → super-admin (id 1), `/_health` 204 | `.tmp/data.db` (better-sqlite3, arm64 prebuilt) | health on `/admin` (`/` 302s) |
+| **Payload** v3 (`payload`) | admin 200, `POST /api/users/first-register` → user 1, REST **+** GraphQL live | `payload.db` (libsql, 9 tables incl. `payload_migrations`) | bare `next dev` binds localhost → pinned `-H 0.0.0.0` |
+| **Ghost** 6 (`ghost`) | front-end 200, `/ghost/` admin 200, Admin API 200 | `content/data/ghost-local.db` (~90 tables, auto-migrated) | **Node-22-only** (needs ^22.18); `sqlite3`+`sharp` compile from source |
+
+**Ghost is advisory, not turnkey:** Ghost 6's local install needs a modern **pnpm
+(≥10/11)** (its tarball uses a pnpm catalog that pnpm 9 rejects) and a **writable
+global npm prefix** (the command repoints it to `~/.npm-global`); the recipe encodes
+the proven sequence but expect to adjust. Strapi/Payload are smoother (the admin
+registration writes the DB on first use). All three persist to **app-side SQLite** —
+this is **sandbox/dev state, not managed production hosting**.
+
 ## Maintainers — candidate presets
 
 `runtime-inspect` detects all ten, but only Next.js + Vite-React are runnable

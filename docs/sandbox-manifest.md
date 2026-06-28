@@ -57,12 +57,21 @@ Every field is optional and defaulted:
 | `build.timeout_seconds` | `120` | |
 | `workers` | none | each gets a `worker-N` name if unnamed |
 
-Resolution rules:
+Resolution rules (how **runtimed** runs a manifest — lenient, the app always boots):
 - **no file** → default web app, no workers.
 - **file with `web:`** → web app with those fields (missing ones defaulted).
 - **file with `workers:` and no `web:`** → worker-only app (no preview).
 - **empty file** → default web app (a stray/empty file won't disable the preview).
 - **invalid YAML** → logged, falls back to defaults (the app still boots).
+
+> **Validator is stricter than the executor.** The rules above keep an app booting
+> even with a bad manifest. The guidance validator
+> (`POST /v1/runtime/manifest/validate`, and the `validation` block on
+> `GET /v1/apps/{id}/runtime/manifest`) is stricter so it can steer you to a correct,
+> forward-compatible manifest: **`version: 1` is required** — a missing or
+> unsupported `version` (and therefore an empty manifest) is reported `valid:false`
+> with a clear error, and no `effective` runtime is returned for an invalid manifest
+> (only the as-declared `parsed` view).
 
 ### Build checks (and how to skip them)
 The build check is **runtime verification** — after a coding task, runtimed runs
