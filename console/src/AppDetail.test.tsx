@@ -36,16 +36,76 @@ describe('app detail — web app', () => {
     expect(screen.getByText('debug')).toBeTruthy()        // non-sensitive value shown
   })
 
-  it('renders advisory runtime detection (suggestion, confidence, detect-only + warning)', async () => {
+  it('renders advisory runtime detection + manifest status/validation/effective', async () => {
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
     const panel = await screen.findByTestId('runtime-inspect')
     expect(panel.textContent).toMatch(/nextjs/)
     expect(panel.textContent).toMatch(/high/)
     expect(panel.textContent).toMatch(/suggested/) // default_suggestion marker
-    // astro is detect-only and warns; never presented as a runnable default
-    expect(panel.textContent).toMatch(/detect-only/)
+    expect(panel.textContent).toMatch(/detect-only/) // astro is detect-only
     expect(panel.textContent).toMatch(/4321/)
-    expect(panel.textContent).toMatch(/Advisory only/i)
+    expect(panel.textContent).toMatch(/Advisory/i)
+    // current sandbox.yaml status + effective view
+    expect(screen.getByTestId('ri-manifest-status').textContent).toMatch(/valid/)
+    expect(screen.getByTestId('ri-effective').textContent).toMatch(/port: 3000/)
+  })
+
+  it('shows invalid manifest errors/warnings', async () => {
+    installFetch((m, p) => {
+      if (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p)) {
+        return {
+          present: true,
+          source: 'sandbox.yaml',
+          manifest: 'command: x\n',
+          validation: {
+            valid: false,
+            errors: ["top-level 'command' is not valid — put it under web.command"],
+            warnings: ['unknown top-level key "foo" (ignored)'],
+            effective: { workers: [] },
+          },
+        }
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    expect((await screen.findByTestId('ri-manifest-status')).textContent).toMatch(/invalid/)
+    expect(screen.getByTestId('ri-errors').textContent).toMatch(/web\.command/)
+    expect(screen.getByTestId('ri-warnings').textContent).toMatch(/unknown top-level/)
+  })
+
+  it('shows missing manifest state', async () => {
+    installFetch((m, p) => {
+      if (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p)) return { present: false, source: 'default', reason: 'none' }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    expect((await screen.findByTestId('ri-manifest-status')).textContent).toMatch(/missing/)
+  })
+
+  it('shows suggested YAML; Copy and Ask-agent copy without submitting a task', async () => {
+    const writes: string[] = []
+    Object.assign(navigator, { clipboard: { writeText: (t: string) => { writes.push(t); return Promise.resolve() } } })
+    let taskSubmitted = false
+    installFetch((m, p) => {
+      if (m === 'POST' && /\/tasks/.test(p)) taskSubmitted = true
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    // astro suggestion carries advisory YAML
+    const yaml = await screen.findByTestId('ri-suggested-yaml-astro')
+    expect(yaml.textContent).toMatch(/astro dev/)
+    expect(yaml.textContent).toMatch(/--host 0\.0\.0\.0/)
+    // Copy YAML
+    fireEvent.click(screen.getByTestId('ri-copy-astro'))
+    expect(writes[writes.length - 1]).toMatch(/astro dev/)
+    // Ask agent -> copies a prompt with schema + suggested YAML; submits NO task
+    fireEvent.click(screen.getByTestId('ri-ask-astro'))
+    const prompt = writes[writes.length - 1]
+    expect(prompt).toMatch(/sandbox\.yaml schema/i)
+    expect(prompt).toMatch(/web:/)
+    expect(prompt).toMatch(/astro dev/)
+    expect(prompt).toMatch(/allowedHosts/) // astro note carried into the prompt
+    expect(taskSubmitted).toBe(false)
   })
 
   it('lists user vs generated files and lazily loads a per-file diff on click', async () => {

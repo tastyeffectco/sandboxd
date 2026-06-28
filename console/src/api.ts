@@ -60,6 +60,29 @@ export interface RuntimeSuggestion {
   confidence: 'high' | 'medium' | 'low'
   reasons: string[]
   warnings?: string[]
+  suggested_manifest?: string // advisory sandbox.yaml text (detect-only stacks)
+  notes?: string[]
+}
+
+// Manifest validation (POST /v1/runtime/manifest/validate) + effective view.
+export interface ManifestEffective {
+  web?: { command: string; port: number; health_path: string }
+  workers: { name: string; command: string }[]
+}
+export interface ManifestValidation {
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+  effective?: ManifestEffective
+}
+// GET /v1/apps/{id}/runtime/manifest
+export interface AppManifest {
+  present: boolean
+  reason?: string
+  source?: 'sandbox.yaml' | 'preset' | 'default'
+  manifest?: string
+  validation?: ManifestValidation
+  effective?: ManifestEffective
 }
 export interface RuntimeManifestSummary {
   present: boolean
@@ -229,6 +252,9 @@ export const api = {
     req<GitCredential>('POST', '/v1/git-credentials', b),
   deleteGitCredential: (id: string) => req<unknown>('DELETE', `/v1/git-credentials/${id}`),
   runtimeInspect: (appId: string) => req<RuntimeInspect>('GET', `/v1/apps/${appId}/runtime-inspect`),
+  appManifest: (appId: string) => req<AppManifest>('GET', `/v1/apps/${appId}/runtime/manifest`),
+  validateManifest: (mfst: string) =>
+    req<ManifestValidation>('POST', '/v1/runtime/manifest/validate', { manifest: mfst }),
   gitStatus: (appId: string) => req<GitStatus>('GET', `/v1/apps/${appId}/git/status`),
   gitDiff: (appId: string, path?: string) =>
     req<GitDiff>('GET', `/v1/apps/${appId}/git/diff${path ? `?path=${encodeURIComponent(path)}` : ''}`),

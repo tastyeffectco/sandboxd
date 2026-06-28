@@ -1,21 +1,35 @@
-// Package manifest is a minimal, shared parser for the per-app runtime manifest
-// (sandbox.yaml). It exists so the CONTROL PLANE can read the declared web port
-// at sandbox-create time (to drive preview routing + the preview URL) — the same
-// file runtimed reads to run the app. It is intentionally tiny: only the fields
-// the control plane needs (web.port / web.command). runtimed keeps its own
-// fuller parser (defaults, build/workers, command building); this package does
-// not change runtimed behavior.
+// Package manifest is the CONTROL-PLANE-side contract for the per-app runtime
+// manifest (sandbox.yaml): the shared parser plus the authoritative Validate.
+// sandboxd core owns the manifest contract and validation here; runtime
+// recipes/presets are advisory and runtimed keeps its own executor-side parser
+// (kept aligned by cmd/runtimed's parser-drift test). This package contains NO
+// framework-specific execution logic — only schema validation + guidance.
 package manifest
 
-import "gopkg.in/yaml.v3"
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // File is the workspace-relative manifest filename.
 const File = "sandbox.yaml"
 
-// Manifest is the subset of sandbox.yaml the control plane cares about.
+// Core defaults applied to the "effective" view for fields the contract owns.
+const (
+	DefaultWebPort    = 3000
+	DefaultHealthPath = "/"
+)
+
+// Manifest is the parsed sandbox.yaml schema.
 type Manifest struct {
 	Version int      `yaml:"version"`
 	Web     *WebProc `yaml:"web"`
+	Workers []Worker `yaml:"workers"`
+	Build   *Build   `yaml:"build"`
 }
 
 // WebProc is the previewed process declaration.
@@ -23,6 +37,18 @@ type WebProc struct {
 	Command    string `yaml:"command"`
 	Port       int    `yaml:"port"`
 	HealthPath string `yaml:"health_path"`
+}
+
+// Worker is a background process declaration.
+type Worker struct {
+	Name    string `yaml:"name"`
+	Command string `yaml:"command"`
+}
+
+// Build is the post-task build check.
+type Build struct {
+	Command        string `yaml:"command"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
 
 // Parse unmarshals raw sandbox.yaml bytes. No defaults are applied.
@@ -41,4 +67,163 @@ func (m *Manifest) WebPort() int {
 		return 0
 	}
 	return m.Web.Port
+}
+
+// --- validation + effective view -------------------------------------
+
+// Result is the validation outcome plus the effective (defaulted) view.
+type Result struct {
+	Valid     bool       `json:"valid"`
+	Errors    []string   `json:"errors"`
+	Warnings  []string   `json:"warnings"`
+	Effective *Effective `json:"effective,omitempty"`
+}
+
+// Effective is the manifest as runtimed would see it after core defaults.
+type Effective struct {
+	Web     *EffectiveWeb     `json:"web,omitempty"`
+	Workers []EffectiveWorker `json:"workers"`
+}
+
+type EffectiveWeb struct {
+	Command    string `json:"command"`
+	Port       int    `json:"port"`
+	HealthPath string `json:"health_path"`
+}
+
+type EffectiveWorker struct {
+	Name    string `json:"name"`
+	Command string `json:"command"`
+}
+
+var (
+	reLocalhost  = regexp.MustCompile(`localhost|127\.0\.0\.1`)
+	reCmdPort    = regexp.MustCompile(`(?:--port[ =]|:)(\d{2,5})`)
+	reWorkerName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+)
+
+// knownTopLevel are the keys the contract understands. Unknown keys WARN (not
+// error): core stays forward-compatible and recipe-agnostic — rejecting unknown
+// keys would couple core to a fixed key set and break valid-but-newer manifests.
+// The warning still makes typos visible. The three web.* fields placed at the top
+// level are a common, specific mistake, so they get a pointed ERROR instead.
+var knownTopLevel = map[string]bool{"version": true, "web": true, "workers": true, "build": true}
+
+// Validate is the authoritative manifest validation. It never executes anything
+// and is framework-agnostic. Errors make a manifest invalid; warnings are advice.
+func Validate(raw []byte) Result {
+	res := Result{Errors: []string{}, Warnings: []string{}}
+
+	// Top-level key inspection (a separate generic parse so we can see keys the
+	// typed struct would silently drop).
+	var top map[string]any
+	if err := yaml.Unmarshal(raw, &top); err != nil {
+		res.Errors = append(res.Errors, "invalid YAML: "+oneLine(err.Error()))
+		return res
+	}
+	var m Manifest
+	if err := yaml.Unmarshal(raw, &m); err != nil {
+		res.Errors = append(res.Errors, "invalid YAML: "+oneLine(err.Error()))
+		return res
+	}
+
+	for k := range top {
+		switch k {
+		case "command":
+			res.Errors = append(res.Errors, "top-level 'command' is not valid — put it under web.command")
+		case "port":
+			res.Errors = append(res.Errors, "top-level 'port' is not valid — put it under web.port")
+		case "health_path":
+			res.Errors = append(res.Errors, "top-level 'health_path' is not valid — put it under web.health_path")
+		default:
+			if !knownTopLevel[k] {
+				res.Warnings = append(res.Warnings, fmt.Sprintf("unknown top-level key %q (ignored)", k))
+			}
+		}
+	}
+
+	if m.Web != nil {
+		if m.Web.Port != 0 && (m.Web.Port < 1 || m.Web.Port > 65535) {
+			res.Errors = append(res.Errors, fmt.Sprintf("web.port %d out of range (1-65535)", m.Web.Port))
+		}
+		// Missing port is a WARNING, not an error: runtimed/preview fall back to
+		// 3000, so the app still runs — but the assumption is worth surfacing.
+		if m.Web.Command != "" && m.Web.Port == 0 {
+			res.Warnings = append(res.Warnings, "web.command is set but web.port is missing — preview will assume 3000")
+		}
+		if m.Web.Command != "" && bindsLocalhost(m.Web.Command) {
+			res.Warnings = append(res.Warnings,
+				"web.command may bind localhost only — the preview needs 0.0.0.0 (e.g. --host 0.0.0.0)")
+		}
+		if cp := commandPort(m.Web.Command); cp != 0 && m.Web.Port != 0 && cp != m.Web.Port {
+			res.Warnings = append(res.Warnings,
+				fmt.Sprintf("web.command appears to use port %d but web.port is %d", cp, m.Web.Port))
+		}
+	}
+
+	// Workers — mirror runtimed's rules (kept as errors, like today's behavior).
+	seen := map[string]bool{}
+	for _, w := range m.Workers {
+		if !reWorkerName.MatchString(w.Name) {
+			res.Errors = append(res.Errors,
+				fmt.Sprintf("invalid worker name %q (allowed: [A-Za-z0-9_-], 1-64 chars)", w.Name))
+		}
+		if seen[w.Name] {
+			res.Errors = append(res.Errors, fmt.Sprintf("duplicate worker name %q", w.Name))
+		}
+		seen[w.Name] = true
+		if w.Command == "" {
+			res.Errors = append(res.Errors, fmt.Sprintf("worker %q has no command", w.Name))
+		}
+	}
+
+	res.Valid = len(res.Errors) == 0
+	res.Effective = effectiveOf(&m)
+	return res
+}
+
+func effectiveOf(m *Manifest) *Effective {
+	e := &Effective{Workers: []EffectiveWorker{}}
+	if m.Web != nil {
+		w := &EffectiveWeb{Command: m.Web.Command, Port: m.Web.Port, HealthPath: m.Web.HealthPath}
+		if w.Port == 0 {
+			w.Port = DefaultWebPort
+		}
+		if w.HealthPath == "" {
+			w.HealthPath = DefaultHealthPath
+		}
+		e.Web = w
+	}
+	for _, wk := range m.Workers {
+		e.Workers = append(e.Workers, EffectiveWorker{Name: wk.Name, Command: wk.Command})
+	}
+	return e
+}
+
+// bindsLocalhost is a heuristic: an explicit localhost/127.0.0.1, or a known
+// dev-server command with no 0.0.0.0/--host, likely won't be reachable for preview.
+func bindsLocalhost(cmd string) bool {
+	if reLocalhost.MatchString(cmd) {
+		return true
+	}
+	if !strings.Contains(cmd, "0.0.0.0") && !strings.Contains(cmd, "--host") {
+		for _, k := range []string{"dev", "vite", "next", "astro", "uvicorn", "serve", "start"} {
+			if strings.Contains(cmd, k) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func commandPort(cmd string) int {
+	if mm := reCmdPort.FindStringSubmatch(cmd); mm != nil {
+		n, _ := strconv.Atoi(mm[1])
+		return n
+	}
+	return 0
+}
+
+func oneLine(s string) string {
+	return strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 }

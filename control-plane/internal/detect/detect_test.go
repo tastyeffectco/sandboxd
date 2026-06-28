@@ -60,6 +60,30 @@ func TestDetectFrameworks(t *testing.T) {
 	}
 }
 
+func TestAstroSuggestedManifest(t *testing.T) {
+	r := Inspect(mapFiles{"package.json": pkg(`"astro":"4"`), "astro.config.mjs": "x"})
+	var astro *Suggestion
+	for i := range r.Suggestions {
+		if r.Suggestions[i].Preset == "astro" {
+			astro = &r.Suggestions[i]
+		}
+	}
+	if astro == nil {
+		t.Fatal("no astro suggestion")
+	}
+	if astro.Runnable {
+		t.Error("astro must be detect-only (not runnable)")
+	}
+	for _, want := range []string{"version: 1", "astro dev", "--host 0.0.0.0", "--port 3000", "health_path"} {
+		if !strings.Contains(astro.SuggestedManifest, want) {
+			t.Errorf("astro suggested_manifest missing %q: %q", want, astro.SuggestedManifest)
+		}
+	}
+	if len(astro.Notes) == 0 || !strings.Contains(strings.Join(astro.Notes, " "), "allowedHosts") {
+		t.Errorf("astro should note allowedHosts: %v", astro.Notes)
+	}
+}
+
 func TestAstroWarns(t *testing.T) {
 	r := Inspect(mapFiles{"package.json": pkg(`"astro":"4"`)})
 	if r.DefaultSuggestion != "" {
