@@ -22,6 +22,14 @@ a patch is fixes only).
   sandbox exists.
 
 ### Fixed
+- **Apply CTA wrote `sandbox.yaml` to the wrong place (QA).** The files API roots at
+  the workspace **mount** (`/home/sandbox`), so `path=sandbox.yaml` landed at
+  `/home/sandbox/sandbox.yaml` (200, but runtimed reads
+  `/home/sandbox/workspace/app/sandbox.yaml` — no effect). The console Apply CTA now
+  writes `path=workspace/app/sandbox.yaml`, so the manifest lands in the app dir
+  (visible in git status, picked up by runtimed after a restart). Comments added at
+  the call site and in `v1_files_write.go` so the path isn't "simplified" back.
+  Console-only fix (plus a backend doc comment); no endpoint or semantics change.
 - **Imported repos no longer get a preset `sandbox.yaml` written into them.** When a
   Git import selected a `runtime_preset`, runtimed wrote the preset's `sandbox.yaml`
   into the cloned repo on first boot — a silent mutation that broke the advisory

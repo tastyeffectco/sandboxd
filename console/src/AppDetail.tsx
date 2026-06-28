@@ -287,7 +287,13 @@ function RuntimeInspectPanel({
           onError('Suggested manifest did not validate: ' + (v.errors[0] || 'invalid'))
           return
         }
-        return api.putWorkspaceFile(sandboxId, 'sandbox.yaml', yaml).then(() => {
+        // NOTE: the files API roots at the workspace MOUNT (/home/sandbox), but the
+        // app — and the sandbox.yaml runtimed reads — lives at
+        // /home/sandbox/workspace/app. So the write path MUST be
+        // "workspace/app/sandbox.yaml". Writing bare "sandbox.yaml" lands at
+        // /home/sandbox/sandbox.yaml (200, but runtimed never sees it). Do NOT
+        // "simplify" this back to "sandbox.yaml".
+        return api.putWorkspaceFile(sandboxId, 'workspace/app/sandbox.yaml', yaml).then(() => {
           setApplied(presetID)
           setApplyConfirm('')
           load() // refresh the manifest status

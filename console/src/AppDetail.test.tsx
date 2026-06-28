@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { AppDetail } from './AppDetail'
 import {
   installFetch,
@@ -53,22 +53,33 @@ describe('app detail — web app', () => {
     expect(screen.queryByTestId('ri-hint')).toBeNull()
   })
 
-  it('Apply sandbox.yaml: confirm → validate → PUT /files → restart notice', async () => {
+  it('Apply sandbox.yaml: writes workspace/app/sandbox.yaml (not the mount root)', async () => {
     let putPath = ''
     let putBody = ''
+    let putCount = 0
     let validated = false
+    let manifestPresent = false // becomes true once the file is written
     installFetch((m, p) => {
       if (m === 'POST' && /\/runtime\/manifest\/validate/.test(p)) {
         validated = true
         return { valid: true, errors: [], warnings: [], effective: { workers: [] } }
       }
-      if (m === 'PUT' && /\/v1\/sandboxes\/[^/]+\/files/.test(p)) return {}
+      if (m === 'PUT' && /\/v1\/sandboxes\/[^/]+\/files/.test(p)) {
+        manifestPresent = true
+        return {}
+      }
+      if (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p)) {
+        return manifestPresent
+          ? { present: true, source: 'sandbox.yaml', manifest: 'version: 1\n', validation: { valid: true, errors: [], warnings: [] } }
+          : { present: false, source: 'default', reason: 'none' }
+      }
       return appDetailRoutes(webSandboxFixture)(m, p)
     })
     const realFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
       if ((init?.method || 'GET').toUpperCase() === 'PUT' && String(input).includes('/files')) {
-        putPath = String(input)
+        putCount++
+        putPath = decodeURIComponent(String(input))
         putBody = init?.body || ''
       }
       return realFetch(input as never, init as never)
@@ -81,13 +92,19 @@ describe('app detail — web app', () => {
     expect(putPath).toBe('')
     fireEvent.click(screen.getByTestId('ri-apply-yes-astro'))
     const applied = await screen.findByTestId('ri-applied-astro')
-    // validated before writing; wrote sandbox.yaml via the generic files endpoint
+    // validated before writing
     expect(validated).toBe(true)
-    expect(putPath).toMatch(/\/v1\/sandboxes\/[^/]+\/files\?path=sandbox\.yaml/)
+    // writes to the ACTUAL app dir, not the mount root
+    expect(putPath).toMatch(/\/files\?path=workspace\/app\/sandbox\.yaml/)
+    expect(putPath).not.toMatch(/\/files\?path=sandbox\.yaml/) // the bug
     expect(putBody).toMatch(/astro dev/)
+    // exactly one write — config snippets are NOT written
+    expect(putCount).toBe(1)
     // restart notice + (astro has a config snippet) reminder to apply the config edit
     expect(applied.textContent).toMatch(/restart the sandbox/i)
     expect(applied.textContent).toMatch(/config edit/i)
+    // after apply, the manifest read now sees the file present
+    await waitFor(() => expect(screen.getByTestId('ri-manifest-status').textContent).toMatch(/valid/))
   })
 
   it('shows invalid manifest errors/warnings', async () => {
