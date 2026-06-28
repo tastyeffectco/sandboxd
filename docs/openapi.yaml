@@ -1155,7 +1155,9 @@ components:
         valid: { type: boolean }
         errors: { type: array, items: { type: string } }
         warnings: { type: array, items: { type: string } }
-        effective: { $ref: "#/components/schemas/ManifestEffective" }
+        effective:
+          allOf: [{ $ref: "#/components/schemas/ManifestEffective" }]
+          description: Present ONLY when valid is true; omitted for an invalid manifest.
     Preview:
       type: object
       properties:

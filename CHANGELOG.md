@@ -17,11 +17,13 @@ a patch is fixes only).
     returning `{valid, errors, warnings, effective}`. Catches: top-level
     `command`/`port`/`health_path` → **error** (use `web.*`); unknown top-level keys
     → **warning** (forward-compatible — core stays recipe-agnostic, but typos stay
-    visible); `web.command` without `web.port` → **warning** (preview assumes 3000);
-    `web.port` out of 1..65535 → **error**; likely-localhost bind → **warning**;
-    command/`web.port` mismatch → **warning**; worker name/dup/empty-command →
-    **error** (mirrors runtimed); invalid YAML → **error**. `effective` shows the
-    manifest after core defaults (port 3000, health_path `/`).
+    visible); `web.command` without `web.port` → **error** (a custom command must
+    declare its port — avoids preview-mismatch ambiguity); `web.port` out of
+    1..65535 → **error**; likely-localhost bind → **warning** ("may"); command/
+    `web.port` mismatch → **warning** ("appears to"); worker name/dup/empty-command
+    → **error** (mirrors runtimed); invalid YAML → **error**. `effective` (manifest
+    after core defaults: port 3000, health_path `/`) is returned **only for a valid
+    manifest** — omitted on errors, so invalid config is never shown as runnable.
   - `GET /v1/apps/{id}/runtime/manifest` — owner-scoped, read-only: the app's
     current `sandbox.yaml` validated (`source: sandbox.yaml`), or the selected
     preset's manifest if none on disk (`source: preset`), or `present:false` with a

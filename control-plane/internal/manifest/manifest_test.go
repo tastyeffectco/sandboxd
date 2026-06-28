@@ -97,16 +97,21 @@ func TestValidatePortRange(t *testing.T) {
 	}
 }
 
-func TestValidateMissingPortWarns(t *testing.T) {
+func TestValidateMissingPortIsError(t *testing.T) {
 	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host 0.0.0.0\"\n"))
-	if !r.Valid {
-		t.Errorf("missing port is a warning, not an error: %+v", r)
+	if r.Valid || !hasMatch(r.Errors, "must declare web.port") {
+		t.Errorf("a custom web.command without web.port must be an error: %+v", r)
 	}
-	if !hasMatch(r.Warnings, "web.port is missing") {
-		t.Errorf("expected missing-port warning: %v", r.Warnings)
+	// invalid -> no effective view exposed
+	if r.Effective != nil {
+		t.Errorf("effective must be omitted for an invalid manifest: %+v", r.Effective)
 	}
-	if r.Effective.Web.Port != 3000 {
-		t.Errorf("effective port should default to 3000: %+v", r.Effective.Web)
+}
+
+func TestValidateEffectiveOmittedWhenInvalid(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: x\n  port: 70000\n"))
+	if r.Valid || r.Effective != nil {
+		t.Errorf("invalid manifest must not expose effective: %+v", r)
 	}
 }
 
