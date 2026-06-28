@@ -132,6 +132,31 @@ or configure. Each is a conscious trade-off you can tighten later:
 | Package installs | public npm/PyPI registries | run your own caching proxy and point the image at it for speed/airgap |
 | TLS / domain | HTTP on `*.localhost` out of the box | switch to a real wildcard domain + cert resolver (see README → Production / TLS) |
 | Snapshots/templates | API present, **experimental** on directory storage | use plain workspace copies, or contribute a directory-tar snapshot backend |
+| Preview ports | **one** public preview endpoint per sandbox | see *Single-port runtime model* below |
+| Base image | **one** image instance-wide (`SANDBOXD_IMAGE`) | no per-app image selection (roadmap); native langs need a custom image — see [`docs/base-image.md`](docs/base-image.md) |
+| Databases | **embedded SQLite** (app-bundled engine) | external Postgres/MySQL/Redis are out-of-sandbox/future — see *Embedded databases* below |
+
+### Single-port runtime model
+
+A sandbox exposes **exactly one public preview endpoint** (the manifest's
+`web.port`, routed by Host). On that single port, **HTTP, WebSocket upgrades, and
+SSE all work** (verified: Streamlit/Jupyter kernel WS → `101`, Reflex socket.io →
+`101`, Gradio SSE queue streamed). A naive multi-port app (separate frontend +
+backend ports) is **not** reachable on the second port — run it in single-port mode
+(e.g. Reflex `--single-port`, a fullstack server that mounts the API + socket on one
+port) or stand up an **in-sandbox reverse proxy** that fans `/` and `/api` off the
+one port. Multi-port exposure is roadmap, not current behaviour. (Apps shouldn't
+hardcode the sandbox id; use the preview URL handed back by the API.)
+
+### Embedded databases
+
+**App-bundled SQLite works** and is part of the sandbox's workspace state (verified:
+n8n → `~/.n8n/database.sqlite`, Express + Prisma → `prisma/dev.db`, Directus →
+`data.db`; the engines — better-sqlite3, Prisma's bundled `libquery_engine` — ship
+with the app, so no system `sqlite3` CLI is needed). The DB file lives in the
+workspace, so **snapshots include it and can grow large**. Postgres/MySQL/Redis
+need a custom image or an external service — there's no in-sandbox service layer,
+DB provisioning, or Docker Compose (by design).
 
 `--userns=host` is set on the infra containers (and, by default, on sandboxes)
 so workspace ownership is deterministic whether or not the host daemon uses

@@ -102,13 +102,24 @@ type v1CreateAppReq struct {
 	ExternalProjectID string    `json:"external_project_id"`
 	RuntimePreset     string    `json:"runtime_preset"`
 	Git               *v1AppGit `json:"git,omitempty"`
+	// Image is rejected on purpose — per-app image selection is not supported (the
+	// sandbox image is instance-wide via SANDBOXD_IMAGE). Declared so we 400 it
+	// explicitly instead of silently dropping it.
+	Image *string `json:"image,omitempty"`
 }
+
+// errPerAppImage is returned when a create body tries to pick a per-app image.
+const errPerAppImage = "per-app image selection is not supported; set SANDBOXD_IMAGE instance-wide"
 
 // v1CreateApp — POST /v1/apps.
 func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 	var req v1CreateAppReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid json: "+err.Error())
+		return
+	}
+	if req.Image != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", errPerAppImage)
 		return
 	}
 	if req.Name == "" {
@@ -247,9 +258,10 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1CreateAppSandboxReq struct {
-	Template      string `json:"template,omitempty"`
-	Ports         []int  `json:"ports,omitempty"`
-	RuntimePreset string `json:"runtime_preset,omitempty"`
+	Template      string  `json:"template,omitempty"`
+	Ports         []int   `json:"ports,omitempty"`
+	RuntimePreset string  `json:"runtime_preset,omitempty"`
+	Image         *string `json:"image,omitempty"` // rejected — see errPerAppImage
 }
 
 // v1CreateAppSandbox — POST /v1/apps/{id}/sandbox. Creates the app's
@@ -275,6 +287,10 @@ func (s *Server) v1CreateAppSandbox(w http.ResponseWriter, r *http.Request) {
 	var req v1CreateAppSandboxReq
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req) // body optional
+	}
+	if req.Image != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", errPerAppImage)
+		return
 	}
 	ports := req.Ports
 	if len(ports) == 0 {

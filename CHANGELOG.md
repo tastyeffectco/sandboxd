@@ -51,6 +51,26 @@ a patch is fixes only).
   **restart-the-sandbox** notice (manifest is read at boot). Disabled until a
   sandbox exists.
 
+### Hardened
+- **Per-app `image` field now rejected with a clear 400** instead of being silently
+  dropped. All four create bodies (`POST /v1/apps`, `POST /v1/apps/{id}/sandbox`,
+  `POST /v1/sandboxes`, `POST /sandbox`) return `per-app image selection is not
+  supported; set SANDBOXD_IMAGE instance-wide`. No per-app image selection is
+  introduced — the image stays instance-wide.
+
+### Docs
+- **Custom base images** ([`docs/base-image.md`](docs/base-image.md)): `SANDBOXD_IMAGE`
+  is read once at startup (stack recreate required to change it; it's also the
+  snapshot seed); native languages (Go/PHP/Ruby/Rust/Java/.NET/Deno) need a custom
+  image; **toolchains must be on the login PATH** because runtimed runs commands with
+  `bash -lc` (a Dockerfile `ENV PATH` alone is not enough) — use `/etc/profile.d` and/
+  or symlink into `/usr/local/bin`.
+- **Runtime model** ([`ARCHITECTURE.md`](ARCHITECTURE.md)): documented the **single
+  public preview port** per sandbox (HTTP + WebSocket + SSE all work on it; multi-port
+  apps run single-port or proxy in-sandbox; multi-port is roadmap), **embedded SQLite**
+  (app-bundled engines; part of workspace/snapshot state; external DBs out-of-scope),
+  and confirmed **WebSocket-upgrade + SSE** platform capabilities.
+
 ### Fixed
 - **Apply CTA wrote `sandbox.yaml` to the wrong place (QA).** The files API roots at
   the workspace **mount** (`/home/sandbox`), so `path=sandbox.yaml` landed at

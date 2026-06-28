@@ -16,7 +16,11 @@ meets the contract below.
 Set **`SANDBOXD_IMAGE`** to any compatible image; every sandbox on the instance
 uses it (it's also the seed image). The current value is shown read-only in the
 console **Settings → Runtime** (`base_image`). There is no per-app image selection
-in v0.4 (see Roadmap).
+in v0.4 (see Roadmap) — **`SANDBOXD_IMAGE` is read once at startup**, so after
+changing it you must **recreate the control-plane stack** for it to take effect
+(it also becomes the snapshot seed image). A stray `image` field in a create body
+is **rejected with a 400** ("per-app image selection is not supported; set
+SANDBOXD_IMAGE instance-wide"), not silently ignored.
 
 ## Custom Base Image Contract
 
@@ -45,9 +49,30 @@ A compatible image **must**:
    `pnpm` for `react-vite` / `nextjs` / `node-express`, and `python3` + `venv` for
    `fastapi`. (Presets install their dependencies at runtime, but the interpreter/
    package manager must already be present.)
+8. **Toolchains must be on the login PATH.** runtimed runs app/web/worker commands
+   with **`bash -lc`**, which resets PATH from the login profile — a Dockerfile
+   `ENV PATH=...` alone is **not** enough. Put toolchains on the login PATH via
+   `/etc/profile.d/<tool>.sh` **and/or** symlink the binaries into `/usr/local/bin`.
 
 This is what `image/Dockerfile` already guarantees; a custom image just has to
 match the same surface.
+
+## Native languages (Go / PHP / Ruby / Rust / Java / .NET / Deno)
+
+The default base ships **Node** (node 20, npm, pnpm, bun) and **Python 3.13 + uv**,
+plus `git`/`make`/`gcc`/`g++`/`curl`/`perl`. Node, Python, and Bun stacks therefore
+run on the stock image. **Go, PHP, Ruby, Rust, Java, .NET, and the `sqlite3` CLI are
+not in the base** — those need a **custom image** (operator-scoped, instance-wide):
+
+1. `FROM sandboxd-base:<tag>`, install the toolchain (e.g. Go under `/opt/go`), and
+   put it on the **login PATH** (`/etc/profile.d/*.sh`) and/or symlink into
+   `/usr/local/bin` — see contract item 8 (`bash -lc` resets PATH).
+2. Keep the rest of the contract (runtimed CMD, uid/gid `1000`, workspace
+   `/home/sandbox/workspace/app`, unprivileged).
+3. Set `SANDBOXD_IMAGE=<image>` and recreate the stack.
+
+This is the supported path for native languages today; per-app image selection is
+roadmap, not current behaviour.
 
 ## Footguns (what a non-compatible image breaks)
 

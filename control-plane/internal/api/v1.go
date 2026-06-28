@@ -214,12 +214,19 @@ type v1CreateReq struct {
 	// RuntimePreset selects a runtime preset (react-vite, nextjs, …). Applied
 	// by runtimed on first boot; takes precedence over Template.
 	RuntimePreset string `json:"runtime_preset,omitempty"`
+	// Image is rejected — per-app image selection is not supported (instance-wide
+	// via SANDBOXD_IMAGE). Declared so we 400 it instead of silently dropping it.
+	Image *string `json:"image,omitempty"`
 }
 
 func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
 	var req v1CreateReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid json: "+err.Error())
+		return
+	}
+	if req.Image != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", errPerAppImage)
 		return
 	}
 	if req.Project.ID == "" || req.Project.UserID == "" {
