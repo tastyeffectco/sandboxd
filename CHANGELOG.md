@@ -51,6 +51,18 @@ a patch is fixes only).
   **restart-the-sandbox** notice (manifest is read at boot). Disabled until a
   sandbox exists.
 
+### Base image
+- **Node bumped 20 → 22** (`sandboxd-base`): removes the `worker_threads.markAsUncloneable`
+  crash class (undici 8 and similar libs crashed the dev server on boot under Node 20).
+  npm 10 + pnpm 9 + bun retained; Python/uv/build tools unchanged.
+- **`python3-setuptools` added** so node-gyp can build native modules (better-sqlite3,
+  sqlite3, sharp, …) on **Python 3.13** — stdlib `distutils` was removed in 3.12, and
+  the vendored shim from setuptools restores it. Previously these failed on arm64 with
+  `ModuleNotFoundError: No module named 'distutils'` unless the module shipped a prebuild.
+- **`/opt/verify-base.sh`** ships in the image — a self-check for Node 22, npm/pnpm/bun,
+  python3/uv/setuptools(+distutils), and make/gcc/g++/git/curl (`docker run --rm <image>
+  bash /opt/verify-base.sh`). Native Go/PHP/Ruby/Rust/Deno/Java stay custom-image/roadmap.
+
 ### Hardened
 - **Per-app `image` field now rejected with a clear 400** instead of being silently
   dropped. All four create bodies (`POST /v1/apps`, `POST /v1/apps/{id}/sandbox`,
