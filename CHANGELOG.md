@@ -10,6 +10,13 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **`n8n` service recipe (advisory).** The QA-proven n8n + SQLite manifest
+  (port 3000, `N8N_LISTEN_ADDRESS=0.0.0.0`, `N8N_SECURE_COOKIE=false` for the
+  plain-HTTP preview, `DB_TYPE=sqlite`) with a **defensive npm-install retry**
+  (clean cache + reinstall on a corrupt extraction). Tagged `service` /
+  `sqlite_app` / `heavy_install` / `first_boot_slow`. Detected only via the `n8n`
+  dependency — never auto-suggested for an empty app. Advisory recipe, **not** a
+  built-in preset; surfaced via `runtime-inspect` + `GET /v1/runtime/recipes`.
 - **15 extended-stack recipes** (from QA): flask, django, angular, solidstart, bun,
   nestjs, hono, static, streamlit, gradio, jupyter, storybook, qwik, dash, directus
   — advisory data only (no auto-apply, no source edits). Each has the QA-verified

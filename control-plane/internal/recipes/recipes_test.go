@@ -60,6 +60,7 @@ func TestMatch(t *testing.T) {
 		{"qwik", []string{"@builder.io/qwik-city"}, "", "", "qwik"},
 		{"hono node", []string{"hono", "@hono/node-server"}, "", "", "hono"},
 		{"directus", []string{"directus"}, "", "", "directus"},
+		{"n8n", []string{"n8n"}, "", "", "n8n"},
 		{"storybook by config", nil, ".storybook/main.ts", "", "storybook"},
 		{"bun by lockfile", nil, "bun.lockb", "", "bun"},
 		{"django by manage.py", nil, "manage.py", "", "django"},
@@ -96,6 +97,57 @@ func TestMatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// n8n: tagged service+sqlite_app+heavy_install, dep-detected, and NOT suggested for
+// an empty app (no n8n signal).
+func TestN8nRecipe(t *testing.T) {
+	all, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n8n *Recipe
+	for i := range all {
+		if all[i].ID == "n8n" {
+			n8n = &all[i]
+		}
+	}
+	if n8n == nil {
+		t.Fatal("no n8n recipe")
+	}
+	has := func(tag string) bool {
+		for _, x := range n8n.Tags {
+			if x == tag {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tag := range []string{"service", "sqlite_app", "heavy_install", "first_boot_slow"} {
+		if !has(tag) {
+			t.Errorf("n8n missing tag %q (have %v)", tag, n8n.Tags)
+		}
+	}
+	if res := manifest.Validate([]byte(n8n.SuggestedManifest)); !res.Valid {
+		t.Errorf("n8n manifest invalid: %v", res.Errors)
+	}
+	// detected for a package.json with the n8n dep
+	if m, _ := Match(map[string]bool{"n8n": true}, func(string) bool { return false }, ""); !hasRecipe(m, "n8n") {
+		t.Error("n8n should be detected via the n8n dependency")
+	}
+	// NOT suggested for an empty app (no deps, no files, no requirements)
+	if m, _ := Match(map[string]bool{}, func(string) bool { return false }, ""); hasRecipe(m, "n8n") {
+		t.Error("n8n must NOT be suggested for an empty app (no n8n signal)")
+	}
+}
+
+func hasRecipe(m []Matched, id string) bool {
+	for _, x := range m {
+		if x.Recipe.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // react-vite must NOT match a Next.js / Remix / Astro app (exclude_deps).

@@ -123,13 +123,26 @@ matching suggestion (with `suggested_manifest`, `config_snippets`, and `notes`).
 
 ## Constraints (what a recipe may NOT contain)
 
-- **No secrets** — recipes are public data; never embed tokens/keys.
-- **No databases / services / Docker Compose** — a recipe configures one web
-  process; it does not provision infra.
+- **No secrets** — recipes are public data; never embed tokens/keys (service
+  recipes use placeholder values like `KEY=replace-me`).
+- **No managed databases / Docker Compose / external infra** — a recipe configures
+  one web process. A self-contained **service with embedded SQLite** (a file in the
+  workspace, e.g. n8n / Directus) is fine — that's still one process plus a file,
+  not a provisioned DB server. No separate DB container, no Compose.
 - **No executable scripts/hooks** — a recipe is declarative `sandbox.yaml` text +
   notes. Core never runs it; the agent or user applies it.
 - **No auto-apply** — `runtime-inspect` suggests; the console offers Copy YAML /
   Ask agent. There is no write/PUT endpoint.
+
+## Service recipes (self-contained app + SQLite)
+
+Some recipes run a whole **service** with an embedded SQLite DB — proven for **n8n**
+(workflow automation) and **Directus** (headless CMS). They're tagged
+`service` / `sqlite_app` / `heavy_install` / `first_boot_slow`: first boot installs a
+large dependency tree (n8n ≈ 2.2 GB, multi-minute) and the SQLite file lives in the
+workspace (n8n: `~/.n8n/database.sqlite`). These are **dev/sandbox** recipes, not
+production deployment — and snapshots can be large. They are auto-detected only when
+there's a real signal (e.g. the `n8n` dependency), never for an empty app.
 
 ## Maintainers — candidate presets
 
