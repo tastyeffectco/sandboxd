@@ -10,6 +10,15 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **Strapi / Payload / Ghost SQLite-CMS recipes (advisory, deep-tested).** Each
+  verified beyond "200" — admin UI + a real DB write + the API: Strapi v5
+  (`@strapi/strapi`, better-sqlite3, `POST /admin/register-admin`), Payload v3
+  (`payload`, libsql, `POST /api/users/first-register`, REST + GraphQL), Ghost 6
+  (`ghost`, ~90-table SQLite, **Node-22-only**). Tagged
+  `service`/`cms`/`sqlite_app`/`heavy_install`/`first_boot_slow`; dep-detected;
+  advisory recipes (no preset/template, no managed DB). Ghost is marked
+  explicitly advisory (needs pnpm ≥10/11 + a writable global npm prefix). App-side
+  SQLite only — sandbox/dev state, not managed production hosting.
 - **`n8n` service recipe (advisory).** The QA-proven n8n + SQLite manifest
   (port 3000, `N8N_LISTEN_ADDRESS=0.0.0.0`, `N8N_SECURE_COOKIE=false` for the
   plain-HTTP preview, `DB_TYPE=sqlite`) with a **defensive npm-install retry**
@@ -31,6 +40,13 @@ a patch is fixes only).
   also gained `tags`.
 
 ### Improved
+- **Manifest validation requires `version: 1`** (QA footgun fix). A manifest with no
+  `version` parsed to an empty `{workers:[]}` and returned `valid:true`; now a missing
+  `version` → `valid:false` ("must declare 'version: 1'"), an unsupported `version`
+  (e.g. `2`) → `valid:false` ("unsupported version"), and an empty manifest is invalid.
+  No `effective` runtime is returned for an invalid manifest (only `parsed`). This is
+  the strict guidance validator; runtimed's executor stays lenient (apps still boot on
+  a bad manifest via defaults) — the doc now spells out that split.
 - **Manifest validation response** (`POST /v1/runtime/manifest/validate`): now returns
   a `parsed` web/workers view (as-declared, no defaults) **whenever the YAML parses
   — even for an invalid manifest** — so callers can confirm the web command was

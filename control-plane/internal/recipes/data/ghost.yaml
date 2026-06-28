@@ -1,0 +1,22 @@
+id: ghost
+display_name: Ghost 6 + SQLite (advisory)
+detect:
+  deps: [ghost]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "export PATH=\"$HOME/.npm-global/bin:$PATH\"; npm config set prefix \"$HOME/.npm-global\" >/dev/null 2>&1; pnpm -v 2>/dev/null | grep -q '^9' && npm install -g pnpm@11 >/dev/null 2>&1; [ -x \"$HOME/.npm-global/bin/ghost\" ] || npm install -g ghost-cli@latest; [ -d versions ] || ghost install local --no-prompt --port 3000; ghost config server.host 0.0.0.0; ghost config server.port 3000; exec ghost run"
+    port: 3000
+    health_path: "/"
+notes:
+  - "ADVISORY, not turnkey — Ghost 6's local install is fiddly; adjust as needed."
+  - "Requires Node 22+ (Ghost 6 needs ^22.18) — satisfied by the current base image."
+  - "Needs a modern pnpm (>=10/11): Ghost 6's tarball uses a pnpm catalog workspace that pnpm 9 rejects (the command installs pnpm 11)."
+  - "Global npm prefix /usr is not writable by the sandbox user, so the command repoints it to ~/.npm-global before `npm install -g`."
+  - "Native sqlite3 + sharp compile from source (now works: Python setuptools/distutils + gcc). DB at content/data/ghost-local.db (auto-migrated, ~90 tables)."
+  - "ghost install local defaults to 127.0.0.1:2368; the command sets server.host 0.0.0.0 + server.port 3000 so the preview can reach it."
+  - "Dev/sandbox recipe — not production hosting."
+tags: [service, cms, sqlite_app, heavy_install, first_boot_slow]
+verified:
+  starter: "ghost install local (Ghost 6.49)"
+  version: v0.4.9
