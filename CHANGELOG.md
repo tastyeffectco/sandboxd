@@ -5,6 +5,39 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [Unreleased] — v0.4.9 (branch `feat/v0.4.9-runtime-manifest`, stacked on v0.4.8; NOT in v0.4.0)
+
+> Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
+
+### Added
+- **Runtime manifest validation & guidance (slice 1).** sandboxd core now owns the
+  `sandbox.yaml` contract and validates it, with no framework-specific execution
+  logic and nothing auto-applied or written.
+  - `POST /v1/runtime/manifest/validate` — stateless validation of a manifest blob,
+    returning `{valid, errors, warnings, effective}`. Catches: top-level
+    `command`/`port`/`health_path` → **error** (use `web.*`); unknown top-level keys
+    → **warning** (forward-compatible — core stays recipe-agnostic, but typos stay
+    visible); `web.command` without `web.port` → **warning** (preview assumes 3000);
+    `web.port` out of 1..65535 → **error**; likely-localhost bind → **warning**;
+    command/`web.port` mismatch → **warning**; worker name/dup/empty-command →
+    **error** (mirrors runtimed); invalid YAML → **error**. `effective` shows the
+    manifest after core defaults (port 3000, health_path `/`).
+  - `GET /v1/apps/{id}/runtime/manifest` — owner-scoped, read-only: the app's
+    current `sandbox.yaml` validated (`source: sandbox.yaml`), or the selected
+    preset's manifest if none on disk (`source: preset`), or `present:false` with a
+    reason (no workspace / default). Never 500 for the no-workspace case.
+  - `runtime-inspect` now returns an **advisory `suggested_manifest`** (and notes)
+    for detect-only stacks (Astro, Docusaurus) — e.g. Astro's
+    `pnpm exec astro dev --host 0.0.0.0 --port 3000` plus a note that allowedHosts
+    belongs in `astro.config.mjs`, not a CLI flag. Suggestions are never written.
+  - Console Runtime panel: sandbox.yaml status (missing / valid / invalid),
+    validation errors/warnings, effective command/port/health, suggested YAML with
+    **Copy YAML** and **Ask agent** (the latter copies a paste-ready prompt
+    explaining the schema + fix — it does **not** submit a task). No Apply button,
+    no YAML editor in this slice.
+  - `internal/manifest` is now the authoritative validator; runtimed keeps its
+    executor-side parser, kept aligned by the existing parser-drift test.
+
 ## [Unreleased] — v0.4.8 (branch `feat/v0.4.8-git-push`, stacked on v0.4.7; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.7); not part of the v0.4.0 launch.

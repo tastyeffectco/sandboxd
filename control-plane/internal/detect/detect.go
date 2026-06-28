@@ -66,7 +66,28 @@ type Suggestion struct {
 	Confidence string   `json:"confidence"` // high | medium | low
 	Reasons    []string `json:"reasons"`
 	Warnings   []string `json:"warnings,omitempty"`
+	// SuggestedManifest is ADVISORY sandbox.yaml text for a detect-only stack that
+	// has no built-in preset yet. It is never written or applied — guidance only.
+	SuggestedManifest string   `json:"suggested_manifest,omitempty"`
+	Notes             []string `json:"notes,omitempty"`
 }
+
+// Advisory sandbox.yaml text for detect-only stacks (no built-in preset yet).
+const astroSuggestedManifest = `version: 1
+web:
+  command: "[ -d node_modules ] || pnpm install; pnpm exec astro dev --host 0.0.0.0 --port 3000"
+  port: 3000
+  health_path: "/"
+`
+
+const docusaurusSuggestedManifest = `version: 1
+web:
+  command: "[ -d node_modules ] || pnpm install; pnpm exec docusaurus start --host 0.0.0.0 --port 3000"
+  port: 3000
+  health_path: "/"
+`
+
+const astroAllowedHostsNote = "Astro allowedHosts belongs in astro.config.mjs under vite.server.allowedHosts, not as a CLI flag."
 
 // ManifestSummary describes an existing sandbox.yaml (authoritative when present).
 type ManifestSummary struct {
@@ -143,13 +164,16 @@ func Inspect(f Files) Result {
 	if cfg, ok := anyExists(f, "astro.config.mjs", "astro.config.js", "astro.config.ts"); ok || pkg.has("astro") {
 		s := framework("astro", false, pkg.has("astro"), depReason(pkg, "astro"), cfgReason(cfg, ok))
 		s.Warnings = append(s.Warnings,
-			"Astro dev defaults to port 4321 and blocks unknown hosts; there is no built-in Astro preset yet — add a sandbox.yaml with `--host 0.0.0.0 --port 3000` and an allowed host, or pick another preset")
+			"Astro dev defaults to port 4321 and blocks unknown hosts; there is no built-in Astro preset yet — add a sandbox.yaml with `--host 0.0.0.0 --port 3000`, or pick another preset")
+		s.SuggestedManifest = astroSuggestedManifest // advisory only — never written
+		s.Notes = append(s.Notes, astroAllowedHostsNote)
 		add(s)
 	}
 	// Docusaurus (detect-only)
 	if cfg, ok := anyExists(f, "docusaurus.config.js", "docusaurus.config.ts"); ok || pkg.has("@docusaurus/core") {
 		s := framework("docusaurus", false, pkg.has("@docusaurus/core"), depReason(pkg, "@docusaurus/core"), cfgReason(cfg, ok))
-		s.Warnings = append(s.Warnings, "No built-in Docusaurus preset yet — configure sandbox.yaml (`docusaurus start --host 0.0.0.0 --port 3000`)")
+		s.Warnings = append(s.Warnings, "No built-in Docusaurus preset yet — configure sandbox.yaml manually.")
+		s.SuggestedManifest = docusaurusSuggestedManifest // advisory only — never written
 		add(s)
 	}
 	// React + Vite (only when NOT Next)

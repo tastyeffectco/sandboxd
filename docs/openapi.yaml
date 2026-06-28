@@ -402,6 +402,49 @@ paths:
                     items: { $ref: "#/components/schemas/Event" }
                   next_before: { type: string }
 
+  /v1/runtime/manifest/validate:
+    post:
+      tags: [apps]
+      summary: Validate a sandbox.yaml manifest (stateless; nothing is applied or written).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { type: string, description: "Raw sandbox.yaml text." }
+      responses:
+        "200":
+          description: Validation result + the effective (defaulted) view.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManifestValidation" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /v1/apps/{id}/runtime/manifest:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [apps]
+      summary: The app's current sandbox.yaml (or the preset/default that would apply), validated. Owner-scoped, read-only.
+      responses:
+        "200":
+          description: Manifest + validation, or present:false with a reason.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  present: { type: boolean }
+                  reason: { type: string }
+                  source: { type: string, enum: [sandbox.yaml, preset, default] }
+                  manifest: { type: string }
+                  validation: { $ref: "#/components/schemas/ManifestValidation" }
+                  effective: { $ref: "#/components/schemas/ManifestEffective" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/apps/{id}/runtime-inspect:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -1089,6 +1132,30 @@ components:
         running: { type: boolean }
         pid: { type: integer }
         restarts: { type: integer }
+    ManifestEffective:
+      type: object
+      description: The manifest as runtimed would see it after core defaults (port 3000, health_path /).
+      properties:
+        web:
+          type: object
+          properties:
+            command: { type: string }
+            port: { type: integer }
+            health_path: { type: string }
+        workers:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              command: { type: string }
+    ManifestValidation:
+      type: object
+      properties:
+        valid: { type: boolean }
+        errors: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
+        effective: { $ref: "#/components/schemas/ManifestEffective" }
     Preview:
       type: object
       properties:

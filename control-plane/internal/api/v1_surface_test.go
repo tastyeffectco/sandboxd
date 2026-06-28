@@ -18,6 +18,8 @@ var requiredPublicSurface = []string{
 	"GET /v1/git-credentials",
 	"DELETE /v1/git-credentials/{id}",
 	"GET /v1/apps/{id}/runtime-inspect",
+	"POST /v1/runtime/manifest/validate",
+	"GET /v1/apps/{id}/runtime/manifest",
 	"GET /v1/apps/{id}/git/status",
 	"GET /v1/apps/{id}/git/diff",
 	"POST /v1/apps/{id}/git/commit",

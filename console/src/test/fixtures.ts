@@ -116,6 +116,9 @@ export const runtimeInspectFixture = {
       confidence: 'high',
       reasons: ['astro is a dependency'],
       warnings: ['Astro dev defaults to port 4321 and blocks unknown hosts; there is no built-in Astro preset yet'],
+      suggested_manifest:
+        'version: 1\nweb:\n  command: "[ -d node_modules ] || pnpm install; pnpm exec astro dev --host 0.0.0.0 --port 3000"\n  port: 3000\n  health_path: "/"\n',
+      notes: ['Astro allowedHosts belongs in astro.config.mjs under vite.server.allowedHosts, not as a CLI flag.'],
     },
   ],
   default_suggestion: 'nextjs',
@@ -159,8 +162,22 @@ export const gitDiffFixture = {
   truncated: false,
 }
 
+export const appManifestFixture = {
+  present: true,
+  source: 'sandbox.yaml',
+  manifest: 'version: 1\nweb:\n  command: "pnpm dev --host 0.0.0.0 --port 3000"\n  port: 3000\n',
+  validation: {
+    valid: true,
+    errors: [],
+    warnings: [],
+    effective: { web: { command: 'pnpm dev --host 0.0.0.0 --port 3000', port: 3000, health_path: '/' }, workers: [] },
+  },
+  effective: { web: { command: 'pnpm dev --host 0.0.0.0 --port 3000', port: 3000, health_path: '/' }, workers: [] },
+}
+
 export function appDetailRoutes(sandbox: Sandbox) {
   return (_m: string, p: string): unknown => {
+    if (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p)) return appManifestFixture
     if (/\/v1\/apps\/[^/]+\/git\/status/.test(p)) return gitStatusFixture
     if (/\/v1\/apps\/[^/]+\/git\/diff/.test(p)) return gitDiffFixture
     if (/\/v1\/apps\/[^/]+\/runtime-inspect/.test(p)) return runtimeInspectFixture

@@ -8,6 +8,7 @@ import {
   Snapshot,
   AppEvent,
   RuntimeInspect,
+  AppManifest,
   GitStatus,
   GitDiff,
   GitFile,
@@ -206,56 +207,148 @@ export function AppDetail({
 // /v1/apps/{id}/runtime-inspect). The console only renders the server's result —
 // it owns no detection logic, and nothing here is applied automatically: the
 // user always overrides manually (the preset dropdown on app/sandbox create).
+// askAgentPrompt builds a paste-ready prompt explaining the sandbox.yaml schema +
+// the suggested fix. It is NOT submitted — the user pastes it into the task box.
+function askAgentPrompt(suggested: string, notes?: string[]): string {
+  return [
+    'Please create or fix `sandbox.yaml` in the workspace root so the preview works.',
+    '',
+    'sandbox.yaml schema:',
+    '  version: 1',
+    '  web:        # the previewed process',
+    '    command: "<start command — must bind 0.0.0.0>"',
+    '    port: <number>',
+    '    health_path: "/"',
+    '  workers:    # optional background processes',
+    '    - { name: <name>, command: "<cmd>" }',
+    '',
+    'Suggested starting point:',
+    '',
+    suggested.trim(),
+    ...(notes && notes.length ? ['', 'Notes:', ...notes.map((n) => `- ${n}`)] : []),
+    '',
+    'Only write sandbox.yaml; do not run anything destructive.',
+  ].join('\n')
+}
+
 function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: string) => void }) {
   const [ins, setIns] = useState<RuntimeInspect | null>(null)
+  const [man, setMan] = useState<AppManifest | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [copied, setCopied] = useState('') // transient "copied" feedback key
+
   const load = () => {
-    api
-      .runtimeInspect(appId)
-      .then((r) => {
+    Promise.all([api.runtimeInspect(appId), api.appManifest(appId)])
+      .then(([r, m]) => {
         setIns(r)
+        setMan(m)
         setLoaded(true)
       })
       .catch((e) => onError((e as Error).message))
   }
   useEffect(load, [appId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const copy = (key: string, text: string) => {
+    navigator.clipboard?.writeText(text).then(
+      () => {
+        setCopied(key)
+        setTimeout(() => setCopied(''), 2000)
+      },
+      () => onError('Could not copy to clipboard'),
+    )
+  }
+
   if (!loaded) return null
-  const em = ins?.existing_manifest
+
+  const v = man?.validation
+  const statusLabel = !man
+    ? 'unknown'
+    : man.present
+      ? v?.valid
+        ? 'valid'
+        : 'invalid'
+      : man.source === 'preset'
+        ? 'missing — the selected preset applies on first boot'
+        : 'missing'
+  const eff = man?.effective || v?.effective
+  const suggestions = ins?.suggestions || []
+
   return (
     <div className="card" data-testid="runtime-inspect">
-      <h2>Runtime (detected)</h2>
-      <p className="muted" style={{ fontSize: 12 }}>
-        Advisory only — pick a preset when creating the sandbox to override.
-      </p>
+      <h2>Runtime</h2>
+      <p className="muted" style={{ fontSize: 12 }}>Advisory — nothing here is applied automatically.</p>
 
-      {em?.present ? (
-        <div data-testid="ri-manifest" className="mono" style={{ fontSize: 12 }}>
-          <strong>sandbox.yaml found</strong> (authoritative)
-          {em.web_command ? <div>command: {em.web_command}</div> : null}
-          {em.web_port ? <div>port: {em.web_port}</div> : null}
-          {em.health_path ? <div>health: {em.health_path}</div> : null}
-        </div>
-      ) : (
-        <div data-testid="ri-no-manifest" className="muted" style={{ fontSize: 12 }}>
-          No sandbox.yaml in the workspace.
+      {/* current sandbox.yaml status */}
+      <div data-testid="ri-manifest-status" style={{ fontSize: 13 }}>
+        sandbox.yaml: <strong>{statusLabel}</strong>
+        {man?.source ? <span className="muted"> (source: {man.source})</span> : null}
+      </div>
+
+      {eff?.web && (
+        <div data-testid="ri-effective" className="mono" style={{ fontSize: 12, marginTop: 4 }}>
+          <div>command: {eff.web.command || '(default)'}</div>
+          <div>port: {eff.web.port}</div>
+          <div>health: {eff.web.health_path}</div>
         </div>
       )}
 
-      {ins && ins.suggestions.length > 0 && (
+      {v && v.errors.length > 0 && (
+        <ul data-testid="ri-errors" style={{ marginTop: 6 }}>
+          {v.errors.map((e, i) => (
+            <li key={i} className="warn" style={{ fontSize: 12 }}>✖ {e}</li>
+          ))}
+        </ul>
+      )}
+      {v && v.warnings.length > 0 && (
+        <ul data-testid="ri-warnings" style={{ marginTop: 6 }}>
+          {v.warnings.map((w, i) => (
+            <li key={i} className="warn" style={{ fontSize: 12 }}>⚠ {w}</li>
+          ))}
+        </ul>
+      )}
+
+      {/* detected stacks */}
+      {suggestions.length > 0 && (
         <ul data-testid="ri-suggestions" style={{ marginTop: 8 }}>
-          {ins.suggestions.map((s) => (
-            <li key={s.preset}>
+          {suggestions.map((s) => (
+            <li key={s.preset} style={{ marginBottom: 6 }}>
               <strong>{s.preset}</strong>{' '}
               <span className="muted">
                 ({s.confidence}
-                {s.preset === ins.default_suggestion ? ', suggested' : ''}
+                {s.preset === ins?.default_suggestion ? ', suggested' : ''}
                 {s.runnable ? '' : ', detect-only'})
               </span>
               {s.reasons.length > 0 && <div className="muted" style={{ fontSize: 12 }}>{s.reasons.join('; ')}</div>}
               {s.warnings?.map((w, i) => (
                 <div key={i} className="warn" style={{ fontSize: 12 }}>⚠ {w}</div>
               ))}
+              {s.suggested_manifest && (
+                <div style={{ marginTop: 4 }}>
+                  <pre className="mono" data-testid={`ri-suggested-yaml-${s.preset}`} style={{ fontSize: 12, background: 'var(--code-bg,#f6f8fa)', padding: 8, overflow: 'auto' }}>
+                    {s.suggested_manifest}
+                  </pre>
+                  {s.notes?.map((n, i) => (
+                    <div key={i} className="muted" style={{ fontSize: 12 }}>ℹ {n}</div>
+                  ))}
+                  <button
+                    className="btn btn-outline"
+                    data-testid={`ri-copy-${s.preset}`}
+                    onClick={() => copy(`yaml-${s.preset}`, s.suggested_manifest as string)}
+                    style={{ marginRight: 6, fontSize: 12 }}
+                  >
+                    {copied === `yaml-${s.preset}` ? 'Copied ✓' : 'Copy YAML'}
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    data-testid={`ri-ask-${s.preset}`}
+                    onClick={() => copy(`ask-${s.preset}`, askAgentPrompt(s.suggested_manifest as string, s.notes))}
+                    style={{ fontSize: 12 }}
+                    title="Copies a prompt to paste into the task box — does not run a task"
+                  >
+                    {copied === `ask-${s.preset}` ? 'Prompt copied ✓ — paste into the task box' : 'Ask agent'}
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

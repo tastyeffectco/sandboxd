@@ -1,6 +1,9 @@
 package manifest
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseWebPort(t *testing.T) {
 	cases := []struct {
@@ -36,5 +39,102 @@ func TestNilWebPort(t *testing.T) {
 	var m *Manifest
 	if m.WebPort() != 0 {
 		t.Error("nil manifest WebPort should be 0")
+	}
+}
+
+// --- Validate ---------------------------------------------------------
+
+func hasMatch(ss []string, sub string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestValidateGoodManifest(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host 0.0.0.0 --port 3000\"\n  port: 3000\n  health_path: \"/\"\n"))
+	if !r.Valid || len(r.Errors) != 0 {
+		t.Fatalf("expected valid, got %+v", r)
+	}
+	if len(r.Warnings) != 0 {
+		t.Errorf("clean manifest should have no warnings: %v", r.Warnings)
+	}
+	if r.Effective == nil || r.Effective.Web == nil || r.Effective.Web.Port != 3000 || r.Effective.Web.HealthPath != "/" {
+		t.Errorf("effective wrong: %+v", r.Effective)
+	}
+}
+
+func TestValidateTopLevelCommandRejected(t *testing.T) {
+	r := Validate([]byte("version: 1\ncommand: \"pnpm dev\"\n"))
+	if r.Valid || !hasMatch(r.Errors, "web.command") {
+		t.Errorf("top-level command must be an error pointing to web.command: %+v", r)
+	}
+}
+
+func TestValidateUnknownTopLevelWarns(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: x\n  port: 3000\nwbe: oops\n"))
+	if !r.Valid {
+		t.Errorf("unknown key should NOT invalidate (forward-compat): %+v", r)
+	}
+	if !hasMatch(r.Warnings, "wbe") {
+		t.Errorf("unknown key should warn: %v", r.Warnings)
+	}
+}
+
+func TestValidateInvalidYAML(t *testing.T) {
+	r := Validate([]byte("web: [this is: not valid"))
+	if r.Valid || !hasMatch(r.Errors, "invalid YAML") {
+		t.Errorf("expected invalid YAML error: %+v", r)
+	}
+}
+
+func TestValidatePortRange(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: x\n  port: 70000\n"))
+	if r.Valid || !hasMatch(r.Errors, "out of range") {
+		t.Errorf("expected port range error: %+v", r)
+	}
+}
+
+func TestValidateMissingPortWarns(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host 0.0.0.0\"\n"))
+	if !r.Valid {
+		t.Errorf("missing port is a warning, not an error: %+v", r)
+	}
+	if !hasMatch(r.Warnings, "web.port is missing") {
+		t.Errorf("expected missing-port warning: %v", r.Warnings)
+	}
+	if r.Effective.Web.Port != 3000 {
+		t.Errorf("effective port should default to 3000: %+v", r.Effective.Web)
+	}
+}
+
+func TestValidateLocalhostWarns(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host localhost\"\n  port: 3000\n"))
+	if !hasMatch(r.Warnings, "localhost") {
+		t.Errorf("expected localhost-bind warning: %v", r.Warnings)
+	}
+}
+
+func TestValidatePortMismatchWarns(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host 0.0.0.0 --port 5173\"\n  port: 3000\n"))
+	if !hasMatch(r.Warnings, "5173") {
+		t.Errorf("expected port-mismatch warning: %v", r.Warnings)
+	}
+}
+
+func TestValidateWorkerRules(t *testing.T) {
+	r := Validate([]byte("version: 1\nworkers:\n  - name: \"bad name!\"\n    command: \"\"\n"))
+	if r.Valid {
+		t.Error("invalid worker name + empty command should be errors")
+	}
+	if !hasMatch(r.Errors, "invalid worker name") || !hasMatch(r.Errors, "no command") {
+		t.Errorf("expected worker errors: %v", r.Errors)
+	}
+	// valid worker passes
+	ok := Validate([]byte("version: 1\nworkers:\n  - name: queue\n    command: \"node worker.js\"\n"))
+	if !ok.Valid {
+		t.Errorf("valid worker should pass: %+v", ok)
 	}
 }
