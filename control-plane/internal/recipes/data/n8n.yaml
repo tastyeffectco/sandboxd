@@ -1,0 +1,21 @@
+id: n8n
+display_name: n8n (workflow automation + SQLite)
+detect:
+  deps: [n8n]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "if [ ! -x node_modules/.bin/n8n ]; then npm install n8n || (rm -rf node_modules package-lock.json && npm cache clean --force && npm install n8n); fi; N8N_PORT=3000 N8N_LISTEN_ADDRESS=0.0.0.0 N8N_SECURE_COOKIE=false N8N_DIAGNOSTICS_ENABLED=false DB_TYPE=sqlite node_modules/.bin/n8n start"
+    port: 3000
+    health_path: "/healthz"
+notes:
+  - "n8n defaults to port 5678; this recipe pins 3000 (N8N_PORT)."
+  - "N8N_LISTEN_ADDRESS=0.0.0.0 is required so the preview can reach it."
+  - "N8N_SECURE_COOKIE=false is required over the plain-HTTP preview (else editor login loops)."
+  - "SQLite DB lives at ~/.n8n/database.sqlite."
+  - "First boot is heavy (node_modules ~2.2 GB, several minutes); the install retries with a clean cache on a corrupt extraction. Snapshots can be large."
+  - "Dev/sandbox recipe — not a production deployment promise."
+tags: [service, sqlite_app, heavy_install, first_boot_slow]
+verified:
+  starter: n8n@2 + sqlite (installed at runtime)
+  version: v0.4.9

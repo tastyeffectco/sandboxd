@@ -30,7 +30,7 @@ func TestRuntimeRecipesEndpoint(t *testing.T) {
 	for _, rc := range resp.Recipes {
 		byID[rc.ID] = rc
 	}
-	for _, want := range []string{"nextjs", "react-vite", "astro", "gatsby", "sveltekit", "eleventy"} {
+	for _, want := range []string{"nextjs", "react-vite", "astro", "gatsby", "sveltekit", "eleventy", "n8n"} {
 		if _, ok := byID[want]; !ok {
 			t.Errorf("registry missing %q", want)
 		}
