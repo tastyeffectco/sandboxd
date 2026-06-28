@@ -1,0 +1,15 @@
+id: hono
+display_name: Hono (Node)
+detect:
+  deps: [hono, "@hono/node-server"]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d node_modules ] || pnpm install; exec node index.js"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Use @hono/node-server's serve({ hostname: '0.0.0.0', port: 3000 }). Adjust the entry to your app."
+verified:
+  starter: authored-in-sandbox
+  version: v0.4.9

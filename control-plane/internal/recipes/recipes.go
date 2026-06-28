@@ -36,14 +36,21 @@ type Recipe struct {
 	SuggestedManifest string          `yaml:"suggested_manifest" json:"suggested_manifest"`
 	ConfigSnippets    []ConfigSnippet `yaml:"config_snippets" json:"config_snippets,omitempty"`
 	Notes             []string        `yaml:"notes" json:"notes,omitempty"`
-	Verified          Verified        `yaml:"verified" json:"verified"`
+	// Tags are advisory capability hints for clients/docs: needs_config_snippet,
+	// heavy_install, websocket, sse, sqlite_app, custom_image_recommended, …
+	Tags     []string `yaml:"tags" json:"tags,omitempty"`
+	Verified Verified `yaml:"verified" json:"verified"`
 }
 
 // Detect is how runtime-inspect recognizes the framework (all data, no code).
 type Detect struct {
-	Deps        []string `yaml:"deps" json:"deps"`                           // ALL must be present (AND)
+	Deps        []string `yaml:"deps" json:"deps"`                           // package.json deps — ALL must be present (AND)
 	ConfigFiles []string `yaml:"config_files" json:"config_files"`           // ANY present matches
 	ExcludeDeps []string `yaml:"exclude_deps" json:"exclude_deps,omitempty"` // if ANY present, no match
+	// RequirementsContains matches a token (case-insensitive) in the project's
+	// Python deps (requirements.txt / pyproject.toml). ANY token matches — a
+	// GENERIC content match so Python frameworks stay data, not Go code.
+	RequirementsContains []string `yaml:"requirements_contains" json:"requirements_contains,omitempty"`
 }
 
 // ConfigSnippet is a non-sandbox.yaml edit the user must make (advice only).
@@ -113,8 +120,8 @@ func validate(r Recipe) error {
 	if r.ID == "" || r.DisplayName == "" {
 		return fmt.Errorf("recipe needs id + display_name")
 	}
-	if len(r.Detect.Deps) == 0 && len(r.Detect.ConfigFiles) == 0 {
-		return fmt.Errorf("recipe %q has no detect.deps or detect.config_files", r.ID)
+	if len(r.Detect.Deps) == 0 && len(r.Detect.ConfigFiles) == 0 && len(r.Detect.RequirementsContains) == 0 {
+		return fmt.Errorf("recipe %q has no detect signal (deps/config_files/requirements_contains)", r.ID)
 	}
 	if r.SuggestedManifest == "" {
 		return fmt.Errorf("recipe %q has no suggested_manifest", r.ID)
@@ -129,13 +136,15 @@ func validate(r Recipe) error {
 	return nil
 }
 
-// Match returns recipes whose detect rule fires for the given dependency set +
-// file-existence check. Pure: no side effects, no execution.
-func Match(deps map[string]bool, exists func(string) bool) ([]Matched, error) {
+// Match returns recipes whose detect rule fires for the given package.json
+// dependency set, a file-existence check, and the lowercased Python requirements
+// text (requirements.txt + pyproject.toml, "" if none). Pure: no side effects.
+func Match(deps map[string]bool, exists func(string) bool, reqText string) ([]Matched, error) {
 	all, err := All()
 	if err != nil {
 		return nil, err
 	}
+	req := strings.ToLower(reqText)
 	var out []Matched
 	for _, r := range all {
 		if anyDep(deps, r.Detect.ExcludeDeps) {
@@ -147,6 +156,13 @@ func Match(deps map[string]bool, exists func(string) bool) ([]Matched, error) {
 			strong = true
 			for _, d := range r.Detect.Deps {
 				reasons = append(reasons, d+" is a dependency")
+			}
+		}
+		for _, tok := range r.Detect.RequirementsContains {
+			if tok != "" && strings.Contains(req, strings.ToLower(tok)) {
+				strong = true
+				reasons = append(reasons, tok+" in requirements")
+				break
 			}
 		}
 		var cfg string

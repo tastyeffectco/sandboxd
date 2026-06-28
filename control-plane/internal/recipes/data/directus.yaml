@@ -1,0 +1,16 @@
+id: directus
+display_name: Directus + SQLite (headless CMS)
+detect:
+  deps: [directus]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/directus ] || pnpm install; export HOST=0.0.0.0 PORT=3000 DB_CLIENT=sqlite3 DB_FILENAME=./data.db KEY=replace-me SECRET=replace-me ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=admin; pnpm exec directus bootstrap; exec pnpm exec directus start"
+    port: 3000
+    health_path: "/server/health"
+notes:
+  - "SQLite-backed (DB_CLIENT=sqlite3). Set real KEY/SECRET/ADMIN_* values. Do NOT install with --omit=optional (breaks the snappy napi binary)."
+tags: [sqlite_app, heavy_install]
+verified:
+  starter: directus@11 + sqlite3
+  version: v0.4.9

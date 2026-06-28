@@ -71,11 +71,17 @@ func (m *Manifest) WebPort() int {
 
 // --- validation + effective view -------------------------------------
 
-// Result is the validation outcome plus the effective (defaulted) view.
+// Result is the validation outcome plus views of the manifest.
 type Result struct {
-	Valid     bool       `json:"valid"`
-	Errors    []string   `json:"errors"`
-	Warnings  []string   `json:"warnings"`
+	Valid    bool     `json:"valid"`
+	Errors   []string `json:"errors"`
+	Warnings []string `json:"warnings"`
+	// Parsed is what we read from the manifest AS-DECLARED (no defaults), set
+	// whenever the YAML parsed — even for an invalid manifest — so a caller can
+	// confirm the web command/port were understood.
+	Parsed *Effective `json:"parsed,omitempty"`
+	// Effective is the manifest after core defaults. Present ONLY when valid, so an
+	// invalid manifest never advertises a (misleading) runnable runtime.
 	Effective *Effective `json:"effective,omitempty"`
 }
 
@@ -126,6 +132,8 @@ func Validate(raw []byte) Result {
 		res.Errors = append(res.Errors, "invalid YAML: "+oneLine(err.Error()))
 		return res
 	}
+	// Always expose what we parsed (as-declared), even if validation fails below.
+	res.Parsed = parsedOf(&m)
 
 	for k := range top {
 		switch k {
@@ -186,6 +194,18 @@ func Validate(raw []byte) Result {
 	return res
 }
 
+// parsedOf is the as-declared view (no defaults applied).
+func parsedOf(m *Manifest) *Effective {
+	e := &Effective{Workers: []EffectiveWorker{}}
+	if m.Web != nil {
+		e.Web = &EffectiveWeb{Command: m.Web.Command, Port: m.Web.Port, HealthPath: m.Web.HealthPath}
+	}
+	for _, wk := range m.Workers {
+		e.Workers = append(e.Workers, EffectiveWorker{Name: wk.Name, Command: wk.Command})
+	}
+	return e
+}
+
 func effectiveOf(m *Manifest) *Effective {
 	e := &Effective{Workers: []EffectiveWorker{}}
 	if m.Web != nil {
@@ -204,20 +224,12 @@ func effectiveOf(m *Manifest) *Effective {
 	return e
 }
 
-// bindsLocalhost is a heuristic: an explicit localhost/127.0.0.1, or a known
-// dev-server command with no 0.0.0.0/--host, likely won't be reachable for preview.
+// bindsLocalhost flags ONLY an explicit localhost / 127.0.0.1 in the command. We
+// deliberately do NOT guess "dev server without --host" — many servers bind all
+// interfaces by default (node/express, Nest, Bun, uvicorn-with-host), and the
+// guess produced false positives ("may bind localhost only") on those.
 func bindsLocalhost(cmd string) bool {
-	if reLocalhost.MatchString(cmd) {
-		return true
-	}
-	if !strings.Contains(cmd, "0.0.0.0") && !strings.Contains(cmd, "--host") {
-		for _, k := range []string{"dev", "vite", "next", "astro", "uvicorn", "serve", "start"} {
-			if strings.Contains(cmd, k) {
-				return true
-			}
-		}
-	}
-	return false
+	return reLocalhost.MatchString(cmd)
 }
 
 func commandPort(cmd string) int {

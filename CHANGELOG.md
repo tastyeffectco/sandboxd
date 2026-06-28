@@ -9,6 +9,29 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
+### Added
+- **15 extended-stack recipes** (from QA): flask, django, angular, solidstart, bun,
+  nestjs, hono, static, streamlit, gradio, jupyter, storybook, qwik, dash, directus
+  — advisory data only (no auto-apply, no source edits). Each has the QA-verified
+  manifest (port 3000, `0.0.0.0`), `config_snippets` where needed (Django
+  `ALLOWED_HOSTS`, Angular host-check, Solid/Qwik/Storybook Vite `allowedHosts`),
+  capability `tags` (`needs_config_snippet`, `heavy_install`, `websocket`, `sse`,
+  `sqlite_app`, …), and a verified starter. Surfaced via `runtime-inspect` +
+  `GET /v1/runtime/recipes`.
+- **Generic Python detection** (`detect.requirements_contains`): recipes match a
+  token in `requirements.txt`/`pyproject.toml` (case-insensitive), so Python
+  frameworks stay representable as data — no framework-specific Go. Recipe schema
+  also gained `tags`.
+
+### Improved
+- **Manifest validation response** (`POST /v1/runtime/manifest/validate`): now returns
+  a `parsed` web/workers view (as-declared, no defaults) **whenever the YAML parses
+  — even for an invalid manifest** — so callers can confirm the web command was
+  understood; `effective` still appears only when valid. The **"may bind localhost"
+  warning no longer false-positives** on all-interface binders (node/express, Nest,
+  Bun, uvicorn-with-host) — it now flags only an explicit `localhost`/`127.0.0.1`
+  (applied to both the validate endpoint and the runtime-inspect manifest summary).
+
 ### Changed
 - **Console "Apply sandbox.yaml" CTA (console-only; no core change).** The Runtime
   panel now offers an explicit **Apply sandbox.yaml** button per suggestion,

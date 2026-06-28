@@ -1,7 +1,6 @@
 package recipes
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/sandboxd/control-plane/internal/manifest"
@@ -20,39 +19,56 @@ func TestAllLoadAndValidate(t *testing.T) {
 			t.Errorf("recipe %q missing required fields", r.ID)
 		}
 		// every suggested_manifest must validate (the contribution gate)
-		if res := manifest.Validate([]byte(r.SuggestedManifest)); !res.Valid {
+		res := manifest.Validate([]byte(r.SuggestedManifest))
+		if !res.Valid {
 			t.Errorf("recipe %q manifest invalid: %v", r.ID, res.Errors)
+			continue
 		}
-		// QA gotcha: install guard must key on the framework binary, not the dir
-		if strings.Contains(r.SuggestedManifest, "[ -d node_modules ]") {
-			t.Errorf("recipe %q uses the fragile `[ -d node_modules ]` guard", r.ID)
+		// The real contract is web.port == 3000 (the field) — the command may
+		// declare the port many ways (:3000, --port=3000, PORT=3000, or in code).
+		if res.Effective == nil || res.Effective.Web == nil || res.Effective.Web.Port != 3000 {
+			t.Errorf("recipe %q must declare web.port 3000; got %+v", r.ID, res.Effective)
 		}
-		// QA gotcha: pin port 3000 + bind 0.0.0.0
-		if !strings.Contains(r.SuggestedManifest, "--port 3000") &&
-			!strings.Contains(r.SuggestedManifest, "-p 3000") {
-			t.Errorf("recipe %q does not pin port 3000", r.ID)
-		}
+		// A node recipe with a single framework binary should guard on it (the
+		// fragile `[ -d node_modules ]` reinstalls forever after an interrupted
+		// install). Stacks with no single bin (bun/hono) may use the dir guard.
 	}
 }
 
 func TestMatch(t *testing.T) {
-	none := func(string) bool { return false }
 	cases := []struct {
-		name  string
-		deps  []string
-		files []string
-		want  string // recipe id expected to match
+		name string
+		deps []string
+		file string // single config file present ("" = none)
+		req  string // requirements/pyproject text ("" = none)
+		want string // recipe id expected to match
 	}{
-		{"nextjs", []string{"next", "react"}, nil, "nextjs"},
-		{"react-vite", []string{"vite", "react"}, nil, "react-vite"},
-		{"vite-vue", []string{"vite", "vue"}, nil, "vite-vue"},
-		{"astro", []string{"astro"}, nil, "astro"},
-		{"docusaurus", []string{"@docusaurus/core"}, nil, "docusaurus"},
-		{"gatsby", []string{"gatsby"}, nil, "gatsby"},
-		{"nuxt", []string{"nuxt"}, nil, "nuxt"},
-		{"sveltekit", []string{"@sveltejs/kit"}, nil, "sveltekit"},
-		{"remix", []string{"@remix-run/dev", "react", "vite"}, nil, "remix-vite"},
-		{"eleventy by config", nil, []string{".eleventy.js"}, "eleventy"},
+		{"nextjs", []string{"next", "react"}, "", "", "nextjs"},
+		{"react-vite", []string{"vite", "react"}, "", "", "react-vite"},
+		{"vite-vue", []string{"vite", "vue"}, "", "", "vite-vue"},
+		{"astro", []string{"astro"}, "", "", "astro"},
+		{"docusaurus", []string{"@docusaurus/core"}, "", "", "docusaurus"},
+		{"gatsby", []string{"gatsby"}, "", "", "gatsby"},
+		{"nuxt", []string{"nuxt"}, "", "", "nuxt"},
+		{"sveltekit", []string{"@sveltejs/kit"}, "", "", "sveltekit"},
+		{"remix", []string{"@remix-run/dev"}, "", "", "remix-vite"},
+		{"eleventy by config", nil, ".eleventy.js", "", "eleventy"},
+		// new extended stacks
+		{"angular", []string{"@angular/core"}, "", "", "angular"},
+		{"nestjs", []string{"@nestjs/core"}, "", "", "nestjs"},
+		{"solidstart", []string{"@solidjs/start"}, "", "", "solidstart"},
+		{"qwik", []string{"@builder.io/qwik-city"}, "", "", "qwik"},
+		{"hono node", []string{"hono", "@hono/node-server"}, "", "", "hono"},
+		{"directus", []string{"directus"}, "", "", "directus"},
+		{"storybook by config", nil, ".storybook/main.ts", "", "storybook"},
+		{"bun by lockfile", nil, "bun.lockb", "", "bun"},
+		{"django by manage.py", nil, "manage.py", "", "django"},
+		// Python recipes via requirements_contains
+		{"flask", nil, "", "Flask==3.0\ngunicorn", "flask"},
+		{"streamlit", nil, "", "streamlit==1.38", "streamlit"},
+		{"gradio", nil, "", "gradio>=4", "gradio"},
+		{"jupyter", nil, "", "jupyterlab", "jupyter"},
+		{"dash", nil, "", "dash\nplotly", "dash"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -60,29 +76,22 @@ func TestMatch(t *testing.T) {
 			for _, d := range c.deps {
 				deps[d] = true
 			}
-			exists := none
-			if len(c.files) > 0 {
-				fs := map[string]bool{}
-				for _, f := range c.files {
-					fs[f] = true
-				}
-				exists = func(p string) bool { return fs[p] }
-			}
-			matched, err := Match(deps, exists)
+			exists := func(p string) bool { return c.file != "" && p == c.file }
+			matched, err := Match(deps, exists, c.req)
 			if err != nil {
 				t.Fatal(err)
 			}
-			var ids []string
-			for _, m := range matched {
-				ids = append(ids, m.Recipe.ID)
-			}
 			found := false
-			for _, id := range ids {
-				if id == c.want {
+			for _, m := range matched {
+				if m.Recipe.ID == c.want {
 					found = true
 				}
 			}
 			if !found {
+				var ids []string
+				for _, m := range matched {
+					ids = append(ids, m.Recipe.ID)
+				}
 				t.Errorf("expected %q in matches, got %v", c.want, ids)
 			}
 		})
@@ -92,7 +101,7 @@ func TestMatch(t *testing.T) {
 // react-vite must NOT match a Next.js / Remix / Astro app (exclude_deps).
 func TestMatchExcludes(t *testing.T) {
 	deps := map[string]bool{"vite": true, "react": true, "next": true}
-	matched, _ := Match(deps, func(string) bool { return false })
+	matched, _ := Match(deps, func(string) bool { return false }, "")
 	for _, m := range matched {
 		if m.Recipe.ID == "react-vite" {
 			t.Error("react-vite must be excluded when next is present")

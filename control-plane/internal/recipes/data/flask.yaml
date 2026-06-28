@@ -1,0 +1,15 @@
+id: flask
+display_name: Flask (Python)
+detect:
+  requirements_contains: [flask]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install flask)); exec .venv/bin/python -m flask --app app run --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Adjust `--app app` to your module (e.g. app.py / wsgi.py). Repos without requirements.txt fall back to installing flask."
+verified:
+  starter: codophobia/flask-hello-world-devops-project
+  version: v0.4.9

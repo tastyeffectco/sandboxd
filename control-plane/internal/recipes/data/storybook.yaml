@@ -1,0 +1,16 @@
+id: storybook
+display_name: Storybook (component explorer)
+detect:
+  config_files: [.storybook/main.ts, .storybook/main.js, .storybook/main.cjs]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d node_modules ] || pnpm install; exec pnpm exec storybook dev -p 3000 --host 0.0.0.0 --no-open --disable-telemetry"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: ".storybook/main.ts"
+    note: "Storybook 8 on Vite 5+ needs viteFinal.server.allowedHosts: true. Storybook 7 / Vite 4 does not."
+verified:
+  starter: LinnJS/storybook-vite-react-ts-starter
+  version: v0.4.9

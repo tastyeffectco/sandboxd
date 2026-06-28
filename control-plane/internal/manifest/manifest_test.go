@@ -118,7 +118,38 @@ func TestValidateEffectiveOmittedWhenInvalid(t *testing.T) {
 func TestValidateLocalhostWarns(t *testing.T) {
 	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host localhost\"\n  port: 3000\n"))
 	if !hasMatch(r.Warnings, "localhost") {
-		t.Errorf("expected localhost-bind warning: %v", r.Warnings)
+		t.Errorf("expected localhost-bind warning for explicit localhost: %v", r.Warnings)
+	}
+}
+
+// No false-positive "may bind localhost" for servers that bind all interfaces by
+// default (Nest, node/express, Bun, uvicorn-with-host).
+func TestValidateNoLocalhostFalsePositive(t *testing.T) {
+	for _, cmd := range []string{
+		"pnpm exec nest start",
+		"node server.js",
+		"bun run src/index.ts",
+		".venv/bin/uvicorn main:app --host 0.0.0.0 --port 3000",
+	} {
+		r := Validate([]byte("version: 1\nweb:\n  command: \"" + cmd + "\"\n  port: 3000\n"))
+		if hasMatch(r.Warnings, "localhost") {
+			t.Errorf("false-positive localhost warning for %q: %v", cmd, r.Warnings)
+		}
+	}
+}
+
+// `parsed` (as-declared) is present even for an invalid manifest, so a caller can
+// confirm the web command was understood; `effective` stays omitted when invalid.
+func TestValidateParsedAlwaysPresent(t *testing.T) {
+	r := Validate([]byte("version: 1\nweb:\n  command: \"pnpm dev --host 0.0.0.0\"\n")) // no port -> invalid
+	if r.Valid || r.Effective != nil {
+		t.Fatalf("expected invalid + no effective: %+v", r)
+	}
+	if r.Parsed == nil || r.Parsed.Web == nil || r.Parsed.Web.Command == "" {
+		t.Fatalf("parsed.web should echo the declared command: %+v", r.Parsed)
+	}
+	if r.Parsed.Web.Port != 0 {
+		t.Errorf("parsed.web.port should be the as-declared 0 (no default): %+v", r.Parsed.Web)
 	}
 }
 
