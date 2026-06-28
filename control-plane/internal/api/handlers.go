@@ -88,6 +88,10 @@ type createReq struct {
 	// referenced by credential_id and decrypted control-plane-side, never sent
 	// inline). Set by v1CreateAppSandbox; nil for blank/preset apps.
 	Git *createGitReq `json:"git,omitempty"`
+
+	// Image is rejected — per-app image selection is not supported (instance-wide
+	// via SANDBOXD_IMAGE). Declared so we 400 it instead of silently dropping it.
+	Image *string `json:"image,omitempty"`
 }
 
 type createGitReq struct {
@@ -373,6 +377,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req createReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if req.Image != nil {
+		writeErr(w, http.StatusBadRequest, errPerAppImage)
 		return
 	}
 	if req.MemoryHigh == "" {
