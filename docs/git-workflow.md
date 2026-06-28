@@ -64,15 +64,23 @@ The split is deliberate and is the heart of the security model:
 ## Runtime detection (advisory)
 
 `GET /v1/apps/{id}/runtime-inspect` summarizes any existing `sandbox.yaml`
-(authoritative, never overwritten) and suggests a preset (`nextjs`, `react-vite`,
-`node-express`, `fastapi`, `worker` are runnable; `astro`, `docusaurus` are
-**detect-only** — suggested with a warning, no built-in preset). It is purely
-advisory: nothing is applied, and the user always picks a preset manually.
+(authoritative, never overwritten), suggests a stack from the advisory recipe
+registry (runnable presets `nextjs`/`react-vite`/`node-express`/`fastapi`/`worker`,
+or detect-only recipes like `astro`/`docusaurus`/`gatsby`/`nuxt`/`sveltekit`/
+`vite-vue`/`remix-vite`/`eleventy`), and for detect-only stacks returns a
+`suggested_manifest` + `config_snippets`. It is purely advisory: **for an imported
+repo sandboxd does not write `sandbox.yaml` or rewrite framework config** — you
+adopt the suggestion explicitly (Copy YAML / Ask agent / manual edit). See
+[`web-framework-recipes.md`](./web-framework-recipes.md).
 
-Preview-port note: the resolved web port comes from the imported `sandbox.yaml`
-`web.port`, else the selected preset, else `3000`. This drives both the Traefik
-preview router and the preview URL, so an imported app that serves on a non-3000
-port (e.g. Astro on 4321) previews correctly.
+Preview-port note: **runtime recipes standardize on `3000`, but a manifest can
+declare any `web.port` and sandboxd routes the declared preview port.** The
+resolved port is the imported `sandbox.yaml` `web.port`, else the selected preset,
+else `3000`, and it drives both the Traefik router and the preview URL (so an
+imported app on, say, 4321 previews correctly once its manifest declares it).
+
+**Restart on change:** the manifest is read at boot, so **after you change
+`sandbox.yaml`, restart the sandbox for runtimed to re-read it.**
 
 ## Status classification
 
