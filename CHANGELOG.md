@@ -9,6 +9,17 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
+### Fixed
+- **Imported repos no longer get a preset `sandbox.yaml` written into them.** When a
+  Git import selected a `runtime_preset`, runtimed wrote the preset's `sandbox.yaml`
+  into the cloned repo on first boot — a silent mutation that broke the advisory
+  model. `applyPreset` now decides scaffold-vs-import by workspace emptiness **before**
+  seeding, and writes the preset manifest **only for an empty/scaffold workspace**
+  (the "blank from preset" path). A populated workspace (a Git import or a
+  snapshot/fork clone) is left untouched; an existing `sandbox.yaml` is always
+  preserved. Imported repos that need a manifest get one via the advisory flow
+  (`runtime-inspect` suggestion → Copy YAML / Ask agent), not a silent write.
+
 ### Added
 - **Web framework recipe registry (advisory).** An embedded, in-repo registry
   (`internal/recipes/data/*.yaml`) of per-framework `sandbox.yaml` guidance for
