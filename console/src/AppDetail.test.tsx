@@ -48,6 +48,9 @@ describe('app detail — web app', () => {
     // current sandbox.yaml status + effective view
     expect(screen.getByTestId('ri-manifest-status').textContent).toMatch(/valid/)
     expect(screen.getByTestId('ri-effective').textContent).toMatch(/port: 3000/)
+    // restart notice is always present; no recovery hint when the manifest is valid
+    expect(screen.getByTestId('ri-restart-note').textContent).toMatch(/restart the sandbox/i)
+    expect(screen.queryByTestId('ri-hint')).toBeNull()
   })
 
   it('shows invalid manifest errors/warnings', async () => {
@@ -71,6 +74,8 @@ describe('app detail — web app', () => {
     expect((await screen.findByTestId('ri-manifest-status')).textContent).toMatch(/invalid/)
     expect(screen.getByTestId('ri-errors').textContent).toMatch(/web\.command/)
     expect(screen.getByTestId('ri-warnings').textContent).toMatch(/unknown top-level/)
+    // invalid manifest + a detected stack => recovery hint (adopt + restart)
+    expect(screen.getByTestId('ri-hint').textContent).toMatch(/restart the sandbox/i)
   })
 
   it('shows missing manifest state', async () => {

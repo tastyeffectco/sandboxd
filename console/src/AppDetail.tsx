@@ -311,6 +311,14 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
         </ul>
       )}
 
+      {/* recovery hint: preview likely won't come up until a working manifest is adopted */}
+      {man && !(man.present && v?.valid) && suggestions.length > 0 && (
+        <div data-testid="ri-hint" className="warn" style={{ fontSize: 12, marginTop: 8 }}>
+          Preview not coming up? Adopt a suggested <span className="mono">sandbox.yaml</span> below (Copy YAML or Ask
+          agent), then restart the sandbox.
+        </div>
+      )}
+
       {/* detected stacks */}
       {suggestions.length > 0 && (
         <ul data-testid="ri-suggestions" style={{ marginTop: 8 }}>
@@ -368,6 +376,10 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
       {ins?.warnings?.map((w, i) => (
         <div key={i} className="warn" data-testid="ri-warning" style={{ fontSize: 12 }}>⚠ {w}</div>
       ))}
+
+      <div data-testid="ri-restart-note" className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+        When <span className="mono">sandbox.yaml</span> changes, restart the sandbox so runtimed re-reads it.
+      </div>
     </div>
   )
 }

@@ -259,11 +259,15 @@ console has a New-App picker):
 
 A preset seeds starter files and writes a **`sandbox.yaml`** describing how the
 app runs — its `web` process (command/port/health_path), background `workers`, a
-post-task `build` check, and `restart_after_task`. Advanced users edit
-`sandbox.yaml` directly; it lives in the workspace so snapshots preserve it.
-Process status is on `GET /v1/sandboxes/{id}` (`processes[]`) and per-process
-logs at `GET /v1/sandboxes/{id}/processes/{name}/logs`. Full schema:
-[`docs/sandbox-manifest.md`](docs/sandbox-manifest.md).
+post-task `build` check, and `restart_after_task`. Presets standardize on port
+`3000`, but a manifest can declare any `web.port` and **sandboxd routes the
+declared preview port**. Advanced users edit `sandbox.yaml` directly; it lives in
+the workspace so snapshots preserve it. **When you change `sandbox.yaml`, restart
+the sandbox so runtimed re-reads it.** Process status is on
+`GET /v1/sandboxes/{id}` (`processes[]`) and per-process logs at
+`GET /v1/sandboxes/{id}/processes/{name}/logs`. Full schema:
+[`docs/sandbox-manifest.md`](docs/sandbox-manifest.md). For importing existing
+repos of any stack, see [`docs/web-framework-recipes.md`](docs/web-framework-recipes.md).
 
 ## Git import & push (optional)
 

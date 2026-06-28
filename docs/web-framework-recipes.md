@@ -4,12 +4,20 @@ Tested, copy-paste `sandbox.yaml` manifests for common JavaScript web frameworks
 maintained as a small **embedded recipe registry** in
 [`control-plane/internal/recipes/data/`](../control-plane/internal/recipes/data).
 
-sandboxd previews any web process that **binds `0.0.0.0` and listens on port
-`3000`** (the port the preview routes to). Most framework dev servers default to
-`localhost` and/or a non-3000 port, so a Git-imported app with no matching preset
-needs a small `sandbox.yaml`. The registry is **advisory data** — `runtime-inspect`
-detects the framework and *suggests* the recipe; nothing is auto-applied or
-written. You Copy YAML / Ask agent and adopt it yourself.
+**Runtime recipes standardize on port `3000`.** A custom manifest can declare
+another `web.port`, and sandboxd routes the **declared** preview port — the recipes
+here use `3000` so they're uniform and copy-paste-ready. The web process must bind
+`0.0.0.0` (not `localhost`) so the preview can reach it.
+
+The registry is **advisory data**: `runtime-inspect` detects the framework and
+*suggests* the recipe — sandboxd **does not** write it into an imported repo or
+rewrite framework config. You adopt it explicitly (Copy YAML / Ask agent / manual
+edit), then **restart the sandbox** so runtimed re-reads the new `sandbox.yaml`.
+
+> **Presets vs imports.** When you create an app from a **sandboxd preset**,
+> sandboxd may write the runtime files needed to run it immediately (that's the
+> point of a preset). For a **Git-imported repo**, recipes are advisory only —
+> sandboxd never silently mutates the repo's files.
 
 See [`sandbox-manifest.md`](./sandbox-manifest.md) for the full schema and
 [`git-workflow.md`](./git-workflow.md) for the import flow.
@@ -40,6 +48,29 @@ Adding a framework is therefore a data-only change — one YAML file, no core co
    `[ -x node_modules/.bin/<bin> ] || pnpm install` over `[ -d node_modules ]`. If a
    first install is interrupted, `node_modules/` exists without `.bin/`, and a
    directory check then skips reinstall forever.
+
+## When the preview doesn't come up
+
+The loop is meant to feel guided and fast, while staying reviewable — sandboxd
+guides, you adopt:
+
+1. **Detected stack** — `GET /v1/apps/{id}/runtime-inspect` (console: Runtime panel)
+   names the framework.
+2. **Current manifest status** — `GET /v1/apps/{id}/runtime/manifest` reports
+   `sandbox.yaml` as missing / valid / invalid, plus the effective command/port/health.
+3. **Likely issue** — a non-3000 default port, a `localhost`-only bind, or a Vite
+   `allowedHosts` 403 (see the three rules above).
+4. **Suggested `sandbox.yaml`** — `runtime-inspect` returns `suggested_manifest`.
+5. **Config snippet notes** — e.g. Vite/Astro `allowedHosts` belongs in the
+   framework config file, not the CLI.
+6. **Adopt it explicitly** — Copy YAML, use the **Ask agent** prompt (paste into
+   the task box; the agent writes the file), or edit `sandbox.yaml` by hand. There
+   is no auto-apply and no hidden source edit.
+7. **Restart the sandbox.** **When `sandbox.yaml` changes, restart the sandbox so
+   runtimed re-reads it** — the manifest is read at boot, not live. Then the
+   preview should come up green.
+
+After that: `git diff` → `git commit` → `git push` (new branch) → open a PR.
 
 ## Compatibility matrix
 
