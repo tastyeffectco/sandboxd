@@ -1,0 +1,20 @@
+id: react-vite
+display_name: Vite + React
+preset: react-vite
+detect:
+  deps: [vite, react]
+  exclude_deps: [next, astro, "@remix-run/dev", "@sveltejs/kit", nuxt, gatsby]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/vite ] || pnpm install; pnpm exec vite --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: "vite.config.*"
+    note: "Add server.allowedHosts: true — Vite blocks unknown Host headers (HTTP 403)."
+notes:
+  - "Vite defaults to port 5173; this manifest pins 3000."
+verified:
+  starter: SafdarJamal/vite-template-react
+  version: v0.4.9

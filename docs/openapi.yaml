@@ -423,6 +423,47 @@ paths:
               schema: { $ref: "#/components/schemas/ManifestValidation" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /v1/runtime/recipes:
+    get:
+      tags: [apps]
+      summary: List the embedded advisory runtime recipes (per-framework sandbox.yaml guidance). Read-only data; nothing is applied.
+      responses:
+        "200":
+          description: The recipe registry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recipes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        display_name: { type: string }
+                        preset: { type: string, description: "Runnable built-in preset id, if any." }
+                        detect:
+                          type: object
+                          properties:
+                            deps: { type: array, items: { type: string } }
+                            config_files: { type: array, items: { type: string } }
+                            exclude_deps: { type: array, items: { type: string } }
+                        suggested_manifest: { type: string }
+                        config_snippets:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              file: { type: string }
+                              note: { type: string }
+                        notes: { type: array, items: { type: string } }
+                        verified:
+                          type: object
+                          properties:
+                            starter: { type: string }
+                            version: { type: string }
+
   /v1/apps/{id}/runtime/manifest:
     parameters:
       - $ref: "#/components/parameters/Id"

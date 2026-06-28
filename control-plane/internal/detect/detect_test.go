@@ -79,28 +79,23 @@ func TestAstroSuggestedManifest(t *testing.T) {
 			t.Errorf("astro suggested_manifest missing %q: %q", want, astro.SuggestedManifest)
 		}
 	}
-	if len(astro.Notes) == 0 || !strings.Contains(strings.Join(astro.Notes, " "), "allowedHosts") {
-		t.Errorf("astro should note allowedHosts: %v", astro.Notes)
+	// allowedHosts guidance is a config-file snippet (not a CLI flag)
+	var snip string
+	for _, c := range astro.ConfigSnippets {
+		snip += c.File + " " + c.Note + " "
+	}
+	if !strings.Contains(snip, "allowedHosts") || !strings.Contains(snip, "astro.config") {
+		t.Errorf("astro should carry an allowedHosts config snippet: %v", astro.ConfigSnippets)
+	}
+	if !strings.Contains(strings.Join(astro.Notes, " "), "4321") {
+		t.Errorf("astro should note the 4321 default: %v", astro.Notes)
 	}
 }
 
-func TestAstroWarns(t *testing.T) {
+func TestAstroDetectOnlyNoDefault(t *testing.T) {
 	r := Inspect(mapFiles{"package.json": pkg(`"astro":"4"`)})
 	if r.DefaultSuggestion != "" {
 		t.Error("astro must not be a default (detect-only)")
-	}
-	var warned bool
-	for _, s := range r.Suggestions {
-		if s.Preset == "astro" {
-			for _, w := range s.Warnings {
-				if strings.Contains(w, "4321") {
-					warned = true
-				}
-			}
-		}
-	}
-	if !warned {
-		t.Error("astro suggestion should warn about 4321/host allowlist")
 	}
 }
 
@@ -163,5 +158,39 @@ func TestSafeJoinRejectsTraversal(t *testing.T) {
 	}
 	if _, ok := safeJoin("/data/ws", "package.json"); !ok {
 		t.Error("safeJoin should allow a normal relative file")
+	}
+}
+
+// runtime-inspect surfaces recipe suggestions for frameworks with no built-in
+// preset (Gatsby/Vue/Nuxt/SvelteKit/Eleventy), each advisory with a manifest.
+func TestInspectRecipeFrameworks(t *testing.T) {
+	cases := []struct {
+		id    string
+		files mapFiles
+	}{
+		{"gatsby", mapFiles{"package.json": pkg(`"gatsby":"5"`)}},
+		{"vite-vue", mapFiles{"package.json": pkg(`"vite":"5","vue":"3"`)}},
+		{"nuxt", mapFiles{"package.json": pkg(`"nuxt":"3"`)}},
+		{"sveltekit", mapFiles{"package.json": pkg(`"@sveltejs/kit":"2"`)}},
+		{"eleventy", mapFiles{".eleventy.js": "x"}},
+	}
+	for _, c := range cases {
+		r := Inspect(c.files)
+		var found *Suggestion
+		for i := range r.Suggestions {
+			if r.Suggestions[i].Preset == c.id {
+				found = &r.Suggestions[i]
+			}
+		}
+		if found == nil {
+			t.Errorf("%s: no suggestion; got %+v", c.id, r.Suggestions)
+			continue
+		}
+		if found.Runnable {
+			t.Errorf("%s: should be advisory (not runnable)", c.id)
+		}
+		if !strings.Contains(found.SuggestedManifest, "port: 3000") {
+			t.Errorf("%s: suggested_manifest should pin 3000: %q", c.id, found.SuggestedManifest)
+		}
 	}
 }

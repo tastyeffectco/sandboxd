@@ -33,9 +33,13 @@ var registry = map[string]Preset{
 		ID: "react-vite", Label: "React / Vite",
 		Description: "React + Vite single-page app with hot reload.",
 		Template:    "react-standard",
+		// QA: pin --port 3000 (Vite defaults to 5173) and guard the install on the
+		// vite binary, not the dir (an interrupted install leaves node_modules/
+		// without .bin/ and a -d check would then skip reinstall forever). The
+		// react-standard template sets server.allowedHosts for the preview host.
 		Manifest: `version: 1
 web:
-  command: "[ -d node_modules ] || pnpm install; pnpm dev --host 0.0.0.0"
+  command: "[ -x node_modules/.bin/vite ] || pnpm install; pnpm exec vite --host 0.0.0.0 --port 3000"
   port: 3000
   health_path: "/"
 build:
@@ -55,7 +59,7 @@ build:
 		// isolated build check exists (see docs/sandbox-manifest.md follow-ups).
 		Manifest: `version: 1
 web:
-  command: "[ -d node_modules ] || pnpm install; rm -rf .next; pnpm dev --hostname 0.0.0.0"
+  command: "[ -x node_modules/.bin/next ] || pnpm install; rm -rf .next; pnpm dev --hostname 0.0.0.0"
   port: 3000
   health_path: "/"
   restart_after_task: true

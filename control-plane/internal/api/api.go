@@ -195,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
 	mux.HandleFunc("GET /v1/apps/{id}/runtime-inspect", s.observe("GET /v1/apps/{id}/runtime-inspect", s.v1RuntimeInspect))
 	mux.HandleFunc("POST /v1/runtime/manifest/validate", s.observe("POST /v1/runtime/manifest/validate", s.v1ValidateManifest))
+	mux.HandleFunc("GET /v1/runtime/recipes", s.observe("GET /v1/runtime/recipes", s.v1RuntimeRecipes))
 	mux.HandleFunc("GET /v1/apps/{id}/runtime/manifest", s.observe("GET /v1/apps/{id}/runtime/manifest", s.v1AppManifest))
 	mux.HandleFunc("GET /v1/apps/{id}/git/status", s.observe("GET /v1/apps/{id}/git/status", s.v1GitStatus))
 	mux.HandleFunc("GET /v1/apps/{id}/git/diff", s.observe("GET /v1/apps/{id}/git/diff", s.v1GitDiff))
