@@ -172,16 +172,8 @@ func seedTemplateApp(appDir, template string, log *slog.Logger) {
 	if template == "" || template == "blank" || template == "none" {
 		return
 	}
-	entries, err := os.ReadDir(appDir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		// A lone .gitkeep (the empty-dir placeholder) still counts as
-		// empty; anything else is a snapshot clone or a real workspace.
-		if e.Name() != ".gitkeep" {
-			return
-		}
+	if !isEmptyWorkspace(appDir) {
+		return // a snapshot clone or a real workspace — never overwrite
 	}
 	src := filepath.Join("/opt/templates", template)
 	if fi, err := os.Stat(src); err != nil || !fi.IsDir() {

@@ -10,13 +10,38 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// applyPreset prepares an app from a runtime preset on first boot: seed the
-// preset's starter template into an EMPTY workspace, then write the preset's
-// sandbox.yaml only when none exists. It never overwrites existing app files
-// (seedTemplateApp only seeds an empty dir) or an existing sandbox.yaml.
+// applyPreset prepares an app from a runtime preset on first boot. The preset
+// manifest is written ONLY for a scaffold (empty workspace) — i.e. a "blank from
+// preset" app. For a populated workspace (a Git import or a snapshot/fork clone)
+// the preset's sandbox.yaml is NOT written: recipes are advisory for imported
+// repos, so sandboxd must not silently mutate the imported files. The emptiness
+// check is taken BEFORE seeding (which would populate a scaffold), so a blank
+// preset app still gets its sandbox.yaml. An existing sandbox.yaml is always
+// preserved either way.
 func applyPreset(appDir string, p preset.Preset, log *slog.Logger) {
+	scaffold := isEmptyWorkspace(appDir)
 	seedTemplateApp(appDir, p.Template, log) // no-op if Template=="" or dir non-empty
+	if !scaffold {
+		log.Info("populated workspace (import/clone): not writing preset sandbox.yaml (advisory)")
+		return
+	}
 	writeManifestIfMissing(appDir, p.Manifest, log)
+}
+
+// isEmptyWorkspace reports whether appDir is an empty scaffold. A lone .gitkeep
+// (the empty-dir placeholder) still counts as empty; anything else is a clone or
+// a real workspace.
+func isEmptyWorkspace(appDir string) bool {
+	entries, err := os.ReadDir(appDir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() != ".gitkeep" {
+			return false
+		}
+	}
+	return true
 }
 
 // writeManifestIfMissing writes sandbox.yaml only when it doesn't already
