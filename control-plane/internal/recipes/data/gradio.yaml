@@ -1,0 +1,16 @@
+id: gradio
+display_name: Gradio (Python ML/data app)
+detect:
+  requirements_contains: [gradio]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install gradio)); exec .venv/bin/python app.py"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Call launch(server_name='0.0.0.0', server_port=3000) in app.py. Gradio auto-detects the preview host; the SSE queue works through the proxy."
+tags: [sse, heavy_install]
+verified:
+  starter: authored-in-sandbox
+  version: v0.4.9

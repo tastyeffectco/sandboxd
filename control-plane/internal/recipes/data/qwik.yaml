@@ -1,0 +1,17 @@
+id: qwik
+display_name: QwikCity (resumable SSR)
+detect:
+  deps: ["@builder.io/qwik-city"]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/vite ] || pnpm install; exec pnpm exec vite --mode ssr --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: "vite.config.ts"
+    note: "Qwik dev is Vite — set server.allowedHosts: true in vite.config.ts."
+tags: [needs_config_snippet]
+verified:
+  starter: gilf/my-qwik-basic-starter
+  version: v0.4.9

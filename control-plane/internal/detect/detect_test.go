@@ -194,3 +194,31 @@ func TestInspectRecipeFrameworks(t *testing.T) {
 		}
 	}
 }
+
+// Config-snippet recipe (Django) surfaces via runtime-inspect: detected by
+// manage.py, advisory, with an ALLOWED_HOSTS config snippet (not a manifest field).
+func TestInspectDjangoConfigSnippet(t *testing.T) {
+	r := Inspect(mapFiles{"manage.py": "x", "requirements.txt": "Django==5.1\n"})
+	var dj *Suggestion
+	for i := range r.Suggestions {
+		if r.Suggestions[i].Preset == "django" {
+			dj = &r.Suggestions[i]
+		}
+	}
+	if dj == nil {
+		t.Fatalf("no django suggestion; got %+v", r.Suggestions)
+	}
+	if dj.Runnable {
+		t.Error("django is advisory (not a runnable preset)")
+	}
+	if !strings.Contains(dj.SuggestedManifest, "runserver 0.0.0.0:3000") {
+		t.Errorf("django manifest wrong: %q", dj.SuggestedManifest)
+	}
+	var snip string
+	for _, c := range dj.ConfigSnippets {
+		snip += c.File + " " + c.Note + " "
+	}
+	if !strings.Contains(snip, "ALLOWED_HOSTS") || !strings.Contains(snip, "settings.py") {
+		t.Errorf("django should carry an ALLOWED_HOSTS settings.py snippet: %v", dj.ConfigSnippets)
+	}
+}

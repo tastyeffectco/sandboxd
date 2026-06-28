@@ -1,0 +1,15 @@
+id: static
+display_name: Static site (no build)
+detect:
+  config_files: [index.html, public/index.html]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "exec python3 -m http.server 3000 --bind 0.0.0.0 --directory public"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Zero install. Point --directory at your output dir (public/, dist/, site/, or .)."
+verified:
+  starter: any-static-site
+  version: v0.4.9

@@ -1196,6 +1196,9 @@ components:
         valid: { type: boolean }
         errors: { type: array, items: { type: string } }
         warnings: { type: array, items: { type: string } }
+        parsed:
+          allOf: [{ $ref: "#/components/schemas/ManifestEffective" }]
+          description: The manifest as-declared (no defaults) — present whenever the YAML parsed, even if invalid, so callers can confirm the web block was understood.
         effective:
           allOf: [{ $ref: "#/components/schemas/ManifestEffective" }]
           description: Present ONLY when valid is true; omitted for an invalid manifest.

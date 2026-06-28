@@ -72,6 +72,7 @@ type Suggestion struct {
 	SuggestedManifest string                  `json:"suggested_manifest,omitempty"`
 	Notes             []string                `json:"notes,omitempty"`
 	ConfigSnippets    []recipes.ConfigSnippet `json:"config_snippets,omitempty"`
+	Tags              []string                `json:"tags,omitempty"`
 }
 
 // ManifestSummary describes an existing sandbox.yaml (authoritative when present).
@@ -152,7 +153,16 @@ func Inspect(f Files) Result {
 			deps[d] = true
 		}
 	}
-	if matched, err := recipes.Match(deps, f.Exists); err == nil {
+	// Python deps live in requirements.txt / pyproject.toml, not package.json — pass
+	// their text so recipes can match via requirements_contains (generic, data).
+	var reqText string
+	if raw, ok := f.Read("requirements.txt"); ok {
+		reqText += string(raw) + "\n"
+	}
+	if raw, ok := f.Read("pyproject.toml"); ok {
+		reqText += string(raw)
+	}
+	if matched, err := recipes.Match(deps, f.Exists, reqText); err == nil {
 		for _, mm := range matched {
 			conf := "medium"
 			if mm.StrongDep {
@@ -166,6 +176,7 @@ func Inspect(f Files) Result {
 				SuggestedManifest: mm.Recipe.SuggestedManifest,
 				Notes:             mm.Recipe.Notes,
 				ConfigSnippets:    mm.Recipe.ConfigSnippets,
+				Tags:              mm.Recipe.Tags,
 			})
 		}
 	}
@@ -250,9 +261,9 @@ func manifestWarnings(f Files, sum *ManifestSummary) []string {
 		out = append(out, "sandbox.yaml web.port is not set")
 	}
 	cmd := sum.WebCommand
-	bindsLocalhost := localhostHints.MatchString(cmd) // explicit localhost / 127.0.0.1
-	missingHostFlag := mentionsDevServer(cmd) && !strings.Contains(cmd, "0.0.0.0") && !strings.Contains(cmd, "--host")
-	if cmd != "" && (bindsLocalhost || missingHostFlag) {
+	// Only flag an EXPLICIT localhost/127.0.0.1 — don't guess "dev server without
+	// --host" (false-positives on all-interface binders like node/Nest/Bun).
+	if cmd != "" && localhostHints.MatchString(cmd) {
 		out = append(out, "web.command may bind localhost only; the preview needs 0.0.0.0 (e.g. --host 0.0.0.0)")
 	}
 	if m := nodeEntryRe.FindStringSubmatch(cmd); m != nil && !f.Exists(m[1]) {
@@ -262,15 +273,6 @@ func manifestWarnings(f Files, sum *ManifestSummary) []string {
 		out = append(out, "web.command references "+m[1]+" which is not in the workspace")
 	}
 	return out
-}
-
-func mentionsDevServer(cmd string) bool {
-	for _, k := range []string{"dev", "vite", "next", "astro", "uvicorn", "serve", "start"} {
-		if strings.Contains(cmd, k) {
-			return true
-		}
-	}
-	return false
 }
 
 // rank orders suggestions (high>medium>low) and sets a default only when there
