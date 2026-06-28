@@ -9,6 +9,18 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
+### Changed
+- **Console "Apply sandbox.yaml" CTA (console-only; no core change).** The Runtime
+  panel now offers an explicit **Apply sandbox.yaml** button per suggestion,
+  alongside Copy YAML / Ask agent. It is **explicit adoption** (button → inline
+  confirm), not auto-apply: it **validates** the manifest (`/runtime/manifest/
+  validate`) and only then writes `sandbox.yaml` to the workspace via the existing
+  generic `PUT /v1/sandboxes/{id}/files` endpoint — **no new endpoint, no core
+  change, no framework-config rewrite** (Apply writes only `sandbox.yaml`; config
+  edits like Vite `allowedHosts` still go via Ask agent). After writing it shows a
+  **restart-the-sandbox** notice (manifest is read at boot). Disabled until a
+  sandbox exists.
+
 ### Fixed
 - **Imported repos no longer get a preset `sandbox.yaml` written into them.** When a
   Git import selected a `runtime_preset`, runtimed wrote the preset's `sandbox.yaml`

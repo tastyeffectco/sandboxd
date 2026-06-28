@@ -53,6 +53,43 @@ describe('app detail — web app', () => {
     expect(screen.queryByTestId('ri-hint')).toBeNull()
   })
 
+  it('Apply sandbox.yaml: confirm → validate → PUT /files → restart notice', async () => {
+    let putPath = ''
+    let putBody = ''
+    let validated = false
+    installFetch((m, p) => {
+      if (m === 'POST' && /\/runtime\/manifest\/validate/.test(p)) {
+        validated = true
+        return { valid: true, errors: [], warnings: [], effective: { workers: [] } }
+      }
+      if (m === 'PUT' && /\/v1\/sandboxes\/[^/]+\/files/.test(p)) return {}
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'PUT' && String(input).includes('/files')) {
+        putPath = String(input)
+        putBody = init?.body || ''
+      }
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('ri-suggested-yaml-astro')
+    // explicit: first click asks to confirm; nothing written yet
+    fireEvent.click(screen.getByTestId('ri-apply-astro'))
+    expect(putPath).toBe('')
+    fireEvent.click(screen.getByTestId('ri-apply-yes-astro'))
+    const applied = await screen.findByTestId('ri-applied-astro')
+    // validated before writing; wrote sandbox.yaml via the generic files endpoint
+    expect(validated).toBe(true)
+    expect(putPath).toMatch(/\/v1\/sandboxes\/[^/]+\/files\?path=sandbox\.yaml/)
+    expect(putBody).toMatch(/astro dev/)
+    // restart notice + (astro has a config snippet) reminder to apply the config edit
+    expect(applied.textContent).toMatch(/restart the sandbox/i)
+    expect(applied.textContent).toMatch(/config edit/i)
+  })
+
   it('shows invalid manifest errors/warnings', async () => {
     installFetch((m, p) => {
       if (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p)) {

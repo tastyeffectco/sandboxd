@@ -260,6 +260,25 @@ export const api = {
   appManifest: (appId: string) => req<AppManifest>('GET', `/v1/apps/${appId}/runtime/manifest`),
   validateManifest: (mfst: string) =>
     req<ManifestValidation>('POST', '/v1/runtime/manifest/validate', { manifest: mfst }),
+  // Write one workspace file via the existing generic PUT endpoint (raw body).
+  // Used by the explicit "Apply sandbox.yaml" CTA — console-only, no new endpoint.
+  putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
+    const res = await fetch(`/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'text/plain' },
+      body: content,
+    })
+    if (!res.ok) {
+      let message = `${res.status} ${res.statusText}`
+      try {
+        const e = await res.json()
+        if (e?.error?.message) message = e.error.message
+      } catch {
+        /* non-JSON */
+      }
+      throw new Error(message)
+    }
+  },
   gitStatus: (appId: string) => req<GitStatus>('GET', `/v1/apps/${appId}/git/status`),
   gitDiff: (appId: string, path?: string) =>
     req<GitDiff>('GET', `/v1/apps/${appId}/git/diff${path ? `?path=${encodeURIComponent(path)}` : ''}`),
