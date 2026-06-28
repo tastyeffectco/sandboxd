@@ -146,10 +146,10 @@ func Validate(raw []byte) Result {
 		if m.Web.Port != 0 && (m.Web.Port < 1 || m.Web.Port > 65535) {
 			res.Errors = append(res.Errors, fmt.Sprintf("web.port %d out of range (1-65535)", m.Web.Port))
 		}
-		// Missing port is a WARNING, not an error: runtimed/preview fall back to
-		// 3000, so the app still runs — but the assumption is worth surfacing.
+		// A custom web.command MUST declare web.port — otherwise preview routing is
+		// ambiguous (it would silently assume 3000). This is an error, not a warning.
 		if m.Web.Command != "" && m.Web.Port == 0 {
-			res.Warnings = append(res.Warnings, "web.command is set but web.port is missing — preview will assume 3000")
+			res.Errors = append(res.Errors, "web.command is set but web.port is missing — a custom web.command must declare web.port")
 		}
 		if m.Web.Command != "" && bindsLocalhost(m.Web.Command) {
 			res.Warnings = append(res.Warnings,
@@ -178,7 +178,11 @@ func Validate(raw []byte) Result {
 	}
 
 	res.Valid = len(res.Errors) == 0
-	res.Effective = effectiveOf(&m)
+	// Only expose the effective view for a VALID manifest, so callers never present
+	// invalid config as runnable.
+	if res.Valid {
+		res.Effective = effectiveOf(&m)
+	}
 	return res
 }
 

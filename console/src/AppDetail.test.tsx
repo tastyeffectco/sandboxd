@@ -61,7 +61,7 @@ describe('app detail — web app', () => {
             valid: false,
             errors: ["top-level 'command' is not valid — put it under web.command"],
             warnings: ['unknown top-level key "foo" (ignored)'],
-            effective: { workers: [] },
+            // effective omitted: invalid manifests are never presented as runnable
           },
         }
       }
