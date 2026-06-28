@@ -9,6 +9,21 @@ a patch is fixes only).
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.7); not part of the v0.4.0 launch.
 
+### Changed
+- **Console Git panel — review-workflow UX (console-only; no backend changes).** The
+  Git panel is now a single vertical "Git review" panel, file-list-first: a header
+  (branch · short SHA · changed count · **Select all/none**); user files listed and
+  checked by default; generated files collapsed and unchecked. Clicking a file
+  **lazily loads that file's diff** (`git/diff?path=`, cached, with `+`/`-` line
+  coloring and loading/error/binary/truncated states) instead of one whole-repo
+  blob. Commit shows the selected count and stays double-submit-guarded. **Push is
+  separate and only appears after a commit succeeds in this session** (with helper
+  text otherwise), keeps its two-step confirm, and states new-branch-only / no
+  force / main untouched. Plain-language states throughout (loading, not running,
+  not a Git repo, no changes, nothing to push) and friendly push-reason mapping
+  (`branch_exists`, `unsafe_repo_config`, `auth_failed`, …). No new endpoints, no
+  diff library, no new framework.
+
 ### Docs
 - **Git workflow consolidated.** The full Git workflow (credentials → import →
   runtime detect → status/diff → commit → push, spanning v0.4.2–v0.4.8) is

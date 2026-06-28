@@ -8,6 +8,7 @@ import {
   workerSandboxFixture,
   unhealthySandboxFixture,
   gitStatusPristineFixture,
+  gitDiffFixture,
   appsFixture,
 } from './test/fixtures'
 
@@ -47,26 +48,34 @@ describe('app detail — web app', () => {
     expect(panel.textContent).toMatch(/Advisory only/i)
   })
 
-  it('shows Git status, splits user vs runtime files, and loads a diff', async () => {
+  it('lists user vs generated files and lazily loads a per-file diff on click', async () => {
+    let diffPath: string | null = null
+    installFetch((m, p) => {
+      const mm = p.match(/\/v1\/apps\/[^/]+\/git\/diff\?path=(.+)$/)
+      if (mm) {
+        diffPath = decodeURIComponent(mm[1])
+        return gitDiffFixture
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
-    const panel = await screen.findByTestId('git-panel')
-    expect(panel.textContent).toMatch(/no push yet/i) // local commit only; clearly no push
-    expect(panel.textContent).toMatch(/main/)         // branch
-    // user files listed
-    expect(await screen.findByTestId('git-files')).toBeTruthy()
-    expect(screen.getByTestId('git-files').textContent).toMatch(/src\/App\.tsx/)
-    // runtime-generated files are shown SEPARATELY, labelled as not-your-edits
+    const files = await screen.findByTestId('git-files') // waits for status to load
+    const panel = screen.getByTestId('git-panel')
+    expect(panel.textContent).toMatch(/Git review/i)
+    expect(panel.textContent).toMatch(/main/) // branch
+    // user files listed; runtime files in their own group, labelled not-your-edits
+    expect(files.textContent).toMatch(/src\/App\.tsx/)
     const rt = screen.getByTestId('git-runtime-files')
     expect(rt.textContent).toMatch(/sandbox\.yaml/)
     expect(rt.textContent).toMatch(/not your edits/i)
-    // sandbox.yaml must NOT appear among user files
     expect(screen.getByTestId('git-files').textContent).not.toMatch(/sandbox\.yaml/)
-    // commit exists (B1) but NO push control yet
-    expect(screen.getByTestId('git-commit')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /push/i })).toBeNull()
-    // diff loads on demand (the fixed diff endpoint)
-    fireEvent.click(screen.getByTestId('git-view-diff'))
-    expect((await screen.findByTestId('git-diff')).textContent).toMatch(/const x = 1/)
+    // no push controls for a non-imported app
+    expect(screen.queryByTestId('git-push-box')).toBeNull()
+    // clicking a file fetches THAT file's diff and renders it
+    fireEvent.click(screen.getByTestId('git-filerow-src/App.tsx'))
+    const fd = await screen.findByTestId('git-filediff-src/App.tsx')
+    expect(fd.textContent).toMatch(/const x = 1/)
+    expect(diffPath).toBe('src/App.tsx') // path-specific diff, not the whole repo
   })
 
   it('commits selected user files (default), runtime unchecked, posts the right body, shows sha', async () => {
@@ -99,7 +108,7 @@ describe('app detail — web app', () => {
     expect(posted!.paths).toContain('src/App.tsx')
     expect(posted!.paths).toContain('notes.md')
     expect(posted!.runtime_paths).toEqual([]) // runtime excluded by default
-    expect(screen.getByTestId('git-committed-sha').textContent).toMatch(/deadbeef/)
+    expect(screen.getByTestId('git-committed-sha').textContent).toMatch(/deadbee/)
   })
 
   it('represents a pristine import honestly (clean to the user, runtime files surfaced)', async () => {
@@ -135,10 +144,56 @@ describe('app detail — web app', () => {
     expect(commitCalls).toBe(1)
   })
 
-  it('git push: shown for imported apps, requires explicit confirm, posts branch, shows result', async () => {
+  it('select all / none toggles every user file', async () => {
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-files')
+    const sel = screen.getByTestId('git-selectall')
+    expect(sel.textContent).toMatch(/select none/i) // all checked by default
+    fireEvent.click(sel) // -> none
+    expect((screen.getByTestId('git-pick-src/App.tsx') as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByTestId('git-pick-notes.md') as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByTestId('git-selectall').textContent).toMatch(/select all/i)
+    fireEvent.click(screen.getByTestId('git-selectall')) // -> all
+    expect((screen.getByTestId('git-pick-src/App.tsx') as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('renders truncated and binary diff states', async () => {
+    installFetch((m, p) => {
+      const mm = p.match(/\/git\/diff\?path=(.+)$/)
+      if (mm) {
+        const path = decodeURIComponent(mm[1])
+        if (path === 'src/App.tsx') return { available: true, diff: '@@ -1 +1 @@\n+x', truncated: true }
+        return { available: true, diff: 'Binary files a/notes.md and b/notes.md differ', truncated: false }
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-files')
+    fireEvent.click(screen.getByTestId('git-filerow-src/App.tsx'))
+    expect(await screen.findByTestId('git-filediff-trunc-src/App.tsx')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('git-filerow-notes.md'))
+    expect((await screen.findByTestId('git-filediff-notes.md')).textContent).toMatch(/binary file/i)
+  })
+
+  it('shows a friendly message when a per-file diff fails to load', async () => {
+    installFetch((m, p) => {
+      if (/\/git\/diff\?path=/.test(p)) return undefined // -> 404 -> rejected promise
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-files')
+    fireEvent.click(screen.getByTestId('git-filerow-src/App.tsx'))
+    const fd = await screen.findByTestId('git-filediff-src/App.tsx')
+    expect(fd.textContent).toMatch(/couldn’t load this diff/i)
+  })
+
+  it('git push: hidden until commit, then explicit confirm posts the branch', async () => {
     let pushed: { branch?: string } | null = null
     installFetch((m, p) => {
-      if (m === 'POST' && /\/v1\/apps\/[^/]+\/git\/push/.test(p)) {
+      if (m === 'POST' && /\/git\/commit/.test(p)) {
+        return { committed: true, sha: 'abc1234', branch: 'main', files_committed: ['src/App.tsx'] }
+      }
+      if (m === 'POST' && /\/git\/push/.test(p)) {
         return { pushed: true, branch: 'my-feature', commits: 2, remote_url: 'https://github.com/o/r' }
       }
       if (/\/v1\/apps\/[^/]+$/.test(p)) {
@@ -155,19 +210,46 @@ describe('app detail — web app', () => {
     }) as unknown as typeof fetch
 
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-commit-box')
+    // push hidden before any commit; helper text explains why
+    expect(screen.queryByTestId('git-push-box')).toBeNull()
+    expect(screen.getByTestId('git-push-help')).toBeTruthy()
+    // commit -> push appears
+    fireEvent.change(screen.getByTestId('git-commit-message'), { target: { value: 'wip' } })
+    fireEvent.click(screen.getByTestId('git-commit'))
     const box = await screen.findByTestId('git-push-box')
-    expect(box.textContent).toMatch(/new branch/i) // explicit remote-write framing
+    expect(box.textContent).toMatch(/new branch/i)
     expect(box.textContent).toMatch(/github\.com/)
-    // requires explicit confirm: no push happens on the first click
+    // explicit confirm required
     fireEvent.change(screen.getByTestId('git-push-branch'), { target: { value: 'my-feature' } })
     fireEvent.click(screen.getByTestId('git-push-start'))
     expect(pushed).toBeNull()
-    expect(screen.getByTestId('git-push-confirm')).toBeTruthy()
-    // confirm -> posts
     fireEvent.click(screen.getByTestId('git-push-confirm-yes'))
     await screen.findByTestId('git-push-result')
     expect(pushed!.branch).toBe('my-feature')
-    expect(screen.getByTestId('git-push-result').textContent).toMatch(/my-feature/)
+  })
+
+  it('maps push reasons to friendly text', async () => {
+    installFetch((m, p) => {
+      if (m === 'POST' && /\/git\/commit/.test(p)) {
+        return { committed: true, sha: 'abc1234', branch: 'main', files_committed: ['src/App.tsx'] }
+      }
+      if (m === 'POST' && /\/git\/push/.test(p)) return { pushed: false, reason: 'branch_exists' }
+      if (/\/v1\/apps\/[^/]+$/.test(p)) {
+        return { ...appsFixture[0], git: { repo_url: 'https://github.com/o/r', branch: 'main' } }
+      }
+      return appDetailRoutes(webSandboxFixture)(m, p)
+    })
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('git-commit-box')
+    fireEvent.change(screen.getByTestId('git-commit-message'), { target: { value: 'wip' } })
+    fireEvent.click(screen.getByTestId('git-commit'))
+    await screen.findByTestId('git-push-box')
+    fireEvent.click(screen.getByTestId('git-push-start'))
+    fireEvent.click(screen.getByTestId('git-push-confirm-yes'))
+    const reason = await screen.findByTestId('git-push-reason')
+    expect(reason.textContent).toMatch(/branch name already exists/i) // not the raw "branch_exists"
+    expect(reason.textContent).not.toMatch(/branch_exists/)
   })
 
   it('delete control says it removes the workspace (v1 DELETE purges)', async () => {
