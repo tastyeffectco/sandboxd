@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   api,
   App as TApp,
@@ -10,6 +10,7 @@ import {
   RuntimeInspect,
   GitStatus,
   GitDiff,
+  GitFile,
   GitPushResult,
 } from './api'
 import { StatusBadge } from './ui'
@@ -270,6 +271,111 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
 // GitPanel shows READ-ONLY Git status/diff for an imported repo (A2). No
 // commit/push — those come later. Status/diff run in-sandbox, so they need a
 // running sandbox; otherwise we show the reason.
+type DiffEntry = GitDiff | 'loading' | 'error'
+
+// status (not-available) reasons in plain language.
+const gitReasonText: Record<string, string> = {
+  no_sandbox: 'No sandbox yet — create one to review changes.',
+  sandbox_not_running: 'Start the sandbox to review changes.',
+  not_a_git_repo: 'This app is not a Git repository.',
+  git_error: 'Git could not read the workspace.',
+  exec_failed: 'Could not reach the sandbox.',
+}
+
+// push (committed:false / pushed:false) reasons in plain language.
+const pushReasonText: Record<string, string> = {
+  no_local_commits: 'Nothing new to push.',
+  branch_exists: 'That branch name already exists — pick another.',
+  non_fast_forward: 'The remote already has different changes on that branch.',
+  shallow_push_unsupported: "This repo's history is too shallow to push (not supported yet).",
+  unsafe_repo_config: 'Unsafe Git config blocked push.',
+  auth_failed: 'Authentication failed; check the credential.',
+  empty_repo_unsupported: 'Make a first commit in this repo before pushing.',
+  no_repo_url: 'This app has no linked repository.',
+  no_credential: 'No Git credential is linked to this app.',
+  credential_not_found: 'The Git credential was not found — re-add it in Settings.',
+  no_workspace: 'No workspace yet.',
+  not_a_git_repo: 'This app is not a Git repository.',
+  push_failed: 'Push failed. Please try again.',
+}
+
+function diffLineStyle(line: string): CSSProperties {
+  if (line.startsWith('+') && !line.startsWith('+++')) return { color: '#1a7f37' } // green
+  if (line.startsWith('-') && !line.startsWith('---')) return { color: '#cf222e' } // red
+  if (line.startsWith('@@')) return { color: '#6639ba' } // hunk header
+  return {}
+}
+
+function isBinaryDiff(d: GitDiff): boolean {
+  return !!d.diff && d.diff.includes('Binary files') && !d.diff.includes('@@')
+}
+
+// DiffBlock renders one file's lazily-fetched diff with basic +/- line coloring.
+function DiffBlock({ entry, path }: { entry: DiffEntry; path: string }) {
+  const tid = `git-filediff-${path}`
+  if (entry === 'loading')
+    return <div className="muted" data-testid={tid} style={{ fontSize: 12, marginTop: 4 }}>Loading diff…</div>
+  if (entry === 'error')
+    return <div className="warn" data-testid={tid} style={{ fontSize: 12, marginTop: 4 }}>Couldn’t load this diff — click the file again to retry.</div>
+  if (!entry.available)
+    return <div className="muted" data-testid={tid} style={{ fontSize: 12, marginTop: 4 }}>Diff unavailable.</div>
+  if (isBinaryDiff(entry))
+    return <div className="muted" data-testid={tid} style={{ fontSize: 12, marginTop: 4 }}>Binary file — no preview.</div>
+  const lines = (entry.diff || '').split('\n')
+  return (
+    <div data-testid={tid} style={{ marginTop: 4 }}>
+      {entry.truncated && (
+        <div className="warn" data-testid={`git-filediff-trunc-${path}`} style={{ fontSize: 12 }}>
+          Diff truncated — large file.
+        </div>
+      )}
+      <pre className="mono" style={{ fontSize: 12, maxHeight: 280, overflow: 'auto', margin: 0 }}>
+        {lines.map((l, i) => (
+          <div key={i} style={diffLineStyle(l)}>
+            {l || ' '}
+          </div>
+        ))}
+      </pre>
+    </div>
+  )
+}
+
+// FileRow: checkbox to include + a clickable label to expand the per-file diff.
+function FileRow({
+  file,
+  checked,
+  onToggleCheck,
+  open,
+  onToggleDiff,
+  diff,
+  testidPrefix,
+}: {
+  file: GitFile
+  checked: boolean
+  onToggleCheck: () => void
+  open: boolean
+  onToggleDiff: () => void
+  diff: DiffEntry | undefined
+  testidPrefix: string
+}) {
+  return (
+    <li className="mono" style={{ marginBottom: 2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input type="checkbox" data-testid={`${testidPrefix}-${file.path}`} checked={checked} onChange={onToggleCheck} />
+        <button
+          className="linklike"
+          data-testid={`git-filerow-${file.path}`}
+          onClick={onToggleDiff}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', font: 'inherit' }}
+        >
+          <span className="muted">{file.status}</span> {file.path} <span aria-hidden>{open ? '▾' : '▸'}</span>
+        </button>
+      </div>
+      {open && <DiffBlock entry={diff ?? 'loading'} path={file.path} />}
+    </li>
+  )
+}
+
 function GitPanel({
   appId,
   repoURL,
@@ -281,19 +387,21 @@ function GitPanel({
 }) {
   const [st, setSt] = useState<GitStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [diff, setDiff] = useState<GitDiff | null>(null)
-  const [diffOpen, setDiffOpen] = useState(false)
-  // push (B2): remote write — explicit confirm.
-  const [pushBranch, setPushBranch] = useState('')
-  const [pushConfirm, setPushConfirm] = useState(false)
-  const [pushing, setPushing] = useState(false)
-  const [pushResult, setPushResult] = useState<GitPushResult | null>(null)
-  // commit (B1): user files default-selected, runtime files default-unselected.
+  // per-file diffs: which rows are expanded + a persistent cache.
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const [diffs, setDiffs] = useState<Record<string, DiffEntry>>({})
+  // selection: user files checked by default, runtime files unchecked.
   const [userSel, setUserSel] = useState<Set<string>>(new Set())
   const [rtSel, setRtSel] = useState<Set<string>>(new Set())
   const [message, setMessage] = useState('')
   const [committing, setCommitting] = useState(false)
   const [committedSha, setCommittedSha] = useState('')
+  const [committedThisSession, setCommittedThisSession] = useState(false)
+  // push (separate, remote write).
+  const [pushBranch, setPushBranch] = useState('')
+  const [pushConfirm, setPushConfirm] = useState(false)
+  const [pushing, setPushing] = useState(false)
+  const [pushResult, setPushResult] = useState<GitPushResult | null>(null)
 
   const load = useCallback(() => {
     api
@@ -303,15 +411,12 @@ function GitPanel({
         setLoaded(true)
         setUserSel(new Set((s.files || []).map((f) => f.path))) // user files checked
         setRtSel(new Set()) // runtime files unchecked
+        setOpen(new Set()) // collapse + drop stale diffs after a refresh
+        setDiffs({})
       })
       .catch((e) => onError((e as Error).message))
   }, [appId, onError])
   useEffect(load, [load])
-
-  const viewDiff = () => {
-    setDiffOpen(true)
-    api.gitDiff(appId).then(setDiff).catch((e) => onError((e as Error).message))
-  }
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, p: string) => {
     const next = new Set(set)
@@ -319,8 +424,31 @@ function GitPanel({
     setter(next)
   }
 
+  const toggleDiff = (path: string) => {
+    const isOpen = open.has(path)
+    setOpen((prev) => {
+      const n = new Set(prev)
+      isOpen ? n.delete(path) : n.add(path)
+      return n
+    })
+    // fetch on first open only; cached diffs (incl. error) are reused.
+    if (!isOpen && !(path in diffs)) {
+      setDiffs((prev) => ({ ...prev, [path]: 'loading' }))
+      api
+        .gitDiff(appId, path)
+        .then((d) => setDiffs((prev) => ({ ...prev, [path]: d })))
+        .catch(() => setDiffs((prev) => ({ ...prev, [path]: 'error' })))
+    } else if (!isOpen && diffs[path] === 'error') {
+      // allow retry: re-fetch a previously failed diff
+      setDiffs((prev) => ({ ...prev, [path]: 'loading' }))
+      api
+        .gitDiff(appId, path)
+        .then((d) => setDiffs((prev) => ({ ...prev, [path]: d })))
+        .catch(() => setDiffs((prev) => ({ ...prev, [path]: 'error' })))
+    }
+  }
+
   const commit = () => {
-    // guard against double-submit (a second click before the disabled state lands)
     if (committing || pushing || !message.trim() || userSel.size + rtSel.size === 0) return
     setCommitting(true)
     setCommittedSha('')
@@ -329,10 +457,11 @@ function GitPanel({
       .then((r) => {
         if (r.committed) {
           setCommittedSha(r.sha || '')
+          setCommittedThisSession(true) // reveals the push section
           setMessage('')
-          load() // refresh — committed files leave the change set
+          load()
         } else {
-          onError(`Commit failed: ${r.reason || 'unknown'}`)
+          onError(`Commit not completed: ${pushReasonText[r.reason || ''] || r.reason || 'unknown'}`)
         }
       })
       .catch((e) => onError((e as Error).message))
@@ -354,103 +483,98 @@ function GitPanel({
       .finally(() => setPushing(false))
   }
 
-  if (!loaded) return null
-
-  const reasonText: Record<string, string> = {
-    no_sandbox: 'No sandbox yet — create one to inspect changes.',
-    sandbox_not_running: 'Start the sandbox to inspect or commit Git changes.',
-    not_a_git_repo: 'This workspace is not a Git repository.',
-    git_error: 'Git could not read the workspace.',
-    exec_failed: 'Could not reach the sandbox.',
-  }
+  const userFiles = st?.files || []
+  const runtimeFiles = st?.runtime_files || []
+  const selectedCount = userSel.size + rtSel.size
+  const allUserChecked = userFiles.length > 0 && userFiles.every((f) => userSel.has(f.path))
+  const hasChanges = userFiles.length > 0 || runtimeFiles.length > 0
 
   return (
     <div className="card" data-testid="git-panel">
-      <h2>
-        Git <span className="muted" style={{ fontSize: 12 }}>(local commit — no push yet)</span>
-      </h2>
+      <h2>Git review</h2>
 
-      {!st?.available ? (
+      {!loaded ? (
+        <div className="muted" data-testid="git-loading" style={{ fontSize: 13 }}>
+          Loading changes…
+        </div>
+      ) : !st?.available ? (
         <div className="muted" data-testid="git-unavailable" style={{ fontSize: 13 }}>
-          {reasonText[st?.reason || ''] || 'Git status is unavailable.'}
+          {gitReasonText[st?.reason || ''] || 'Git status is unavailable.'}
         </div>
       ) : (
         <>
-          <div className="mono" style={{ fontSize: 12 }}>
-            branch <strong>{st.branch || '—'}</strong>
-            {st.head_sha ? ` @ ${st.head_sha.slice(0, 8)}` : ''}
-            {' · '}
-            {st.user_clean ? (
-              <span data-testid="git-clean">clean</span>
-            ) : (
-              <span data-testid="git-dirty">{st.files?.length || 0} changed</span>
+          <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="mono" style={{ fontSize: 12 }}>
+              branch <strong>{st.branch || '—'}</strong>
+              {st.head_sha ? ` · ${st.head_sha.slice(0, 7)}` : ''}
+              {' · '}
+              {st.user_clean ? (
+                <span data-testid="git-clean">no changes</span>
+              ) : (
+                <span data-testid="git-dirty">
+                  {userFiles.length} changed file{userFiles.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            {userFiles.length > 0 && (
+              <button
+                className="linklike"
+                data-testid="git-selectall"
+                onClick={() => setUserSel(allUserChecked ? new Set() : new Set(userFiles.map((f) => f.path)))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}
+              >
+                {allUserChecked ? 'Select none' : 'Select all'}
+              </button>
             )}
-            {typeof st.ahead === 'number' ? ` · ahead ${st.ahead}` : ''}
-            {typeof st.behind === 'number' ? ` · behind ${st.behind}` : ''}
           </div>
 
-          {st.files && st.files.length > 0 && (
+          {!hasChanges && (
+            <div className="muted" data-testid="git-no-changes" style={{ fontSize: 13, marginTop: 6 }}>
+              No changes to commit.
+            </div>
+          )}
+
+          {userFiles.length > 0 && (
             <ul data-testid="git-files" style={{ marginTop: 8, fontSize: 13, listStyle: 'none', paddingLeft: 0 }}>
-              {st.files.map((f) => (
-                <li key={f.path} className="mono">
-                  <label>
-                    <input
-                      type="checkbox"
-                      data-testid={`git-pick-${f.path}`}
-                      checked={userSel.has(f.path)}
-                      onChange={() => toggle(userSel, setUserSel, f.path)}
-                    />{' '}
-                    <span className="muted">{f.status}</span> — {f.path}
-                  </label>
-                </li>
+              {userFiles.map((f) => (
+                <FileRow
+                  key={f.path}
+                  file={f}
+                  checked={userSel.has(f.path)}
+                  onToggleCheck={() => toggle(userSel, setUserSel, f.path)}
+                  open={open.has(f.path)}
+                  onToggleDiff={() => toggleDiff(f.path)}
+                  diff={diffs[f.path]}
+                  testidPrefix="git-pick"
+                />
               ))}
             </ul>
           )}
 
-          {st.runtime_files && st.runtime_files.length > 0 && (
+          {runtimeFiles.length > 0 && (
             <details data-testid="git-runtime-files" style={{ marginTop: 8 }}>
               <summary className="muted" style={{ fontSize: 12 }}>
-                {st.runtime_files.length} runtime-generated file
-                {st.runtime_files.length === 1 ? '' : 's'} (sandbox.yaml, lockfiles, caches — not your edits, excluded by default)
+                {runtimeFiles.length} generated file{runtimeFiles.length === 1 ? '' : 's'} (sandbox.yaml, lockfiles, caches — not your edits)
               </summary>
-              <ul style={{ fontSize: 13, listStyle: 'none', paddingLeft: 0 }}>
-                {st.runtime_files.map((f) => (
-                  <li key={f.path} className="mono">
-                    <label>
-                      <input
-                        type="checkbox"
-                        data-testid={`git-rtpick-${f.path}`}
-                        checked={rtSel.has(f.path)}
-                        onChange={() => toggle(rtSel, setRtSel, f.path)}
-                      />{' '}
-                      <span className="muted">{f.status}</span> — {f.path}
-                    </label>
-                  </li>
+              <ul style={{ fontSize: 13, listStyle: 'none', paddingLeft: 0, marginTop: 4 }}>
+                {runtimeFiles.map((f) => (
+                  <FileRow
+                    key={f.path}
+                    file={f}
+                    checked={rtSel.has(f.path)}
+                    onToggleCheck={() => toggle(rtSel, setRtSel, f.path)}
+                    open={open.has(f.path)}
+                    onToggleDiff={() => toggleDiff(f.path)}
+                    diff={diffs[f.path]}
+                    testidPrefix="git-rtpick"
+                  />
                 ))}
               </ul>
             </details>
           )}
 
-          {!st.clean && (
-            <button className="btn btn-outline" data-testid="git-view-diff" onClick={viewDiff} style={{ marginTop: 8 }}>
-              View diff
-            </button>
-          )}
-
-          {diffOpen && diff && (
-            <div style={{ marginTop: 8 }}>
-              {diff.truncated && (
-                <div className="warn" data-testid="git-diff-truncated" style={{ fontSize: 12 }}>
-                  ⚠ diff truncated (too large)
-                </div>
-              )}
-              <pre className="mono" data-testid="git-diff" style={{ fontSize: 12, maxHeight: 320, overflow: 'auto' }}>
-                {diff.diff || '(no diff)'}
-              </pre>
-            </div>
-          )}
-
-          {!st.clean && (
+          {/* Commit — uses the selected files only. */}
+          {hasChanges && (
             <div data-testid="git-commit-box" style={{ marginTop: 12, borderTop: '1px solid var(--border, #ddd)', paddingTop: 8 }}>
               <input
                 className="input"
@@ -463,73 +587,75 @@ function GitPanel({
               <button
                 className="btn btn-primary"
                 data-testid="git-commit"
-                disabled={committing || pushing || !message.trim() || userSel.size + rtSel.size === 0}
+                disabled={committing || pushing || !message.trim() || selectedCount === 0}
                 onClick={commit}
                 style={{ marginTop: 8 }}
               >
-                Commit {userSel.size + rtSel.size} file{userSel.size + rtSel.size === 1 ? '' : 's'} (local)
+                Commit {selectedCount} selected file{selectedCount === 1 ? '' : 's'}
               </button>
               {committedSha && (
                 <div className="mono" data-testid="git-committed-sha" style={{ fontSize: 12, marginTop: 8 }}>
-                  ✓ committed {committedSha.slice(0, 8)}
+                  ✓ committed {committedSha.slice(0, 7)}
                 </div>
               )}
             </div>
           )}
 
-          {/* Push (B2) — REMOTE WRITE. Only for git-imported apps; explicit confirm. */}
-          {repoURL && (
-            <div
-              data-testid="git-push-box"
-              style={{ marginTop: 12, borderTop: '2px solid var(--warn, #e0a800)', paddingTop: 8 }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Push to remote</div>
-              <div className="muted" data-testid="git-push-explain" style={{ fontSize: 12, marginTop: 2 }}>
-                Pushes your local commits to <span className="mono">{repoURL}</span> as a <strong>new branch</strong>{' '}
-                (auto-named if blank). Won’t touch the import branch. No force. No PR.
-              </div>
-              <input
-                className="input"
-                placeholder="new branch (auto)"
-                value={pushBranch}
-                onChange={(e) => setPushBranch(e.target.value)}
-                data-testid="git-push-branch"
-                style={{ width: '100%', marginTop: 8 }}
-              />
-              {!pushConfirm ? (
-                <button
-                  className="btn btn-outline"
-                  data-testid="git-push-start"
-                  disabled={committing || pushing}
-                  onClick={() => setPushConfirm(true)}
-                  style={{ marginTop: 8 }}
-                >
-                  Push to remote…
-                </button>
-              ) : (
-                <div data-testid="git-push-confirm" style={{ marginTop: 8 }}>
-                  <span style={{ fontSize: 13 }}>This writes to the remote repository. Continue?</span>{' '}
-                  <button className="btn btn-primary" data-testid="git-push-confirm-yes" disabled={pushing || committing} onClick={push}>
-                    Confirm push
-                  </button>{' '}
-                  <button className="btn btn-outline" data-testid="git-push-cancel" onClick={() => setPushConfirm(false)}>
-                    Cancel
-                  </button>
+          {/* Push — separate; only after a commit lands this session. */}
+          {repoURL &&
+            (committedThisSession ? (
+              <div data-testid="git-push-box" style={{ marginTop: 12, borderTop: '2px solid var(--warn, #e0a800)', paddingTop: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Push to remote</div>
+                <div className="muted" data-testid="git-push-explain" style={{ fontSize: 12, marginTop: 2 }}>
+                  Creates a <strong>new branch</strong> on <span className="mono">{repoURL}</span> (auto-named if blank).
+                  Your main / import branch is untouched. No force. Open a pull request afterward.
                 </div>
-              )}
-              {pushResult &&
-                (pushResult.pushed ? (
-                  <div className="mono" data-testid="git-push-result" style={{ fontSize: 12, marginTop: 8 }}>
-                    ✓ pushed {pushResult.commits} commit{pushResult.commits === 1 ? '' : 's'} to{' '}
-                    <strong>{pushResult.branch}</strong> — open a PR on your Git host.
-                  </div>
+                <input
+                  className="input"
+                  placeholder="new branch (auto)"
+                  value={pushBranch}
+                  onChange={(e) => setPushBranch(e.target.value)}
+                  data-testid="git-push-branch"
+                  style={{ width: '100%', marginTop: 8 }}
+                />
+                {!pushConfirm ? (
+                  <button
+                    className="btn btn-outline"
+                    data-testid="git-push-start"
+                    disabled={committing || pushing}
+                    onClick={() => setPushConfirm(true)}
+                    style={{ marginTop: 8 }}
+                  >
+                    Push to a new branch…
+                  </button>
                 ) : (
-                  <div className="warn" data-testid="git-push-reason" style={{ fontSize: 12, marginTop: 8 }}>
-                    Push not completed: {pushResult.reason}
+                  <div data-testid="git-push-confirm" style={{ marginTop: 8 }}>
+                    <span style={{ fontSize: 13 }}>This writes a new branch to the remote. Continue?</span>{' '}
+                    <button className="btn btn-primary" data-testid="git-push-confirm-yes" disabled={pushing || committing} onClick={push}>
+                      Confirm push
+                    </button>{' '}
+                    <button className="btn btn-outline" data-testid="git-push-cancel" onClick={() => setPushConfirm(false)}>
+                      Cancel
+                    </button>
                   </div>
-                ))}
-            </div>
-          )}
+                )}
+                {pushResult &&
+                  (pushResult.pushed ? (
+                    <div className="mono" data-testid="git-push-result" style={{ fontSize: 12, marginTop: 8 }}>
+                      ✓ pushed {pushResult.commits} commit{pushResult.commits === 1 ? '' : 's'} to{' '}
+                      <strong>{pushResult.branch}</strong> — open a pull request on your Git host.
+                    </div>
+                  ) : (
+                    <div className="warn" data-testid="git-push-reason" style={{ fontSize: 12, marginTop: 8 }}>
+                      {pushReasonText[pushResult.reason || ''] || `Push not completed: ${pushResult.reason}`}
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <div className="muted" data-testid="git-push-help" style={{ fontSize: 12, marginTop: 12 }}>
+                Push appears after you commit changes in this session.
+              </div>
+            ))}
         </>
       )}
     </div>
