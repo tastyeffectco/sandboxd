@@ -60,7 +60,7 @@ RUN cd control-plane && CGO_ENABLED=0 go build -trimpath -o /runtimed ./cmd/runt
 # --- Stage 2: the sandbox base image ---------------------------------
 FROM debian:stable-slim
 
-ARG NODE_VERSION=20.x
+ARG NODE_VERSION=22.x
 ARG PNPM_VERSION=9.12.0
 ARG BUN_VERSION=1.1.30
 ARG UV_VERSION=0.4.20
@@ -75,10 +75,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*\n' \
       > /etc/dpkg/dpkg.cfg.d/01-nodoc
 
+# python3-setuptools provides the vendored `distutils` shim (via the
+# `distutils-precedence.pth` hook) so node-gyp builds of native modules
+# (better-sqlite3, sqlite3, sharp, …) work on Python 3.12+ where the
+# stdlib distutils was removed. Without it, node-gyp ≤9 fails with
+# `ModuleNotFoundError: No module named 'distutils'`. (Node 22's bundled
+# node-gyp 10 no longer needs it, but project-pinned/older node-gyp and
+# non-npm package managers still do — so we provide it unconditionally.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg git ripgrep fd-find jq unzip \
       passwd \
-      build-essential python3 python3-venv \
+      build-essential python3 python3-venv python3-setuptools \
       tini \
  && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt /var/log/apt
 
@@ -125,6 +132,10 @@ COPY image/skel/ /opt/sandbox-skel/
 # default react-standard) into an empty workspace/app on first boot.
 # Add a template = drop a new dir here; the registry is additive.
 COPY image/templates/ /opt/templates/
+
+# Base-image self-check (Node 22, npm/pnpm/bun, python3/uv/setuptools, build
+# tools). Run: `docker run --rm <image> bash /opt/verify-base.sh`.
+COPY image/verify-base.sh /opt/verify-base.sh
 
 # Sandbox user (uid/gid 1000 inside the container; userns-remap offsets
 # it on the host so a running sandbox's processes appear as host-uid

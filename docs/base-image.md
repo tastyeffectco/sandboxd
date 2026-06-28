@@ -59,9 +59,13 @@ match the same surface.
 
 ## Native languages (Go / PHP / Ruby / Rust / Java / .NET / Deno)
 
-The default base ships **Node** (node 20, npm, pnpm, bun) and **Python 3.13 + uv**,
-plus `git`/`make`/`gcc`/`g++`/`curl`/`perl`. Node, Python, and Bun stacks therefore
-run on the stock image. **Go, PHP, Ruby, Rust, Java, .NET, and the `sqlite3` CLI are
+The default base ships **Node 22** (npm 10, pnpm 9, bun) and **Python 3.13 + uv**
+**with `setuptools`** (so node-gyp can build native modules — better-sqlite3,
+sqlite3, sharp — on Python 3.12+ where stdlib `distutils` was removed), plus
+`git`/`make`/`gcc`/`g++`/`curl`/`perl`. Node, Python, and Bun stacks therefore run
+on the stock image. (Node 22 also has `worker_threads.markAsUncloneable`, so libs
+like undici 8 no longer crash the dev server on boot.) Self-check the image with
+`docker run --rm <image> bash /opt/verify-base.sh`. **Go, PHP, Ruby, Rust, Java, .NET, and the `sqlite3` CLI are
 not in the base** — those need a **custom image** (operator-scoped, instance-wide):
 
 1. `FROM sandboxd-base:<tag>`, install the toolchain (e.g. Go under `/opt/go`), and
