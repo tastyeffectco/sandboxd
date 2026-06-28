@@ -184,7 +184,7 @@ export function AppDetail({
 
       <ProcessesPanel sandbox={sb} onError={onError} />
 
-      <RuntimeInspectPanel appId={appId} onError={onError} />
+      <RuntimeInspectPanel appId={appId} sandboxId={sb?.id} onError={onError} />
 
       <GitPanel appId={appId} repoURL={app.git?.repo_url} onError={onError} />
 
@@ -235,11 +235,24 @@ function askAgentPrompt(suggested: string, notes?: string[], snippets?: ConfigSn
   ].join('\n')
 }
 
-function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: string) => void }) {
+function RuntimeInspectPanel({
+  appId,
+  sandboxId,
+  onError,
+}: {
+  appId: string
+  sandboxId?: string
+  onError: (m: string) => void
+}) {
   const [ins, setIns] = useState<RuntimeInspect | null>(null)
   const [man, setMan] = useState<AppManifest | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [copied, setCopied] = useState('') // transient "copied" feedback key
+  // explicit Apply: write the suggested sandbox.yaml via the generic PUT /files
+  // endpoint (validate-first). Not auto-apply — user clicks + confirms.
+  const [applyConfirm, setApplyConfirm] = useState('') // preset id awaiting confirm
+  const [applying, setApplying] = useState(false)
+  const [applied, setApplied] = useState('') // preset id whose YAML was written
 
   const load = () => {
     Promise.all([api.runtimeInspect(appId), api.appManifest(appId)])
@@ -260,6 +273,28 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
       },
       () => onError('Could not copy to clipboard'),
     )
+  }
+
+  // apply writes the suggested sandbox.yaml to the workspace — validate FIRST, then
+  // the generic PUT /files endpoint. Explicit (confirmed) adoption; not auto-apply.
+  const apply = (presetID: string, yaml: string) => {
+    if (!sandboxId || applying) return
+    setApplying(true)
+    api
+      .validateManifest(yaml)
+      .then((v) => {
+        if (!v.valid) {
+          onError('Suggested manifest did not validate: ' + (v.errors[0] || 'invalid'))
+          return
+        }
+        return api.putWorkspaceFile(sandboxId, 'sandbox.yaml', yaml).then(() => {
+          setApplied(presetID)
+          setApplyConfirm('')
+          load() // refresh the manifest status
+        })
+      })
+      .catch((e) => onError((e as Error).message))
+      .finally(() => setApplying(false))
   }
 
   if (!loaded) return null
@@ -361,11 +396,47 @@ function RuntimeInspectPanel({ appId, onError }: { appId: string; onError: (m: s
                     onClick={() =>
                       copy(`ask-${s.preset}`, askAgentPrompt(s.suggested_manifest as string, s.notes, s.config_snippets))
                     }
-                    style={{ fontSize: 12 }}
+                    style={{ marginRight: 6, fontSize: 12 }}
                     title="Copies a prompt to paste into the task box — does not run a task"
                   >
                     {copied === `ask-${s.preset}` ? 'Prompt copied ✓ — paste into the task box' : 'Ask agent'}
                   </button>
+                  {/* Explicit Apply: writes sandbox.yaml to the workspace (validated). */}
+                  {applyConfirm === s.preset ? (
+                    <span data-testid={`ri-apply-confirm-${s.preset}`} style={{ fontSize: 12 }}>
+                      Write <span className="mono">sandbox.yaml</span> to the workspace?{' '}
+                      <button
+                        className="btn btn-primary"
+                        data-testid={`ri-apply-yes-${s.preset}`}
+                        disabled={applying}
+                        onClick={() => apply(s.preset, s.suggested_manifest as string)}
+                      >
+                        Confirm
+                      </button>{' '}
+                      <button className="btn btn-outline" data-testid={`ri-apply-cancel-${s.preset}`} onClick={() => setApplyConfirm('')}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      className="btn btn-primary"
+                      data-testid={`ri-apply-${s.preset}`}
+                      disabled={!sandboxId}
+                      onClick={() => setApplyConfirm(s.preset)}
+                      style={{ fontSize: 12 }}
+                      title={sandboxId ? 'Writes sandbox.yaml to the workspace' : 'Create a sandbox first'}
+                    >
+                      Apply sandbox.yaml
+                    </button>
+                  )}
+                  {applied === s.preset && (
+                    <div data-testid={`ri-applied-${s.preset}`} className="mono" style={{ fontSize: 12, marginTop: 4 }}>
+                      ✓ wrote sandbox.yaml — <strong>restart the sandbox</strong> for it to take effect
+                      {s.config_snippets && s.config_snippets.length > 0
+                        ? '; also apply the config edit(s) above (Ask agent).'
+                        : '.'}
+                    </div>
+                  )}
                 </div>
               )}
             </li>
