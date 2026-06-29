@@ -64,6 +64,8 @@ func TestMatch(t *testing.T) {
 		{"strapi", []string{"@strapi/strapi"}, "", "", "strapi"},
 		{"payload", []string{"payload"}, "", "", "payload"},
 		{"ghost", []string{"ghost"}, "", "", "ghost"},
+		{"tanstack-start", []string{"@tanstack/react-start", "vite", "react"}, "", "", "tanstack-start"},
+		{"astro-node-server", []string{"astro", "@astrojs/node"}, "", "", "astro-node-server"},
 		{"storybook by config", nil, ".storybook/main.ts", "", "storybook"},
 		{"bun by lockfile", nil, "bun.lockb", "", "bun"},
 		{"django by manage.py", nil, "manage.py", "", "django"},
@@ -161,5 +163,18 @@ func TestMatchExcludes(t *testing.T) {
 		if m.Recipe.ID == "react-vite" {
 			t.Error("react-vite must be excluded when next is present")
 		}
+	}
+}
+
+// TanStack Start (vite+react+@tanstack/react-start) must detect as tanstack-start and
+// NOT fall through to react-vite (which would mislabel an SSR/server framework).
+func TestTanStackBeatsReactVite(t *testing.T) {
+	deps := map[string]bool{"vite": true, "react": true, "@tanstack/react-start": true}
+	matched, _ := Match(deps, func(string) bool { return false }, "")
+	if !hasRecipe(matched, "tanstack-start") {
+		t.Error("@tanstack/react-start must match tanstack-start")
+	}
+	if hasRecipe(matched, "react-vite") {
+		t.Error("react-vite must be excluded when @tanstack/react-start is present")
 	}
 }

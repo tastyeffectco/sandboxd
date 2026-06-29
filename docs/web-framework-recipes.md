@@ -65,12 +65,33 @@ guides, you adopt:
    framework config file, not the CLI.
 6. **Adopt it explicitly** — Copy YAML, use the **Ask agent** prompt (paste into
    the task box; the agent writes the file), or edit `sandbox.yaml` by hand. There
-   is no auto-apply and no hidden source edit.
+   is no auto-apply and no hidden source edit. If you write it via the files API
+   (`PUT /v1/sandboxes/{id}/files`), note the path is relative to the **workspace
+   mount root**, so the app manifest is **`path=workspace/app/sandbox.yaml`** — a
+   bare `path=sandbox.yaml` lands in `/home/sandbox` and runtimed never reads it.
 7. **Restart the sandbox.** **When `sandbox.yaml` changes, restart the sandbox so
    runtimed re-reads it** — the manifest is read at boot, not live. Then the
    preview should come up green.
 
 After that: `git diff` → `git commit` → `git push` (new branch) → open a PR.
+
+## Dev server vs built node server (SSR meta-frameworks)
+
+Most recipes run a **dev server** (HMR, Vite `allowedHosts`). SSR meta-frameworks
+also have a **production "build-then-serve"** shape that's worth knowing:
+
+- **Dev** (default): e.g. `astro dev` / `vite dev` with `--host 0.0.0.0 --port 3000`
+  and the Vite `allowedHosts` config edit. HMR; edits are live.
+- **Built node server**: `astro build` → `node ./dist/server/entry.mjs` (`HOST`/`PORT`
+  env), `restart_after_task: true`. **No `allowedHosts`** — that's a Vite-dev-only
+  concern; the built standalone server accepts any `Host`. Needs the framework's
+  node adapter (Astro `@astrojs/node`). The `astro-node-server` recipe encodes this.
+- **Caveat — not every build is a server.** Some builds emit a *web-standard fetch
+  handler*, not a self-listening server: TanStack Start's `vite build` produces
+  `dist/server/server.js` and needs a deployment adapter (Nitro / node-server →
+  `.output/server/index.mjs`) to actually listen. So a "build then `node` it"
+  assumption fails there — the `tanstack-start` recipe stays **dev-runtime oriented**
+  and notes this. sandboxd does not infer production mode; pick the recipe you want.
 
 ## Compatibility matrix
 

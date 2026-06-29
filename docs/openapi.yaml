@@ -919,20 +919,35 @@ paths:
         "200": { description: OK }
     put:
       tags: [sandboxes]
-      summary: Write a workspace file
+      summary: Write a workspace file (atomic)
+      description: >
+        Writes one file into the sandbox workspace. The `path` query parameter is
+        RELATIVE TO THE WORKSPACE MOUNT ROOT (`/home/sandbox` inside the container),
+        NOT the app directory. The app source lives under `workspace/app`, so the
+        app's runtime manifest must be written as
+        `path=workspace/app/sandbox.yaml`. A bare `path=sandbox.yaml` is accepted
+        but writes to the mount root (`/home/sandbox/sandbox.yaml`), where runtimed
+        does NOT read it for app runtime. Reserved subtrees (`.runtimed/`,
+        `lost+found/`) are refused. The request body is the RAW file content
+        (opaque bytes), not JSON.
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema: { type: string }
+          description: >
+            File path relative to the workspace mount root (e.g.
+            `workspace/app/sandbox.yaml`). Absolute paths and `..` are rejected.
       requestBody:
         required: true
+        description: Raw file content (opaque bytes) — not JSON.
         content:
-          application/json:
-            schema:
-              type: object
-              required: [path, content]
-              properties:
-                path: { type: string }
-                content: { type: string }
-                append: { type: boolean }
+          text/plain:
+            schema: { type: string }
       responses:
         "200": { description: Written }
+        "400": { description: Invalid path (absolute, traversal, or reserved subtree) }
+        "413": { description: File exceeds the size limit }
 
   /v1/sandboxes/{id}/files/content:
     parameters: [ { $ref: "#/components/parameters/Id" } ]

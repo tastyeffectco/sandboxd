@@ -10,6 +10,17 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **`tanstack-start` + `astro-node-server` recipes (advisory).** `tanstack-start`
+  (detect `@tanstack/react-start`) detects ahead of `react-vite` — which now
+  `exclude_deps` it — so an SSR/server meta-framework isn't mislabeled a plain SPA;
+  dev-runtime oriented (Vite dev + `allowedHosts`), tagged `ssr`/`meta_framework`/
+  `needs_config_snippet`, with a note that `vite build` emits a fetch handler (needs
+  a Nitro/node-server adapter), not a self-listening server. `astro-node-server`
+  (detect `astro` + `@astrojs/node`) is the **build-then-serve** pattern
+  (`astro build` → `node ./dist/server/entry.mjs`, `restart_after_task: true`, **no
+  `allowedHosts`** — that's Vite-dev-only), tagged `ssr`/`build_then_serve`; the
+  dev-HMR `astro` recipe is unchanged. Docs gained a "dev server vs built node
+  server" cookbook section.
 - **Strapi / Payload / Ghost SQLite-CMS recipes (advisory, deep-tested).** Each
   verified beyond "200" — admin UI + a real DB write + the API: Strapi v5
   (`@strapi/strapi`, better-sqlite3, `POST /admin/register-admin`), Payload v3
@@ -93,6 +104,12 @@ a patch is fixes only).
   introduced — the image stays instance-wide.
 
 ### Docs
+- **Files API path clarified** ([`docs/openapi.yaml`](docs/openapi.yaml) +
+  recipes doc): `PUT /v1/sandboxes/{id}/files` `path` is relative to the **workspace
+  mount root**, so the app manifest is `path=workspace/app/sandbox.yaml`; a bare
+  `path=sandbox.yaml` writes to `/home/sandbox` where runtimed never reads it. The
+  OpenAPI request shape is also corrected (query `path` + raw body, not a JSON body).
+  No backend change.
 - **Custom base images** ([`docs/base-image.md`](docs/base-image.md)): `SANDBOXD_IMAGE`
   is read once at startup (stack recreate required to change it; it's also the
   snapshot seed); native languages (Go/PHP/Ruby/Rust/Java/.NET/Deno) need a custom
