@@ -10,6 +10,13 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **`chainlit` + `drizzle-sqlite` recipes; sveltekit notes (advisory).** `chainlit`
+  (detect `chainlit`; LLM chat UI) tags `python`/`ai_chat`/`websocket`/`heavy_install`,
+  notes the `/ws/socket.io/` WS path (no provider/key handling). `drizzle-sqlite`
+  (detect `drizzle-orm`+`better-sqlite3`+`tsx`; canonical TS+SQLite) tags
+  `node`/`typescript`/`sqlite_app`. `sveltekit` gains notes (Svelte-5 `vite.config.ts`-
+  only; dev SSR/load/actions work; `node:sqlite` needs `NODE_OPTIONS=--experimental-sqlite`).
+  `storybook`'s install guard fixed to `[ -x node_modules/.bin/storybook ]`.
 - **`react-router` / `fasthtml` / `slidev` recipes (advisory).** `react-router`
   (detect `@react-router/dev`; React Router v7+ framework mode) detects ahead of
   `react-vite` — which now `exclude_deps` it — so the Remix successor's SSR isn't

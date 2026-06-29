@@ -36,6 +36,23 @@ func TestAllLoadAndValidate(t *testing.T) {
 	}
 }
 
+// Install-guard invariant: a recipe that installs node deps must guard on the
+// framework BINARY (`[ -x node_modules/.bin/<tool> ]`), never `[ -d node_modules ]`
+// (true even for an empty dir pnpm leaves behind → install skipped → binary missing).
+// Exceptions: stacks with no single stable binary.
+func TestNodeRecipesGuardOnBinary(t *testing.T) {
+	exceptions := map[string]bool{"bun": true, "hono": true} // no single stable local bin
+	all, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range all {
+		if strings.Contains(r.SuggestedManifest, "[ -d node_modules ]") && !exceptions[r.ID] {
+			t.Errorf("recipe %q uses the fragile `[ -d node_modules ]` guard; use `[ -x node_modules/.bin/<tool> ]`", r.ID)
+		}
+	}
+}
+
 func TestMatch(t *testing.T) {
 	cases := []struct {
 		name string
@@ -83,6 +100,8 @@ func TestMatch(t *testing.T) {
 		{"react-router", []string{"@react-router/dev", "vite", "react"}, "", "", "react-router"},
 		{"fasthtml", nil, "", "python-fasthtml", "fasthtml"},
 		{"slidev by config", []string{"@slidev/cli"}, "", "", "slidev"},
+		{"chainlit", nil, "", "chainlit", "chainlit"},
+		{"drizzle-sqlite", []string{"drizzle-orm", "better-sqlite3", "tsx"}, "", "", "drizzle-sqlite"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -15,7 +15,8 @@ existing apps keep working unchanged. runtimed reads the manifest on (re)start.
 > `command:`/`port:`) is now a **validation error**, not silently ignored — so a
 > compose-style file no longer parses to an empty runtime and runs the default
 > template. A single previewed port carries HTTP, **WebSocket**, and SSE (confirmed
-> for NiceGUI socket.io, Sanic native WS, Streamlit, Jupyter kernels, Gradio SSE).
+> for NiceGUI/Chainlit socket.io, Sanic native WS, Streamlit, Jupyter kernels,
+> Gradio SSE).
 
 > **Phase status:** 7A (Runtime Manifest Core), 7B (process API + console), and
 > **7C-1 (runtime presets) are all accepted & live-verified.** All five presets

@@ -5,7 +5,7 @@ detect:
 suggested_manifest: |
   version: 1
   web:
-    command: "[ -d node_modules ] || pnpm install; exec pnpm exec storybook dev -p 3000 --host 0.0.0.0 --no-open --disable-telemetry"
+    command: "[ -x node_modules/.bin/storybook ] || pnpm install; exec pnpm exec storybook dev -p 3000 --host 0.0.0.0 --no-open --disable-telemetry"
     port: 3000
     health_path: "/"
 config_snippets:
