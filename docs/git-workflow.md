@@ -97,8 +97,14 @@ user files from `git/status`; runtime files are excluded unless explicitly liste
 in `runtime_paths`). It **never** uses `git add -A`, makes a path-scoped commit so
 any changes the agent pre-staged are not swept in, runs with `--no-verify` (so an
 untrusted repo hook can't run), and sets an **ephemeral author** via `git -c
-user.name= -c user.email=` — never written to `.git/config`. Empty repos (no HEAD)
-are unsupported in this slice (`reason:"empty_repo_unsupported"`).
+user.name= -c user.email=` — never written to `.git/config`.
+
+**First-commit limitation.** `git/commit` expects an **existing HEAD** — it handles
+*subsequent* commits, not repository initialization. A brand-new repo with no commits
+returns `reason:"empty_repo_unsupported"`. The **initial commit must be made
+in-sandbox** for now (e.g. the agent runs `git init && git add -A && git commit` in
+the workspace); after that, `git/commit`/`git/push` work normally. First-commit
+support via the API is intentionally out of scope here.
 
 ## Push
 

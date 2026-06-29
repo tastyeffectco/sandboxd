@@ -1,6 +1,7 @@
 package recipes
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sandboxd/control-plane/internal/manifest"
@@ -79,6 +80,9 @@ func TestMatch(t *testing.T) {
 		{"python-asgi starlette", nil, "", "starlette", "python-asgi"},
 		{"nicegui", nil, "", "nicegui==2.0", "nicegui"},
 		{"sanic", nil, "", "sanic>=24", "sanic"},
+		{"react-router", []string{"@react-router/dev", "vite", "react"}, "", "", "react-router"},
+		{"fasthtml", nil, "", "python-fasthtml", "fasthtml"},
+		{"slidev by config", []string{"@slidev/cli"}, "", "", "slidev"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -180,5 +184,35 @@ func TestTanStackBeatsReactVite(t *testing.T) {
 	}
 	if hasRecipe(matched, "react-vite") {
 		t.Error("react-vite must be excluded when @tanstack/react-start is present")
+	}
+}
+
+// React Router framework mode (@react-router/dev, vite+react) must detect as
+// react-router and NOT fall through to react-vite (SPA) — RR7/8 is SSR.
+func TestReactRouterBeatsReactVite(t *testing.T) {
+	deps := map[string]bool{"vite": true, "react": true, "@react-router/dev": true}
+	matched, _ := Match(deps, func(string) bool { return false }, "")
+	if !hasRecipe(matched, "react-router") {
+		t.Error("@react-router/dev must match react-router")
+	}
+	if hasRecipe(matched, "react-vite") {
+		t.Error("react-vite must be excluded when @react-router/dev is present")
+	}
+}
+
+// slidev carries the standalone-vite.config allowedHosts snippet.
+func TestSlidevHasConfigSnippet(t *testing.T) {
+	matched, _ := Match(map[string]bool{"@slidev/cli": true}, func(string) bool { return false }, "")
+	var s *Recipe
+	for i := range matched {
+		if matched[i].Recipe.ID == "slidev" {
+			s = &matched[i].Recipe
+		}
+	}
+	if s == nil {
+		t.Fatal("slidev not matched")
+	}
+	if len(s.ConfigSnippets) == 0 || !strings.Contains(s.ConfigSnippets[0].Note, "allowedHosts") {
+		t.Errorf("slidev should carry an allowedHosts config_snippet: %+v", s.ConfigSnippets)
 	}
 }

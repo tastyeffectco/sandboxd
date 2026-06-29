@@ -86,12 +86,16 @@ also have a **production "build-then-serve"** shape that's worth knowing:
   env), `restart_after_task: true`. **No `allowedHosts`** — that's a Vite-dev-only
   concern; the built standalone server accepts any `Host`. Needs the framework's
   node adapter (Astro `@astrojs/node`). The `astro-node-server` recipe encodes this.
-- **Caveat — not every build is a server.** Some builds emit a *web-standard fetch
-  handler*, not a self-listening server: TanStack Start's `vite build` produces
-  `dist/server/server.js` and needs a deployment adapter (Nitro / node-server →
-  `.output/server/index.mjs`) to actually listen. So a "build then `node` it"
-  assumption fails there — the `tanstack-start` recipe stays **dev-runtime oriented**
-  and notes this. sandboxd does not infer production mode; pick the recipe you want.
+- **Other build-then-serve frameworks:** **React Router v7+** → `react-router build`
+  then `react-router-serve ./build/server/index.js` (a Node SSR server, not static);
+  **TanStack Start** → `vite build` emits a *web-standard fetch handler*
+  (`dist/server/server.js`), **not** a self-listening server, so it needs a
+  deployment adapter (Nitro / node-server → `.output/server/index.mjs`) to listen.
+- **Caveat — not every build is a server**, as TanStack shows. The `react-router`,
+  `tanstack-start`, and `astro` recipes all stay **dev-runtime oriented** (the
+  `astro-node-server` recipe is the one named built-server variant). sandboxd does
+  **not** infer production mode and there is no generic built-server abstraction —
+  pick the recipe you want.
 
 ## Compatibility matrix
 

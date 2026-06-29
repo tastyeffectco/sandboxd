@@ -10,6 +10,15 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **`react-router` / `fasthtml` / `slidev` recipes (advisory).** `react-router`
+  (detect `@react-router/dev`; React Router v7+ framework mode) detects ahead of
+  `react-vite` — which now `exclude_deps` it — so the Remix successor's SSR isn't
+  mislabeled an SPA (SSR loader/action verified); tags `ssr`/`meta_framework`/
+  `needs_config_snippet`, notes the `react-router build` → `react-router-serve`
+  production path. `fasthtml` (detect `python-fasthtml`; HTMX + app-side SQLite)
+  tags `python`/`hypermedia`/`sqlite_app`. `slidev` (detect `@slidev/cli`) ships the
+  standalone-`vite.config.ts` `allowedHosts` snippet and notes the `--remote`
+  password footgun; tags `presentation`/`vite`/`needs_config_snippet`.
 - **`python-asgi` / `nicegui` / `sanic` recipes (advisory).** `python-asgi`
   (uvicorn; detect `litestar`/`starlette` in requirements) — one recipe for the
   FastAPI/Litestar/Starlette ASGI shape (FastAPI keeps its runnable preset). `nicegui`
