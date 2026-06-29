@@ -1,0 +1,17 @@
+id: sanic
+display_name: Sanic (async web)
+detect:
+  requirements_contains: [sanic]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install sanic)); exec .venv/bin/sanic server:app --host 0.0.0.0 --port 3000 --single-process"
+    port: 3000
+    health_path: "/"
+notes:
+  - "`--single-process` is REQUIRED — Sanic's worker-manager/reloader otherwise forks processes the managed supervisor can't track."
+  - "Native WebSocket (/ws) upgrades through the preview (101 + echo verified). Adjust server:app to your module."
+tags: [python, websocket]
+verified:
+  starter: "Sanic (native WS echo verified)"
+  version: v0.4.9

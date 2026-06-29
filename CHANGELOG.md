@@ -10,6 +10,12 @@ a patch is fixes only).
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.
 
 ### Added
+- **`python-asgi` / `nicegui` / `sanic` recipes (advisory).** `python-asgi`
+  (uvicorn; detect `litestar`/`starlette` in requirements) — one recipe for the
+  FastAPI/Litestar/Starlette ASGI shape (FastAPI keeps its runnable preset). `nicegui`
+  and `sanic` tagged `websocket` (both verified `101` + round-trip through the
+  preview); `sanic` notes the required `--single-process` (its worker-manager
+  otherwise forks processes the supervisor can't track). All tagged `python`.
 - **`tanstack-start` + `astro-node-server` recipes (advisory).** `tanstack-start`
   (detect `@tanstack/react-start`) detects ahead of `react-vite` — which now
   `exclude_deps` it — so an SSR/server meta-framework isn't mislabeled a plain SPA;
@@ -58,6 +64,16 @@ a patch is fixes only).
   No `effective` runtime is returned for an invalid manifest (only the as-declared
   `parsed`). This is the strict guidance validator; runtimed's executor stays lenient
   (apps still boot on a bad manifest via defaults) — the doc spells out that split.
+- **Unknown top-level keys are now validation errors** (QA `processes:`/`services:`
+  footgun). The v1 top-level key set is closed: `processes:` → error (did you mean
+  `workers:`/`web:`?), `services:` → error (sandbox.yaml is not Docker Compose),
+  top-level `command`/`port`/`health_path` → error (belong under `web:`), any other
+  unknown key → error. A `version: 1` manifest with **neither `web:` nor `workers:`**
+  is invalid ("nothing to run"); worker-only and web manifests stay valid. runtimed
+  now refuses to silently run the default `react-standard` template for a present
+  manifest with unrecognized keys — it serves **no preview** and logs
+  *"sandbox.yaml is invalid — no web process; no preview will be served"* (empty/stray
+  files and worker-only manifests are unaffected). All three surfaces agree.
 - **runtime-inspect now agrees with the validator.** `existing_manifest` gained
   `valid` + `errors` from the **same** `manifest.Validate` used by
   `POST /v1/runtime/manifest/validate` and `GET /v1/apps/{id}/runtime/manifest`, so all

@@ -1,0 +1,17 @@
+id: python-asgi
+display_name: Python ASGI (uvicorn) — Litestar / Starlette
+detect:
+  requirements_contains: [litestar, starlette]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install uvicorn)); exec .venv/bin/uvicorn app:app --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Same ASGI/uvicorn shape as FastAPI/Starlette/Litestar. Adjust the module (app:app / main:app) to your app's ASGI callable."
+  - "Litestar can also run via `litestar --app app:app run --host 0.0.0.0 --port 3000`."
+tags: [python, asgi]
+verified:
+  starter: "Litestar (stdlib sqlite3 round-trip verified)"
+  version: v0.4.9

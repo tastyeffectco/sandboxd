@@ -75,6 +75,10 @@ func TestMatch(t *testing.T) {
 		{"gradio", nil, "", "gradio>=4", "gradio"},
 		{"jupyter", nil, "", "jupyterlab", "jupyter"},
 		{"dash", nil, "", "dash\nplotly", "dash"},
+		{"python-asgi litestar", nil, "", "litestar\nuvicorn", "python-asgi"},
+		{"python-asgi starlette", nil, "", "starlette", "python-asgi"},
+		{"nicegui", nil, "", "nicegui==2.0", "nicegui"},
+		{"sanic", nil, "", "sanic>=24", "sanic"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

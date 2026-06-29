@@ -8,6 +8,15 @@ edit it like any workspace file.
 **No manifest = the built-in defaults** (a Vite/React web app on port 3000), so
 existing apps keep working unchanged. runtimed reads the manifest on (re)start.
 
+> **`sandbox.yaml` is NOT Docker Compose.** It declares **one** previewed web
+> process (`web:`) and optional background `workers:` — there are no `services:`,
+> no `processes:`, no multi-container/multi-port orchestration, and no DB
+> provisioning. A top-level `services:`/`processes:` key (or a bare top-level
+> `command:`/`port:`) is now a **validation error**, not silently ignored — so a
+> compose-style file no longer parses to an empty runtime and runs the default
+> template. A single previewed port carries HTTP, **WebSocket**, and SSE (confirmed
+> for NiceGUI socket.io, Sanic native WS, Streamlit, Jupyter kernels, Gradio SSE).
+
 > **Phase status:** 7A (Runtime Manifest Core), 7B (process API + console), and
 > **7C-1 (runtime presets) are all accepted & live-verified.** All five presets
 > (react-vite, nextjs, fastapi, node-express, worker) pass preview + agent-task

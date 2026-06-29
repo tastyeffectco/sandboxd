@@ -108,11 +108,11 @@ var (
 	reWorkerName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 
-// knownTopLevel are the keys the contract understands. Unknown keys WARN (not
-// error): core stays forward-compatible and recipe-agnostic — rejecting unknown
-// keys would couple core to a fixed key set and break valid-but-newer manifests.
-// The warning still makes typos visible. The three web.* fields placed at the top
-// level are a common, specific mistake, so they get a pointed ERROR instead.
+// knownTopLevel are the keys the v1 contract understands. The set is CLOSED for
+// version 1: an unrecognized top-level key is an ERROR (forward-compat lives in the
+// version field — a new key requires a version bump). This catches the common,
+// dangerous mistakes (processes:/services:/top-level command) that otherwise parse
+// to an empty runtime and silently run the default template.
 var knownTopLevel = map[string]bool{"version": true, "web": true, "workers": true, "build": true}
 
 // Validate is the authoritative manifest validation. It never executes anything
@@ -148,17 +148,32 @@ func Validate(raw []byte) Result {
 		res.Errors = append(res.Errors, fmt.Sprintf("unsupported version %d — only 'version: 1' is supported", m.Version))
 	}
 
+	// Top-level keys are a CLOSED set in v1 (a future schema change bumps version,
+	// which is rejected above). An unrecognized top-level key is therefore an ERROR,
+	// not a warning — a wrong key (processes:/services:) otherwise parses to zero web
+	// and the app silently runs the default template (QA footgun).
+	topLevelMistake := false
 	for k := range top {
 		switch k {
 		case "command":
 			res.Errors = append(res.Errors, "top-level 'command' is not valid — put it under web.command")
+			topLevelMistake = true
 		case "port":
 			res.Errors = append(res.Errors, "top-level 'port' is not valid — put it under web.port")
+			topLevelMistake = true
 		case "health_path":
 			res.Errors = append(res.Errors, "top-level 'health_path' is not valid — put it under web.health_path")
+			topLevelMistake = true
+		case "processes":
+			res.Errors = append(res.Errors, "top-level 'processes' is not valid — did you mean 'workers:' (background processes) or 'web:' (the previewed process)?")
+			topLevelMistake = true
+		case "services":
+			res.Errors = append(res.Errors, "top-level 'services' is not valid — sandbox.yaml is not Docker Compose; use 'web:' and 'workers:'")
+			topLevelMistake = true
 		default:
 			if !knownTopLevel[k] {
-				res.Warnings = append(res.Warnings, fmt.Sprintf("unknown top-level key %q (ignored)", k))
+				res.Errors = append(res.Errors, fmt.Sprintf("unknown top-level key %q — sandbox.yaml (v1) allows: version, web, workers, build", k))
+				topLevelMistake = true
 			}
 		}
 	}
@@ -196,6 +211,13 @@ func Validate(raw []byte) Result {
 		if w.Command == "" {
 			res.Errors = append(res.Errors, fmt.Sprintf("worker %q has no command", w.Name))
 		}
+	}
+
+	// A manifest must declare something runnable. No web AND no workers is invalid
+	// (unless a top-level mistake above already explains the emptiness — avoid a
+	// redundant second error for processes:/services:/etc.).
+	if m.Web == nil && len(m.Workers) == 0 && !topLevelMistake {
+		res.Errors = append(res.Errors, "sandbox.yaml declares neither 'web:' nor 'workers:' — nothing to run")
 	}
 
 	res.Valid = len(res.Errors) == 0
