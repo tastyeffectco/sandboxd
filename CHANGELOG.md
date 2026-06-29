@@ -117,6 +117,17 @@ a patch is fixes only).
   sandbox exists.
 
 ### Base image
+- **pnpm bumped 9.12 → 10.34** (`sandboxd-base`): supports **catalog-only**
+  `pnpm-workspace.yaml` (no `packages:` key) used by modern release tarballs (e.g.
+  Ghost 6 + `packageManager: pnpm@11`) — pnpm 9 rejected those with "packages field
+  missing or empty". npm/bun/Node 22/python/uv/build tools unchanged.
+- **Writable global npm prefix.** The default global prefix (`/usr`) is root-owned, so
+  `npm install -g <pkg>` failed for the sandbox user. The login profile now sets
+  `NPM_CONFIG_PREFIX=$HOME/.npm-global` and puts its `bin` on PATH (and the dir is
+  pre-seeded in the home skel), so global-CLI installs (e.g. ghost-cli) work **without
+  root**. Set in the login profile only, so the image's build-time root globals still
+  land in `/usr`. `verify-base.sh` now also asserts pnpm ≥ 10 and that the npm global
+  prefix is user-writable, not `/usr`, and on PATH.
 - **Node bumped 20 → 22** (`sandboxd-base`): removes the `worker_threads.markAsUncloneable`
   crash class (undici 8 and similar libs crashed the dev server on boot under Node 20).
   npm 10 + pnpm 9 + bun retained; Python/uv/build tools unchanged.
