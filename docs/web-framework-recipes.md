@@ -159,7 +159,11 @@ These were verified beyond "200" — admin UI **plus** a real DB write **plus** 
 global npm prefix** (the command repoints it to `~/.npm-global`); the recipe encodes
 the proven sequence but expect to adjust. Strapi/Payload are smoother (the admin
 registration writes the DB on first use). All three persist to **app-side SQLite** —
-this is **sandbox/dev state, not managed production hosting**.
+proving sandboxd runs **self-contained app services with embedded SQLite** end-to-end
+(admin UI + DB write/persistence + API). Caveats: this is **sandbox/dev state, not
+managed production hosting**; **snapshot size grows** with the DB + `node_modules`;
+and **external Postgres/MySQL/Redis remain outside this release** (custom image or an
+external service).
 
 ## Maintainers — candidate presets
 

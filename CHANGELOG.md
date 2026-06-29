@@ -44,9 +44,15 @@ a patch is fixes only).
   `version` parsed to an empty `{workers:[]}` and returned `valid:true`; now a missing
   `version` → `valid:false` ("must declare 'version: 1'"), an unsupported `version`
   (e.g. `2`) → `valid:false` ("unsupported version"), and an empty manifest is invalid.
-  No `effective` runtime is returned for an invalid manifest (only `parsed`). This is
-  the strict guidance validator; runtimed's executor stays lenient (apps still boot on
-  a bad manifest via defaults) — the doc now spells out that split.
+  No `effective` runtime is returned for an invalid manifest (only the as-declared
+  `parsed`). This is the strict guidance validator; runtimed's executor stays lenient
+  (apps still boot on a bad manifest via defaults) — the doc spells out that split.
+- **runtime-inspect now agrees with the validator.** `existing_manifest` gained
+  `valid` + `errors` from the **same** `manifest.Validate` used by
+  `POST /v1/runtime/manifest/validate` and `GET /v1/apps/{id}/runtime/manifest`, so all
+  three are consistent (a present-but-versionless manifest is `authoritative:true` —
+  it exists and takes precedence — but `valid:false` with the version error). The
+  `web_*` summary fields are the as-declared parse (non-authoritative when invalid).
 - **Manifest validation response** (`POST /v1/runtime/manifest/validate`): now returns
   a `parsed` web/workers view (as-declared, no defaults) **whenever the YAML parses
   — even for an invalid manifest** — so callers can confirm the web command was

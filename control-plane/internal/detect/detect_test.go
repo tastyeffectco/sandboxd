@@ -222,3 +222,30 @@ func TestInspectDjangoConfigSnippet(t *testing.T) {
 		t.Errorf("django should carry an ALLOWED_HOSTS settings.py snippet: %v", dj.ConfigSnippets)
 	}
 }
+
+// runtime-inspect agrees with the core validator: a present-but-versionless
+// manifest is authoritative (it exists) yet valid:false with the version error —
+// consistent with POST /v1/runtime/manifest/validate.
+func TestExistingManifestValidityConsistent(t *testing.T) {
+	bad := Inspect(mapFiles{"sandbox.yaml": "web:\n  command: \"node server.js\"\n  port: 3000\n"}).ExistingManifest
+	if bad == nil || !bad.Present || !bad.Authoritative {
+		t.Fatalf("a present manifest stays present+authoritative: %+v", bad)
+	}
+	if bad.Valid {
+		t.Errorf("versionless manifest must be valid:false: %+v", bad)
+	}
+	found := false
+	for _, e := range bad.Errors {
+		if strings.Contains(e, "version") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a version error in existing_manifest.errors: %v", bad.Errors)
+	}
+
+	good := Inspect(mapFiles{"sandbox.yaml": "version: 1\nweb:\n  command: \"node server.js\"\n  port: 3000\n"}).ExistingManifest
+	if !good.Valid || len(good.Errors) != 0 {
+		t.Errorf("version:1 manifest must be valid with no errors: %+v", good)
+	}
+}
