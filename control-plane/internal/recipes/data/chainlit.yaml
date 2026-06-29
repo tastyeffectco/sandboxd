@@ -1,0 +1,17 @@
+id: chainlit
+display_name: Chainlit (LLM chat UI)
+detect:
+  requirements_contains: [chainlit]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install chainlit)); exec .venv/bin/chainlit run app.py --host 0.0.0.0 --port 3000 --headless"
+    port: 3000
+    health_path: "/"
+notes:
+  - "WebSocket upgrades through the preview at /ws/socket.io/ (Chainlit-specific path, not /socket.io/) — verified 101. No special host/env config needed."
+  - "Recipe only — bring your own LLM provider/keys via the app; sandboxd does not handle provider keys here."
+tags: [python, ai_chat, websocket, heavy_install]
+verified:
+  starter: "chainlit run app.py"
+  version: v0.4.9

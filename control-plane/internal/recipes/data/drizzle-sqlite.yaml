@@ -1,0 +1,18 @@
+id: drizzle-sqlite
+display_name: Drizzle ORM + better-sqlite3 (TypeScript, tsx)
+detect:
+  deps: [drizzle-orm, better-sqlite3, tsx]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/tsx ] || pnpm install; exec pnpm exec tsx src/index.ts"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Canonical TypeScript + SQLite stack (verified with Hono). The server must bind host 0.0.0.0 and port 3000 in code. Adjust the entry (src/index.ts)."
+  - "better-sqlite3 11.x uses a Node-22 prebuilt — no compile. DB persists across restarts (e.g. data.db grows)."
+  - "Drizzle's better-sqlite3 sync driver needs a terminal `.get()/.all()/.run()` — don't array-destructure the query builder."
+tags: [node, typescript, sqlite_app]
+verified:
+  starter: "Hono + Drizzle + better-sqlite3"
+  version: v0.4.9

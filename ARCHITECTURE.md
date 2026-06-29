@@ -140,9 +140,10 @@ or configure. Each is a conscious trade-off you can tighten later:
 
 A sandbox exposes **exactly one public preview endpoint** (the manifest's
 `web.port`, routed by Host). On that single port, **HTTP, WebSocket upgrades, and
-SSE all work** (verified: Streamlit/Jupyter kernel WS → `101`, Reflex + NiceGUI
-socket.io → `101`, Sanic native WS → `101` + echo, Gradio SSE queue streamed). A
-naive multi-port app (separate frontend +
+SSE all work** (verified: Streamlit/Jupyter kernel WS → `101`, Reflex + NiceGUI +
+Chainlit socket.io → `101` (Chainlit at `/ws/socket.io/`), Sanic native WS → `101` +
+echo, Gradio SSE queue streamed) — every WS framework tested works with zero per-app
+config. A naive multi-port app (separate frontend +
 backend ports) is **not** reachable on the second port — run it in single-port mode
 (e.g. Reflex `--single-port`, a fullstack server that mounts the API + socket on one
 port) or stand up an **in-sandbox reverse proxy** that fans `/` and `/api` off the
@@ -158,6 +159,13 @@ with the app, so no system `sqlite3` CLI is needed). The DB file lives in the
 workspace, so **snapshots include it and can grow large**. Postgres/MySQL/Redis
 need a custom image or an external service — there's no in-sandbox service layer,
 DB provisioning, or Docker Compose (by design).
+
+On **Node 22**, SQLite is a non-issue across the board: `better-sqlite3` 11.x and
+`@libsql` ship arm64 **prebuilts** (no compile); Node's built-in `node:sqlite` works
+with `NODE_OPTIONS=--experimental-sqlite`; and Python's `apsw`/`python-fasthtml`
+bundle their own engine. The base image's Python `setuptools`/`distutils` fix is the
+safety net for the cases that *do* compile from source (e.g. Ghost's `sqlite3` +
+`sharp`). Recipes stay advisory — the DB file is app state.
 
 `--userns=host` is set on the infra containers (and, by default, on sandboxes)
 so workspace ownership is deterministic whether or not the host daemon uses
