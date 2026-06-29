@@ -3,7 +3,7 @@ display_name: Vite + React
 preset: react-vite
 detect:
   deps: [vite, react]
-  exclude_deps: [next, astro, "@remix-run/dev", "@sveltejs/kit", nuxt, gatsby, "@tanstack/react-start"]
+  exclude_deps: [next, astro, "@remix-run/dev", "@sveltejs/kit", nuxt, gatsby, "@tanstack/react-start", "@react-router/dev"]
 suggested_manifest: |
   version: 1
   web:

@@ -1,0 +1,18 @@
+id: fasthtml
+display_name: FastHTML + SQLite (Answer.AI hypermedia)
+detect:
+  requirements_contains: [python-fasthtml]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install python-fasthtml)); exec .venv/bin/python main.py"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Call serve(host='0.0.0.0', port=3000) in main.py. HTMX is baked in — partial (HX-Request) vs full-document content negotiation verified."
+  - "App-side SQLite persistence verified (e.g. todos.db rows survive reload). Note the fast_app(title=, tbls=) API when wiring tables."
+  - "Not Vite — no host-check / allowedHosts concern."
+tags: [python, hypermedia, sqlite_app]
+verified:
+  starter: "python-fasthtml (HTMX + sqlite todos)"
+  version: v0.4.9
