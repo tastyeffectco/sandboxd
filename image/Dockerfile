@@ -27,10 +27,10 @@
 #     image's runtime PATH omits /usr/sbin since the container runs as
 #     the unprivileged sandbox user, so admin tools don't belong on
 #     PATH at runtime).
-#   - `npm install -g pnpm@${PNPM_VERSION}` instead of corepack — Node
-#     20's bundled corepack auto-resolves to pnpm 11.x even with
-#     `corepack prepare --activate`, and pnpm 11 needs Node 22+ so the
-#     runtime crashes on `node:sqlite` import.
+#   - `npm install -g pnpm@${PNPM_VERSION}` instead of corepack — corepack
+#     auto-resolves to a floating pnpm; we pin an explicit version. (On the
+#     Node 22 base, pnpm 10/11 are fine; the image pins pnpm 10.x for catalog
+#     workspace support — see the PNPM_VERSION arg.)
 #   - `env UV_INSTALL_DIR=/usr/local sh` instead of mv-after-install —
 #     the uv 0.4 installer moved its default target from ~/.local/bin
 #     to ~/.cargo/bin, and treats `UV_INSTALL_DIR` as a prefix that
@@ -61,7 +61,11 @@ RUN cd control-plane && CGO_ENABLED=0 go build -trimpath -o /runtimed ./cmd/runt
 FROM debian:stable-slim
 
 ARG NODE_VERSION=22.x
-ARG PNPM_VERSION=9.12.0
+# pnpm 10.x: supports catalog-only `pnpm-workspace.yaml` (no `packages:` key) used by
+# modern release tarballs (e.g. Ghost 6 + `packageManager: pnpm@11`). pnpm 9 rejects
+# those with "packages field missing or empty". Still installed explicitly (not via
+# corepack) for a deterministic version; Node 22 supports pnpm 10/11.
+ARG PNPM_VERSION=10.34.4
 ARG BUN_VERSION=1.1.30
 ARG UV_VERSION=0.4.20
 

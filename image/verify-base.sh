@@ -26,6 +26,9 @@ check "node worker_threads.markAsUncloneable" node -e 'require("worker_threads")
 
 check "npm    $(npm --version 2>/dev/null)"  npm --version
 check "pnpm   $(pnpm --version 2>/dev/null)" pnpm --version
+# pnpm must be >= 10 (catalog-only workspaces; Ghost 6 etc.)
+pnpm_major="$(pnpm --version 2>/dev/null | cut -d. -f1)"
+if [ "${pnpm_major:-0}" -ge 10 ] 2>/dev/null; then ok "pnpm major >= 10"; else bad "pnpm major is ${pnpm_major:-?} (want >= 10)"; fi
 check "bun    $(bun --version 2>/dev/null)"  bun --version
 check "python3 $(python3 --version 2>/dev/null)" python3 --version
 check "uv     $(uv --version 2>/dev/null)"   uv --version
@@ -33,6 +36,16 @@ check "uv     $(uv --version 2>/dev/null)"   uv --version
 # Finding A: node-gyp on Python 3.12+ needs distutils, which setuptools provides.
 check "python distutils (node-gyp)" python3 -c 'import distutils.version; distutils.version.StrictVersion'
 check "python setuptools"           python3 -c 'import setuptools'
+
+# Global npm prefix must be user-writable (default /usr is root-owned). Checked under
+# a LOGIN shell (`bash -lc`) because runtimed runs app/agent commands that way, which
+# is where NPM_CONFIG_PREFIX is set.
+npm_prefix="$(bash -lc 'npm config get prefix' 2>/dev/null)"
+if [ "$npm_prefix" != "/usr" ] && [ -n "$npm_prefix" ]; then ok "npm global prefix is $npm_prefix (not /usr)"; else bad "npm global prefix is '$npm_prefix' (root-owned /usr)"; fi
+# prefix bin dir is on the login PATH
+check "npm global bin on login PATH" bash -lc 'case ":$PATH:" in *":$(npm config get prefix)/bin:"*) exit 0;; *) exit 1;; esac'
+# prefix is actually writable by this (sandbox) user — proves `npm install -g` works
+check "npm global prefix writable"   bash -lc 'p=$(npm config get prefix); mkdir -p "$p/bin" && touch "$p/bin/.probe" && rm -f "$p/bin/.probe"'
 
 check "make"  make --version
 check "gcc"   gcc --version
