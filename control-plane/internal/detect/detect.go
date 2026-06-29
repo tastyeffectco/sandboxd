@@ -75,13 +75,20 @@ type Suggestion struct {
 	Tags              []string                `json:"tags,omitempty"`
 }
 
-// ManifestSummary describes an existing sandbox.yaml (authoritative when present).
+// ManifestSummary describes an existing sandbox.yaml. Authoritative = a manifest is
+// present and takes precedence (sandboxd won't substitute a runtime). Valid/Errors
+// come from the SAME core validator as POST /v1/runtime/manifest/validate and
+// GET /v1/apps/{id}/runtime/manifest, so all three agree (e.g. a versionless
+// manifest is present+authoritative but valid:false). The web_* fields are
+// as-declared (parsed, non-authoritative when valid is false).
 type ManifestSummary struct {
-	Present       bool   `json:"present"`
-	Authoritative bool   `json:"authoritative"`
-	WebCommand    string `json:"web_command,omitempty"`
-	WebPort       int    `json:"web_port,omitempty"`
-	HealthPath    string `json:"health_path,omitempty"`
+	Present       bool     `json:"present"`
+	Authoritative bool     `json:"authoritative"`
+	Valid         bool     `json:"valid"`
+	Errors        []string `json:"errors,omitempty"`
+	WebCommand    string   `json:"web_command,omitempty"`
+	WebPort       int      `json:"web_port,omitempty"`
+	HealthPath    string   `json:"health_path,omitempty"`
 }
 
 // Result is the runtime-inspect payload.
@@ -241,9 +248,12 @@ func existingManifest(f Files) *ManifestSummary {
 	if !ok {
 		return &ManifestSummary{Present: false}
 	}
-	sum := &ManifestSummary{Present: true, Authoritative: true}
-	if m, err := manifest.Parse(raw); err == nil && m.Web != nil {
-		sum.WebCommand, sum.WebPort, sum.HealthPath = m.Web.Command, m.Web.Port, m.Web.HealthPath
+	// Use the authoritative core validator so runtime-inspect agrees with the
+	// validate/manifest endpoints (notably: version is required).
+	res := manifest.Validate(raw)
+	sum := &ManifestSummary{Present: true, Authoritative: true, Valid: res.Valid, Errors: res.Errors}
+	if res.Parsed != nil && res.Parsed.Web != nil { // as-declared (non-authoritative when invalid)
+		sum.WebCommand, sum.WebPort, sum.HealthPath = res.Parsed.Web.Command, res.Parsed.Web.Port, res.Parsed.Web.HealthPath
 	}
 	return sum
 }

@@ -504,8 +504,10 @@ paths:
                     type: object
                     properties:
                       present: { type: boolean }
-                      authoritative: { type: boolean }
-                      web_command: { type: string }
+                      authoritative: { type: boolean, description: A sandbox.yaml exists and takes precedence (independent of validity). }
+                      valid: { type: boolean, description: Verdict from the same core validator as /v1/runtime/manifest/validate (version required). }
+                      errors: { type: array, items: { type: string }, description: Why the manifest is invalid, if valid is false. }
+                      web_command: { type: string, description: As-declared (non-authoritative when valid is false). }
                       web_port: { type: integer }
                       health_path: { type: string }
                   suggestions:
