@@ -109,7 +109,13 @@ func main() {
 	// defaults (a Vite web app); a parse error logs and falls back safely.
 	m, err := LoadManifest(appDir, manifestDefaults)
 	if err != nil {
-		log.Warn("manifest load failed; using defaults", "err", err.Error())
+		// Distinguish "misconfigured present manifest -> no preview" from a
+		// recoverable problem where we fell back to the default web app.
+		if m.Web == nil {
+			log.Warn("sandbox.yaml is invalid — no web process; no preview will be served", "err", err.Error())
+		} else {
+			log.Warn("sandbox.yaml problem; using default web app", "err", err.Error())
+		}
 	}
 
 	a := &app{

@@ -73,13 +73,37 @@ func TestValidateTopLevelCommandRejected(t *testing.T) {
 	}
 }
 
-func TestValidateUnknownTopLevelWarns(t *testing.T) {
+// Unknown top-level keys are ERRORS in v1 (closed key set) — they used to warn,
+// which let processes:/services: parse to an empty runtime and silently run the
+// default template (QA footgun).
+func TestValidateUnknownTopLevelErrors(t *testing.T) {
 	r := Validate([]byte("version: 1\nweb:\n  command: x\n  port: 3000\nwbe: oops\n"))
-	if !r.Valid {
-		t.Errorf("unknown key should NOT invalidate (forward-compat): %+v", r)
+	if r.Valid || !hasMatch(r.Errors, "wbe") {
+		t.Errorf("unknown top-level key must be an error: %+v", r)
 	}
-	if !hasMatch(r.Warnings, "wbe") {
-		t.Errorf("unknown key should warn: %v", r.Warnings)
+}
+
+// The exact footgun keys get pointed errors; none silently validate.
+func TestValidateFootgunTopLevelKeys(t *testing.T) {
+	cases := []struct{ yaml, want string }{
+		{"version: 1\nprocesses:\n  - cmd: x\n", "workers"},                      // did you mean workers/web
+		{"version: 1\nservices:\n  db: { image: postgres }\n", "Docker Compose"}, // not compose
+		{"version: 1\ncommand: \"pnpm dev\"\n", "web.command"},                   // belongs under web
+		{"version: 1\nworkers:\n  - name: w\n    command: x\n", ""},              // worker-only is VALID
+		{"version: 1\nweb:\n  command: x\n  port: 3000\n", ""},                   // web is VALID
+		{"version: 1\n", "nothing to run"},                                       // no web/workers
+	}
+	for _, c := range cases {
+		r := Validate([]byte(c.yaml))
+		if c.want == "" {
+			if !r.Valid {
+				t.Errorf("expected valid for %q: %+v", c.yaml, r)
+			}
+			continue
+		}
+		if r.Valid || !hasMatch(r.Errors, c.want) {
+			t.Errorf("expected invalid (%q) for %q: %+v", c.want, c.yaml, r)
+		}
 	}
 }
 

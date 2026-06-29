@@ -289,3 +289,29 @@ func TestManifestWorkerRestartAfterTask(t *testing.T) {
 		t.Error("worker restart_after_task should default to false when absent")
 	}
 }
+
+// A present manifest with unrecognized top-level keys (processes:/services:) must
+// NOT silently run the default react-standard web app — no web, clear error.
+func TestManifestUnknownTopLevelNoDefaultWeb(t *testing.T) {
+	for _, bad := range []string{
+		"version: 1\nprocesses:\n  - cmd: \"node x\"\n",
+		"version: 1\nservices:\n  web: { image: node }\n",
+	} {
+		dir := writeManifest(t, bad)
+		m, err := LoadManifest(dir, testDefaults)
+		if err == nil {
+			t.Errorf("expected an error for %q", bad)
+		}
+		if m.Web != nil {
+			t.Errorf("misconfigured manifest must NOT get a default web app: %+v", m.Web)
+		}
+	}
+	// Control: an empty/stray file still defaults to web (back-compat), and
+	// worker-only stays worker-only.
+	if m, _ := LoadManifest(writeManifest(t, "\n"), testDefaults); m.Web == nil {
+		t.Error("empty manifest should still be default web")
+	}
+	if m, _ := LoadManifest(writeManifest(t, "version: 1\nworkers:\n  - name: w\n    command: x\n"), testDefaults); m.Web != nil {
+		t.Error("worker-only manifest must have no web")
+	}
+}

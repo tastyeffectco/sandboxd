@@ -140,8 +140,9 @@ or configure. Each is a conscious trade-off you can tighten later:
 
 A sandbox exposes **exactly one public preview endpoint** (the manifest's
 `web.port`, routed by Host). On that single port, **HTTP, WebSocket upgrades, and
-SSE all work** (verified: Streamlit/Jupyter kernel WS → `101`, Reflex socket.io →
-`101`, Gradio SSE queue streamed). A naive multi-port app (separate frontend +
+SSE all work** (verified: Streamlit/Jupyter kernel WS → `101`, Reflex + NiceGUI
+socket.io → `101`, Sanic native WS → `101` + echo, Gradio SSE queue streamed). A
+naive multi-port app (separate frontend +
 backend ports) is **not** reachable on the second port — run it in single-port mode
 (e.g. Reflex `--single-port`, a fullstack server that mounts the API + socket on one
 port) or stand up an **in-sandbox reverse proxy** that fans `/` and `/api` off the

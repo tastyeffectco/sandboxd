@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/sandboxd/control-plane/internal/preset"
 	"gopkg.in/yaml.v3"
@@ -143,13 +144,45 @@ func LoadManifest(appDir string, def Defaults) (*Manifest, error) {
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		return defaultManifest(def), fmt.Errorf("parse %s: %w", ManifestFile, err)
 	}
+	// A PRESENT manifest with unrecognized top-level keys (e.g. processes:/services:)
+	// parses to no web + no workers. Do NOT silently inject the default (react-
+	// standard) web app and run the wrong template — serve no preview and surface the
+	// error so the user fixes the manifest. (An empty/stray file has no such keys and
+	// still defaults to web; worker-only has workers; both are unaffected.)
+	bare := m.Web == nil && len(m.Workers) == 0
 	m.applyDefaults(def)
+	if bare {
+		if unknown := unknownTopLevelKeys(raw); len(unknown) > 0 {
+			m.Web = nil // undo the default-web injection; no preview for a misconfigured manifest
+			return &m, fmt.Errorf("invalid %s: unrecognized top-level key(s) %v with no web:/workers: — no preview will be served (use web:/workers:, not %v)", ManifestFile, unknown, unknown)
+		}
+	}
 	// Reject an invalid manifest and fall back to the safe default rather than
 	// boot a misconfigured (or unsafe) app. The caller logs the error.
 	if err := m.validate(); err != nil {
 		return defaultManifest(def), fmt.Errorf("invalid %s: %w", ManifestFile, err)
 	}
 	return &m, nil
+}
+
+// unknownTopLevelKeys returns the sorted top-level keys that aren't part of the v1
+// contract — the typed Manifest silently drops them, so a generic parse is the only
+// way to see a processes:/services: mistake.
+func unknownTopLevelKeys(raw []byte) []string {
+	var top map[string]any
+	if err := yaml.Unmarshal(raw, &top); err != nil {
+		return nil
+	}
+	var out []string
+	for k := range top {
+		switch k {
+		case "version", "web", "workers", "build":
+		default:
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func defaultManifest(def Defaults) *Manifest {
