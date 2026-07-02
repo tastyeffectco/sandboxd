@@ -10,6 +10,7 @@
 
 import { CATALOG2 } from './catalog2'
 import { CATALOG3 } from './catalog3'
+import { PINS } from './catalog-pins'
 
 export type CatalogCategory = 'dev' | 'productivity' | 'media' | 'data' | 'network' | 'ai' | 'other'
 export type CatalogEffort = 'instant' | 'quick' | 'build'
@@ -105,6 +106,19 @@ mkdir -p "$TMPDIR"
 // when asset names are stable.
 const ghAsset = (repo: string, match: string, exclude = 'sha|sig|asc') =>
   `U=$(curl -s https://api.github.com/repos/${repo}/releases/latest | grep browser_download_url | grep -iE '${match}' | grep -viE '${exclude}' | cut -d'"' -f4 | head -1)`
+
+
+// Hardening: pinned + SHA256-verified download. Recipes for static binaries use
+// this instead of resolving "latest" at install — deterministic and tamper-evident.
+// A drifted or tampered asset fails `sha256sum -c` and aborts the install.
+export function verifiedDownload(id: string, outfile: string): string {
+  const pin = PINS[id]
+  if (!pin) return `echo "no pin for ${id}" >&2; exit 1`
+  return [
+    `curl -fsSL "${pin.url}" -o ${outfile}`,
+    `echo "${pin.sha256}  ${outfile}" | sha256sum -c - || { echo "CHECKSUM MISMATCH for ${id}" >&2; exit 1; }`,
+  ].join('\n  ')
+}
 
 export const CATALOG: CatalogRecipe[] = [
   // ───────────────────────── instant: prebuilt binaries ─────────────────────────
@@ -1012,13 +1026,15 @@ export function classifyRuntime(script: string): CatalogRuntime {
 }
 
 const SHIPPED: CatalogRuntime[] = ['node', 'python', 'binary']
+// Excluded from v1: heavy/flaky builds that don't meet the 'one-click works' bar.
+const FLAKY = new Set(['searxng', 'web-check'])
 
 const ALL_RECIPES: CatalogRecipe[] = [...CATALOG, ...CATALOG2, ...CATALOG3]
 for (const r of ALL_RECIPES) r.runtime = classifyRuntime(r.script)
 
 // The exported catalog the App Store renders (v1: 79 no-runtime-drop apps).
 CATALOG.length = 0
-CATALOG.push(...ALL_RECIPES.filter((r) => SHIPPED.includes(classifyRuntime(r.script))))
+CATALOG.push(...ALL_RECIPES.filter((r) => SHIPPED.includes(classifyRuntime(r.script)) && !FLAKY.has(r.id)))
 
 // Shelved runtime-drop families (Java/PHP/.NET/Deno) — re-enable per image profile.
 export const CATALOG_DEFERRED: CatalogRecipe[] = ALL_RECIPES.filter((r) => !SHIPPED.includes(classifyRuntime(r.script)))
