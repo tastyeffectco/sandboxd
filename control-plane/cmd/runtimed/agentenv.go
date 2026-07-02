@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sandboxd/control-plane/internal/agentauth"
 )
 
 // agentAuthBaseDir is the in-container parent of per-provider auth mounts
@@ -38,8 +40,28 @@ func agentEnv(agentName string, specEnv map[string]string) []string {
 	}
 	if h := agentAuthHome(agentName); h != "" {
 		overlay["HOME"] = h
+		// API-key auth: if the owner connected this provider by API key, the key
+		// was stored opaquely at HOME/<APIKeyFile>. Inject it as the provider's
+		// one key env var — the SINGLE deliberate exception to the secret scrub
+		// below (buildAgentEnv drops every other secret-shaped var). OAuth-imported
+		// providers have no such file, so nothing is injected.
+		if env, ok := agentauth.APIKeyEnv(agentName); ok {
+			if key := readAPIKey(filepath.Join(h, agentauth.APIKeyFile)); key != "" {
+				overlay[env] = key
+			}
+		}
 	}
 	return buildAgentEnv(os.Environ(), overlay)
+}
+
+// readAPIKey reads a stored API-key file, returning its trimmed contents (or ""
+// if absent/empty). The file is a single opaque line; only whitespace is stripped.
+func readAPIKey(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // buildAgentEnv constructs the environment for a spawned coding-agent process.

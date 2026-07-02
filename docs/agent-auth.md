@@ -12,18 +12,18 @@ How sandboxd gives a sandbox's coding agent its credentials **without** putting
 them in the workspace, snapshots, container env, logs, events, or task results.
 
 > **Status (accepted on the branch):** the store + runtime delivery, opaque
-> **credential import** for claude-code, and the **Claude Code task adapter** are
-> done and verified. There is **no custom OAuth and no `setup-token` browser
-> flow** implemented — credentials are obtained by **importing** an existing
-> `~/.claude/.credentials.json`. A guided in-console login (`setup-token`
-> PTY/xterm), **Codex** support, and **stronger per-task auth isolation** are
-> **deferred** (the old stdout-scrape `setup-token` automation was removed because
-> claude v2's Ink/TUI flow can't be driven by piped stdin).
+> **credential import** and **API-key** connect for **all three providers**
+> (opencode, claude-code, codex), and the **Claude Code task adapter** are done.
+> There is **no server-side browser OAuth / `setup-token` flow** — a
+> "subscription" is connected by **importing the credential the provider's own
+> `<cli> login` already produced** on the owner's machine. A guided in-console
+> login (PTY/xterm) and **stronger per-task auth isolation** remain **deferred**.
 >
-> **Product model:** the `opencode` provider runs OpenCode (still supported); the
-> `claude-code` provider runs the real Claude Code CLI adapter. Claude
-> credentials are only meaningful for `claude-code` — they are never fed to
-> OpenCode.
+> **Product model:** each provider carries its **own** credentials. `opencode`
+> and `claude-code` are **runnable** (they have runtimed task adapters); `codex`
+> can be **connected** (its creds are stored + mounted) but is **not runnable
+> yet** — the console shows "credentials stored, runner not enabled yet". A
+> provider's credentials are only ever mounted for that provider, never shared.
 
 ## How credentials reach the agent
 
@@ -55,9 +55,19 @@ own `RUNTIMED_*`). Two consequences:
   env. **Credentials are delivered only as files under `HOME`, never as env.**
 - **Container-env API keys are no longer used by the agent.** Setting a key via
   the sandbox create `env` (e.g. `ANTHROPIC_API_KEY`) no longer reaches the
-  agent — populate the managed auth dir instead.
+  agent — connect the provider instead.
 
 Non-secret config (`PATH`, `HOME`, `LANG`, `*_MODEL`, `*_BASE_URL`, …) is kept.
+
+**The one allowlisted exception — managed API keys.** When a provider is
+connected *by API key*, the key is stored opaquely at
+`<DataDir>/agent-auth/<provider>/.sandboxd-apikey`. At task time runtimed reads
+that file and injects **exactly one** env var — the provider's own key var
+(`agentauth.APIKeyEnv`: `ANTHROPIC_API_KEY` for claude-code/opencode,
+`OPENAI_API_KEY` for codex) — into the agent process, overriding the scrub for
+that single name only. Every other secret-shaped var still gets dropped, and the
+key comes from the managed file, **never** from the container env. Providers
+connected by subscription import have no key file, so nothing is injected.
 
 ## What's guaranteed (verified)
 
@@ -78,22 +88,44 @@ in env at all), task results, events, or logs. (Verified live with the real
   time, so connecting/changing a provider's auth takes effect on the **next**
   sandbox (re)create. A3's per-task copy removes this too.
 
-## Connecting Claude Code: credential import
+## Connecting a provider
 
-Until the guided login lands, claude-code is connected by **importing an existing
-credential**:
+Every provider offers **two** connect methods, both owner-supplied and stored
+opaquely. Connecting fully **replaces** the provider's auth dir, so a provider
+holds **exactly one** method at a time (switching from one to the other wipes the
+old material atomically).
 
-1. On a machine where you've signed in to Claude Code (`claude setup-token` or a
-   normal login), copy the contents of `~/.claude/.credentials.json`.
-2. Console → AI Agents → **Import Claude credentials** → paste it. (Or
-   `POST /v1/agents/claude-code/import` with `{"credentials":"<contents>"}`.)
-3. sandboxd writes the bytes **verbatim** (opaque, never parsed) to a staging
-   dir at `.claude/.credentials.json`, then atomically **promotes** it to
-   `<DataDir>/agent-auth/claude-code/`.
-4. `GET /v1/agents` reports `claude-code: connected, runnable: true`.
+### A) Subscription — credential import (OAuth)
 
-**Disconnect** (`POST /v1/agents/claude-code/disconnect`) deletes the auth dir.
-The imported credential is never logged, echoed back, or emitted in events.
+Paste the credential the provider's own login already produced on your machine —
+sandboxd never drives a browser flow:
+
+| Provider      | `<cli> login`         | Credential file to paste                  |
+| ------------- | --------------------- | ----------------------------------------- |
+| `claude-code` | `claude` → `/login`   | `~/.claude/.credentials.json`             |
+| `codex`       | `codex login`         | `~/.codex/auth.json`                       |
+| `opencode`    | `opencode auth login` | `~/.local/share/opencode/auth.json`        |
+
+Console → AI Agents → **Connect subscription** → paste. (Or
+`POST /v1/agents/{provider}/import` with `{"credentials":"<contents>"}`.) The
+bytes are written **verbatim** (never parsed) to the provider's credential file
+in a staging dir, then atomically **promoted** to
+`<DataDir>/agent-auth/<provider>/`. `GET /v1/agents` then reports
+`method: "oauth"`.
+
+### B) API key
+
+Console → AI Agents → **Use API key** → paste. (Or
+`POST /v1/agents/{provider}/api-key` with `{"api_key":"<key>"}`.) The key is
+stored opaquely at `.sandboxd-apikey` and injected as the provider's key env var
+at task time (see **Env scrub → allowlisted exception**). `GET /v1/agents`
+reports `method: "api_key"`.
+
+**Disconnect** (`POST /v1/agents/{provider}/disconnect`) deletes the auth dir.
+Stored credentials/keys are never logged, echoed back, or emitted in events; the
+console textareas are write-only. `GET /v1/agents` also advertises
+`supports_oauth` / `supports_api_key` per provider so the console shows only the
+relevant actions.
 
 ## Runnable vs connected
 

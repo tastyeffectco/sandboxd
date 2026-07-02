@@ -73,6 +73,26 @@ func (s *Store) Promote(staging, provider string) error {
 	return os.Rename(staging, final)
 }
 
+// HasFile reports whether a non-empty HOME-relative file exists in a provider's
+// auth dir. Presence only — never opened or parsed. Used to report which auth
+// method a connected provider is using (credential file vs API-key file).
+func (s *Store) HasFile(provider, rel string) bool {
+	return s.CredentialPresent(s.Dir(provider), rel)
+}
+
+// Method reports how a provider is currently connected: "oauth" (a login
+// credential file is present), "api_key" (the API-key file is present), or ""
+// (not connected). Each connect fully replaces the dir, so at most one applies.
+func (s *Store) Method(provider string) string {
+	if s.HasFile(provider, APIKeyFile) {
+		return "api_key"
+	}
+	if rel, ok := CredentialFile(provider); ok && s.HasFile(provider, rel) {
+		return "oauth"
+	}
+	return ""
+}
+
 // CredentialPresent reports whether a non-empty file exists at rel within dir —
 // presence only, never opened/parsed. Used as the success signal for a login
 // (the CLI writes its long-lived token there), since exit codes are unreliable.

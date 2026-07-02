@@ -50,10 +50,14 @@ var runnable = map[string]bool{
 func Runnable(id string) bool { return runnable[id] }
 
 // credentialFiles maps a provider to the HOME-relative file its login writes the
-// long-lived token to. Used as the opaque target for credential import and the
-// presence check. The file is never opened or parsed.
+// long-lived token to. Used as the opaque target for credential import (the
+// "connect subscription" path) and the presence check. Every provider's own
+// `<cli> login` produces one of these on the owner's machine; the owner pastes
+// its contents in. The file is never opened or parsed.
 var credentialFiles = map[string]string{
 	"claude-code": ".claude/.credentials.json",
+	"codex":       ".codex/auth.json",
+	"opencode":    ".local/share/opencode/auth.json",
 }
 
 // CredentialFile returns the provider's credential file path (relative to HOME).
@@ -61,3 +65,26 @@ func CredentialFile(id string) (string, bool) {
 	f, ok := credentialFiles[id]
 	return f, ok
 }
+
+// apiKeyEnv maps a provider to the single environment variable its CLI reads an
+// API key from. This is the ONE deliberate exception to runtimed's secret-env
+// scrub: when an owner connects a provider by API key, runtimed injects just
+// this var (from the stored key file) into the agent process — nothing else
+// secret-shaped survives the scrub. opencode is Claude-centric on this platform,
+// so its key maps to ANTHROPIC_API_KEY.
+var apiKeyEnv = map[string]string{
+	"claude-code": "ANTHROPIC_API_KEY",
+	"codex":       "OPENAI_API_KEY",
+	"opencode":    "ANTHROPIC_API_KEY",
+}
+
+// APIKeyEnv returns the env var name a provider's CLI reads its API key from.
+func APIKeyEnv(id string) (string, bool) {
+	e, ok := apiKeyEnv[id]
+	return e, ok
+}
+
+// APIKeyFile is the HOME-relative file an API key is stored in (opaque, one line).
+// Distinct from any credentialFile so the two auth methods never collide; each
+// connect fully replaces the provider dir, so a provider holds exactly one method.
+const APIKeyFile = ".sandboxd-apikey"
