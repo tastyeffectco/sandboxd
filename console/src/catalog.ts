@@ -8,6 +8,8 @@
 // Every script here was live-verified on sandboxd (arm64, SQLite/on-disk state)
 // during the self-hosted catalog QA sweep (qa-reports/selfhosted/CHUNK-17..25.md).
 
+import { CATALOG2 } from './catalog2'
+
 export type CatalogCategory = 'dev' | 'productivity' | 'media' | 'data' | 'network' | 'ai' | 'other'
 export type CatalogEffort = 'instant' | 'quick' | 'build'
 
@@ -26,6 +28,7 @@ export interface CatalogRecipe {
   category: CatalogCategory
   effort: CatalogEffort
   modifiable: CatalogModifiable
+  repo: string // upstream source repo — agents read it to understand the app
   script: string // catalog-run.sh content (idempotent install + exec run)
   healthPath: string // must be a 200 route
   entryPath?: string // UI path when not '/'
@@ -34,26 +37,36 @@ export interface CatalogRecipe {
   // (config file paths, restart semantics). Written to workspace/app/AGENTS.md
   // at install so tasks land with real context instead of a mystery binary.
   agentNotes?: string
+  // Optional per-app skills: small how-to docs written to workspace/app/skills/
+  // that teach agents to OPERATE the running app (create an n8n workflow via
+  // its API, send a gotify message, …) — not just edit files.
+  skills?: { name: string; content: string }[]
 }
 
 // AGENTS.md written into the workspace at install — the contract between the
 // catalog and agent tasks (`POST /v1/sandboxes/{id}/tasks`).
 export function recipeAgentsMd(r: CatalogRecipe): string {
-  const common = `# ${r.name} (installed from the sandboxd App Store)
-
-This workspace runs **${r.name}** — ${r.blurb}.
-
-- Supervision: \`sandbox.yaml\` → \`web.command\` → \`catalog-run.sh\` (install-once guard, then \`exec\` the server on 0.0.0.0:3000).
-- To apply changes: edit files, then restart the web process (stop/start the sandbox or kill the web process; runtimed restarts it).
-- Keep the server binding to 0.0.0.0:3000 and state inside the workspace.
-`
-  const model =
+  const lines = [
+    `# ${r.name} (installed from the sandboxd App Store)`,
+    '',
+    `This workspace runs **${r.name}** — ${r.blurb}.`,
+    '',
+    `- Upstream source: ${r.repo} — read it (or its docs) to understand the app before non-trivial changes.`,
+    '- Supervision: `sandbox.yaml` → `web.command` → `catalog-run.sh` (install-once guard, then `exec` the server on 0.0.0.0:3000).',
+    '- The app listens on http://127.0.0.1:3000 inside this sandbox — you can drive its HTTP API directly with curl.',
+    '- To apply changes: edit files, then restart the web process (stop/start the sandbox; runtimed restarts it).',
+    '- Keep the server binding to 0.0.0.0:3000 and all state inside the workspace.',
     r.modifiable === 'source'
-      ? `- The app's FULL SOURCE lives in this workspace — you may edit code and rebuild (see catalog-run.sh for the build steps its install phase used).
-`
-      : `- The app runs from a PREBUILT RELEASE BINARY: do NOT try to edit the app's own code. You CAN edit its configuration, catalog-run.sh flags/env, plugins, and data.
-`
-  return common + model + (r.agentNotes ? `\n${r.agentNotes}\n` : '')
+      ? "- The app's FULL SOURCE lives in this workspace — you may edit code and rebuild (see catalog-run.sh for the build steps its install phase used)."
+      : "- The app runs from a PREBUILT RELEASE BINARY: do NOT try to edit the app's own code. You CAN edit its configuration, catalog-run.sh flags/env, plugins, and data.",
+  ]
+  if (r.agentNotes) lines.push('', r.agentNotes)
+  if (r.skills?.length) {
+    lines.push('', '## Skills', '', 'Task-oriented how-tos for operating this app live in `skills/`:')
+    for (const sk of r.skills) lines.push(`- skills/${sk.name}.md`)
+  }
+  lines.push('')
+  return lines.join('\n')
 }
 
 export function recipeManifest(r: CatalogRecipe): string {
@@ -92,6 +105,7 @@ export const CATALOG: CatalogRecipe[] = [
     category: 'productivity',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/filebrowser/filebrowser',
     agentNotes: 'Settings live in `fb.db` — manage via `./filebrowser config set ... -d fb.db` and `./filebrowser users ... -d fb.db`. Files served from `root/`.',
     healthPath: '/',
     note: 'Create users via the CLI; first-run DB is initialized automatically.',
@@ -113,6 +127,11 @@ exec ./filebrowser -a 0.0.0.0 -p 3000 -d fb.db -r root
     category: 'network',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/gotify/server',
+    skills: [{ name: 'send-notification', content: `# Gotify: send a notification
+1. Login admin/admin → create an application: \`curl -s -u admin:admin -X POST 127.0.0.1:3000/application -H 'content-type: application/json' -d '{"name":"agent"}'\` → take \`.token\`.
+2. Send: \`curl -s -X POST '127.0.0.1:3000/message?token=APPTOKEN' -F title=Hello -F message='It works' -F priority=5\`
+3. Read messages: \`curl -s -u admin:admin 127.0.0.1:3000/message\`` }],
     agentNotes: 'Config via GOTIFY_* env in `catalog-run.sh`; plugins dir supported. Admin login admin/admin. DB: gotify.db (SQLite).',
     healthPath: '/',
     note: 'Default login admin/admin.',
@@ -134,6 +153,7 @@ exec ./gotify-linux-arm64
     category: 'dev',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/henrygd/beszel',
     healthPath: '/',
     script:
       SH +
@@ -152,6 +172,17 @@ exec ./beszel serve --http 0.0.0.0:3000
     category: 'productivity',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/glanceapp/glance',
+    skills: [{ name: 'add-widgets', content: `# Glance: customize the dashboard
+Everything is \`glance.yml\`. Add widgets under pages[].columns[].widgets, e.g.:
+\`\`\`yaml
+- type: rss
+  feeds:
+    - url: https://news.ycombinator.com/rss
+- type: weather
+  location: Berlin, Germany
+\`\`\`
+Then restart the web process. Widget list: https://github.com/glanceapp/glance/blob/main/docs/configuration.md` }],
     agentNotes: 'Config: `glance.yml` (pages/columns/widgets — clock, weather, rss, bookmarks…). Edit it and restart to change the dashboard.',
     healthPath: '/',
     script:
@@ -172,6 +203,7 @@ exec ./glance --config glance.yml
     category: 'dev',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/axllent/mailpit',
     healthPath: '/',
     script:
       SH +
@@ -190,6 +222,7 @@ exec ./mailpit --listen 0.0.0.0:3000 --database /home/sandbox/workspace/app/mail
     category: 'network',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/syncthing/syncthing',
     healthPath: '/',
     script:
       SH +
@@ -209,6 +242,7 @@ exec ./syncthing --gui-address=0.0.0.0:3000 --no-browser --home=/home/sandbox/wo
     category: 'network',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/drakkan/sftpgo',
     healthPath: '/',
     script:
       SH +
@@ -230,6 +264,7 @@ exec ./sftpgo serve
     category: 'productivity',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/usememos/memos',
     healthPath: '/',
     script:
       SH +
@@ -248,6 +283,7 @@ exec ./memos --addr 0.0.0.0 --port 3000 --data /home/sandbox/workspace/app/memos
     category: 'dev',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/muety/wakapi',
     healthPath: '/',
     note: 'IPv6 listener disabled (upstream dual-stack bug #860).',
     script:
@@ -270,6 +306,7 @@ exec ./wakapi
     category: 'data',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/trailbaseio/trailbase',
     healthPath: '/_/admin/',
     entryPath: '/_/admin/',
     note: 'Admin UI at /_/admin/ (root path serves the API, not a page).',
@@ -291,6 +328,7 @@ exec ./trail --data-dir /home/sandbox/workspace/app/traildepot run --address 0.0
     category: 'dev',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/coder/code-server',
     healthPath: '/',
     script:
       SH +
@@ -309,6 +347,7 @@ exec ./cs/bin/code-server --bind-addr 0.0.0.0:3000 --auth none --disable-telemet
     category: 'dev',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/gchq/CyberChef',
     healthPath: '/',
     script:
       SH +
@@ -329,6 +368,7 @@ exec python3 -m http.server 3000 --bind 0.0.0.0
     category: 'network',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/aldinokemal/go-whatsapp-web-multidevice',
     healthPath: '/',
     script:
       SH +
@@ -349,6 +389,7 @@ exec ./linux-arm64 rest --port 3000 --db-uri "file:/home/sandbox/workspace/app/g
     category: 'productivity',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/sysadminsmedia/homebox',
     healthPath: '/',
     script:
       SH +
@@ -371,6 +412,7 @@ exec ./homebox
     category: 'productivity',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://codeberg.org/readeck/readeck',
     healthPath: '/login',
     entryPath: '/login',
     note: 'UI lives at /login — the root path is not routed.',
@@ -392,6 +434,7 @@ exec ./readeck serve
     category: 'productivity',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/TriliumNext/Notes',
     healthPath: '/',
     script:
       SH +
@@ -414,6 +457,7 @@ exec ./trilium.sh
     category: 'data',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://git.deuxfleurs.fr/Deuxfleurs/garage',
     agentNotes: 'Config: `garage.toml` (S3 on :3000). Manage buckets/keys with `./garage -c garage.toml bucket|key ...`.',
     healthPath: '/',
     note: 'S3 API on the preview port; responses are S3 XML (no HTML UI).',
@@ -437,6 +481,7 @@ exec ./garage -c /home/sandbox/workspace/app/garage.toml server
     category: 'data',
     effort: 'instant',
     modifiable: 'config',
+    repo: 'https://github.com/maplibre/martin',
     agentNotes: 'Tile sources are the .mbtiles/.pmtiles files passed in `catalog-run.sh`. Add files to the workspace and append them to the martin command.',
     healthPath: '/catalog',
     entryPath: '/catalog',
@@ -471,6 +516,7 @@ exec ./martin --listen-addresses 0.0.0.0:3000 --webui enable-for-all /home/sandb
     category: 'dev',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/nicolargo/glances',
     healthPath: '/',
     script:
       SH +
@@ -489,6 +535,7 @@ exec glances -w --bind 0.0.0.0 -p 3000
     category: 'productivity',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/dgtlmoon/changedetection.io',
     healthPath: '/',
     note: 'Runs the changedetection.io console script (not python -m).',
     script:
@@ -509,6 +556,7 @@ exec changedetection.io -d /home/sandbox/workspace/app/cddata -p 3000 -h 0.0.0.0
     category: 'network',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/benbusby/whoogle-search',
     healthPath: '/',
     script:
       SH +
@@ -527,6 +575,7 @@ exec whoogle-search --host 0.0.0.0 --port 3000
     category: 'other',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/esphome/esphome',
     healthPath: '/',
     script:
       SH +
@@ -546,6 +595,7 @@ exec esphome dashboard --address 0.0.0.0 --port 3000 espconfig
     category: 'ai',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/LibreTranslate/LibreTranslate',
     healthPath: '/',
     note: 'First start downloads the en/es language models (~1 min).',
     script:
@@ -566,6 +616,7 @@ exec libretranslate --host 0.0.0.0 --port 3000
     category: 'data',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/pgadmin-org/pgadmin4',
     healthPath: '/',
     note: 'Login admin@example.com / admin123456.',
     script:
@@ -602,6 +653,7 @@ exec pgadmin4
     category: 'productivity',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/actualbudget/actual-server',
     healthPath: '/',
     script:
       SH +
@@ -620,6 +672,12 @@ exec npx @actual-app/sync-server
     category: 'data',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/directus/directus',
+    skills: [{ name: 'manage-items', content: `# Directus: create collections & items via API
+1. Login: \`curl -s -X POST 127.0.0.1:3000/auth/login -H 'content-type: application/json' -d '{"email":"admin@example.com","password":"admin123456"}'\` → \`.data.access_token\`.
+2. Create collection: POST /collections with {"collection":"articles","fields":[{"field":"title","type":"string"}]}.
+3. CRUD items: POST/GET /items/articles (Authorization: Bearer TOKEN).
+Docs: https://docs.directus.io/reference/introduction.html` }],
     healthPath: '/admin/login',
     entryPath: '/admin/login',
     note: 'Login admin@example.com / admin123456. Install takes ~1–2 min.',
@@ -641,6 +699,14 @@ exec npx directus start
     category: 'ai',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/n8n-io/n8n',
+    skills: [{ name: 'create-workflow', content: `# n8n: create a workflow via the REST API
+1. First boot requires an owner: POST /rest/owner/setup with {email, firstName, lastName, password} (or complete it once in the UI).
+2. Login: \`curl -s -c /tmp/n8n.jar -X POST 127.0.0.1:3000/rest/login -H 'content-type: application/json' -d '{"emailOrLdapLoginId":"EMAIL","password":"PASS"}'\`
+3. Create workflow: \`curl -s -b /tmp/n8n.jar -X POST 127.0.0.1:3000/rest/workflows -H 'content-type: application/json' -d '{"name":"My flow","nodes":[...],"connections":{},"settings":{}}'\`
+   Node objects need: name, type (e.g. n8n-nodes-base.scheduleTrigger / .httpRequest), typeVersion, position, parameters.
+4. Activate: PATCH /rest/workflows/ID with {"active":true}.
+Alternative: the public API (X-N8N-API-KEY) once an API key is created in Settings.` }],
     agentNotes: 'Workflows/data under `n8ndata/`. n8n itself is an npm dist (pinned 1.68.1) — configure via N8N_* env in `catalog-run.sh`; do not edit node_modules.',
     healthPath: '/',
     note: 'Pinned to 1.68.1 — the latest npm release ships a broken @langchain/core dep tree. Install ~3 min.',
@@ -664,6 +730,7 @@ exec n8n start
     category: 'productivity',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/requarks/wiki',
     agentNotes: 'Config: `wiki/config.yml`. Content lives in the SQLite DB (`wiki/db.sqlite`).',
     healthPath: '/',
     script:
@@ -685,6 +752,7 @@ exec node server
     category: 'productivity',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/silverbulletmd/silverbullet',
     agentNotes: 'Your notes live in `space/` (markdown files — edit freely). Server config via flags in `catalog-run.sh`.',
     healthPath: '/',
     note: 'Runs on pinned Deno 1.46 (2.x breaks upstream); needs --unstable-kv.',
@@ -705,6 +773,7 @@ exec ./d1/deno run -A --unstable-kv https://get.silverbullet.md --hostname 0.0.0
     category: 'network',
     effort: 'quick',
     modifiable: 'config',
+    repo: 'https://github.com/shlinkio/shlink',
     healthPath: '/rest/health',
     entryPath: '/rest/health',
     note: 'API-first: /rest/health shows status; manage via shlink CLI or web client.',
@@ -734,6 +803,7 @@ exec /home/sandbox/workspace/app/php -S 0.0.0.0:3000 -t public
     category: 'productivity',
     effort: 'build',
     modifiable: 'config',
+    repo: 'https://github.com/TryGhost/Ghost',
     healthPath: '/ghost/',
     entryPath: '/ghost/',
     note: 'Install ~3–5 min (ghost-cli local install).',
@@ -772,6 +842,7 @@ exec node current/index.js
     category: 'productivity',
     effort: 'build',
     modifiable: 'source',
+    repo: 'https://github.com/gethomepage/homepage',
     agentNotes: 'Source app (Next.js). User config in `hp/config/*.yaml` (services, widgets, bookmarks); code in `hp/src`. Rebuild with `pnpm build` after code changes.',
     healthPath: '/',
     note: 'Build takes several minutes (pnpm install + next build).',
@@ -794,6 +865,7 @@ exec pnpm start
     category: 'productivity',
     effort: 'build',
     modifiable: 'source',
+    repo: 'https://github.com/Lissy93/dashy',
     agentNotes: 'Source app (Vue). User config: `dy/user-data/conf.yml`; code in `dy/src`. Rebuild with `corepack yarn build` after code changes.',
     healthPath: '/',
     note: 'Yarn-guarded project — installed via corepack yarn. Build ~2–3 min.',
@@ -816,6 +888,7 @@ exec node server
     category: 'dev',
     effort: 'build',
     modifiable: 'source',
+    repo: 'https://github.com/CorentinTh/it-tools',
     healthPath: '/',
     script:
       SH +
@@ -835,6 +908,7 @@ exec python3 -m http.server 3000 --bind 0.0.0.0
     category: 'media',
     effort: 'build',
     modifiable: 'source',
+    repo: 'https://github.com/C4illin/ConvertX',
     healthPath: '/',
     note: 'Runs from source under Bun; CSS generated at install.',
     script:
@@ -857,6 +931,7 @@ exec bun src/index.tsx
     category: 'media',
     effort: 'build',
     modifiable: 'source',
+    repo: 'https://github.com/alexta69/metube',
     healthPath: '/',
     note: 'Angular UI build ~3–4 min; requires Python 3.13.',
     script:
@@ -881,6 +956,7 @@ exec python3 app/main.py
     category: 'dev',
     effort: 'build',
     modifiable: 'source',
+    repo: 'https://github.com/healthchecks/healthchecks',
     healthPath: '/accounts/login/',
     entryPath: '/accounts/login/',
     script:
@@ -909,3 +985,6 @@ export const CATEGORIES: { id: CatalogCategory | 'all'; label: string }[] = [
   { id: 'ai', label: 'AI & Automation' },
   { id: 'other', label: 'Other' },
 ]
+
+// Expansion set (exhaustive verified list) — see catalog2.ts.
+CATALOG.push(...CATALOG2)

@@ -85,6 +85,11 @@ export function AppStore({ onOpen, onError, onInfo }: { onOpen: (appId: string) 
           await api.putWorkspaceFile(sb.id, 'workspace/app/catalog-run.sh', r.script)
           await api.putWorkspaceFile(sb.id, 'workspace/app/sandbox.yaml', recipeManifest(r))
           await api.putWorkspaceFile(sb.id, 'workspace/app/AGENTS.md', recipeAgentsMd(r))
+          // Optional per-app skills — how-tos for OPERATING the app (create an
+          // n8n workflow, send a gotify message, …) that agent tasks can read.
+          for (const sk of r.skills || []) {
+            await api.putWorkspaceFile(sb.id, `workspace/app/skills/${sk.name}.md`, sk.content)
+          }
           lastErr = null
           break
         } catch (e) {
