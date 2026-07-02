@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, App as TApp } from './api'
-import { CATALOG, CATEGORIES, CatalogRecipe, recipeManifest } from './catalog'
+import { CATALOG, CATEGORIES, CatalogRecipe, recipeAgentsMd, recipeManifest } from './catalog'
 
 // App Store — one-click installs of curated open-source apps.
 //
@@ -77,12 +77,14 @@ export function AppStore({ onOpen, onError, onInfo }: { onOpen: (appId: string) 
       const sb = await api.createAppSandbox(app.id, {})
       set(r.id, { phase: 'writing', appId: app.id })
 
-      // Recipe = two workspace files; retry briefly while the sandbox settles.
+      // Recipe = three workspace files (script, manifest, agent context);
+      // retry briefly while the sandbox settles.
       let lastErr: Error | null = null
       for (let i = 0; i < 5; i++) {
         try {
           await api.putWorkspaceFile(sb.id, 'workspace/app/catalog-run.sh', r.script)
           await api.putWorkspaceFile(sb.id, 'workspace/app/sandbox.yaml', recipeManifest(r))
+          await api.putWorkspaceFile(sb.id, 'workspace/app/AGENTS.md', recipeAgentsMd(r))
           lastErr = null
           break
         } catch (e) {
@@ -168,6 +170,9 @@ export function AppStore({ onOpen, onError, onInfo }: { onOpen: (appId: string) 
               <div className="row" style={{ alignItems: 'baseline', gap: 8 }}>
                 <div className="card-title">{r.name}</div>
                 <span className="badge">{r.effort === 'instant' ? '⚡ instant' : r.effort === 'quick' ? '~1 min' : 'build (mins)'}</span>
+                <span className="badge" title={r.modifiable === 'source' ? 'Full source in the workspace — agent tasks can modify the app itself' : 'Prebuilt release — agent tasks can modify config, flags, plugins, and data'}>
+                  {r.modifiable === 'source' ? '✎ source' : '⚙ config'}
+                </span>
               </div>
               <p className="muted" style={{ minHeight: '2.4em' }}>{r.blurb}</p>
               {r.note && <p className="muted" style={{ fontSize: '0.85em' }}>{r.note}</p>}

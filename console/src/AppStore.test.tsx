@@ -97,11 +97,17 @@ describe('console — app store', () => {
 
     await waitFor(() => expect(onInfo).toHaveBeenCalled(), { timeout: 15000 })
 
-    // Both recipe files were written via the generic files endpoint.
-    expect(Object.keys(putBodies).sort()).toEqual(['workspace/app/catalog-run.sh', 'workspace/app/sandbox.yaml'])
+    // All three recipe files were written via the generic files endpoint.
+    expect(Object.keys(putBodies).sort()).toEqual([
+      'workspace/app/AGENTS.md',
+      'workspace/app/catalog-run.sh',
+      'workspace/app/sandbox.yaml',
+    ])
     const r = CATALOG.find((x) => x.id === 'filebrowser')!
     expect(putBodies['workspace/app/sandbox.yaml']).toBe(recipeManifest(r))
     expect(putBodies['workspace/app/catalog-run.sh']).toContain('.catalog-installed')
+    // Agent context tells tasks what they can and cannot modify.
+    expect(putBodies['workspace/app/AGENTS.md']).toContain('PREBUILT RELEASE BINARY')
     // Restart ordering: stop before start, start before the final poll success.
     expect(calls.findIndex((c) => c === 'POST /v1/sandboxes/sb1/stop')).toBeLessThan(
       calls.findIndex((c) => c === 'POST /v1/sandboxes/sb1/start'),

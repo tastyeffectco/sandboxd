@@ -119,3 +119,31 @@ None block v1: the catalog ships today on the current API.
 - Installed catalog apps are ordinary apps (tagged `catalog:<id>`) — full existing AppDetail experience.
 - Catalog data lives in `console/src/catalog.ts` (v1). Later: served from a recipes repo/registry endpoint
   when the projects split.
+
+## 8. Base images — operator-curated, never user-built
+
+Decision (validated by the QA sweep): **ship a small official image set; users do not build images.**
+User-built images would break the hardened-container trust model and turn the catalog into a Docker
+registry. The sweep proved images are barely needed anyway:
+
+| Image | Covers | Status |
+|---|---|---|
+| `sandboxd-base` | ~90% of the catalog — all Go/Rust binaries, Node, Python, Bun, Deno, static-PHP, portable-JRE, self-contained .NET (the "runtime-drop" pattern) | today's default; every v1 recipe runs on it |
+| `sandboxd-ruby` | Rails-family (redmine, docuseal, fizzy, sessy) — native gem compilation needs headers/toolchain | built & verified; blocked on the core `image:` field |
+| `sandboxd-media` (future) | chromium/libreoffice/ffmpeg class (gotenberg, browserless, fileflows-full) | optional, add on demand |
+
+Mechanics: recipes carry `image?: string`; the store shows a "requires <image>" badge and refuses to
+install when the platform doesn't advertise it (via `/v1/settings` capabilities). Core's only job is the
+generic manifest `image:` field validated against an operator allowlist (`SANDBOXD_IMAGES`). Recipe
+authors must always prefer a base-image path (portable runtime) before requesting an image.
+
+## 9. Agent tasks on installed apps
+
+Every install writes `workspace/app/AGENTS.md` describing the app, its supervision (`sandbox.yaml` →
+`catalog-run.sh`), and the modification model, so `POST /tasks` agents land with context:
+
+- `modifiable: 'source'` (clone-based recipes — dashy, homepage, metube…): agents can edit the app's own
+  code, rebuild, restart — the full sandboxd experience.
+- `modifiable: 'config'` (release binaries/dists): agents modify configuration files, `catalog-run.sh`
+  flags/env, plugins and data — not the app's code. Recipes should name the exact config files in
+  `agentNotes` (e.g. glance → `glance.yml`, garage → `garage.toml`).
