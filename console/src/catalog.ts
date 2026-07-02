@@ -99,6 +99,7 @@ set -e
 cd /home/sandbox/workspace/app
 export TMPDIR=/home/sandbox/workspace/tmp
 mkdir -p "$TMPDIR"
+echo "▸ preparing workspace"
 `
 
 // Latest-release asset lookup via the GitHub API. Works today; note the shared
@@ -115,7 +116,9 @@ export function verifiedDownload(id: string, outfile: string): string {
   const pin = PINS[id]
   if (!pin) return `echo "no pin for ${id}" >&2; exit 1`
   return [
+    `echo "▸ downloading ${id} (${pin.tag ?? ''})"`,
     `curl -fsSL "${pin.url}" -o ${outfile}`,
+    `echo "▸ verifying checksum"`,
     `echo "${pin.sha256}  ${outfile}" | sha256sum -c - || { echo "CHECKSUM MISMATCH for ${id}" >&2; exit 1; }`,
   ].join('\n  ')
 }

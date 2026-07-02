@@ -14,7 +14,28 @@ type Phase = 'idle' | 'creating' | 'writing' | 'restarting' | 'waiting' | 'done'
 interface InstallState {
   phase: Phase
   appId?: string
+  sandboxId?: string
   message?: string
+  step?: string // human phase derived from live logs
+  logs?: string[] // last N web-process log lines (live install output)
+}
+
+// Derive a friendly step from the live install log. Recipes emit "▸ <phase>"
+// markers; otherwise fall back to content heuristics. Zero core dependency —
+// this is just reading GET /v1/sandboxes/{id}/processes/web/logs.
+function deriveStep(lines: string[]): string {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i].match(/▸\s*(.+)$/)
+    if (m) return m[1].trim()
+  }
+  const blob = lines.join('\n').toLowerCase()
+  if (/(downloading|fetching|% total|% received|curl)/.test(blob)) return 'downloading'
+  if (/(npm install|added \d+ packages|pnpm|yarn install|bun install)/.test(blob)) return 'installing dependencies'
+  if (/(collecting |installing collected|uv pip|resolved \d+ package)/.test(blob)) return 'installing dependencies'
+  if (/(building|vite build|webpack|ng build|compiled)/.test(blob)) return 'building'
+  if (/(migrat|db upgrade|bootstrap)/.test(blob)) return 'initializing database'
+  if (/(listening|running on|started server|http server)/.test(blob)) return 'starting app'
+  return 'working'
 }
 
 // Health-wait budget by recipe effort: binaries are up in seconds; source
@@ -106,17 +127,42 @@ export function AppStore({ onOpen, onError, onInfo }: { onOpen: (appId: string) 
       await waitSandbox(sb.id, (s) => s.status === 'stopped', 60_000)
       await api.startSandbox(sb.id)
 
-      set(r.id, { phase: 'waiting', appId: app.id })
-      const ok = await waitSandbox(
-        sb.id,
-        (s) => s.status === 'running' && !!s.processes?.some((p) => p.kind === 'web' && p.running),
-        WAIT_MS[r.effort],
-      )
+      // Wait for health WHILE streaming the web-process logs so the user sees
+      // exactly what the install is doing (download → deps → build → start).
+      set(r.id, { phase: 'waiting', appId: app.id, sandboxId: sb.id })
+      const deadline = Date.now() + WAIT_MS[r.effort]
+      let ok = false
+      let lastLogs: string[] = []
+      while (Date.now() < deadline) {
+        try {
+          const [s, lg] = await Promise.all([
+            api.getSandbox(sb.id),
+            api.getProcessLogs(sb.id, 'web', 40).catch(() => ({ lines: [] as string[] })),
+          ])
+          if (lg.lines?.length) lastLogs = lg.lines
+          set(r.id, {
+            phase: 'waiting',
+            appId: app.id,
+            sandboxId: sb.id,
+            step: deriveStep(lastLogs),
+            logs: lastLogs.slice(-14),
+          })
+          if (s.status === 'running' && s.processes?.some((p) => p.kind === 'web' && p.running)) {
+            ok = true
+            break
+          }
+        } catch {
+          /* transient — keep polling */
+        }
+        await sleep(POLL_MS)
+      }
       if (!ok) {
         set(r.id, {
           phase: 'error',
           appId: app.id,
-          message: 'Timed out waiting for the app to become healthy — open it to inspect logs.',
+          sandboxId: sb.id,
+          message: 'Timed out — see the install log below (or open the app to inspect).',
+          logs: lastLogs.slice(-14),
         })
         return
       }
@@ -208,10 +254,22 @@ export function AppStore({ onOpen, onError, onInfo }: { onOpen: (appId: string) 
                 )}
               </div>
               {st.phase === 'error' && st.message && <p className="error" style={{ fontSize: '0.85em' }}>{st.message}</p>}
-              {st.phase === 'waiting' && (
+              {(st.phase === 'waiting' || st.phase === 'restarting') && (
                 <p className="muted" style={{ fontSize: '0.85em' }}>
-                  Installing inside the sandbox — {r.effort === 'build' ? 'source builds take a few minutes' : 'usually well under a minute'}.
+                  <span className="spin" aria-hidden>◐</span> {st.step ? st.step[0].toUpperCase() + st.step.slice(1) : 'Preparing'}
+                  {' '}— installing inside the sandbox
+                  {r.effort === 'build' ? ' (source build, a few minutes)' : ''}…
                 </p>
+              )}
+              {/* Live install log — the exact output of catalog-run.sh in the
+                  sandbox, via GET /processes/web/logs. No core change. */}
+              {(st.logs?.length ?? 0) > 0 && (st.phase === 'waiting' || st.phase === 'restarting' || st.phase === 'error') && (
+                <details className="log" open={st.phase === 'error'} data-testid={`store-log-${r.id}`}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.8em' }}>Install log</summary>
+                  <pre style={{ maxHeight: 160, overflow: 'auto', fontSize: '0.72em', lineHeight: 1.35, margin: '4px 0 0' }}>
+                    {st.logs!.join('\n')}
+                  </pre>
+                </details>
               )}
             </div>
           )
