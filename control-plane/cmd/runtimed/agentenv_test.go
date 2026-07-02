@@ -78,6 +78,42 @@ func TestAgentEnvPerAgentHome(t *testing.T) {
 	}
 }
 
+// When a provider is connected by API key, agentEnv injects its one key env var
+// from the stored file — the single allowlisted exception to the scrub. Other
+// secret-shaped inherited vars are still dropped.
+func TestAgentEnvInjectsAPIKey(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "claude-code")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// APIKeyFile is agentauth.APIKeyFile ('.sandboxd-apikey'); write with trailing
+	// newline to confirm it is trimmed.
+	if err := os.WriteFile(filepath.Join(dir, ".sandboxd-apikey"), []byte("sk-ant-INJECTED\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", base)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-inherited-should-be-overridden")
+
+	got := envMap(agentEnv("claude-code", nil))
+	if got["ANTHROPIC_API_KEY"] != "sk-ant-INJECTED" {
+		t.Errorf("ANTHROPIC_API_KEY = %q; want injected+trimmed value", got["ANTHROPIC_API_KEY"])
+	}
+	if got["HOME"] != dir {
+		t.Errorf("HOME = %q; want %q", got["HOME"], dir)
+	}
+
+	// A provider with a mounted dir but NO key file gets no injected key, and the
+	// inherited secret is still scrubbed.
+	oc := filepath.Join(base, "opencode")
+	if err := os.MkdirAll(oc, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := envMap(agentEnv("opencode", nil))["ANTHROPIC_API_KEY"]; ok {
+		t.Error("opencode has no key file; ANTHROPIC_API_KEY must be scrubbed, not injected")
+	}
+}
+
 func TestIsSecretEnvKey(t *testing.T) {
 	secret := []string{"ANTHROPIC_API_KEY", "openai_api_key", "GITHUB_TOKEN", "X_SECRET", "Y_PASSWORD", "Z_CREDENTIALS", "RUNTIMED_X"}
 	ok := []string{"PATH", "HOME", "LANG", "ANTHROPIC_MODEL", "API_BASE_URL", "NODE_ENV"}

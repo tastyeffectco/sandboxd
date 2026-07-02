@@ -51,6 +51,10 @@ export interface Agent {
   label: string
   installed_state: 'installed' | 'not_installed' | 'unknown'
   status: 'connected' | 'needs_login'
+  // How the provider is currently connected. '' when not connected.
+  method: 'oauth' | 'api_key' | ''
+  supports_oauth: boolean
+  supports_api_key: boolean
   runnable: boolean
 }
 
@@ -156,10 +160,19 @@ export const api = {
   getSettings: () => req<Settings>('GET', '/v1/settings'),
   getAgents: () => req<{ providers: Agent[] }>('GET', '/v1/agents').then((r) => r.providers || []),
 
-  // Claude Code credentials: import an existing bundle opaquely / disconnect.
-  importClaude: (credentials: string) =>
-    req<{ provider: string; status: string }>('POST', '/v1/agents/claude-code/import', { credentials }),
-  disconnectClaude: () => req<unknown>('POST', '/v1/agents/claude-code/disconnect'),
+  // Connect an agent provider by subscription (paste the credential bundle the
+  // owner's `<cli> login` produced) — stored opaquely, never parsed.
+  importAgentCredential: (provider: string, credentials: string) =>
+    req<{ provider: string; status: string; method: string }>('POST', `/v1/agents/${provider}/import`, {
+      credentials,
+    }),
+  // Connect an agent provider by API key — stored opaquely; injected as the
+  // provider's key env var at task time.
+  setAgentApiKey: (provider: string, api_key: string) =>
+    req<{ provider: string; status: string; method: string }>('POST', `/v1/agents/${provider}/api-key`, {
+      api_key,
+    }),
+  disconnectAgent: (provider: string) => req<unknown>('POST', `/v1/agents/${provider}/disconnect`),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
   createApp: (b: { name: string; description?: string; tags?: string[]; runtime_preset?: string }) =>
     req<App>('POST', '/v1/apps', b),

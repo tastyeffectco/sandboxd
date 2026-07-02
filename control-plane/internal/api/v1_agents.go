@@ -19,6 +19,13 @@ type v1Agent struct {
 	Label          string `json:"label"`
 	InstalledState string `json:"installed_state"` // installed | not_installed | unknown
 	Status         string `json:"status"`          // connected | needs_login
+	// Method is how the provider is currently connected: "oauth" (imported
+	// subscription credential), "api_key", or "" when not connected.
+	Method string `json:"method"`
+	// SupportsOAuth/SupportsAPIKey advertise which connect methods the provider
+	// offers, so the console can show only the relevant actions.
+	SupportsOAuth  bool `json:"supports_oauth"`
+	SupportsAPIKey bool `json:"supports_api_key"`
 	// Runnable: runtimed has a task adapter for this provider. When connected
 	// but NOT runnable, the credentials are "imported, runner not enabled yet".
 	Runnable bool `json:"runnable"`
@@ -35,15 +42,20 @@ func (s *Server) v1ListAgents(w http.ResponseWriter, _ *http.Request) {
 				state = v
 			}
 		}
-		status := "needs_login"
+		status, method := "needs_login", ""
 		if s.AgentAuth != nil && s.AgentAuth.Connected(p.ID) {
-			status = "connected"
+			status, method = "connected", s.AgentAuth.Method(p.ID)
 		}
+		_, oauthOK := agentauth.CredentialFile(p.ID)
+		_, keyOK := agentauth.APIKeyEnv(p.ID)
 		out = append(out, v1Agent{
 			ID:             p.ID,
 			Label:          p.Label,
 			InstalledState: state,
 			Status:         status,
+			Method:         method,
+			SupportsOAuth:  oauthOK,
+			SupportsAPIKey: keyOK,
 			Runnable:       agentauth.Runnable(p.ID),
 		})
 	}
