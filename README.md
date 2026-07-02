@@ -224,12 +224,21 @@ real domain you get `https://s-<id>-3000.preview.yourdomain.com`
 ## Web console (optional UI)
 
 Prefer a UI to curl? sandboxd ships an optional web console — a small React SPA
-that talks **only** to the public `/v1` API. From it you can create and open
-apps, watch the live preview, submit agent tasks and stream their logs,
-start/stop the sandbox, and manage per-app **config & secrets** (sensitive
-values are write-only: set once, never shown again).
+that talks **only** to the public `/v1` API. From it you can:
+
+- **create apps** and **choose a runtime preset**;
+- **create / start / stop / delete** a sandbox and **open its live preview**;
+- **submit agent tasks** and **view task status + streamed logs**;
+- **manage per-app config & secrets** (sensitive values are write-only: set
+  once, never shown again);
+- **view the activity/events timeline** and **runtime processes + their logs**;
+- **snapshot / fork / restore** an app's workspace;
+- **read instance settings** and **edit the lifecycle tunables only** (idle
+  reaping + keepalive — see [Settings](#settings)).
 
 ```bash
+# the console is gated by basic auth and ships FAIL-CLOSED — set a login first:
+export CONSOLE_BASIC_AUTH="admin:$(openssl passwd -apr1 'choose-a-password')"
 docker compose --profile console up -d        # core stack + console
 ```
 
@@ -239,9 +248,33 @@ Host header — `console.<domain>` → console, `*.preview.<domain>` → preview
 it shares one entrypoint, no extra port. Plain `docker compose up -d` (no
 profile) runs sandboxd without the console.
 
+> **Console auth.** The console is protected by Traefik HTTP basic auth and is
+> **fail-closed**: without `CONSOLE_BASIC_AUTH` it returns `401` (the default is
+> a locked, unknown password) — it is never exposed open. Set
+> `CONSOLE_BASIC_AUTH="user:HASH"` (`HASH` from `htpasswd -nbB` or
+> `openssl passwd -apr1`; in a `.env` file double every `$` → `$$`). The
+> [installer](#1-install) generates and prints one for you. This is **separate
+> from API auth** — see [Authentication](#authentication).
+
 The console never touches the database or workspaces — it's a pure `/v1` client
 (contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
 [`console/README.md`](console/README.md).
+
+## Settings
+
+Most settings are **env/install-managed** and read-only at runtime
+(`GET /v1/settings` exposes a safe, secret-free summary). The **only**
+values editable from the console/API (`PATCH /v1/settings`, hot-applied to the
+running reaper) are the lifecycle tunables:
+
+| Editable (console / `PATCH /v1/settings`) | Read-only (env / install-managed) |
+|---|---|
+| `idle_reap_enabled` | API auth, egress mode |
+| `idle_threshold_seconds` | networking, preview domain/port |
+| `keepalive_max_seconds` | base image, agent providers, secrets key |
+
+Auth tokens, the secrets-encryption key, and egress are **env/file-only** and
+are never shown or editable through the API.
 
 ## Runtime presets & `sandbox.yaml`
 
@@ -337,6 +370,37 @@ The defaults run a complete local stack. The knobs you'll touch most:
 | `SANDBOXD_DATA_DIR` | `/var/lib/sandboxed` | where workspaces + state live |
 | `SANDBOXD_API_BIND` | `127.0.0.1:9090` | where the control-plane API is published |
 | `SANDBOXD_API_AUTH_DISABLED` | `true` | open API for local use; set `false` + tokens for prod |
+| `CONSOLE_BASIC_AUTH` | *(locked)* | `user:htpasswd-hash` gating the optional console; fail-closed default |
+
+## Authentication
+
+sandboxd has **two independent** auth layers. They are separate knobs — neither
+is required for core use, and there is **no token-management UI in v0.4**.
+
+**API auth — protects the sandboxd `/v1` API (application layer).**
+- **Off by default** (`SANDBOXD_API_AUTH_DISABLED=true`). To enable:
+  ```bash
+  SANDBOXD_API_AUTH_DISABLED=false
+  SANDBOXD_API_TOKENS=admin=your-token,ci=another-token   # NAME=VALUE, comma-separated
+  ```
+  then call the API with `Authorization: Bearer your-token`.
+- Tokens are **env/file-only** — never stored in the database, **never returned
+  by any endpoint, and never shown in the console** (Settings shows only whether
+  auth is on/off). There is no create/list/revoke API and no `last_used`.
+
+**Console auth — protects the optional web UI at the edge (Traefik basic auth).**
+- The console (`--profile console`) is **fail-closed**: the default
+  `CONSOLE_BASIC_AUTH` is a locked entry with an unknown password, so an
+  un-configured console returns `401` — it is **never exposed open**.
+- Set your own: `CONSOLE_BASIC_AUTH="user:HASH"` (`HASH` from `htpasswd -nbB user 'pass'`
+  or `openssl passwd -apr1 'pass'`). In a `.env` file, **double every `$` → `$$`**.
+- The [installer](#1-install) generates a random password, wires it, and prints
+  it once. Override with `CONSOLE_USER` / `CONSOLE_PASS` before running it.
+- This is a **separate gate** from API auth; the console reaches `/v1` over an
+  internal proxy, so the basic-auth login is what stands in front of the browser.
+
+> Core-only users running `docker compose up` (no console) are unaffected by
+> either setting; both default to a safe state.
 
 ## Production / TLS
 
@@ -406,10 +470,18 @@ Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-m
 - The wake/warming interstitial returns HTTP `200` (callers can't distinguish
   "warming" from "ready" by status code alone).
 - Per-task `agent.log` can be empty on task timeout (transcript persistence WIP).
-- **Docker backend only** (OCI/containerd/Kata are a future provider; see
-  [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md)).
-- **Not yet:** Git/GitHub import, a managed-database/sidecar story, and
-  Docker-Compose-inside-the-sandbox are deliberately out of scope for v0.4.
+- **Docker is the only runtime provider today** (OCI/containerd/Kata are a future
+  provider; see [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md)).
+- **Compose / local service stacks are not first-class yet**, and there is no
+  built-in database/sidecar story — run **Postgres/Supabase/Neon etc. as remote
+  services** for now.
+- **No in-sandbox terminal yet**, and **no Git/private-repo import** yet.
+- **Claude Code *subscription* support is post-v0.4** — the managed agent-auth
+  store + Claude Code task adapter are **accepted on the `feat/phase-10b-agent-auth`
+  branch, not part of the v0.4 release** (documented in
+  [`docs/agent-auth.md`](docs/agent-auth.md)). v0.4 ships the OpenCode/Claude Code
+  CLIs in the image and the OpenCode task agent; an API-key agent works via the
+  sandbox `env` on v0.4.
 
 ## License
 

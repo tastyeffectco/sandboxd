@@ -159,6 +159,81 @@ paths:
         "204": { description: Deleted }
         "404": { description: No such credential }
 
+  /v1/agents:
+    get:
+      tags: [apps]
+      summary: List coding-agent providers with installed + connected status (read-only, no tokens)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        installed_state: { type: string, enum: [installed, not_installed, unknown] }
+                        status: { type: string, enum: [connected, needs_login] }
+                        method: { type: string, enum: ["", oauth, api_key], description: How the provider is currently connected }
+                        supports_oauth: { type: boolean }
+                        supports_api_key: { type: boolean }
+                        runnable: { type: boolean, description: runtimed has a task adapter for this provider }
+
+  /v1/agents/{provider}/import:
+    post:
+      tags: [apps]
+      summary: Connect a provider by subscription — import the credential bundle its `<cli> login` produced (opaque, never parsed).
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, claude-code, codex] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                credentials: { type: string, description: Contents of the provider's login credential file (stored verbatim) }
+      responses:
+        "200": { description: Imported; provider connected }
+        "400": { description: Missing/invalid credentials, or provider has no import support }
+        "404": { description: Unknown provider }
+        "503": { description: Agent auth not configured }
+  /v1/agents/{provider}/api-key:
+    post:
+      tags: [apps]
+      summary: Connect a provider by API key (opaque). Injected as the provider's key env var at task time only.
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, claude-code, codex] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key: { type: string, description: Provider API key (stored verbatim, never returned) }
+      responses:
+        "200": { description: Stored; provider connected }
+        "400": { description: Missing key, or provider has no API-key support }
+        "404": { description: Unknown provider }
+        "503": { description: Agent auth not configured }
+  /v1/agents/{provider}/disconnect:
+    post:
+      tags: [apps]
+      summary: Disconnect a provider — deletes the stored auth dir.
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, claude-code, codex] } }
+      responses:
+        "204": { description: Disconnected }
+        "404": { description: Unknown provider }
+        "503": { description: Agent auth not configured }
+
   /v1/presets:
     get:
       tags: [apps]

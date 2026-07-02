@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/activity"
+	"github.com/sandboxd/control-plane/internal/agentauth"
 	"github.com/sandboxd/control-plane/internal/api"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
@@ -356,9 +357,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Phase 10B A0 — host-side agent auth store (read-only here). Best-effort
+	// root creation; never fatal.
+	agentAuth := agentauth.NewStore(dataDir)
+	if err := agentAuth.EnsureRoot(); err != nil {
+		log.Warn("agent-auth: could not create store root", "err", err.Error())
+	}
+	// A1 — which provider's auth dir gets mounted into new sandboxes (as the
+	// agent's HOME) when connected. Must match the agent runtimed runs.
+	defaultAgent := envDefault("SANDBOXD_DEFAULT_AGENT", "opencode")
+
 	server := &api.Server{
 		Store:               st,
 		Secrets:             secretsCipher,
+		AgentAuth:           agentAuth,
+		DefaultAgent:        defaultAgent,
 		Docker:              dockerClient,
 		Loopback:            loopMgr,
 		Log:                 log.With("component", "api"),

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -178,17 +177,18 @@ func toolTarget(raw json.RawMessage) string {
 		return ""
 	}
 	var in struct {
-		FilePath string `json:"filePath"`
-		Path     string `json:"path"`
-		File     string `json:"file"`
-		Pattern  string `json:"pattern"`
-		Command  string `json:"command"`
+		FilePath  string `json:"filePath"`
+		FilePathS string `json:"file_path"` // claude tools use snake_case
+		Path      string `json:"path"`
+		File      string `json:"file"`
+		Pattern   string `json:"pattern"`
+		Command   string `json:"command"`
 	}
 	if json.Unmarshal(raw, &in) != nil {
 		return ""
 	}
 	t := in.FilePath
-	for _, c := range []string{in.Path, in.File, in.Pattern, in.Command} {
+	for _, c := range []string{in.FilePathS, in.Path, in.File, in.Pattern, in.Command} {
 		if t == "" {
 			t = c
 		}
@@ -204,10 +204,10 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	cmd := exec.Command("opencode", "run",
 		"--format", "json", "--dangerously-skip-permissions", spec.prompt)
 	cmd.Dir = spec.workDir
-	cmd.Env = os.Environ()
-	for k, v := range spec.env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's
+	// mounted auth dir (/run/agent-auth/opencode), if any. Credentials come from
+	// files under HOME, never from inherited container env.
+	cmd.Env = agentEnv(o.name(), spec.env)
 	// Own process group so cancel/timeout kills the whole agent tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
