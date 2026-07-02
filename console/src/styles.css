@@ -163,6 +163,16 @@ h2 {
   background: var(--muted);
   color: var(--foreground);
 }
+.btn-danger {
+  background: transparent;
+  border-color: #b42318;
+  color: #d92d20;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #d92d20;
+  color: #fff;
+  border-color: #d92d20;
+}
 .btn-sm {
   height: 28px;
   padding: 0 10px;

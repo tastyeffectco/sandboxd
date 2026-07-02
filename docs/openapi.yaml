@@ -314,6 +314,12 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/App" }
         "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [apps]
+      summary: Delete an app and EVERYTHING it owns — purges every sandbox (container, workspace image, snapshots) and all app rows (config, events, snapshots). Irreversible.
+      responses:
+        "204": { description: App and all its resources deleted }
+        "404": { $ref: "#/components/responses/Error" }
 
   /v1/apps/{id}/sandbox:
     parameters:

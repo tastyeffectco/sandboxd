@@ -40,6 +40,7 @@ const (
 const (
 	AppCreated = "app.created"
 	AppUpdated = "app.updated"
+	AppDeleted = "app.deleted"
 
 	SandboxCreateStarted = "sandbox.create.started"
 	SandboxCreateFailed  = "sandbox.create.failed"

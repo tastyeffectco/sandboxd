@@ -8,7 +8,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/sandboxd/control-plane/internal/audit"
@@ -255,6 +257,66 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 	s.recordEvent(r, events.Event{Type: events.AppUpdated, Severity: events.SeverityInfo,
 		Message: "App updated", AppID: id})
 	writeJSON(w, http.StatusOK, v1AppFromRow(app, s.currentSandboxID(r, id)))
+}
+
+// v1DeleteApp — DELETE /v1/apps/{id}. The FULL teardown: purge every sandbox the
+// app has ever had (container + workspace image + snapshot dirs + rows), then
+// delete all app-scoped rows (config, event timeline, snapshots captured from it)
+// and the app row, and unlink the snapshot image files. This is the "delete
+// everything" action — forceful (it stops a running container) and irreversible.
+// A missing or cross-tenant app is 404 (no existence leak).
+func (s *Server) v1DeleteApp(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	app, err := s.Store.GetAppForOwner(r.Context(), id, tenantToken(r))
+	if errors.Is(err, store.ErrNotFound) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such app")
+		return
+	}
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+
+	// 1. Purge every sandbox: container, egress, loopback, workspace .img, and
+	//    the per-sandbox snapshot dir + sandbox/workspace_owner rows.
+	sbIDs, err := s.Store.SandboxIDsForApp(r.Context(), id)
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", "list sandboxes: "+err.Error())
+		return
+	}
+	var freed int64
+	for _, sid := range sbIDs {
+		f, _, perr := s.purgeOne(r.Context(), sid)
+		if perr != nil {
+			writeV1Err(w, http.StatusInternalServerError, "internal",
+				fmt.Sprintf("purge sandbox %s: %v", sid, perr))
+			return
+		}
+		freed += f
+	}
+
+	// 2. Snapshot image files (library .img) — capture paths before the rows go.
+	snapPaths, _ := s.Store.SnapshotImagePathsForApp(r.Context(), id)
+
+	// 3. Delete all app-scoped rows + the app itself, in one transaction.
+	if err := s.Store.DeleteApp(r.Context(), id); err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", "delete app: "+err.Error())
+		return
+	}
+
+	// 4. Remove the snapshot image files (best-effort; the rows are already gone).
+	for _, p := range snapPaths {
+		_ = os.Remove(p)
+	}
+
+	// audit_log is a separate, append-only table (NOT app_events, which we just
+	// wiped) — it retains the delete record for the compliance trail.
+	s.auditAction(r, audit.Entry{
+		Action: "app.delete",
+		Target: id,
+		Detail: map[string]any{"name": app.Name, "sandboxes_purged": len(sbIDs), "freed_bytes": freed},
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type v1CreateAppSandboxReq struct {

@@ -226,6 +226,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
+	mux.HandleFunc("DELETE /v1/apps/{id}", s.observe("DELETE /v1/apps/{id}", s.v1DeleteApp))
 	mux.HandleFunc("POST /v1/apps/{id}/sandbox", s.observe("POST /v1/apps/{id}/sandbox", s.v1CreateAppSandbox))
 	mux.HandleFunc("GET /v1/apps/{id}/snapshots", s.observe("GET /v1/apps/{id}/snapshots", s.v1ListAppSnapshots))
 	mux.HandleFunc("POST /v1/apps/{id}/restore", s.observe("POST /v1/apps/{id}/restore", s.v1RestoreApp))

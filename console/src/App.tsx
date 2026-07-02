@@ -54,7 +54,7 @@ export default function App() {
         {view === 'settings' ? (
           <Settings onError={setError} />
         ) : appId ? (
-          <AppDetail appId={appId} onError={setError} onInfo={setInfo} />
+          <AppDetail appId={appId} onError={setError} onInfo={setInfo} onDeleted={goApps} />
         ) : view === 'store' ? (
           <AppStore
             onOpen={(id) => {

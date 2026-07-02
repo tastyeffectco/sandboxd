@@ -380,6 +380,43 @@ describe('app detail — web app', () => {
     // v1 DELETE purges the workspace, so the wording must say so — not just "Delete sandbox".
     expect(del.textContent).toMatch(/delete sandbox and workspace/i)
   })
+
+  it('full delete: confirms, DELETEs the app, and navigates away via onDeleted', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let deletedPath = ''
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'DELETE') deletedPath = String(input)
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    const onDeleted = vi.fn()
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} onDeleted={onDeleted} />)
+    const del = await screen.findByTestId('delete-app')
+    expect(del.textContent).toMatch(/delete app/i)
+    fireEvent.click(del)
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled())
+    expect(deletedPath).toContain('/v1/apps/01APPAAAAAAAAAAAAAAAAAAAAA')
+    expect(confirmSpy).toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('full delete: cancelling the confirm does not call the API', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    let deleteCalled = false
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'DELETE') deleteCalled = true
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    const onDeleted = vi.fn()
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} onDeleted={onDeleted} />)
+    fireEvent.click(await screen.findByTestId('delete-app'))
+    expect(deleteCalled).toBe(false)
+    expect(onDeleted).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
 })
 
 describe('app detail — unhealthy sandbox', () => {
