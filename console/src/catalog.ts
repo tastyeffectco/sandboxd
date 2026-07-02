@@ -9,6 +9,7 @@
 // during the self-hosted catalog QA sweep (qa-reports/selfhosted/CHUNK-17..25.md).
 
 import { CATALOG2 } from './catalog2'
+import { CATALOG3 } from './catalog3'
 
 export type CatalogCategory = 'dev' | 'productivity' | 'media' | 'data' | 'network' | 'ai' | 'other'
 export type CatalogEffort = 'instant' | 'quick' | 'build'
@@ -987,4 +988,4 @@ export const CATEGORIES: { id: CatalogCategory | 'all'; label: string }[] = [
 ]
 
 // Expansion set (exhaustive verified list) — see catalog2.ts.
-CATALOG.push(...CATALOG2)
+CATALOG.push(...CATALOG2, ...CATALOG3)
