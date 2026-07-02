@@ -11,16 +11,49 @@
 export type CatalogCategory = 'dev' | 'productivity' | 'media' | 'data' | 'network' | 'ai' | 'other'
 export type CatalogEffort = 'instant' | 'quick' | 'build'
 
+// How agent tasks can change an installed app:
+//  - 'source': the app's source is cloned into the workspace — tasks can edit
+//    code, rebuild, and restart (full sandboxd experience).
+//  - 'config': the app runs from a prebuilt release binary (black box); tasks
+//    can edit its config files, catalog-run.sh flags/env, plugins, and data —
+//    but not the app's own code.
+export type CatalogModifiable = 'source' | 'config'
+
 export interface CatalogRecipe {
   id: string
   name: string
   blurb: string
   category: CatalogCategory
   effort: CatalogEffort
+  modifiable: CatalogModifiable
   script: string // catalog-run.sh content (idempotent install + exec run)
   healthPath: string // must be a 200 route
   entryPath?: string // UI path when not '/'
   note?: string
+  // Agent-task context: what an agent should know to modify this app
+  // (config file paths, restart semantics). Written to workspace/app/AGENTS.md
+  // at install so tasks land with real context instead of a mystery binary.
+  agentNotes?: string
+}
+
+// AGENTS.md written into the workspace at install — the contract between the
+// catalog and agent tasks (`POST /v1/sandboxes/{id}/tasks`).
+export function recipeAgentsMd(r: CatalogRecipe): string {
+  const common = `# ${r.name} (installed from the sandboxd App Store)
+
+This workspace runs **${r.name}** — ${r.blurb}.
+
+- Supervision: \`sandbox.yaml\` → \`web.command\` → \`catalog-run.sh\` (install-once guard, then \`exec\` the server on 0.0.0.0:3000).
+- To apply changes: edit files, then restart the web process (stop/start the sandbox or kill the web process; runtimed restarts it).
+- Keep the server binding to 0.0.0.0:3000 and state inside the workspace.
+`
+  const model =
+    r.modifiable === 'source'
+      ? `- The app's FULL SOURCE lives in this workspace — you may edit code and rebuild (see catalog-run.sh for the build steps its install phase used).
+`
+      : `- The app runs from a PREBUILT RELEASE BINARY: do NOT try to edit the app's own code. You CAN edit its configuration, catalog-run.sh flags/env, plugins, and data.
+`
+  return common + model + (r.agentNotes ? `\n${r.agentNotes}\n` : '')
 }
 
 export function recipeManifest(r: CatalogRecipe): string {
@@ -58,6 +91,8 @@ export const CATALOG: CatalogRecipe[] = [
     blurb: 'Web file manager for the sandbox workspace',
     category: 'productivity',
     effort: 'instant',
+    modifiable: 'config',
+    agentNotes: 'Settings live in `fb.db` — manage via `./filebrowser config set ... -d fb.db` and `./filebrowser users ... -d fb.db`. Files served from `root/`.',
     healthPath: '/',
     note: 'Create users via the CLI; first-run DB is initialized automatically.',
     script:
@@ -77,6 +112,8 @@ exec ./filebrowser -a 0.0.0.0 -p 3000 -d fb.db -r root
     blurb: 'Self-hosted push notification server',
     category: 'network',
     effort: 'instant',
+    modifiable: 'config',
+    agentNotes: 'Config via GOTIFY_* env in `catalog-run.sh`; plugins dir supported. Admin login admin/admin. DB: gotify.db (SQLite).',
     healthPath: '/',
     note: 'Default login admin/admin.',
     script:
@@ -96,6 +133,7 @@ exec ./gotify-linux-arm64
     blurb: 'Lightweight server monitoring hub',
     category: 'dev',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -113,6 +151,8 @@ exec ./beszel serve --http 0.0.0.0:3000
     blurb: 'Personal dashboard with widgets',
     category: 'productivity',
     effort: 'instant',
+    modifiable: 'config',
+    agentNotes: 'Config: `glance.yml` (pages/columns/widgets — clock, weather, rss, bookmarks…). Edit it and restart to change the dashboard.',
     healthPath: '/',
     script:
       SH +
@@ -131,6 +171,7 @@ exec ./glance --config glance.yml
     blurb: 'Email testing tool with web UI (SMTP catch-all)',
     category: 'dev',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -148,6 +189,7 @@ exec ./mailpit --listen 0.0.0.0:3000 --database /home/sandbox/workspace/app/mail
     blurb: 'Continuous peer-to-peer file synchronization',
     category: 'network',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -166,6 +208,7 @@ exec ./syncthing --gui-address=0.0.0.0:3000 --no-browser --home=/home/sandbox/wo
     blurb: 'SFTP/WebDAV server with a full admin web UI',
     category: 'network',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -186,6 +229,7 @@ exec ./sftpgo serve
     blurb: 'Lightweight self-hosted note taking',
     category: 'productivity',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -203,6 +247,7 @@ exec ./memos --addr 0.0.0.0 --port 3000 --data /home/sandbox/workspace/app/memos
     blurb: 'WakaTime-compatible coding statistics',
     category: 'dev',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     note: 'IPv6 listener disabled (upstream dual-stack bug #860).',
     script:
@@ -224,6 +269,7 @@ exec ./wakapi
     blurb: 'Single-binary Firebase alternative on SQLite',
     category: 'data',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/_/admin/',
     entryPath: '/_/admin/',
     note: 'Admin UI at /_/admin/ (root path serves the API, not a page).',
@@ -244,6 +290,7 @@ exec ./trail --data-dir /home/sandbox/workspace/app/traildepot run --address 0.0
     blurb: 'VS Code in the browser',
     category: 'dev',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -261,6 +308,7 @@ exec ./cs/bin/code-server --bind-addr 0.0.0.0:3000 --auth none --disable-telemet
     blurb: 'The cyber Swiss-army knife (encode/decode/analyse)',
     category: 'dev',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -280,6 +328,7 @@ exec python3 -m http.server 3000 --bind 0.0.0.0
     blurb: 'Multi-device WhatsApp Web API gateway',
     category: 'network',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -299,6 +348,7 @@ exec ./linux-arm64 rest --port 3000 --db-uri "file:/home/sandbox/workspace/app/g
     blurb: 'Inventory and organization for your home',
     category: 'productivity',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -320,6 +370,7 @@ exec ./homebox
     blurb: 'Read-later bookmarks and article archiving',
     category: 'productivity',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/login',
     entryPath: '/login',
     note: 'UI lives at /login — the root path is not routed.',
@@ -340,6 +391,7 @@ exec ./readeck serve
     blurb: 'Hierarchical note taking with rich features',
     category: 'productivity',
     effort: 'instant',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -361,6 +413,8 @@ exec ./trilium.sh
     blurb: 'Lightweight S3-compatible object storage',
     category: 'data',
     effort: 'instant',
+    modifiable: 'config',
+    agentNotes: 'Config: `garage.toml` (S3 on :3000). Manage buckets/keys with `./garage -c garage.toml bucket|key ...`.',
     healthPath: '/',
     note: 'S3 API on the preview port; responses are S3 XML (no HTML UI).',
     script:
@@ -382,6 +436,8 @@ exec ./garage -c /home/sandbox/workspace/app/garage.toml server
     blurb: 'Blazing-fast vector tile server (MBTiles/PMTiles)',
     category: 'data',
     effort: 'instant',
+    modifiable: 'config',
+    agentNotes: 'Tile sources are the .mbtiles/.pmtiles files passed in `catalog-run.sh`. Add files to the workspace and append them to the martin command.',
     healthPath: '/catalog',
     entryPath: '/catalog',
     note: 'Ships with a generated demo tileset; add .mbtiles files to the workspace.',
@@ -414,6 +470,7 @@ exec ./martin --listen-addresses 0.0.0.0:3000 --webui enable-for-all /home/sandb
     blurb: 'System monitoring dashboard',
     category: 'dev',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -431,6 +488,7 @@ exec glances -w --bind 0.0.0.0 -p 3000
     blurb: 'Website change detection and alerts',
     category: 'productivity',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     note: 'Runs the changedetection.io console script (not python -m).',
     script:
@@ -450,6 +508,7 @@ exec changedetection.io -d /home/sandbox/workspace/app/cddata -p 3000 -h 0.0.0.0
     blurb: 'Ad-free, tracking-free Google proxy',
     category: 'network',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -467,6 +526,7 @@ exec whoogle-search --host 0.0.0.0 --port 3000
     blurb: 'ESP microcontroller firmware dashboard',
     category: 'other',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -485,6 +545,7 @@ exec esphome dashboard --address 0.0.0.0 --port 3000 espconfig
     blurb: 'Self-hosted machine translation API + UI',
     category: 'ai',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     note: 'First start downloads the en/es language models (~1 min).',
     script:
@@ -504,6 +565,7 @@ exec libretranslate --host 0.0.0.0 --port 3000
     blurb: 'PostgreSQL administration UI (connect to external DBs)',
     category: 'data',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     note: 'Login admin@example.com / admin123456.',
     script:
@@ -539,6 +601,7 @@ exec pgadmin4
     blurb: 'Private local-first budgeting',
     category: 'productivity',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/',
     script:
       SH +
@@ -556,6 +619,7 @@ exec npx @actual-app/sync-server
     blurb: 'Instant headless CMS / data platform on SQLite',
     category: 'data',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/admin/login',
     entryPath: '/admin/login',
     note: 'Login admin@example.com / admin123456. Install takes ~1–2 min.',
@@ -576,6 +640,8 @@ exec npx directus start
     blurb: 'Workflow automation platform (SQLite)',
     category: 'ai',
     effort: 'quick',
+    modifiable: 'config',
+    agentNotes: 'Workflows/data under `n8ndata/`. n8n itself is an npm dist (pinned 1.68.1) — configure via N8N_* env in `catalog-run.sh`; do not edit node_modules.',
     healthPath: '/',
     note: 'Pinned to 1.68.1 — the latest npm release ships a broken @langchain/core dep tree. Install ~3 min.',
     script:
@@ -597,6 +663,8 @@ exec n8n start
     blurb: 'Modern wiki on SQLite',
     category: 'productivity',
     effort: 'quick',
+    modifiable: 'config',
+    agentNotes: 'Config: `wiki/config.yml`. Content lives in the SQLite DB (`wiki/db.sqlite`).',
     healthPath: '/',
     script:
       SH +
@@ -616,6 +684,8 @@ exec node server
     blurb: 'Hackable markdown knowledge base',
     category: 'productivity',
     effort: 'quick',
+    modifiable: 'config',
+    agentNotes: 'Your notes live in `space/` (markdown files — edit freely). Server config via flags in `catalog-run.sh`.',
     healthPath: '/',
     note: 'Runs on pinned Deno 1.46 (2.x breaks upstream); needs --unstable-kv.',
     script:
@@ -634,6 +704,7 @@ exec ./d1/deno run -A --unstable-kv https://get.silverbullet.md --hostname 0.0.0
     blurb: 'Self-hosted URL shortener (REST + SQLite)',
     category: 'network',
     effort: 'quick',
+    modifiable: 'config',
     healthPath: '/rest/health',
     entryPath: '/rest/health',
     note: 'API-first: /rest/health shows status; manage via shlink CLI or web client.',
@@ -662,6 +733,7 @@ exec /home/sandbox/workspace/app/php -S 0.0.0.0:3000 -t public
     blurb: 'Professional publishing platform (SQLite)',
     category: 'productivity',
     effort: 'build',
+    modifiable: 'config',
     healthPath: '/ghost/',
     entryPath: '/ghost/',
     note: 'Install ~3–5 min (ghost-cli local install).',
@@ -699,6 +771,8 @@ exec node current/index.js
     blurb: 'Highly configurable application dashboard',
     category: 'productivity',
     effort: 'build',
+    modifiable: 'source',
+    agentNotes: 'Source app (Next.js). User config in `hp/config/*.yaml` (services, widgets, bookmarks); code in `hp/src`. Rebuild with `pnpm build` after code changes.',
     healthPath: '/',
     note: 'Build takes several minutes (pnpm install + next build).',
     script:
@@ -719,6 +793,8 @@ exec pnpm start
     blurb: 'Feature-rich self-hosted dashboard',
     category: 'productivity',
     effort: 'build',
+    modifiable: 'source',
+    agentNotes: 'Source app (Vue). User config: `dy/user-data/conf.yml`; code in `dy/src`. Rebuild with `corepack yarn build` after code changes.',
     healthPath: '/',
     note: 'Yarn-guarded project — installed via corepack yarn. Build ~2–3 min.',
     script:
@@ -739,6 +815,7 @@ exec node server
     blurb: 'Handy online tools for developers',
     category: 'dev',
     effort: 'build',
+    modifiable: 'source',
     healthPath: '/',
     script:
       SH +
@@ -757,6 +834,7 @@ exec python3 -m http.server 3000 --bind 0.0.0.0
     blurb: 'Self-hosted file converter (Bun + SQLite)',
     category: 'media',
     effort: 'build',
+    modifiable: 'source',
     healthPath: '/',
     note: 'Runs from source under Bun; CSS generated at install.',
     script:
@@ -778,6 +856,7 @@ exec bun src/index.tsx
     blurb: 'yt-dlp web UI for video downloads',
     category: 'media',
     effort: 'build',
+    modifiable: 'source',
     healthPath: '/',
     note: 'Angular UI build ~3–4 min; requires Python 3.13.',
     script:
@@ -801,6 +880,7 @@ exec python3 app/main.py
     blurb: 'Cron job monitoring with alerts',
     category: 'dev',
     effort: 'build',
+    modifiable: 'source',
     healthPath: '/accounts/login/',
     entryPath: '/accounts/login/',
     script:
