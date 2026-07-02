@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, App as TApp, Preset, GitCredential } from './api'
 import { AppDetail } from './AppDetail'
+import { AppStore } from './AppStore'
 import { Settings } from './Settings'
 import { StatusBadge } from './ui'
 
 export default function App() {
   const [appId, setAppId] = useState<string | null>(null)
-  const [view, setView] = useState<'apps' | 'settings'>('apps')
+  const [view, setView] = useState<'apps' | 'store' | 'settings'>('apps')
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
 
@@ -33,9 +34,14 @@ export default function App() {
           sandboxd <span className="dot">/</span> console
         </div>
         <div className="spacer" />
-        {(appId || view === 'settings') && (
+        {(appId || view !== 'apps') && (
           <button className="btn btn-ghost btn-sm" onClick={goApps}>
             ← Apps
+          </button>
+        )}
+        {view !== 'store' && !appId && (
+          <button className="btn btn-ghost btn-sm" data-testid="nav-store" onClick={() => setView('store')}>
+            App Store
           </button>
         )}
         {view !== 'settings' && (
@@ -49,6 +55,15 @@ export default function App() {
           <Settings onError={setError} />
         ) : appId ? (
           <AppDetail appId={appId} onError={setError} onInfo={setInfo} />
+        ) : view === 'store' ? (
+          <AppStore
+            onOpen={(id) => {
+              setView('apps')
+              setAppId(id)
+            }}
+            onError={setError}
+            onInfo={setInfo}
+          />
         ) : (
           <AppList onOpen={setAppId} onError={setError} />
         )}
