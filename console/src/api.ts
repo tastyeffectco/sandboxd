@@ -173,6 +173,9 @@ export interface GitCredential {
 export interface Preview {
   url: string
   status: string
+  // The resolved web port the preview URL routes to (Traefik target). Fixed at
+  // sandbox create; compare against the effective manifest port to detect drift.
+  port?: number
 }
 
 export type AccessPolicy = 'control_plane_only' | 'agent_access' | 'runtime_access' | 'both'

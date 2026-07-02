@@ -603,8 +603,12 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// 1c. Git import (A1): clone a private HTTPS repo into the workspace app dir,
 	//     host-side, BEFORE the container starts — so the token (decrypted only
-	//     here) never enters the sandbox. The cloned dir is non-empty, so
-	//     runtimed skips the template seed but still writes the preset sandbox.yaml.
+	//     here) never enters the sandbox. The cloned dir is non-empty, so runtimed
+	//     treats it as a populated workspace: it does NOT seed a template and does
+	//     NOT write the preset sandbox.yaml (applyPreset returns early — see
+	//     cmd/runtimed/manifest.go). The imported repo's own sandbox.yaml, if any,
+	//     is authoritative; with none, runtimed falls back to the Vite defaults.
+	//     (No runtime detection is run on import — that is advisory-only today.)
 	if req.Git != nil && req.Git.RepoURL != "" {
 		s.recordEvent(r, events.Event{Type: events.GitRepoCloneStarted, Severity: events.SeverityInfo,
 			Message: "Cloning repository", AppID: req.AppID, SandboxID: req.ID,

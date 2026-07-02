@@ -215,7 +215,13 @@ export function AppDetail({
 
       <ProcessesPanel sandbox={sb} onError={onError} />
 
-      <RuntimeInspectPanel appId={appId} sandboxId={sb?.id} onError={onError} />
+      <RuntimeInspectPanel
+        appId={appId}
+        sandboxId={sb?.id}
+        routedPort={sb?.preview?.port}
+        running={status === 'running'}
+        onError={onError}
+      />
 
       <GitPanel appId={appId} repoURL={app.git?.repo_url} onError={onError} />
 
@@ -269,10 +275,14 @@ function askAgentPrompt(suggested: string, notes?: string[], snippets?: ConfigSn
 function RuntimeInspectPanel({
   appId,
   sandboxId,
+  routedPort,
+  running,
   onError,
 }: {
   appId: string
   sandboxId?: string
+  routedPort?: number
+  running?: boolean
   onError: (m: string) => void
 }) {
   const [ins, setIns] = useState<RuntimeInspect | null>(null)
@@ -348,11 +358,66 @@ function RuntimeInspectPanel({
         : 'missing'
   const eff = man?.effective || v?.effective
   const suggestions = ins?.suggestions || []
+  // Port drift: the preview URL/route is fixed at sandbox create (routedPort),
+  // but sandbox.yaml can be edited afterwards (Apply, agent, hand-edit). When the
+  // effective manifest port no longer matches the routed port, the preview URL
+  // sandboxd returns is stale — it points at a port the app no longer serves.
+  const effPort = eff?.web?.port
+  const drift = !!running && effPort != null && routedPort != null && effPort !== routedPort
+  // Auto-detect surfacing (console-side, no core change): when the workspace has
+  // no valid manifest but detection is confident, offer a one-click Apply of the
+  // default detected stack — the same detect→validate→write flow, surfaced at the
+  // right moment (e.g. right after a git import) instead of buried in the list.
+  const manifestOK = !!man?.present && !!v?.valid
+  const defaultSug = suggestions.find((s) => s.preset === ins?.default_suggestion)
+  const offerAutoDetect =
+    !manifestOK && !!sandboxId && !!defaultSug?.suggested_manifest && defaultSug?.confidence !== 'low'
 
   return (
     <div className="card" data-testid="runtime-inspect">
       <h2>Runtime</h2>
       <p className="muted" style={{ fontSize: 12 }}>Advisory — nothing here is applied automatically.</p>
+
+      {/* Auto-detect banner: prominent one-click when detection is confident and no
+          valid manifest exists yet (e.g. just imported a repo). */}
+      {offerAutoDetect && defaultSug && (
+        <div
+          data-testid="ri-autodetect"
+          className="card"
+          style={{ border: '1px solid var(--border)', padding: 10, margin: '8px 0', fontSize: 13 }}
+        >
+          Detected <strong>{defaultSug.preset}</strong>{' '}
+          <span className="muted">({defaultSug.confidence} confidence)</span> — no working{' '}
+          <span className="mono">sandbox.yaml</span> yet.{' '}
+          {defaultSug.reasons.length > 0 && (
+            <span className="muted">{defaultSug.reasons.join('; ')}. </span>
+          )}
+          {applyConfirm === `auto:${defaultSug.preset}` ? (
+            <span data-testid="ri-autodetect-confirm">
+              Write <span className="mono">sandbox.yaml</span>?{' '}
+              <button
+                className="btn btn-primary btn-sm"
+                data-testid="ri-autodetect-yes"
+                disabled={applying}
+                onClick={() => apply(defaultSug.preset, defaultSug.suggested_manifest as string)}
+              >
+                Confirm
+              </button>{' '}
+              <button className="btn btn-outline btn-sm" onClick={() => setApplyConfirm('')}>
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              className="btn btn-primary btn-sm"
+              data-testid="ri-autodetect-apply"
+              onClick={() => setApplyConfirm(`auto:${defaultSug.preset}`)}
+            >
+              Apply detected sandbox.yaml
+            </button>
+          )}
+        </div>
+      )}
 
       {/* current sandbox.yaml status */}
       <div data-testid="ri-manifest-status" style={{ fontSize: 13 }}>
@@ -365,6 +430,22 @@ function RuntimeInspectPanel({
           <div>command: {eff.web.command || '(default)'}</div>
           <div>port: {eff.web.port}</div>
           <div>health: {eff.web.health_path}</div>
+        </div>
+      )}
+
+      {/* Port-drift badge: the preview URL routes to a fixed port set at create; if
+          sandbox.yaml now serves a different port, the live preview URL is stale. */}
+      {drift && (
+        <div
+          data-testid="ri-port-drift"
+          className="warn"
+          style={{ fontSize: 12, marginTop: 8, fontWeight: 600 }}
+        >
+          ⚠ Preview route mismatch — the preview URL routes to{' '}
+          <span className="mono">:{routedPort}</span>, but <span className="mono">sandbox.yaml</span> now
+          serves <span className="mono">:{effPort}</span>. The preview URL is stale. Set the manifest port
+          back to <span className="mono">:{routedPort}</span> (the previewed convention), or recreate the
+          sandbox so the route re-resolves to <span className="mono">:{effPort}</span>.
         </div>
       )}
 

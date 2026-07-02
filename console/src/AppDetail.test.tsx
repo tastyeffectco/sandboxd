@@ -10,6 +10,8 @@ import {
   gitStatusPristineFixture,
   gitDiffFixture,
   appsFixture,
+  appManifestFixture,
+  runtimeInspectFixture,
 } from './test/fixtures'
 
 const noop = () => {}
@@ -416,6 +418,67 @@ describe('app detail — web app', () => {
     expect(deleteCalled).toBe(false)
     expect(onDeleted).not.toHaveBeenCalled()
     confirmSpy.mockRestore()
+  })
+})
+
+describe('app detail — runtime port drift + auto-detect', () => {
+  it('drift badge shows when the effective manifest port != the routed preview port', async () => {
+    const eff = { web: { command: 'uvicorn main:app --port 8080', port: 8080, health_path: '/' }, workers: [] }
+    const driftManifest = {
+      ...appManifestFixture,
+      effective: eff,
+      validation: { valid: true, errors: [], warnings: [], effective: eff },
+    }
+    const driftSandbox = {
+      ...webSandboxFixture,
+      status: 'running',
+      preview: { url: 'http://app.preview.localhost', status: 'ready', port: 3000 },
+    }
+    const base = appDetailRoutes(driftSandbox)
+    installFetch((m, p) => (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p) ? driftManifest : base(m, p)))
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    const badge = await screen.findByTestId('ri-port-drift')
+    expect(badge.textContent).toMatch(/:3000/)
+    expect(badge.textContent).toMatch(/:8080/)
+  })
+
+  it('no drift badge when the effective port matches the routed port', async () => {
+    const okSandbox = {
+      ...webSandboxFixture,
+      status: 'running',
+      preview: { url: 'http://x', status: 'ready', port: 3000 }, // appManifestFixture effective = 3000
+    }
+    installFetch(appDetailRoutes(okSandbox))
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    await screen.findByTestId('runtime-inspect')
+    expect(screen.queryByTestId('ri-port-drift')).toBeNull()
+  })
+
+  it('auto-detect banner offers one-click Apply and writes workspace/app/sandbox.yaml', async () => {
+    let putPath = ''
+    const noManifest = { present: false }
+    const inspect = { ...runtimeInspectFixture, default_suggestion: 'astro' } // astro carries suggested_manifest
+    const base = appDetailRoutes(webSandboxFixture)
+    installFetch((m, p) => {
+      if (/\/v1\/apps\/[^/]+\/runtime\/manifest/.test(p)) return noManifest
+      if (/\/v1\/apps\/[^/]+\/runtime-inspect/.test(p)) return inspect
+      if (/\/v1\/runtime\/manifest\/validate/.test(p)) return { valid: true, errors: [], warnings: [] }
+      if (/\/v1\/sandboxes\/[^/]+\/files/.test(p)) return { written: true }
+      return base(m, p)
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'PUT' && String(input).includes('/files')) putPath = String(input)
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
+    const banner = await screen.findByTestId('ri-autodetect')
+    expect(banner.textContent).toMatch(/astro/i)
+    fireEvent.click(screen.getByTestId('ri-autodetect-apply'))
+    fireEvent.click(await screen.findByTestId('ri-autodetect-yes'))
+    await waitFor(() => expect(putPath).toContain('/files'))
+    expect(putPath).toContain('sandbox.yaml')
   })
 })
 
