@@ -406,7 +406,7 @@ if [ ! -d "$R/node_modules" ]; then
 fi
 cd "$R"
 export PORT=3000
-exec node index.js
+exec node server/index.js
 `,
   },
   {
@@ -449,37 +449,6 @@ exec node server/server.js
 fi
 export SOKETI_HOST=0.0.0.0 SOKETI_PORT=3000
 exec ./node_modules/.bin/soketi start
-`,
-  },
-  {
-    id: 'snapdrop',
-    name: 'Snapdrop',
-    blurb: 'Local file sharing in your browser',
-    category: 'network',
-    effort: 'quick',
-    modifiable: 'source',
-    repo: 'https://github.com/SnapDrop/snapdrop',
-    healthPath: '/',
-    note: 'Runs a single-port patched server (static client + WebSocket together).',
-    script:
-      SH +
-      `R=/home/sandbox/workspace/app/sd
-if [ ! -f "$R/server/srv.js" ]; then
-  rm -rf "$R" && git clone --depth 1 https://github.com/SnapDrop/snapdrop "$R"
-  cd "$R/server" && npm install --no-audit --no-fund
-  cat > srv.js <<'JSEOF'
-const http=require('http'),fs=require('fs'),path=require('path');
-const root=path.join(__dirname,'..','client');
-const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.webmanifest':'application/manifest+json'};
-const srv=http.createServer((req,res)=>{let p=req.url.split('?')[0];if(p==='/')p='/index.html';let f=path.join(root,p);fs.readFile(f,(e,d)=>{if(e){res.writeHead(404);res.end('nf');return;}res.writeHead(200,{'Content-Type':mime[path.extname(f)]||'application/octet-stream'});res.end(d);});});
-const SnapdropServer=require('./ws-server.js');
-try{new SnapdropServer(srv);}catch(e){}
-srv.listen(3000,'0.0.0.0',()=>console.log('snapdrop on 3000'));
-JSEOF
-fi
-cd "$R/server"
-export PORT=3000
-exec node srv.js
 `,
   },
   {

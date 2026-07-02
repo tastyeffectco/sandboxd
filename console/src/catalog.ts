@@ -14,6 +14,14 @@ import { CATALOG3 } from './catalog3'
 export type CatalogCategory = 'dev' | 'productivity' | 'media' | 'data' | 'network' | 'ai' | 'other'
 export type CatalogEffort = 'instant' | 'quick' | 'build'
 
+// Runtime a recipe relies on. v1 launch scope (simplicity-first) ships only
+// 'node' | 'python' | 'binary' — everything that runs on the stock
+// sandboxd-base image with NO foreign runtime dropped into the workspace.
+// 'java' | 'php' | 'dotnet' | 'deno' recipes drop a foreign runtime and are
+// SHELVED (CATALOG_DEFERRED) until the core `image:` field / image profiles
+// land. Classified from the script; see classifyRuntime().
+export type CatalogRuntime = 'node' | 'python' | 'binary' | 'java' | 'php' | 'dotnet' | 'deno'
+
 // How agent tasks can change an installed app:
 //  - 'source': the app's source is cloned into the workspace — tasks can edit
 //    code, rebuild, and restart (full sandboxd experience).
@@ -29,6 +37,7 @@ export interface CatalogRecipe {
   category: CatalogCategory
   effort: CatalogEffort
   modifiable: CatalogModifiable
+  runtime?: CatalogRuntime  // set at load by classifyRuntime()
   repo: string // upstream source repo — agents read it to understand the app
   script: string // catalog-run.sh content (idempotent install + exec run)
   healthPath: string // must be a 200 route
@@ -624,7 +633,7 @@ exec libretranslate --host 0.0.0.0 --port 3000
       SH +
       `if [ ! -d .venv ]; then
   uv venv --python-preference only-managed --python 3.12 >/dev/null
-  . .venv/bin/activate && uv pip install pgadmin4
+  . .venv/bin/activate && uv pip install pgadmin4 passlib bcrypt
   mkdir -p pgdata
   P=$(ls -d .venv/lib/python3.12/site-packages/pgadmin4 | head -1)
   cat > "$P/config_local.py" <<'CFGEOF'
@@ -987,5 +996,29 @@ export const CATEGORIES: { id: CatalogCategory | 'all'; label: string }[] = [
   { id: 'other', label: 'Other' },
 ]
 
-// Expansion set (exhaustive verified list) — see catalog2.ts.
-CATALOG.push(...CATALOG2, ...CATALOG3)
+// ── v1 launch scope: Node + Python + static-binary apps only ────────────────
+// Classify each recipe by the runtime it needs, then split: the store ships
+// the no-foreign-runtime set; runtime-drop families are shelved (kept in code,
+// not surfaced) for a later image-profile release. This is a pure filter —
+// no core change, no script change.
+export function classifyRuntime(script: string): CatalogRuntime {
+  if (/temurin|adoptium/.test(script)) return 'java'
+  if (/static-php/.test(script)) return 'php'
+  if (/GLOBALIZATION_INVARIANT/.test(script)) return 'dotnet'
+  if (/get\.silverbullet|denoland|d1\/deno/.test(script)) return 'deno'
+  if (/uv venv|uv pip|\.venv/.test(script)) return 'python'
+  if (/npm |pnpm|bun |npx |corepack yarn|node /.test(script)) return 'node'
+  return 'binary' // static Go/Rust: download one binary, run — no runtime
+}
+
+const SHIPPED: CatalogRuntime[] = ['node', 'python', 'binary']
+
+const ALL_RECIPES: CatalogRecipe[] = [...CATALOG, ...CATALOG2, ...CATALOG3]
+for (const r of ALL_RECIPES) r.runtime = classifyRuntime(r.script)
+
+// The exported catalog the App Store renders (v1: 79 no-runtime-drop apps).
+CATALOG.length = 0
+CATALOG.push(...ALL_RECIPES.filter((r) => SHIPPED.includes(classifyRuntime(r.script))))
+
+// Shelved runtime-drop families (Java/PHP/.NET/Deno) — re-enable per image profile.
+export const CATALOG_DEFERRED: CatalogRecipe[] = ALL_RECIPES.filter((r) => !SHIPPED.includes(classifyRuntime(r.script)))

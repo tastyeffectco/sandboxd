@@ -141,8 +141,8 @@ export function AppStore({ onOpen, onError, onInfo }: { onOpen: (appId: string) 
       <h1>App Store</h1>
       <p className="muted">
         One-click open-source apps, installed as ordinary sandboxd apps — each runs isolated in its own
-        sandbox with a live preview URL. Recipes are data on top of the public API; the core engine is
-        untouched.
+        sandbox with a live preview URL. v1 ships Node, Python & single-binary apps that run on the stock
+        base image. Recipes are data on top of the public API; the core engine is untouched.
       </p>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {CATEGORIES.map((c) => (

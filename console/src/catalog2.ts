@@ -37,7 +37,7 @@ const ARRCONF = `mkdir -p data && cat > data/config.xml <<'XMLEOF'
 </Config>
 XMLEOF`
 
-const arr = (id: string, name: string, repo: string, asset: string, bin: string): CatalogRecipe => ({
+const arr = (id: string, name: string, repo: string, asset: string, bin: string, exclude = 'sha|sig|asc'): CatalogRecipe => ({
   id,
   name,
   blurb: `${name} — media automation (${id})`,
@@ -51,7 +51,7 @@ const arr = (id: string, name: string, repo: string, asset: string, bin: string)
   script:
     SH +
     `if [ ! -f .catalog-installed ]; then
-  ${gh(repo, asset)}
+  ${gh(repo, asset, exclude)}
   curl -sL "$U" -o a.tgz && tar xzf a.tgz
   ${ARRCONF}
   touch .catalog-installed
@@ -172,6 +172,7 @@ exec ./ntfy serve --config ./server.yml
   touch .catalog-installed
 fi
 export VIKUNJA_DATABASE_TYPE=sqlite VIKUNJA_DATABASE_PATH=./vikunja.db VIKUNJA_SERVICE_INTERFACE=:3000
+export VIKUNJA_SERVICE_PUBLICURL=http://localhost:3000 VIKUNJA_CORS_ENABLE=false
 exec ./vikunja
 `,
   },
@@ -302,7 +303,7 @@ exec ./pocket-id
     script:
       SH +
       `if [ ! -f .catalog-installed ]; then
-  ${gh('flipt-io/flipt', 'flipt_.*_linux_arm64.tar.gz')}
+  ${gh('flipt-io/flipt', 'flipt_linux_arm64.tar.gz', 'sha|sig|asc|sbom|darwin')}
   curl -sL "$U" -o f.tgz && tar xzf f.tgz && chmod +x flipt
   touch .catalog-installed
 fi
@@ -357,7 +358,7 @@ Swagger: /api/swagger`,
     script:
       SH +
       `if [ ! -f .catalog-installed ]; then
-  ${gh('go-gitea/gitea', 'gitea-.*-linux-arm64$')}
+  ${gh('go-gitea/gitea', 'gitea-[0-9][0-9.]*-linux-arm64', 'sha|sig|asc')}
   curl -sL "$U" -o gitea && chmod +x gitea && mkdir -p data
   SEC=$(./gitea generate secret SECRET_KEY); JWT=$(./gitea generate secret JWT_SECRET); INT=$(./gitea generate secret INTERNAL_TOKEN)
   printf '[server]\\nHTTP_ADDR=0.0.0.0\\nHTTP_PORT=3000\\nROOT_URL=http://localhost:3000/\\n[database]\\nDB_TYPE=sqlite3\\nPATH=/home/sandbox/workspace/app/data/gitea.db\\n[security]\\nINSTALL_LOCK=true\\nSECRET_KEY=%s\\nINTERNAL_TOKEN=%s\\n[oauth2]\\nJWT_SECRET=%s\\n' "$SEC" "$INT" "$JWT" > data/app.ini
@@ -380,7 +381,7 @@ exec ./gitea web --config /home/sandbox/workspace/app/data/app.ini
     script:
       SH +
       `if [ ! -f .catalog-installed ]; then
-  ${gh('userdocs/qbittorrent-nox-static', 'aarch64-qbittorrent-nox$')}
+  ${gh('userdocs/qbittorrent-nox-static', 'aarch64-qbittorrent-nox', 'sha|sig|asc')}
   curl -sL "$U" -o qbittorrent-nox && chmod +x qbittorrent-nox
   touch .catalog-installed
 fi
@@ -505,7 +506,7 @@ Datasources: POST /api/datasources. Docs: https://grafana.com/docs/grafana/lates
 fi
 D=$(find . -maxdepth 1 -type d -name 'grafana-*' | head -1)
 cd "$D"
-exec ./bin/grafana server --homepath . cfg:server.http_addr=0.0.0.0 cfg:server.http_port=3000
+exec ./bin/grafana server --homepath "$PWD" cfg:server.http_addr=0.0.0.0 cfg:server.http_port=3000 cfg:paths.data=/home/sandbox/workspace/app/gfdata cfg:paths.logs=/home/sandbox/workspace/app/gflogs
 `,
   },
   {
@@ -578,8 +579,8 @@ exec ./kc/bin/kc.sh start-dev --http-host=0.0.0.0 --http-port=3000 --hostname-st
   },
 
   // ── .NET family, self-contained (chunk 9) ─────────────────────────────────
-  arr('prowlarr', 'Prowlarr', 'Prowlarr/Prowlarr', 'linux-arm64.*tar.gz', 'Prowlarr'),
-  arr('sonarr', 'Sonarr', 'Sonarr/Sonarr', 'linux-arm64.*tar.gz', 'Sonarr'),
+  arr('prowlarr', 'Prowlarr', 'Prowlarr/Prowlarr', 'linux-core-arm64.tar.gz', 'Prowlarr', 'sha|sig|asc|musl'),
+  arr('sonarr', 'Sonarr', 'Sonarr/Sonarr', 'linux-arm64.tar.gz', 'Sonarr', 'sha|sig|asc|musl'),
   {
     id: 'duplicati',
     name: 'Duplicati',
@@ -592,7 +593,7 @@ exec ./kc/bin/kc.sh start-dev --http-host=0.0.0.0 --http-port=3000 --hostname-st
     script:
       SH +
       `if [ ! -f .catalog-installed ]; then
-  ${gh('duplicati/duplicati', 'linux-arm64.*(zip|tar.gz)', 'gui|sig|deb|rpm|sha')}
+  ${gh('duplicati/duplicati', 'linux-arm64-gui.zip', 'sig|deb|rpm|sha|appimage')}
   curl -sL "$U" -o d.zip && mkdir -p dup
   (cd dup && (unzip -o ../d.zip >/dev/null 2>&1 || tar xzf ../d.zip))
   touch .catalog-installed
