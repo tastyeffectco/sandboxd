@@ -73,3 +73,26 @@ Needs the core `image:` field + `SANDBOXD_IMAGES` allowlist; recipe declares `im
   highest-value core ask; until then the shelf stays shelved.
 - Agent-task journeys (install → develop-on-top / drive-the-app-API) work today via `AGENTS.md` + per-app
   `skills/` written at install (see APP-CATALOG-CONTRACT.md §9).
+
+## Alignment with core docs
+
+The **console UI** (catalog host) and **sandboxd core** are separate products (separate repos, near-term).
+This decision sits *on top of* core and restates nothing in it:
+
+- [`base-image.md`](../base-image.md) — one instance-wide base image, per-app `image` create-field rejected
+  today, native langs → custom image, and the **image-profiles + app-level allowlisted selection** roadmap
+  this ADR's deferred-families plan depends on.
+- [`sandbox-manifest.md`](../sandbox-manifest.md) — the `sandbox.yaml` schema every recipe emits, and the
+  "the agent can write the manifest like any workspace file" rule that makes the whole catalog possible.
+- [`../ARCHITECTURE.md`](../../ARCHITECTURE.md) §"Optional workflows on top of core" — catalog is one more
+  optional `/v1`-client layer, like apps/agents/git.
+- [`../APP-CATALOG-CONTRACT.md`](../APP-CATALOG-CONTRACT.md) — the mechanism (§10 recipes-vs-presets, §11 v1
+  scope, §12 deferred families, §13 follow-ups).
+
+**Catalog recipes ≠ core presets:** presets are core Go/runtime templates (`internal/preset`, `GET
+/v1/presets`); catalog recipes are console/client data written via the `/v1` files API. The catalog does not
+change sandboxd core (APP-CATALOG-CONTRACT.md §10).
+
+**Follow-up (not fixed here):** wake does `docker start` but cannot recreate a *removed* container — a
+pruned/GC'd idle sandbox bricks behind the "Spinning up…" interstitial. Belongs with the core wake
+follow-ups in `sandbox-manifest.md`; documented, not fixed.
