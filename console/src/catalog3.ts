@@ -8,6 +8,7 @@ set -e
 cd /home/sandbox/workspace/app
 export TMPDIR=/home/sandbox/workspace/tmp
 mkdir -p "$TMPDIR"
+echo "▸ preparing workspace"
 `
 
 const gh = (repo: string, match: string, exclude = 'sha|sig|asc') =>

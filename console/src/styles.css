@@ -370,3 +370,6 @@ h2 {
 .tl-ids {
   font-size: 11px;
 }
+
+.spin { display: inline-block; animation: spin 1.1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
