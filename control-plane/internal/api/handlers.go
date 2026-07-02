@@ -708,6 +708,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		previewPorts = ensurePort(previewPorts, webPort)
 	}
 	labels := traefik.Labels(req.ID, previewPorts, s.PreviewDomain, visibility, s.PreviewEntrypoint, s.PreviewTLS)
+	// Phase 10B — bind-mount EVERY connected provider's auth dir at
+	// /run/agent-auth/<provider> (outside the workspace). runtimed selects the
+	// right one per task by the requested agent, so an explicit agent:"claude-code"
+	// task works regardless of the default. No credential is ever in env.
+	volumes := append([]string{mntPath + ":/home/sandbox"}, s.agentAuthMounts()...)
 	startRun := time.Now()
 	var runErr error
 	containerID, runErr := s.Docker.Run(r.Context(), docker.RunSpec{
@@ -725,7 +730,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Ulimits:     []string{"nofile=65536:65536"},
 		Tmpfs:       []string{"/tmp:size=512m", "/var/tmp:size=128m"},
 		Env:         envFlags,
-		Volumes:     []string{mntPath + ":/home/sandbox"},
+		Volumes:     volumes,
 		Labels:      labels,
 		Image:       s.Image,
 	})

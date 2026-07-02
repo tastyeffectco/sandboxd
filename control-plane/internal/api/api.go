@@ -6,11 +6,13 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/sandboxd/control-plane/internal/activity"
+	"github.com/sandboxd/control-plane/internal/agentauth"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
@@ -128,6 +130,40 @@ type Server struct {
 	// shared with the reaper. nil-safe: PATCH /v1/settings returns 503 when
 	// unset, and the static KeepaliveMax is used as a fallback.
 	Live *instancecfg.Live
+
+	// Phase 10B A0 — host-side agent auth store (read-only here) + a lazy,
+	// cached, best-effort "installed" probe. nil-safe.
+	AgentAuth      *agentauth.Store
+	agentProbeOnce sync.Once
+	agentProbe     map[string]string                    // binary -> installed|not_installed (nil => unknown)
+	agentProbeFn   func(image string) map[string]string // test override
+
+	// Phase 10B — default agent for tasks that don't specify one. Does NOT
+	// control credential mounting (every connected provider is mounted); an
+	// explicit agent:"claude-code" task works regardless of this. Empty → opencode.
+	DefaultAgent string
+}
+
+// agentAuthBaseMount is the in-container parent dir under which each connected
+// provider's auth dir is bind-mounted, as /run/agent-auth/<provider>.
+// Deliberately NOT under /home/sandbox (the workspace), so credentials never
+// land in a workspace or a snapshot. runtimed picks the right one per task by
+// the selected agent's name.
+const agentAuthBaseMount = "/run/agent-auth"
+
+// agentAuthMounts returns one -v spec per CONNECTED provider, mounting its auth
+// dir at /run/agent-auth/<provider>. Empty when nothing is connected.
+func (s *Server) agentAuthMounts() []string {
+	if s.AgentAuth == nil {
+		return nil
+	}
+	var vols []string
+	for _, p := range agentauth.Providers() {
+		if s.AgentAuth.Connected(p.ID) {
+			vols = append(vols, s.AgentAuth.Dir(p.ID)+":"+agentAuthBaseMount+"/"+p.ID)
+		}
+	}
+	return vols
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -178,6 +214,10 @@ func (s *Server) Handler() http.Handler {
 	// Durable apps above sandboxes (Phase 1).
 	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
 	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
+	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
+	mux.HandleFunc("POST /v1/agents/{provider}/import", s.observe("POST /v1/agents/{provider}/import", s.v1AgentImport))
+	mux.HandleFunc("POST /v1/agents/{provider}/api-key", s.observe("POST /v1/agents/{provider}/api-key", s.v1AgentAPIKey))
+	mux.HandleFunc("POST /v1/agents/{provider}/disconnect", s.observe("POST /v1/agents/{provider}/disconnect", s.v1AgentDisconnect))
 	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
 	mux.HandleFunc("POST /v1/git-credentials", s.observe("POST /v1/git-credentials", s.v1CreateGitCredential))
 	mux.HandleFunc("GET /v1/git-credentials", s.observe("GET /v1/git-credentials", s.v1ListGitCredentials))

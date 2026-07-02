@@ -3,11 +3,18 @@
 // (control-plane/internal/api/v1_client_contract_test.go and friends). If a
 // server shape changes, update these to match (and the Go test should fail first).
 import { vi } from 'vitest'
-import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings, GitCredential } from '../api'
+import type { App, Preset, Sandbox, AppEvent, ConfigItem, Settings, GitCredential, Agent } from '../api'
 
 // Git credential metadata (mirrors GET /v1/git-credentials). No token field.
 export const gitCredentialsFixture: GitCredential[] = [
   { id: '01GITCREDAAAAAAAAAAAAAAAAA', name: 'github', host: 'github.com', username: 'x-access-token', token_set: true, created_at: '2026-06-26T00:00:00Z' },
+]
+
+// Read-only AI Agents status (mirrors GET /v1/agents). No tokens.
+export const agentsFixture: Agent[] = [
+  { id: 'opencode', label: 'OpenCode', installed_state: 'installed', status: 'connected', method: 'oauth', supports_oauth: true, supports_api_key: true, runnable: true },
+  { id: 'claude-code', label: 'Claude Code', installed_state: 'installed', status: 'needs_login', method: '', supports_oauth: true, supports_api_key: true, runnable: false },
+  { id: 'codex', label: 'Codex', installed_state: 'not_installed', status: 'needs_login', method: '', supports_oauth: true, supports_api_key: true, runnable: false },
 ]
 
 export const presetsFixture: Preset[] = [

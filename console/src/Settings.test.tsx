@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Settings } from './Settings'
-import { installFetch, settingsFixture, gitCredentialsFixture } from './test/fixtures'
+import { installFetch, settingsFixture, gitCredentialsFixture, agentsFixture } from './test/fixtures'
 
 const noop = () => {}
 
@@ -9,6 +9,7 @@ describe('console — Settings page', () => {
   beforeEach(() => {
     installFetch((m, p) => {
       if (m === 'GET' && p.startsWith('/v1/git-credentials')) return { credentials: gitCredentialsFixture }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined
     })
@@ -30,7 +31,7 @@ describe('console — Settings page', () => {
     // safe values surfaced (unique strings)
     expect(screen.getByText('v0.4.0')).toBeTruthy()
     expect(screen.getByText('http://*.preview.localhost:18080')).toBeTruthy()
-    expect(screen.getByText('opencode')).toBeTruthy()
+    expect(screen.getByTestId('settings-agents-list')).toBeTruthy() // AI Agents from /v1/agents
     expect(screen.getByTestId('settings-presets')).toBeTruthy()
     // egress mode rendered as a mode word
     expect(screen.getByTestId('settings-egress').textContent).toMatch(/disabled/i)
@@ -51,6 +52,104 @@ describe('console — Settings page', () => {
     expect(sec.querySelector('input')).toBeNull()
   })
 
+  it('AI Agents: every provider offers subscription + API-key connect; no token rendered', async () => {
+    render(<Settings onError={noop} />)
+    expect(await screen.findByTestId('settings-agents-list')).toBeTruthy()
+    for (const a of agentsFixture) expect(screen.getByTestId(`agent-${a.id}`)).toBeTruthy()
+    expect(screen.getByTestId('agent-codex').textContent).toMatch(/not installed/i)
+    // Each not-connected provider shows both connect actions.
+    for (const id of ['claude-code', 'codex']) {
+      const card = screen.getByTestId(`agent-${id}`)
+      expect(card.querySelector('[data-testid="agent-connect-oauth"]')).toBeTruthy()
+      expect(card.querySelector('[data-testid="agent-connect-apikey"]')).toBeTruthy()
+    }
+    // opencode is connected (oauth) → shows Disconnect, not connect actions.
+    const oc = screen.getByTestId('agent-opencode')
+    expect(oc.querySelector('[data-testid="agent-disconnect"]')).toBeTruthy()
+    expect(oc.querySelector('[data-testid="agent-connect-oauth"]')).toBeNull()
+    expect(oc.textContent).toMatch(/via subscription/i)
+    expect(screen.getByTestId('settings-page').textContent || '').not.toMatch(/sk-[A-Za-z0-9]{8,}/)
+  })
+
+  it('shows "runner not enabled yet" when claude-code is connected but not runnable', async () => {
+    const connectedNotRunnable = agentsFixture.map((a) =>
+      a.id === 'claude-code' ? { ...a, status: 'connected', runnable: false } : a,
+    )
+    installFetch((m, p) => {
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: connectedNotRunnable }
+      if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
+      return undefined
+    })
+    render(<Settings onError={noop} />)
+    expect(await screen.findByTestId('agent-runner-disabled')).toBeTruthy()
+    expect(screen.getByTestId('agent-runner-disabled').textContent).toMatch(/runner not enabled yet/i)
+    // disconnect is offered on the claude-code card; no token shown
+    const card = screen.getByTestId('agent-claude-code')
+    expect(card.querySelector('[data-testid="agent-disconnect"]')).toBeTruthy()
+  })
+
+  it('Connect subscription: posts the pasted credential bundle opaquely', async () => {
+    let posted: unknown = null
+    let postedPath = ''
+    installFetch((m, p) => {
+      if (m === 'POST' && p === '/v1/agents/claude-code/import')
+        return { provider: 'claude-code', status: 'connected', method: 'oauth' }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
+      if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
+      return undefined
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).includes('/agents/')) {
+        posted = init?.body ? JSON.parse(init.body) : null
+        postedPath = String(input)
+      }
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<Settings onError={noop} />)
+    const card = await screen.findByTestId('agent-claude-code')
+    fireEvent.click(card.querySelector('[data-testid="agent-connect-oauth"]') as Element)
+    const ta = await screen.findByTestId('agent-connect-input')
+    fireEvent.change(ta, { target: { value: '{"claudeAiOauth":{"x":1}}' } })
+    fireEvent.click(screen.getByTestId('agent-connect-submit'))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(postedPath).toContain('/v1/agents/claude-code/import')
+    expect((posted as { credentials: string }).credentials).toContain('claudeAiOauth')
+    await waitFor(() => expect(screen.queryByTestId('agent-connect-modal')).toBeNull())
+  })
+
+  it('Use API key: posts the key to the provider api-key endpoint', async () => {
+    let posted: unknown = null
+    let postedPath = ''
+    installFetch((m, p) => {
+      if (m === 'POST' && p === '/v1/agents/codex/api-key')
+        return { provider: 'codex', status: 'connected', method: 'api_key' }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
+      if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
+      return undefined
+    })
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
+      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).includes('/agents/')) {
+        posted = init?.body ? JSON.parse(init.body) : null
+        postedPath = String(input)
+      }
+      return realFetch(input as never, init as never)
+    }) as unknown as typeof fetch
+
+    render(<Settings onError={noop} />)
+    const card = await screen.findByTestId('agent-codex')
+    fireEvent.click(card.querySelector('[data-testid="agent-connect-apikey"]') as Element)
+    const ta = await screen.findByTestId('agent-connect-input')
+    fireEvent.change(ta, { target: { value: 'sk-secret-key' } })
+    fireEvent.click(screen.getByTestId('agent-connect-submit'))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(postedPath).toContain('/v1/agents/codex/api-key')
+    expect((posted as { api_key: string }).api_key).toBe('sk-secret-key')
+    await waitFor(() => expect(screen.queryByTestId('agent-connect-modal')).toBeNull())
+  })
+
   it('lifecycle is editable; protected sections have no inputs', async () => {
     render(<Settings onError={noop} />)
     // lifecycle section exposes editable inputs (server marked them editable)
@@ -67,6 +166,7 @@ describe('console — Settings page', () => {
     let patched: { method: string; body: unknown } | null = null
     installFetch((m, p) => {
       if (m === 'GET' && p.startsWith('/v1/git-credentials')) return { credentials: gitCredentialsFixture }
+      if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
       if (m === 'PATCH' && p.startsWith('/v1/settings')) return settingsFixture
       return undefined

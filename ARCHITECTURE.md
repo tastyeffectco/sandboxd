@@ -1,7 +1,31 @@
 # Architecture
 
-sandboxd is a small Go control plane (`sandboxd`) that drives the Docker
-daemon, fronted by Traefik. Everything runs as containers on one host.
+sandboxd is a small Go **control plane** (`sandboxd`) that drives the Docker
+daemon, fronted by Traefik, with an optional **web console** (a pure `/v1` API
+client) on top. It's a self-hosted engine for AI app-builder products: isolated
+sandboxes, live preview URLs, coding agents, app-scoped config/secrets,
+snapshots/fork/restore, runtime presets, and process logs/events. Everything
+runs as containers on one host.
+
+High level:
+
+- **Control plane** (`sandboxd`, Go) — sandbox/app lifecycle, the `/v1` API.
+- **SQLite** (WAL) — the single source of truth for apps, sandboxes, config,
+  events, snapshots.
+- **Docker runtime provider** — the only backend today; sandboxd shells the
+  `docker` CLI. (A second provider is a future concern.)
+- **Traefik** — edge router; publishes a preview URL per running sandbox.
+- **runtimed** — in-sandbox supervisor + task runner, baked into the base image.
+- **sandbox.yaml** — the per-app runtime manifest runtimed reads (web/workers/
+  build/health/restart_after_task).
+- **Presets / templates / base image** — the create-time layering (see
+  [Runtime model](#runtime-model)).
+- **Console** — a React SPA that talks **only** to `/v1`; never touches the DB or
+  workspaces.
+- **Agent auth store** — opaque per-provider credential dirs under the data root,
+  **outside** any workspace (post-v0.4; see `docs/agent-auth.md`).
+- **App config/secrets**, an **event timeline**, and **snapshots/fork/restore**
+  are first-class app subsystems (below).
 
 ```
                          ┌── host (Docker daemon) ─────────────────────────┐
@@ -62,6 +86,48 @@ only routes containers this stack owns. Running sandboxes win on a
 priority-100 router; the priority-1 file-provider catch-all (`traefik/dynamic/
 wake.yml`) forwards anything else to sandboxd's wake path. Plain HTTP by
 default; TLS is a config switch (see README → Production / TLS).
+
+### Console (optional UI)
+A small React SPA served behind the same Traefik (`console.<domain>`). It is a
+**pure `/v1` API client** — it never opens the DB or a workspace. It creates
+apps, picks presets, drives sandbox lifecycle + preview, submits tasks and
+streams logs, manages config/secrets, shows the events timeline and per-process
+logs, does snapshot/fork/restore, and reads settings (editing only the lifecycle
+tunables). Contract: `docs/openapi.yaml`.
+
+### App subsystems
+- **App config & secrets** — per-app key/values. Sensitive values are write-only:
+  encrypted at rest (`internal/secrets`), never returned by the API (only
+  `value_set`). Delivery to agents/runtime is policy-scoped.
+- **Event timeline** — a durable, newest-first per-app activity log
+  (`internal/events`): app/sandbox/config/task/snapshot events, surfaced at
+  `GET /v1/apps/{id}/events`.
+- **Snapshots / fork / restore** — capture an app's **workspace state**
+  (`internal/snapshot`), excluding dependency/build artifacts; fork into a new
+  app or restore in place. Ownership is normalized to the sandbox user.
+- **Agent auth store** (post-v0.4, `feat/phase-10b-agent-auth`) — opaque
+  per-provider credential dirs under `SANDBOXD_DATA_DIR/agent-auth/<provider>/`,
+  **outside** any workspace, mounted read-only-to-the-task at
+  `/run/agent-auth/<provider>` so the selected agent's `HOME` finds its creds.
+  Credentials never enter workspaces, snapshots, Docker env, logs, events, or
+  task results. See `docs/agent-auth.md`.
+
+## Runtime model
+
+How an app actually runs, layered create-time → run-time:
+
+1. **Base image** — tools + `runtimed` (the container's main process) + optional
+   per-preset `/opt/templates/<preset>` starters. Contract: `docs/base-image.md`.
+2. **Runtime preset** — the create-time bundle (template + a generated
+   `sandbox.yaml` + capabilities) chosen via `runtime_preset` / `GET /v1/presets`.
+3. **`sandbox.yaml`** — the manifest runtimed reads: the `web` process (previewed),
+   N background `workers`, the post-task `build` check, `health`, and
+   `restart_after_task`. Full schema: `docs/sandbox-manifest.md`.
+4. **Starter / import** — the app's source code (seeded from the preset's
+   template; Git/private-repo import is not implemented yet).
+5. **Snapshot** — a capture of the app **workspace state**, deliberately
+   **excluding** installed dependencies and build output
+   (`node_modules`, `.next`, `out`, `.venv`, `__pycache__`, `.cache`).
 
 ## Request flow: first hit to a stopped sandbox
 

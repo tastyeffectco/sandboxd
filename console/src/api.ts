@@ -44,6 +44,21 @@ export interface Settings {
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
 }
 
+// Read-only AI Agents status (GET /v1/agents). No tokens are ever returned.
+// `runnable` = runtimed has a task adapter for this provider; a connected but
+// not-runnable provider means "credentials imported, runner not enabled yet".
+export interface Agent {
+  id: string
+  label: string
+  installed_state: 'installed' | 'not_installed' | 'unknown'
+  status: 'connected' | 'needs_login'
+  // How the provider is currently connected. '' when not connected.
+  method: 'oauth' | 'api_key' | ''
+  supports_oauth: boolean
+  supports_api_key: boolean
+  runnable: boolean
+}
+
 export interface SettingsPatch {
   lifecycle?: {
     idle_reap_enabled?: boolean
@@ -247,6 +262,21 @@ export const api = {
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
   getSettings: () => req<Settings>('GET', '/v1/settings'),
+  getAgents: () => req<{ providers: Agent[] }>('GET', '/v1/agents').then((r) => r.providers || []),
+
+  // Connect an agent provider by subscription (paste the credential bundle the
+  // owner's `<cli> login` produced) — stored opaquely, never parsed.
+  importAgentCredential: (provider: string, credentials: string) =>
+    req<{ provider: string; status: string; method: string }>('POST', `/v1/agents/${provider}/import`, {
+      credentials,
+    }),
+  // Connect an agent provider by API key — stored opaquely; injected as the
+  // provider's key env var at task time.
+  setAgentApiKey: (provider: string, api_key: string) =>
+    req<{ provider: string; status: string; method: string }>('POST', `/v1/agents/${provider}/api-key`, {
+      api_key,
+    }),
+  disconnectAgent: (provider: string) => req<unknown>('POST', `/v1/agents/${provider}/disconnect`),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
 
   // Git credentials (for importing private repos in a later v0.4.x release).
@@ -325,8 +355,8 @@ export const api = {
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
 
-  submitTask: (id: string, prompt: string) =>
-    req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, { prompt, agent: 'opencode' }),
+  submitTask: (id: string, prompt: string, agent: string = 'opencode') =>
+    req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, { prompt, agent }),
   getTask: (id: string, taskId: string) =>
     req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
   taskEventsURL: (id: string, taskId: string) =>

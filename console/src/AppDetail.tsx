@@ -1362,6 +1362,7 @@ function TaskPanel({
   onError: (m: string) => void
 }) {
   const [prompt, setPrompt] = useState('')
+  const [agent, setAgent] = useState('opencode')
   const [status, setStatus] = useState<string | null>(null)
   const [log, setLog] = useState<string[]>([])
   const esRef = useRef<EventSource | null>(null)
@@ -1377,7 +1378,7 @@ function TaskPanel({
     setLog([])
     setStatus('running')
     try {
-      const t = await api.submitTask(sandboxId, prompt.trim())
+      const t = await api.submitTask(sandboxId, prompt.trim(), agent)
       esRef.current?.close()
       const es = new EventSource(api.taskEventsURL(sandboxId, t.id))
       esRef.current = es
@@ -1421,6 +1422,16 @@ function TaskPanel({
         data-testid="task-prompt"
       />
       <div className="row" style={{ marginTop: 10 }}>
+        <select
+          className="select"
+          value={agent}
+          onChange={(e) => setAgent(e.target.value)}
+          data-testid="task-agent"
+          title="Which coding agent runs this task"
+        >
+          <option value="opencode">OpenCode</option>
+          <option value="claude-code">Claude Code (your subscription)</option>
+        </select>
         <button className="btn btn-primary" disabled={!running || !prompt.trim()} onClick={run} data-testid="run-task">
           Run task
         </button>

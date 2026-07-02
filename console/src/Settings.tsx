@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api, Settings as TSettings, GitCredential } from './api'
+import { api, Settings as TSettings, GitCredential, Agent } from './api'
 
 // Instance settings/operability view (Phase 8A read-only + 8B editable lifecycle
 // tunables). Only the lifecycle section is editable (and only if the server says
 // so via `editable`); everything else is read-only / env-managed.
 export function Settings({ onError }: { onError: (m: string) => void }) {
   const [s, setS] = useState<TSettings | null>(null)
+  const [agents, setAgents] = useState<Agent[]>([])
+  // Open connect dialog: which provider, and which method the owner chose.
+  const [connect, setConnect] = useState<{ provider: Agent; method: 'oauth' | 'api_key' } | null>(null)
   const [idleEnabled, setIdleEnabled] = useState(true)
   const [idleSec, setIdleSec] = useState(0)
   const [keepSec, setKeepSec] = useState(0)
@@ -32,6 +35,10 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
       .then(apply)
       .catch((e) => onError((e as Error).message))
     reloadGitCreds()
+    api
+      .getAgents()
+      .then(setAgents)
+      .catch((e) => onError((e as Error).message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onError])
 
@@ -164,9 +171,43 @@ export function Settings({ onError }: { onError: (m: string) => void }) {
         </table>
       </Section>
 
-      <Section title="Agents" testid="settings-agents">
-        <Row k="Providers" v={s.agents.providers.join(', ') || 'none'} />
+      <Section title="AI Agents" testid="settings-agents">
+        <div className="stack" data-testid="settings-agents-list">
+          {agents.map((a) => (
+            <AgentCard
+              key={a.id}
+              agent={a}
+              onConnect={(method) => setConnect({ provider: a, method })}
+              onDisconnect={async () => {
+                try {
+                  await api.disconnectAgent(a.id)
+                  api.getAgents().then(setAgents)
+                } catch (e) {
+                  onError((e as Error).message)
+                }
+              }}
+            />
+          ))}
+        </div>
+        <p className="muted">
+          Each agent runs on your own account — connect a subscription (paste the credential your
+          CLI login created) or an API key. Credentials are stored opaquely server-side, never shown
+          in the browser, and kept out of every sandbox snapshot.
+        </p>
       </Section>
+
+      {connect && (
+        <AgentConnectModal
+          provider={connect.provider}
+          method={connect.method}
+          onClose={() => setConnect(null)}
+          onConnected={() => {
+            setConnect(null)
+            api.getAgents().then(setAgents)
+          }}
+          onError={onError}
+        />
+      )}
 
       <Section title="Security / auth" testid="settings-security">
         <Row k="API auth" v={s.auth.enabled ? 'enabled' : 'disabled'} />
@@ -301,6 +342,210 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="row" style={{ justifyContent: 'space-between' }}>
       <span className="muted">{k}</span>
       <span className="mono">{v}</span>
+    </div>
+  )
+}
+
+// Per-provider hints for the connect dialog: where the login credential file
+// lives on the owner's machine (for the subscription/OAuth path) and how to
+// label the API-key path. Kept in the console only — the server treats every
+// credential opaquely.
+const AGENT_HINTS: Record<
+  string,
+  { steps: string[]; credFile: string; credExample: string; keyLabel: string; keyExample: string }
+> = {
+  'claude-code': {
+    steps: [
+      'On any machine with Claude Code installed, run `claude` and type `/login`.',
+      'Your browser opens — approve access with your Claude subscription.',
+      'Open `~/.claude/.credentials.json` and copy its contents.',
+    ],
+    credFile: '~/.claude/.credentials.json',
+    credExample: '{"claudeAiOauth": { ... }}',
+    keyLabel: 'Anthropic API key',
+    keyExample: 'sk-ant-…',
+  },
+  codex: {
+    steps: [
+      'On any machine with Codex installed, run `codex login` and approve in your browser.',
+      'Open `~/.codex/auth.json` and copy its contents.',
+    ],
+    credFile: '~/.codex/auth.json',
+    credExample: '{"tokens": { ... }}',
+    keyLabel: 'OpenAI API key',
+    keyExample: 'sk-…',
+  },
+  opencode: {
+    steps: [
+      'On any machine with OpenCode installed, run `opencode auth login` and pick Anthropic.',
+      'Your browser opens — approve access with your subscription.',
+      'Open `~/.local/share/opencode/auth.json` and copy its contents.',
+    ],
+    credFile: '~/.local/share/opencode/auth.json',
+    credExample: '{"anthropic": { ... }}',
+    keyLabel: 'Anthropic API key',
+    keyExample: 'sk-ant-…',
+  },
+}
+
+// mono renders `backtick` spans as monospace, HTML-escaping everything else.
+// Inputs are our own constant step strings (no user data), so this is safe.
+function mono(s: string): string {
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return esc(s).replace(/`([^`]+)`/g, '<span class="mono">$1</span>')
+}
+
+// One provider row: installed state, connection status + method, and the
+// relevant connect/disconnect actions.
+function AgentCard({
+  agent,
+  onConnect,
+  onDisconnect,
+}: {
+  agent: Agent
+  onConnect: (method: 'oauth' | 'api_key') => void
+  onDisconnect: () => void
+}) {
+  const connected = agent.status === 'connected'
+  const installed =
+    agent.installed_state === 'installed'
+      ? 'installed'
+      : agent.installed_state === 'not_installed'
+        ? 'not installed'
+        : 'install unknown'
+  return (
+    <div className="card" data-testid={`agent-${agent.id}`}>
+      <div className="row" style={{ alignItems: 'center' }}>
+        <div>
+          <div className="card-title" style={{ marginBottom: 2 }}>
+            {agent.label}
+          </div>
+          <div className="muted mono" style={{ fontSize: 12 }}>
+            {installed}
+            {connected && agent.method && ` · via ${agent.method === 'oauth' ? 'subscription' : 'API key'}`}
+          </div>
+        </div>
+        <div className="spacer" />
+        <span className={`badge ${connected ? 'running' : 'stopped'}`}>
+          {connected ? 'connected' : 'needs login'}
+        </span>
+      </div>
+
+      {connected && !agent.runnable && (
+        <p className="muted" data-testid="agent-runner-disabled" style={{ marginTop: 8, marginBottom: 0 }}>
+          credentials stored, runner not enabled yet
+        </p>
+      )}
+
+      <div className="row" style={{ marginTop: 12 }}>
+        {connected ? (
+          <button data-testid="agent-disconnect" onClick={onDisconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <>
+            {agent.supports_oauth && (
+              <button data-testid="agent-connect-oauth" className="btn-primary" onClick={() => onConnect('oauth')}>
+                Connect subscription
+              </button>
+            )}
+            {agent.supports_api_key && (
+              <button data-testid="agent-connect-apikey" onClick={() => onConnect('api_key')}>
+                Use API key
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Connect a provider by one of two methods. OAuth: paste the login credential
+// file the CLI produced. API key: paste a key. Both are write-only textareas —
+// nothing is ever read back. The server stores the value opaquely.
+function AgentConnectModal({
+  provider,
+  method,
+  onClose,
+  onConnected,
+  onError,
+}: {
+  provider: Agent
+  method: 'oauth' | 'api_key'
+  onClose: () => void
+  onConnected: () => void
+  onError: (m: string) => void
+}) {
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const hint = AGENT_HINTS[provider.id]
+
+  async function submit() {
+    if (!value.trim()) return
+    setBusy(true)
+    try {
+      if (method === 'oauth') await api.importAgentCredential(provider.id, value)
+      else await api.setAgentApiKey(provider.id, value.trim())
+      setValue('')
+      onConnected()
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" data-testid="agent-connect-modal">
+      <div className="card">
+        <h2 className="card-title">
+          {method === 'oauth' ? `Connect ${provider.label} subscription` : `${provider.label} API key`}
+        </h2>
+        {method === 'oauth' ? (
+          <>
+            <p className="muted" style={{ marginBottom: 8 }}>
+              Sign in with the real {provider.label} login (that browser step is the provider&apos;s own,
+              per its terms), then paste the credential it created:
+            </p>
+            <ol data-testid="agent-connect-steps" className="muted" style={{ margin: '0 0 10px 18px', padding: 0 }}>
+              {hint?.steps.map((s, i) => (
+                <li key={i} style={{ marginBottom: 4 }} dangerouslySetInnerHTML={{ __html: mono(s) }} />
+              ))}
+            </ol>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Paste the contents of <span className="mono">{hint?.credFile}</span> below — stored opaquely
+              server-side (never parsed) and never shown here again.
+            </p>
+          </>
+        ) : (
+          <p className="muted">
+            Paste your {hint?.keyLabel}. It is stored opaquely and injected only into this agent&apos;s
+            task process — never exposed to your app&apos;s environment or snapshots.
+          </p>
+        )}
+        <textarea
+          data-testid="agent-connect-input"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={method === 'oauth' ? hint?.credExample : hint?.keyExample}
+          rows={method === 'oauth' ? 6 : 2}
+          style={{ width: '100%' }}
+        />
+        <div className="row">
+          <button
+            data-testid="agent-connect-submit"
+            className="btn-primary"
+            disabled={busy || !value.trim()}
+            onClick={submit}
+          >
+            {busy ? 'Connecting…' : 'Connect'}
+          </button>
+          <button data-testid="agent-connect-close" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
