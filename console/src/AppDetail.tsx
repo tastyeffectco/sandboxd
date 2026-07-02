@@ -30,10 +30,12 @@ export function AppDetail({
   appId,
   onError,
   onInfo,
+  onDeleted,
 }: {
   appId: string
   onError: (m: string) => void
   onInfo: (m: string) => void
+  onDeleted?: () => void
 }) {
   const [app, setApp] = useState<TApp | null>(null)
   const [sb, setSb] = useState<Sandbox | null>(null)
@@ -154,6 +156,35 @@ export function AppDetail({
             Delete sandbox and workspace
           </button>
         )}
+        <div className="spacer" />
+        <button
+          className="btn btn-danger"
+          disabled={busy}
+          data-testid="delete-app"
+          title="Delete the app and everything it owns"
+          onClick={async () => {
+            if (
+              !window.confirm(
+                `Delete the app “${app?.name ?? appId}” and EVERYTHING it owns?\n\n` +
+                  'This stops and removes its sandbox container, deletes the workspace image, ' +
+                  'all snapshots, config, and history. This cannot be undone. Continue?',
+              )
+            ) {
+              return
+            }
+            setBusy(true)
+            try {
+              await api.deleteApp(appId)
+              onInfo('App and all its resources deleted.')
+              onDeleted?.()
+            } catch (e) {
+              onError((e as Error).message)
+              setBusy(false)
+            }
+          }}
+        >
+          Delete app (everything)
+        </button>
       </div>
 
       <div className="detail">

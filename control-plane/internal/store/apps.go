@@ -199,6 +199,73 @@ func (s *Store) CurrentSandboxForApp(ctx context.Context, appID string) (*Sandbo
 	return sb, nil
 }
 
+// SandboxIDsForApp returns every sandbox id linked to the app (current +
+// historical), newest first. Used by the full app-delete cascade to purge each.
+func (s *Store) SandboxIDsForApp(ctx context.Context, appID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM sandbox WHERE app_id = ? ORDER BY created_at DESC`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SnapshotImagePathsForApp returns the on-disk image_path of every snapshot
+// captured from the app (source_app_id). The caller removes the files; the rows
+// themselves are dropped by DeleteApp.
+func (s *Store) SnapshotImagePathsForApp(ctx context.Context, appID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT image_path FROM snapshot WHERE source_app_id = ? AND image_path <> ''`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, rows.Err()
+}
+
+// DeleteApp removes the app row and every app-scoped DB row (config, events, and
+// snapshot records captured from it) in one transaction. Sandbox rows and files
+// are torn down separately by the purge path before this is called; this is the
+// final metadata cleanup so nothing dangling references the app. Idempotent:
+// deleting an already-absent app affects zero rows and returns nil.
+func (s *Store) DeleteApp(ctx context.Context, appID string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, stmt := range []string{
+			`DELETE FROM app_config WHERE app_id = ?`,
+			`DELETE FROM app_events WHERE app_id = ?`,
+			`DELETE FROM snapshot   WHERE source_app_id = ?`,
+			`DELETE FROM app        WHERE id = ?`,
+		} {
+			if _, err := tx.ExecContext(ctx, stmt, appID); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
+}
+
 func joinComma(parts []string) string {
 	out := ""
 	for i, p := range parts {
