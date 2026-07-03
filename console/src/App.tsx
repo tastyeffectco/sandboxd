@@ -163,20 +163,6 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
             onKeyDown={(e) => e.key === 'Enter' && create()}
             data-testid="app-name"
           />
-          <select
-            className="input"
-            value={presetID}
-            onChange={(e) => setPresetID(e.target.value)}
-            data-testid="app-preset"
-            title="App type — generates a sandbox.yaml so it boots"
-          >
-            <option value="">App type (default)…</option>
-            {presets.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
           <button
             className="btn btn-primary"
             onClick={create}
@@ -186,7 +172,10 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
             Create app
           </button>
         </div>
-        <div className="row" style={{ marginTop: 8 }}>
+
+        {/* Pick ONE way to start — only the chosen path's fields show, so the form
+            stays a single clear choice rather than a wall of inputs. */}
+        <div className="row" style={{ marginTop: 8, gap: 16 }}>
           <label>
             <input
               type="radio"
@@ -194,7 +183,7 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
               checked={mode === 'blank'}
               onChange={() => setMode('blank')}
             />{' '}
-            Blank from preset
+            Start from a template
           </label>
           <label>
             <input
@@ -203,45 +192,73 @@ function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (
               checked={mode === 'git'}
               onChange={() => setMode('git')}
             />{' '}
-            Import from Git URL
+            Import from Git
           </label>
         </div>
-        {mode === 'git' && (
-          <div className="row" data-testid="git-import-fields" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="input"
-              placeholder="https://github.com/org/repo.git"
-              value={repoURL}
-              onChange={(e) => setRepoURL(e.target.value)}
-              data-testid="git-repo-url"
-            />
-            <input
-              className="input"
-              placeholder="branch"
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              data-testid="git-branch"
-            />
+
+        {mode === 'blank' && (
+          <div className="row" style={{ marginTop: 8, gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <select
               className="input"
-              value={credId}
-              onChange={(e) => setCredId(e.target.value)}
-              data-testid="git-credential"
+              value={presetID}
+              onChange={(e) => setPresetID(e.target.value)}
+              data-testid="app-preset"
+              title="Scaffolds starter code + a sandbox.yaml so the app boots"
             >
-              <option value="">Credential…</option>
-              {gitCreds.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.host ? ` (${c.host})` : ''}
+              <option value="">Start from a template…</option>
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
                 </option>
               ))}
             </select>
-            {gitCreds.length === 0 && (
-              <span className="muted" data-testid="git-no-creds">
-                Add a Git credential in Settings first.
-              </span>
-            )}
+            <span className="muted" style={{ fontSize: 12 }} data-testid="blank-hint">
+              Scaffolds starter code. Want a ready-made app instead? Browse the <strong>App Store</strong>.
+            </span>
           </div>
+        )}
+
+        {mode === 'git' && (
+          <>
+            <div className="row" data-testid="git-import-fields" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
+              <input
+                className="input"
+                placeholder="https://github.com/org/repo.git"
+                value={repoURL}
+                onChange={(e) => setRepoURL(e.target.value)}
+                data-testid="git-repo-url"
+              />
+              <input
+                className="input"
+                placeholder="branch"
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                data-testid="git-branch"
+              />
+              <select
+                className="input"
+                value={credId}
+                onChange={(e) => setCredId(e.target.value)}
+                data-testid="git-credential"
+              >
+                <option value="">Credential…</option>
+                {gitCreds.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.host ? ` (${c.host})` : ''}
+                  </option>
+                ))}
+              </select>
+              {gitCreds.length === 0 && (
+                <span className="muted" data-testid="git-no-creds">
+                  Add a Git credential in Settings first.
+                </span>
+              )}
+            </div>
+            <p className="muted" style={{ fontSize: 12, marginTop: 6 }} data-testid="git-autodetect-note">
+              The runtime is auto-detected from your repo after import — no template needed.
+            </p>
+          </>
         )}
       </div>
 
