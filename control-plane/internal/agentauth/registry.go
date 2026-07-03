@@ -70,12 +70,13 @@ func CredentialFile(id string) (string, bool) {
 // API key from. This is the ONE deliberate exception to runtimed's secret-env
 // scrub: when an owner connects a provider by API key, runtimed injects just
 // this var (from the stored key file) into the agent process — nothing else
-// secret-shaped survives the scrub. opencode is Claude-centric on this platform,
-// so its key maps to ANTHROPIC_API_KEY.
+// secret-shaped survives the scrub. opencode connects with an OpenCode (Zen)
+// key against api.opencode.ai, so it maps to OPENCODE_API_KEY — NOT an Anthropic
+// key (Zen is opencode's own gateway; the key is issued at opencode.ai).
 var apiKeyEnv = map[string]string{
 	"claude-code": "ANTHROPIC_API_KEY",
 	"codex":       "OPENAI_API_KEY",
-	"opencode":    "ANTHROPIC_API_KEY",
+	"opencode":    "OPENCODE_API_KEY",
 }
 
 // APIKeyEnv returns the env var name a provider's CLI reads its API key from.

@@ -404,6 +404,7 @@ func main() {
 		Secrets:             secretsCipher,
 		AgentAuth:           agentAuth,
 		AgentOAuth:          agentOAuth,
+		OpencodeModel:       envDefault("SANDBOXD_OPENCODE_MODEL", ""),
 		DefaultAgent:        defaultAgent,
 		AgentProxyURL:       agentProxyURL,
 		Docker:              dockerClient,

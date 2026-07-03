@@ -708,6 +708,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if s.AgentProxyURL != "" {
 		envFlags = append(envFlags, "RUNTIMED_ANTHROPIC_PROXY="+s.AgentProxyURL)
 	}
+	// Optional OpenCode model (e.g. an OpenCode Zen model) for opencode tasks.
+	if s.OpencodeModel != "" {
+		envFlags = append(envFlags, "RUNTIMED_OPENCODE_MODEL="+s.OpencodeModel)
+	}
 
 	// 2. docker run with the locked flag set + traefik labels.
 	// A1.5a — ensure the resolved web port has a preview router. ADDITIVE: never

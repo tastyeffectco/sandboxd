@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -201,8 +202,14 @@ func toolTarget(raw json.RawMessage) string {
 
 func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (string, runtime.TokenUsage, error) {
 	var usage runtime.TokenUsage
-	cmd := exec.Command("opencode", "run",
-		"--format", "json", "--dangerously-skip-permissions", spec.prompt)
+	// Optional model (e.g. an OpenCode Zen model like "opencode/claude-sonnet-4-5")
+	// via RUNTIMED_OPENCODE_MODEL; unset lets opencode pick its configured default.
+	args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+	if m := os.Getenv("RUNTIMED_OPENCODE_MODEL"); m != "" {
+		args = append(args, "--model", m)
+	}
+	args = append(args, spec.prompt)
+	cmd := exec.Command("opencode", args...)
 	cmd.Dir = spec.workDir
 	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's
 	// mounted auth dir (/run/agent-auth/opencode), if any. Credentials come from
