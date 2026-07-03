@@ -702,6 +702,12 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		envFlags = append(envFlags, "RUNTIMED_RUNTIME_PRESET="+req.RuntimePreset)
 	}
+	// Credential-injecting auth proxy: tell runtimed where the Anthropic proxy is
+	// so claude-code tasks route through it (base URL + dummy key) instead of
+	// reading a mounted credential. runtimed only acts on this for claude-code.
+	if s.AgentProxyURL != "" {
+		envFlags = append(envFlags, "RUNTIMED_ANTHROPIC_PROXY="+s.AgentProxyURL)
+	}
 
 	// 2. docker run with the locked flag set + traefik labels.
 	// A1.5a — ensure the resolved web port has a preview router. ADDITIVE: never

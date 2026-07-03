@@ -32,6 +32,7 @@ import (
 
 	"github.com/sandboxd/control-plane/internal/activity"
 	"github.com/sandboxd/control-plane/internal/agentauth"
+	"github.com/sandboxd/control-plane/internal/authproxy"
 	"github.com/sandboxd/control-plane/internal/api"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
@@ -367,11 +368,30 @@ func main() {
 	// agent's HOME) when connected. Must match the agent runtimed runs.
 	defaultAgent := envDefault("SANDBOXD_DEFAULT_AGENT", "opencode")
 
+	// Credential-injecting auth proxy for claude-code (internal/authproxy). The
+	// sandbox reaches it at SANDBOXD_AGENT_PROXY_URL (in-network name of THIS
+	// process); we listen on SANDBOXD_AGENT_PROXY_ADDR. The real credential stays
+	// here and is never mounted into the sandbox. Empty URL disables the proxy
+	// (legacy mounted-credential behaviour).
+	agentProxyURL := envDefault("SANDBOXD_AGENT_PROXY_URL", "http://sandboxd:9100")
+	if proxy := authproxy.New(agentAuth, log.With("component", "authproxy")); proxy != nil && agentProxyURL != "" {
+		proxyAddr := envDefault("SANDBOXD_AGENT_PROXY_ADDR", "0.0.0.0:9100")
+		go func() {
+			log.Info("auth proxy listening", "addr", proxyAddr, "url", agentProxyURL)
+			if err := (&http.Server{Addr: proxyAddr, Handler: proxy}).ListenAndServe(); err != nil {
+				log.Error("auth proxy stopped", "err", err.Error())
+			}
+		}()
+	} else {
+		agentProxyURL = ""
+	}
+
 	server := &api.Server{
 		Store:               st,
 		Secrets:             secretsCipher,
 		AgentAuth:           agentAuth,
 		DefaultAgent:        defaultAgent,
+		AgentProxyURL:       agentProxyURL,
 		Docker:              dockerClient,
 		Loopback:            loopMgr,
 		Log:                 log.With("component", "api"),

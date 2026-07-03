@@ -51,6 +51,18 @@ func agentEnv(agentName string, specEnv map[string]string) []string {
 			}
 		}
 	}
+	// claude-code via the credential-injecting proxy: the real subscription
+	// credential is NOT mounted here (see api.agentAuthMounts). Instead point the
+	// CLI at the proxy and give it a DUMMY api key — enough for claude to skip its
+	// local "Not logged in" gate (apiKeySource: ANTHROPIC_API_KEY) and send its
+	// requests to ANTHROPIC_BASE_URL, where the proxy swaps in the real bearer.
+	// The sandbox never holds the real token.
+	if agentName == "claude-code" {
+		if proxy := os.Getenv("RUNTIMED_ANTHROPIC_PROXY"); proxy != "" {
+			overlay["ANTHROPIC_BASE_URL"] = proxy
+			overlay["ANTHROPIC_API_KEY"] = "sandboxd-proxy-injected"
+		}
+	}
 	return buildAgentEnv(os.Environ(), overlay)
 }
 
