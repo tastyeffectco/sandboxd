@@ -373,6 +373,19 @@ func main() {
 	// process); we listen on SANDBOXD_AGENT_PROXY_ADDR. The real credential stays
 	// here and is never mounted into the sandbox. Empty URL disables the proxy
 	// (legacy mounted-credential behaviour).
+	// Guided claude-code subscription login + token refresh (internal/agentauth).
+	agentOAuth := agentauth.NewOAuth(agentAuth)
+	if agentOAuth != nil {
+		go func() {
+			for {
+				if err := agentOAuth.Refresh(); err != nil {
+					log.Debug("claude oauth refresh", "err", err.Error())
+				}
+				time.Sleep(5 * time.Minute)
+			}
+		}()
+	}
+
 	agentProxyURL := envDefault("SANDBOXD_AGENT_PROXY_URL", "http://sandboxd:9100")
 	if proxy := authproxy.New(agentAuth, log.With("component", "authproxy")); proxy != nil && agentProxyURL != "" {
 		proxyAddr := envDefault("SANDBOXD_AGENT_PROXY_ADDR", "0.0.0.0:9100")
@@ -390,6 +403,7 @@ func main() {
 		Store:               st,
 		Secrets:             secretsCipher,
 		AgentAuth:           agentAuth,
+		AgentOAuth:          agentOAuth,
 		DefaultAgent:        defaultAgent,
 		AgentProxyURL:       agentProxyURL,
 		Docker:              dockerClient,

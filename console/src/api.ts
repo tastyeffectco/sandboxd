@@ -280,6 +280,14 @@ export const api = {
       api_key,
     }),
   disconnectAgent: (provider: string) => req<unknown>('POST', `/v1/agents/${provider}/disconnect`),
+  // Guided Claude subscription login: get the authorize link, then submit the
+  // code the user pastes back. Tokens are exchanged + stored + refreshed host-side.
+  oauthStart: (provider: string) =>
+    req<{ authorize_url: string }>('POST', `/v1/agents/${provider}/oauth/start`),
+  oauthFinish: (provider: string, code: string) =>
+    req<{ provider: string; status: string; method: string }>('POST', `/v1/agents/${provider}/oauth/finish`, {
+      code,
+    }),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
 
   // Git credentials (for importing private repos in a later v0.4.x release).

@@ -88,11 +88,13 @@ describe('console — Settings page', () => {
     expect(card.querySelector('[data-testid="agent-disconnect"]')).toBeTruthy()
   })
 
-  it('Connect subscription: posts the pasted credential bundle opaquely', async () => {
-    let posted: unknown = null
-    let postedPath = ''
+  it('Connect Claude subscription: shows a login link, then posts the pasted code', async () => {
+    let finishBody: unknown = null
+    let finishPath = ''
     installFetch((m, p) => {
-      if (m === 'POST' && p === '/v1/agents/claude-code/import')
+      if (m === 'POST' && p === '/v1/agents/claude-code/oauth/start')
+        return { authorize_url: 'https://claude.ai/oauth/authorize?state=abc' }
+      if (m === 'POST' && p === '/v1/agents/claude-code/oauth/finish')
         return { provider: 'claude-code', status: 'connected', method: 'oauth' }
       if (m === 'GET' && p.startsWith('/v1/agents')) return { providers: agentsFixture }
       if (m === 'GET' && p.startsWith('/v1/settings')) return settingsFixture
@@ -100,9 +102,9 @@ describe('console — Settings page', () => {
     })
     const realFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
-      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).includes('/agents/')) {
-        posted = init?.body ? JSON.parse(init.body) : null
-        postedPath = String(input)
+      if ((init?.method || 'GET').toUpperCase() === 'POST' && String(input).includes('/oauth/finish')) {
+        finishBody = init?.body ? JSON.parse(init.body) : null
+        finishPath = String(input)
       }
       return realFetch(input as never, init as never)
     }) as unknown as typeof fetch
@@ -110,12 +112,15 @@ describe('console — Settings page', () => {
     render(<Settings onError={noop} />)
     const card = await screen.findByTestId('agent-claude-code')
     fireEvent.click(card.querySelector('[data-testid="agent-connect-oauth"]') as Element)
-    const ta = await screen.findByTestId('agent-connect-input')
-    fireEvent.change(ta, { target: { value: '{"claudeAiOauth":{"x":1}}' } })
+    // The authorize link appears (from oauth/start).
+    const link = await screen.findByTestId('oauth-link')
+    expect(link.getAttribute('href')).toContain('claude.ai/oauth/authorize')
+    // Paste the code and connect → oauth/finish with the code.
+    fireEvent.change(await screen.findByTestId('agent-connect-input'), { target: { value: 'thecode#abc' } })
     fireEvent.click(screen.getByTestId('agent-connect-submit'))
-    await waitFor(() => expect(posted).not.toBeNull())
-    expect(postedPath).toContain('/v1/agents/claude-code/import')
-    expect((posted as { credentials: string }).credentials).toContain('claudeAiOauth')
+    await waitFor(() => expect(finishBody).not.toBeNull())
+    expect(finishPath).toContain('/v1/agents/claude-code/oauth/finish')
+    expect((finishBody as { code: string }).code).toBe('thecode#abc')
     await waitFor(() => expect(screen.queryByTestId('agent-connect-modal')).toBeNull())
   })
 

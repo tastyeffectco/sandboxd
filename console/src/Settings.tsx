@@ -479,13 +479,30 @@ function AgentConnectModal({
 }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
+  const [authUrl, setAuthUrl] = useState('')
   const hint = AGENT_HINTS[provider.id]
+  // Claude has a first-class guided login: get a link, approve in a browser,
+  // paste the code back. Tokens are exchanged + stored + refreshed server-side —
+  // the credential never touches the browser or the sandbox.
+  const claudeOAuth = method === 'oauth' && provider.id === 'claude-code'
+
+  // Fetch the authorize link as soon as the Claude login dialog opens.
+  useEffect(() => {
+    if (!claudeOAuth) return
+    setBusy(true)
+    api
+      .oauthStart(provider.id)
+      .then((r) => setAuthUrl(r.authorize_url))
+      .catch((e) => onError((e as Error).message))
+      .finally(() => setBusy(false))
+  }, [claudeOAuth, provider.id, onError])
 
   async function submit() {
     if (!value.trim()) return
     setBusy(true)
     try {
-      if (method === 'oauth') await api.importAgentCredential(provider.id, value)
+      if (claudeOAuth) await api.oauthFinish(provider.id, value.trim())
+      else if (method === 'oauth') await api.importAgentCredential(provider.id, value)
       else await api.setAgentApiKey(provider.id, value.trim())
       setValue('')
       onConnected()
@@ -502,36 +519,77 @@ function AgentConnectModal({
         <h2 className="card-title">
           {method === 'oauth' ? `Connect ${provider.label} subscription` : `${provider.label} API key`}
         </h2>
-        {method === 'oauth' ? (
+
+        {claudeOAuth ? (
           <>
             <p className="muted" style={{ marginBottom: 8 }}>
-              Sign in with the real {provider.label} login (that browser step is the provider&apos;s own,
-              per its terms), then paste the credential it created:
+              <strong>1.</strong> Open the Claude login, approve with your subscription, then copy the code
+              it shows you:
             </p>
-            <ol data-testid="agent-connect-steps" className="muted" style={{ margin: '0 0 10px 18px', padding: 0 }}>
-              {hint?.steps.map((s, i) => (
-                <li key={i} style={{ marginBottom: 4 }} dangerouslySetInnerHTML={{ __html: mono(s) }} />
-              ))}
-            </ol>
+            {authUrl ? (
+              <a
+                href={authUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary"
+                data-testid="oauth-link"
+                style={{ display: 'inline-block', marginBottom: 10 }}
+              >
+                Open Claude login ↗
+              </a>
+            ) : (
+              <p className="muted" data-testid="oauth-link-loading" style={{ marginBottom: 10 }}>
+                {busy ? 'Preparing login link…' : 'Login link unavailable — close and retry.'}
+              </p>
+            )}
             <p className="muted" style={{ marginTop: 0 }}>
-              Paste the contents of <span className="mono">{hint?.credFile}</span> below — stored opaquely
-              server-side (never parsed) and never shown here again.
+              <strong>2.</strong> Paste the code here. It is exchanged for tokens stored on the server
+              (auto-refreshed, never shown in the browser or mounted into a sandbox).
             </p>
+            <input
+              className="input"
+              data-testid="agent-connect-input"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="paste code (looks like  abc123#xyz )"
+              style={{ width: '100%' }}
+            />
           </>
         ) : (
-          <p className="muted">
-            Paste your {hint?.keyLabel}. It is stored opaquely and injected only into this agent&apos;s
-            task process — never exposed to your app&apos;s environment or snapshots.
-          </p>
+          <>
+            {method === 'oauth' ? (
+              <>
+                <p className="muted" style={{ marginBottom: 8 }}>
+                  Sign in with the real {provider.label} login (that browser step is the provider&apos;s
+                  own), then paste the credential it created:
+                </p>
+                <ol data-testid="agent-connect-steps" className="muted" style={{ margin: '0 0 10px 18px', padding: 0 }}>
+                  {hint?.steps.map((s, i) => (
+                    <li key={i} style={{ marginBottom: 4 }} dangerouslySetInnerHTML={{ __html: mono(s) }} />
+                  ))}
+                </ol>
+                <p className="muted" style={{ marginTop: 0 }}>
+                  Paste the contents of <span className="mono">{hint?.credFile}</span> below — stored
+                  opaquely server-side (never parsed) and never shown here again.
+                </p>
+              </>
+            ) : (
+              <p className="muted">
+                Paste your {hint?.keyLabel}. It is stored opaquely and injected only into this
+                agent&apos;s task process — never exposed to your app&apos;s environment or snapshots.
+              </p>
+            )}
+            <textarea
+              data-testid="agent-connect-input"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={method === 'oauth' ? hint?.credExample : hint?.keyExample}
+              rows={method === 'oauth' ? 6 : 2}
+              style={{ width: '100%' }}
+            />
+          </>
         )}
-        <textarea
-          data-testid="agent-connect-input"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={method === 'oauth' ? hint?.credExample : hint?.keyExample}
-          rows={method === 'oauth' ? 6 : 2}
-          style={{ width: '100%' }}
-        />
+
         <div className="row">
           <button
             data-testid="agent-connect-submit"
@@ -539,7 +597,7 @@ function AgentConnectModal({
             disabled={busy || !value.trim()}
             onClick={submit}
           >
-            {busy ? 'Connecting…' : 'Connect'}
+            {busy ? 'Connecting…' : claudeOAuth ? 'Connect' : 'Connect'}
           </button>
           <button data-testid="agent-connect-close" onClick={onClose}>
             Cancel
