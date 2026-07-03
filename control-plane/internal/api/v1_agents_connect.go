@@ -88,6 +88,42 @@ func (s *Server) v1AgentAPIKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"provider": p.ID, "status": "connected", "method": "api_key"})
 }
 
+// POST /v1/agents/claude-code/oauth/start — returns the authorize URL the user
+// opens in a browser. They approve and paste the resulting code back to /finish.
+func (s *Server) v1AgentOAuthStart(w http.ResponseWriter, _ *http.Request) {
+	if s.AgentOAuth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "oauth not configured")
+		return
+	}
+	authURL, err := s.AgentOAuth.Start()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not start login")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"authorize_url": authURL})
+}
+
+// POST /v1/agents/claude-code/oauth/finish — body {"code":"<code#state>"}.
+// Exchanges the code for tokens and stores them; the value is never echoed.
+func (s *Server) v1AgentOAuthFinish(w http.ResponseWriter, r *http.Request) {
+	if s.AgentOAuth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "oauth not configured")
+		return
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&body); err != nil || body.Code == "" {
+		writeErr(w, http.StatusBadRequest, "missing code")
+		return
+	}
+	if err := s.AgentOAuth.Finish(body.Code); err != nil {
+		writeErr(w, http.StatusBadRequest, "could not complete login: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"provider": "claude-code", "status": "connected", "method": "oauth"})
+}
+
 // POST /v1/agents/{provider}/disconnect — deletes the stored auth dir.
 func (s *Server) v1AgentDisconnect(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.agentProvider(w, r)

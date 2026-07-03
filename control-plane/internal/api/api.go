@@ -143,6 +143,10 @@ type Server struct {
 	// explicit agent:"claude-code" task works regardless of this. Empty → opencode.
 	DefaultAgent string
 
+	// AgentOAuth drives the guided claude-code subscription login (authorize link
+	// → paste code → tokens) and token refresh. nil disables the OAuth endpoints.
+	AgentOAuth *agentauth.OAuth
+
 	// AgentProxyURL is the in-network URL of the credential-injecting auth proxy
 	// (see internal/authproxy). When set, claude-code runs proxy-side: the real
 	// subscription credential is NOT mounted into the sandbox; instead the sandbox
@@ -228,6 +232,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
 	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
 	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
+	mux.HandleFunc("POST /v1/agents/claude-code/oauth/start", s.observe("POST /v1/agents/claude-code/oauth/start", s.v1AgentOAuthStart))
+	mux.HandleFunc("POST /v1/agents/claude-code/oauth/finish", s.observe("POST /v1/agents/claude-code/oauth/finish", s.v1AgentOAuthFinish))
 	mux.HandleFunc("POST /v1/agents/{provider}/import", s.observe("POST /v1/agents/{provider}/import", s.v1AgentImport))
 	mux.HandleFunc("POST /v1/agents/{provider}/api-key", s.observe("POST /v1/agents/{provider}/api-key", s.v1AgentAPIKey))
 	mux.HandleFunc("POST /v1/agents/{provider}/disconnect", s.observe("POST /v1/agents/{provider}/disconnect", s.v1AgentDisconnect))

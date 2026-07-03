@@ -233,6 +233,37 @@ paths:
         "204": { description: Disconnected }
         "404": { description: Unknown provider }
         "503": { description: Agent auth not configured }
+  /v1/agents/claude-code/oauth/start:
+    post:
+      tags: [apps]
+      summary: Begin the guided Claude subscription login — returns the authorize URL the user opens in a browser.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorize_url: { type: string, description: The Claude OAuth authorize URL (PKCE); open it, approve, and paste the returned code to /finish. }
+        "503": { description: OAuth not configured }
+  /v1/agents/claude-code/oauth/finish:
+    post:
+      tags: [apps]
+      summary: Complete the login — exchange the pasted code for tokens, stored host-side (never returned). Refreshed automatically thereafter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: "The code the authorize page returned (form 'code#state')." }
+      responses:
+        "200": { description: Connected }
+        "400": { description: Missing/invalid code, or no pending login }
+        "503": { description: OAuth not configured }
 
   /v1/presets:
     get:
