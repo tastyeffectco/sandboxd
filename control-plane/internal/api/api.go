@@ -142,6 +142,13 @@ type Server struct {
 	// control credential mounting (every connected provider is mounted); an
 	// explicit agent:"claude-code" task works regardless of this. Empty → opencode.
 	DefaultAgent string
+
+	// AgentProxyURL is the in-network URL of the credential-injecting auth proxy
+	// (see internal/authproxy). When set, claude-code runs proxy-side: the real
+	// subscription credential is NOT mounted into the sandbox; instead the sandbox
+	// gets this base URL + a dummy key, and the proxy injects the real bearer.
+	// Empty → legacy behaviour (credential mounted into the sandbox).
+	AgentProxyURL string
 }
 
 // agentAuthBaseMount is the in-container parent dir under which each connected
@@ -159,6 +166,12 @@ func (s *Server) agentAuthMounts() []string {
 	}
 	var vols []string
 	for _, p := range agentauth.Providers() {
+		// When the auth proxy is enabled, claude-code runs proxy-side: its real
+		// credential stays control-plane-side and is deliberately NOT mounted into
+		// the sandbox (so the workspace can never read, exfiltrate, or clobber it).
+		if p.ID == "claude-code" && s.AgentProxyURL != "" {
+			continue
+		}
 		if s.AgentAuth.Connected(p.ID) {
 			vols = append(vols, s.AgentAuth.Dir(p.ID)+":"+agentAuthBaseMount+"/"+p.ID)
 		}

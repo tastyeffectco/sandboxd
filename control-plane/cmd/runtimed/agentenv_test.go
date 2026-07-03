@@ -114,6 +114,34 @@ func TestAgentEnvInjectsAPIKey(t *testing.T) {
 	}
 }
 
+// With the auth proxy enabled, a claude-code task gets ANTHROPIC_BASE_URL (the
+// proxy) + a dummy ANTHROPIC_API_KEY, and does NOT read a mounted credential —
+// the real token never reaches the sandbox.
+func TestAgentEnvClaudeProxy(t *testing.T) {
+	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", t.TempDir()) // nothing mounted
+	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "http://sandboxd:9100")
+
+	got := envMap(agentEnv("claude-code", nil))
+	if got["ANTHROPIC_BASE_URL"] != "http://sandboxd:9100" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q; want the proxy url", got["ANTHROPIC_BASE_URL"])
+	}
+	if got["ANTHROPIC_API_KEY"] == "" {
+		t.Error("expected a dummy ANTHROPIC_API_KEY so claude skips its local login gate")
+	}
+
+	// opencode is unaffected by the Anthropic proxy env.
+	oc := envMap(agentEnv("opencode", nil))
+	if _, ok := oc["ANTHROPIC_BASE_URL"]; ok {
+		t.Error("opencode must not get ANTHROPIC_BASE_URL from the claude proxy")
+	}
+
+	// No proxy configured → no base url injected (legacy path).
+	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "")
+	if _, ok := envMap(agentEnv("claude-code", nil))["ANTHROPIC_BASE_URL"]; ok {
+		t.Error("no proxy configured => no ANTHROPIC_BASE_URL")
+	}
+}
+
 func TestIsSecretEnvKey(t *testing.T) {
 	secret := []string{"ANTHROPIC_API_KEY", "openai_api_key", "GITHUB_TOKEN", "X_SECRET", "Y_PASSWORD", "Z_CREDENTIALS", "RUNTIMED_X"}
 	ok := []string{"PATH", "HOME", "LANG", "ANTHROPIC_MODEL", "API_BASE_URL", "NODE_ENV"}
