@@ -78,7 +78,7 @@ type claudeCred struct {
 // under the generated state so Finish can complete the exchange.
 func (o *OAuth) Start() (string, error) {
 	verifier := randURL(32)
-	state := randURL(16)
+	state := randURL(32)
 	challenge := s256(verifier)
 
 	o.mu.Lock()
@@ -86,16 +86,28 @@ func (o *OAuth) Start() (string, error) {
 	o.gcLocked()
 	o.mu.Unlock()
 
-	q := url.Values{}
-	q.Set("code", "true")
-	q.Set("client_id", oauthClientID)
-	q.Set("response_type", "code")
-	q.Set("redirect_uri", oauthRedirect)
-	q.Set("scope", oauthScopes)
-	q.Set("code_challenge", challenge)
-	q.Set("code_challenge_method", "S256")
-	q.Set("state", state)
-	return oauthAuthorize + "?" + q.Encode(), nil
+	// Build the query in the EXACT order the real claude CLI emits (its authorize
+	// front-end rejects a reordered request as "Invalid request format"). Go's
+	// url.Values.Encode() sorts keys, so assemble the string by hand.
+	esc := url.QueryEscape
+	pairs := [][2]string{
+		{"code", "true"},
+		{"client_id", oauthClientID},
+		{"response_type", "code"},
+		{"redirect_uri", oauthRedirect},
+		{"scope", oauthScopes},
+		{"code_challenge", challenge},
+		{"code_challenge_method", "S256"},
+		{"state", state},
+	}
+	var b strings.Builder
+	for i, p := range pairs {
+		if i > 0 {
+			b.WriteByte('&')
+		}
+		b.WriteString(p[0] + "=" + esc(p[1]))
+	}
+	return oauthAuthorize + "?" + b.String(), nil
 }
 
 // Finish exchanges the pasted code (form "code#state", or bare code when only one
