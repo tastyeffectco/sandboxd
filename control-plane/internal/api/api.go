@@ -147,6 +147,10 @@ type Server struct {
 	// → paste code → tokens) and token refresh. nil disables the OAuth endpoints.
 	AgentOAuth *agentauth.OAuth
 
+	// OpencodeModel, when set, is passed to opencode tasks as --model (e.g. an
+	// OpenCode Zen model "opencode/claude-sonnet-4-5"). Empty → opencode's default.
+	OpencodeModel string
+
 	// AgentProxyURL is the in-network URL of the credential-injecting auth proxy
 	// (see internal/authproxy). When set, claude-code runs proxy-side: the real
 	// subscription credential is NOT mounted into the sandbox; instead the sandbox

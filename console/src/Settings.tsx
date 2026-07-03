@@ -383,8 +383,8 @@ const AGENT_HINTS: Record<
     ],
     credFile: '~/.local/share/opencode/auth.json',
     credExample: '{"anthropic": { ... }}',
-    keyLabel: 'Anthropic API key',
-    keyExample: 'sk-ant-…',
+    keyLabel: 'OpenCode (Zen) API key — from opencode.ai',
+    keyExample: 'sk-… (OpenCode key, not Anthropic)',
   },
 }
 
