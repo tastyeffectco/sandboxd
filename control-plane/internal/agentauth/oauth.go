@@ -24,12 +24,15 @@ import (
 // tokens are ultimately used by the genuine Claude Code CLI running in the
 // sandbox. Endpoints are env-overridable so a change on Anthropic's side is a
 // config fix, not a rebuild.
+// Defaults captured from the real `claude setup-token` flow (Claude Code 2.1.x):
+// authorize on claude.com/cai, token + redirect on platform.claude.com, scope
+// user:inference. All env-overridable in case Anthropic moves them again.
 var (
 	oauthClientID  = envOr("SANDBOXD_CLAUDE_CLIENT_ID", "9d1c250a-e61b-44d9-88ed-5944d1962f5e")
-	oauthAuthorize = envOr("SANDBOXD_CLAUDE_AUTHORIZE_URL", "https://claude.ai/oauth/authorize")
-	oauthTokenURL  = envOr("SANDBOXD_CLAUDE_TOKEN_URL", "https://console.anthropic.com/v1/oauth/token")
-	oauthRedirect  = envOr("SANDBOXD_CLAUDE_REDIRECT_URI", "https://console.anthropic.com/oauth/code/callback")
-	oauthScopes    = envOr("SANDBOXD_CLAUDE_SCOPES", "org:create_api_key user:profile user:inference")
+	oauthAuthorize = envOr("SANDBOXD_CLAUDE_AUTHORIZE_URL", "https://claude.com/cai/oauth/authorize")
+	oauthTokenURL  = envOr("SANDBOXD_CLAUDE_TOKEN_URL", "https://platform.claude.com/v1/oauth/token")
+	oauthRedirect  = envOr("SANDBOXD_CLAUDE_REDIRECT_URI", "https://platform.claude.com/oauth/code/callback")
+	oauthScopes    = envOr("SANDBOXD_CLAUDE_SCOPES", "user:inference")
 )
 
 const claudeCredRel = ".claude/.credentials.json"
