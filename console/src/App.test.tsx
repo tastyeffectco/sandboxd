@@ -69,4 +69,17 @@ describe('console — app list', () => {
       expect(screen.getByRole('option', { name: p.label })).toBeTruthy()
     }
   })
+
+  it('create form shows one path at a time: template picker vs git import', async () => {
+    render(<App />)
+    // default (template) mode: preset picker + App Store hint; no git fields
+    expect(await screen.findByTestId('app-preset')).toBeTruthy()
+    expect(screen.getByTestId('blank-hint').textContent).toMatch(/app store/i)
+    expect(screen.queryByTestId('git-import-fields')).toBeNull()
+    // switch to git: preset picker hidden, git fields + auto-detect note shown
+    fireEvent.click(screen.getByTestId('mode-git'))
+    expect(screen.queryByTestId('app-preset')).toBeNull()
+    expect(screen.getByTestId('git-import-fields')).toBeTruthy()
+    expect(screen.getByTestId('git-autodetect-note').textContent).toMatch(/auto-detected/i)
+  })
 })
