@@ -1464,6 +1464,25 @@ function ConfigPanel({ appId, onError }: { appId: string; onError: (m: string) =
   )
 }
 
+// Curated per-agent model shortlist for the task box. '' = the agent's default.
+// The "Custom…" option (added in the UI) lets you type any model the agent
+// supports — so this list stays short and we never block a model we didn't list.
+const MODEL_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  'claude-code': [
+    { value: '', label: 'Default' },
+    { value: 'sonnet', label: 'Sonnet' },
+    { value: 'opus', label: 'Opus' },
+    { value: 'haiku', label: 'Haiku' },
+  ],
+  opencode: [
+    { value: '', label: 'Default' },
+    { value: 'opencode/claude-opus-4-5', label: 'Zen · Claude Opus 4.5' },
+    { value: 'opencode/claude-haiku-4-5', label: 'Zen · Claude Haiku 4.5' },
+    { value: 'opencode/big-pickle', label: 'Zen · big-pickle' },
+    { value: 'opencode/deepseek-v4-flash-free', label: 'Zen · DeepSeek v4 Flash (free)' },
+  ],
+}
+
 function TaskPanel({
   sandboxId,
   running,
@@ -1475,7 +1494,8 @@ function TaskPanel({
 }) {
   const [prompt, setPrompt] = useState('')
   const [agent, setAgent] = useState('opencode')
-  const [model, setModel] = useState('')
+  const [model, setModel] = useState('') // actual value sent ('' = agent default)
+  const [customModel, setCustomModel] = useState(false) // free-text mode
   const [status, setStatus] = useState<string | null>(null)
   const [log, setLog] = useState<string[]>([])
   const esRef = useRef<EventSource | null>(null)
@@ -1538,24 +1558,51 @@ function TaskPanel({
         <select
           className="select"
           value={agent}
-          onChange={(e) => setAgent(e.target.value)}
+          onChange={(e) => {
+            setAgent(e.target.value)
+            setModel('') // a claude alias isn't a valid opencode model, and vice versa
+            setCustomModel(false)
+          }}
           data-testid="task-agent"
           title="Which coding agent runs this task"
         >
           <option value="opencode">OpenCode</option>
           <option value="claude-code">Claude Code (your subscription)</option>
         </select>
-        <input
-          className="input"
-          style={{ maxWidth: 260 }}
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
+        <select
+          className="select"
+          style={{ maxWidth: 230 }}
+          value={customModel ? '__custom__' : model}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') {
+              setCustomModel(true)
+              setModel('')
+            } else {
+              setCustomModel(false)
+              setModel(e.target.value)
+            }
+          }}
           data-testid="task-model"
-          placeholder={
-            agent === 'opencode' ? 'model (opencode/… — optional)' : 'model (sonnet / opus — optional)'
-          }
-          title="Optional per-task model. OpenCode: provider/model. Claude: an alias or id. Empty = agent default."
-        />
+          title="Model for this task. Empty = the agent's default."
+        >
+          {(MODEL_OPTIONS[agent] || MODEL_OPTIONS.opencode).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+          <option value="__custom__">Custom…</option>
+        </select>
+        {customModel && (
+          <input
+            className="input"
+            style={{ maxWidth: 220 }}
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            data-testid="task-model-custom"
+            placeholder={agent === 'opencode' ? 'provider/model' : 'alias or model id'}
+            title="Any model the agent supports"
+          />
+        )}
         <button className="btn btn-primary" disabled={!running || !prompt.trim()} onClick={run} data-testid="run-task">
           Run task
         </button>
