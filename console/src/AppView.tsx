@@ -164,6 +164,25 @@ function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canAp
     if (ready && !wasReady.current) setNonce((n) => n + 1) // fresh load on first-ready
     wasReady.current = ready
   }, [ready])
+
+  // Client-side reachability: the control plane already confirmed the app is up
+  // (preview.status==='ready'), so if the BROWSER can't reach the same URL the
+  // iframe is being blocked client-side — almost always HTTP being upgraded to
+  // HTTPS on a plain-HTTP preview. Detect it and tell the user to open a new tab
+  // instead of leaving a blank frame that looks broken.
+  const [reach, setReach] = useState<'checking' | 'ok' | 'blocked'>('checking')
+  useEffect(() => {
+    if (!ready || !previewURL) { setReach('checking'); return }
+    let cancelled = false
+    setReach('checking')
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 6000)
+    fetch(previewURL, { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+      .then(() => { if (!cancelled) setReach('ok') })
+      .catch(() => { if (!cancelled) setReach('blocked') })
+      .finally(() => clearTimeout(timer))
+    return () => { cancelled = true; clearTimeout(timer); ctrl.abort() }
+  }, [ready, previewURL, nonce])
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 400px', gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -176,8 +195,15 @@ function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canAp
             {ready && <a onClick={() => setNonce((n) => n + 1)} title="Reload preview" className="dc-hoverink" data-testid="preview-reload" style={{ color: c.muted, fontSize: 13, cursor: 'pointer' }}>↻</a>}
             {previewURL && running && <a onClick={() => window.open(previewURL, '_blank')} style={{ color: c.link, fontSize: 12, cursor: 'pointer' }}>Open ↗</a>}
           </div>
-          <div style={{ height: 420, position: 'relative', background: ready ? '#fff' : 'repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5 12px,#eeeef0 12px,#eeeef0 24px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {ready ? (
+          <div style={{ height: 420, position: 'relative', background: ready && reach !== 'blocked' ? '#fff' : 'repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5 12px,#eeeef0 12px,#eeeef0 24px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {ready && reach === 'blocked' ? (
+              <div data-testid="preview-blocked" style={{ maxWidth: 340, textAlign: 'center', background: '#ffffffcc', border: `1px solid ${c.border2}`, borderRadius: 9, padding: '18px 20px' }}>
+                <div style={{ fontFamily: font.display, fontWeight: 600, fontSize: 14, marginBottom: 6 }}>App is running ✓</div>
+                <div style={{ fontSize: 12, color: c.muted, lineHeight: 1.5, marginBottom: 14 }}>Your browser is blocking the inline preview because it's served over plain HTTP. The sandbox itself is healthy — open it in a new tab to view it.</div>
+                <Btn variant="primary" data-testid="preview-open-newtab" onClick={() => window.open(previewURL, '_blank')}>Open in new tab ↗</Btn>
+                <a onClick={() => setNonce((n) => n + 1)} className="dc-hoverink" style={{ display: 'block', marginTop: 10, fontSize: 11.5, color: c.muted2, cursor: 'pointer' }}>Retry inline</a>
+              </div>
+            ) : ready ? (
               <iframe key={`${previewURL}-${nonce}`} src={previewURL} title="preview" data-testid="preview" style={{ width: '100%', height: '100%', border: 'none' }} />
             ) : running && previewURL && sb?.preview?.status !== 'none' ? (
               <div style={{ ...mono, fontSize: 11.5, color: c.muted, background: '#ffffffcc', border: `1px dashed ${c.border2}`, borderRadius: 7, padding: '10px 16px', textAlign: 'center' }} data-testid="preview-starting">
