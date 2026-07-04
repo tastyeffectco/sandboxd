@@ -1,299 +1,250 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api, App as TApp, Preset, GitCredential } from './api'
-import { AppDetail } from './AppDetail'
-import { AppStore } from './AppStore'
-import { Settings } from './Settings'
-import { StatusBadge } from './ui'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api, App as TApp, Preset } from './api'
+import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
+import { AppView } from './AppView'
+import { StoreView } from './StoreView'
+import { SettingsView } from './SettingsView'
+
+type Route = { name: 'apps' } | { name: 'store' } | { name: 'settings' } | { name: 'app'; id: string; tab?: string; task?: string }
 
 export default function App() {
-  const [appId, setAppId] = useState<string | null>(null)
-  const [view, setView] = useState<'apps' | 'store' | 'settings'>('apps')
-  const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
+  const [route, setRoute] = useState<Route>({ name: 'apps' })
+  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([])
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [apps, setApps] = useState<TApp[]>([])
 
-  const goApps = () => {
-    setView('apps')
-    setAppId(null)
-  }
+  const toast = useCallback((msg: string) => {
+    const id = Date.now() + Math.floor(performance.now())
+    setToasts((t) => [...t, { id, msg }])
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200)
+  }, [])
+  const onError = useCallback((m: string) => toast(m), [toast])
 
-  useEffect(() => {
-    if (!error) return
-    const t = setTimeout(() => setError(null), 4500)
-    return () => clearTimeout(t)
-  }, [error])
-  useEffect(() => {
-    if (!info) return
-    const t = setTimeout(() => setInfo(null), 5000)
-    return () => clearTimeout(t)
-  }, [info])
-
-  return (
-    <>
-      <div className="topbar">
-        <div className="brand" style={{ cursor: 'pointer' }} onClick={goApps}>
-          sandboxd <span className="dot">/</span> console
-        </div>
-        <div className="spacer" />
-        {(appId || view !== 'apps') && (
-          <button className="btn btn-ghost btn-sm" onClick={goApps}>
-            ← Apps
-          </button>
-        )}
-        {view !== 'store' && !appId && (
-          <button className="btn btn-ghost btn-sm" data-testid="nav-store" onClick={() => setView('store')}>
-            App Store
-          </button>
-        )}
-        {view !== 'settings' && (
-          <button className="btn btn-ghost btn-sm" data-testid="nav-settings" onClick={() => setView('settings')}>
-            Settings
-          </button>
-        )}
-      </div>
-      <div className="container">
-        {view === 'settings' ? (
-          <Settings onError={setError} />
-        ) : appId ? (
-          <AppDetail appId={appId} onError={setError} onInfo={setInfo} onDeleted={goApps} />
-        ) : view === 'store' ? (
-          <AppStore
-            onOpen={(id) => {
-              setView('apps')
-              setAppId(id)
-            }}
-            onError={setError}
-            onInfo={setInfo}
-          />
-        ) : (
-          <AppList onOpen={setAppId} onError={setError} />
-        )}
-      </div>
-      {error && (
-        <div className="toast" onClick={() => setError(null)} data-testid="toast">
-          {error}
-        </div>
-      )}
-      {info && (
-        <div className="toast toast-info" onClick={() => setInfo(null)} data-testid="toast-info">
-          {info}
-        </div>
-      )}
-    </>
-  )
-}
-
-function AppList({ onOpen, onError }: { onOpen: (id: string) => void; onError: (m: string) => void }) {
-  const [apps, setApps] = useState<TApp[] | null>(null)
-  // Real status of each app's current sandbox, keyed by app id. A sandbox
-  // row exists in many states (creating/running/stopped/error), so presence
-  // alone must not read as "running" — we show the actual status.
-  const [sbStatus, setSbStatus] = useState<Record<string, string>>({})
-  const [name, setName] = useState('')
-  const [presets, setPresets] = useState<Preset[]>([])
-  const [presetID, setPresetID] = useState('')
-  const [busy, setBusy] = useState(false)
-  // Git import (A1): blank-from-preset by default; "git" imports a private repo.
-  const [mode, setMode] = useState<'blank' | 'git'>('blank')
-  const [gitCreds, setGitCreds] = useState<GitCredential[]>([])
-  const [repoURL, setRepoURL] = useState('')
-  const [branch, setBranch] = useState('main')
-  const [credId, setCredId] = useState('')
+  const loadApps = useCallback(() => api.listApps().then(setApps).catch(() => {}), [])
+  useEffect(() => { loadApps() }, [loadApps])
 
   useEffect(() => {
-    api.listPresets().then(setPresets).catch(() => setPresets([]))
-    api.listGitCredentials().then(setGitCreds).catch(() => setGitCreds([]))
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((o) => !o) }
+      else if (e.key === 'Escape') setPaletteOpen(false)
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
   }, [])
 
-  const load = useCallback(() => {
-    api
-      .listApps()
-      .then(async (list) => {
-        setApps(list)
-        const pairs = await Promise.all(
-          list
-            .filter((a) => a.current_sandbox_id)
-            .map(async (a) => {
-              try {
-                const s = await api.getSandbox(a.current_sandbox_id as string)
-                return [a.id, s.status] as const
-              } catch {
-                return [a.id, 'unknown'] as const
-              }
-            }),
-        )
-        setSbStatus(Object.fromEntries(pairs))
-      })
-      .catch((e) => onError(e.message))
-  }, [onError])
-  useEffect(load, [load])
+  const goApp = (id: string, tab?: string) => setRoute({ name: 'app', id, tab })
+  const running = apps.find((a) => a.current_sandbox_id)
 
-  const create = async () => {
-    if (!name.trim()) return
-    if (mode === 'git' && (!repoURL.trim() || !credId)) return
-    setBusy(true)
-    try {
-      const a = await api.createApp({
-        name: name.trim(),
-        runtime_preset: presetID || undefined,
-        git:
-          mode === 'git'
-            ? { repo_url: repoURL.trim(), branch: branch.trim() || 'main', credential_id: credId }
-            : undefined,
-      })
-      setName('')
-      setRepoURL('')
-      onOpen(a.id)
-    } catch (e) {
-      onError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+  const nav = [
+    { key: 'apps', label: 'Apps' },
+    { key: 'store', label: 'App Store' },
+    { key: 'settings', label: 'Settings' },
+  ]
 
   return (
-    <div className="stack">
-      <h1>Apps</h1>
-      <div className="card">
-        <div className="row">
-          <input
-            className="input"
-            placeholder="New app name…"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && create()}
-            data-testid="app-name"
-          />
-          <button
-            className="btn btn-primary"
-            onClick={create}
-            disabled={busy || !name.trim() || (mode === 'git' && (!repoURL.trim() || !credId))}
-            data-testid="create-app"
-          >
-            Create app
-          </button>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: c.bg, color: c.fg, fontFamily: font.sans, overflow: 'hidden' }}>
+      {/* TOP BAR */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: 52, flexShrink: 0, padding: '0 20px', borderBottom: `1px solid ${c.border}`, background: c.panel }}>
+        <div onClick={() => setRoute({ name: 'apps' })} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg,#3f3f46,#18181b)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 11, color: c.bg }}>&gt;_</div>
+          <span style={{ fontFamily: font.display, fontWeight: 700, fontSize: 15, letterSpacing: '.2px' }}>sandboxd</span>
         </div>
-
-        {/* Pick ONE way to start — only the chosen path's fields show, so the form
-            stays a single clear choice rather than a wall of inputs. */}
-        <div className="row" style={{ marginTop: 8, gap: 16 }}>
-          <label>
-            <input
-              type="radio"
-              data-testid="mode-blank"
-              checked={mode === 'blank'}
-              onChange={() => setMode('blank')}
-            />{' '}
-            Start from a template
-          </label>
-          <label>
-            <input
-              type="radio"
-              data-testid="mode-git"
-              checked={mode === 'git'}
-              onChange={() => setMode('git')}
-            />{' '}
-            Import from Git
-          </label>
+        <div style={{ display: 'flex', gap: 2 }}>
+          {nav.map((n) => (
+            <div key={n.key} data-testid={`nav-${n.key}`} className="dc-hoverink" onClick={() => setRoute({ name: n.key } as Route)} style={navItem(route.name === n.key)}>
+              {n.label}
+            </div>
+          ))}
         </div>
-
-        {mode === 'blank' && (
-          <div className="row" style={{ marginTop: 8, gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              className="input"
-              value={presetID}
-              onChange={(e) => setPresetID(e.target.value)}
-              data-testid="app-preset"
-              title="Scaffolds starter code + a sandbox.yaml so the app boots"
-            >
-              <option value="">Start from a template…</option>
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <span className="muted" style={{ fontSize: 12 }} data-testid="blank-hint">
-              Scaffolds starter code. Want a ready-made app instead? Browse the <strong>App Store</strong>.
-            </span>
+        <div style={{ flex: 1 }} />
+        {running && (
+          <div onClick={() => goApp(running.id)} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 7, border: `1px solid ${c.border}`, background: c.bg, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.good }} />
+            <span style={{ ...mono, fontSize: 11.5 }}>{running.name}</span>
           </div>
         )}
+        <div onClick={() => setPaletteOpen(true)} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${c.border}`, background: c.bg, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', width: 180 }}>
+          <span style={{ color: c.muted2, fontSize: 12, flex: 1 }}>Search…</span>
+          <span style={{ ...mono, fontSize: 10, color: c.muted2, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 5px' }}>⌘K</span>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Docs</a>
+          <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>GitHub</a>
+        </div>
+      </div>
 
-        {mode === 'git' && (
-          <>
-            <div className="row" data-testid="git-import-fields" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
-              <input
-                className="input"
-                placeholder="https://github.com/org/repo.git"
-                value={repoURL}
-                onChange={(e) => setRepoURL(e.target.value)}
-                data-testid="git-repo-url"
-              />
-              <input
-                className="input"
-                placeholder="branch"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                data-testid="git-branch"
-              />
-              <select
-                className="input"
-                value={credId}
-                onChange={(e) => setCredId(e.target.value)}
-                data-testid="git-credential"
-              >
-                <option value="">Credential…</option>
-                {gitCreds.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.host ? ` (${c.host})` : ''}
-                  </option>
-                ))}
-              </select>
-              {gitCreds.length === 0 && (
-                <span className="muted" data-testid="git-no-creds">
-                  Add a Git credential in Settings first.
-                </span>
-              )}
-            </div>
-            <p className="muted" style={{ fontSize: 12, marginTop: 6 }} data-testid="git-autodetect-note">
-              The runtime is auto-detected from your repo after import — no template needed.
-            </p>
-          </>
+      {/* MAIN */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        {route.name === 'apps' && <AppsScreen apps={apps} reload={loadApps} onOpen={(id) => goApp(id)} onError={onError} goStore={() => setRoute({ name: 'store' })} />}
+        {route.name === 'store' && <StoreView onError={onError} toast={toast} onOpen={(id) => goApp(id)} reloadApps={loadApps} />}
+        {route.name === 'settings' && <SettingsView onError={onError} toast={toast} />}
+        {route.name === 'app' && (
+          <AppView
+            appId={route.id}
+            initialTab={route.tab}
+            onError={onError}
+            toast={toast}
+            goApps={() => { setRoute({ name: 'apps' }); loadApps() }}
+            goSettings={() => setRoute({ name: 'settings' })}
+          />
         )}
       </div>
 
-      {apps === null ? (
-        <p className="muted">Loading…</p>
-      ) : apps.length === 0 ? (
-        <p className="muted">No apps yet — create one above to get started.</p>
-      ) : (
-        <div className="grid" data-testid="app-list">
-          {apps.map((a) => (
-            <div key={a.id} className="card click" onClick={() => onOpen(a.id)} data-testid="app-card">
-              <div className="card-title">{a.name}</div>
-              <div className="muted mono" style={{ fontSize: 12, marginBottom: 12 }}>
-                {a.description || a.id}
-              </div>
-              <div className="row">
-                {a.current_sandbox_id ? (
-                  <StatusBadge status={sbStatus[a.id]} />
-                ) : (
-                  <span className="badge">
-                    <span className="dot-i" />
-                    no sandbox
-                  </span>
-                )}
-                <div className="spacer" />
-                {a.tags?.slice(0, 3).map((t) => (
-                  <span key={t} className="tag">
-                    {t}
-                  </span>
-                ))}
-              </div>
+      {paletteOpen && <Palette apps={apps} close={() => setPaletteOpen(false)} onGo={(r) => { setRoute(r); setPaletteOpen(false) }} />}
+      <Helper />
+
+      {/* TOASTS */}
+      {toasts.length > 0 && (
+        <div style={{ position: 'fixed', bottom: 80, right: 20, zIndex: 99, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {toasts.map((t) => (
+            <div key={t.id} style={{ background: c.ink, color: '#fff', borderRadius: 8, padding: '10px 16px', fontSize: 12.5, boxShadow: '0 8px 24px rgba(0,0,0,.18)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#4ade80' }}>✓</span>{t.msg}
             </div>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; reload: () => void; onOpen: (id: string) => void; onError: (m: string) => void; goStore: () => void }) {
+  const [name, setName] = useState('')
+  const [mode, setMode] = useState<'template' | 'git'>('template')
+  const [preset, setPreset] = useState('')
+  const [presets, setPresets] = useState<Preset[]>([])
+  const [repo, setRepo] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [sbStatus, setSbStatus] = useState<Record<string, string>>({})
+
+  useEffect(() => { api.listPresets().then(setPresets).catch(() => {}) }, [])
+  useEffect(() => {
+    Promise.all(apps.filter((a) => a.current_sandbox_id).map(async (a) => {
+      try { const s = await api.getSandbox(a.current_sandbox_id as string); return [a.id, s.status] as const } catch { return [a.id, 'unknown'] as const }
+    })).then((p) => setSbStatus(Object.fromEntries(p)))
+  }, [apps])
+
+  const create = async () => {
+    if (!name.trim()) return
+    if (mode === 'git' && !repo.trim()) { onError('Enter a repo URL'); return }
+    setBusy(true)
+    try {
+      const a = await api.createApp({ name: name.trim(), runtime_preset: mode === 'template' && preset ? preset : undefined })
+      setName(''); reload(); onOpen(a.id)
+    } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
+  }
+
+  const modeChip = (m: 'template' | 'git', label: string) => (
+    <div onClick={() => setMode(m)} className="dc-hoverborder" style={{ padding: '6px 12px', fontSize: 12.5, borderRadius: 7, cursor: 'pointer', border: `1px solid ${mode === m ? c.faint : c.border}`, color: mode === m ? c.fg : c.muted, background: mode === m ? c.panel2 : 'transparent' }}>{label}</div>
+  )
+
+  return (
+    <div style={{ maxWidth: 920, margin: '0 auto', padding: '36px 40px 80px' }}>
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Apps</h1>
+      <p style={{ color: c.muted, margin: '0 0 24px' }}>Each app runs isolated in its own sandbox with a live preview URL.</p>
+
+      <Card style={{ padding: 16, marginBottom: 28 }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+          <Input mono value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="new-app-name" style={{ flex: 1, fontSize: 13 }} data-testid="app-name" />
+          <Btn variant="primary" disabled={busy || !name.trim()} onClick={create} style={{ padding: '9px 18px', fontSize: 13 }}>Create app</Btn>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {modeChip('template', 'Start from a template')}
+          {modeChip('git', 'Import from Git')}
+          {mode === 'template' ? (
+            <select value={preset} onChange={(e) => setPreset(e.target.value)} data-testid="app-preset" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
+              <option value="">Template…</option>
+              {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          ) : (
+            <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo" style={{ flex: 1, fontSize: 12.5 }} />
+          )}
+          <span style={{ color: c.muted2, fontSize: 12, marginLeft: 'auto' }}>Want a ready-made app? Browse the <a onClick={goStore} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }}>App Store</a>.</span>
+        </div>
+      </Card>
+
+      {apps.length === 0 ? (
+        <p style={{ color: c.muted2 }}>No apps yet — create one above to get started.</p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(270px,1fr))', gap: 14 }} data-testid="app-list">
+          {apps.map((a) => (
+            <Card key={a.id} style={{ padding: 16, cursor: 'pointer' }} >
+              <div className="dc-hoverborder" onClick={() => onOpen(a.id)} data-testid="app-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ ...mono, fontWeight: 500, fontSize: 14 }}>{a.name}</span>
+                  {a.current_sandbox_id ? <StatusPill status={sbStatus[a.id]} /> : <StatusPill status={undefined} />}
+                </div>
+                <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 12 }}>{a.description || a.id}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {(a.tags || []).slice(0, 3).map((t) => (
+                    <span key={t} style={{ ...mono, fontSize: 10.5, color: c.muted, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 5, padding: '2px 7px' }}>{t}</span>
+                  ))}
+                  <span style={{ marginLeft: 'auto', color: c.link, fontSize: 12 }}>Open →</span>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo: (r: Route) => void }) {
+  const [q, setQ] = useState('')
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => { ref.current?.focus() }, [])
+  const items = useMemo(() => {
+    const cmds: { kind: string; label: string; go: Route }[] = [
+      { kind: 'go', label: 'Apps', go: { name: 'apps' } },
+      { kind: 'go', label: 'App Store', go: { name: 'store' } },
+      { kind: 'go', label: 'Settings', go: { name: 'settings' } },
+      ...apps.map((a) => ({ kind: 'app', label: a.name, go: { name: 'app', id: a.id } as Route })),
+    ]
+    const s = q.trim().toLowerCase()
+    return s ? cmds.filter((x) => x.label.toLowerCase().includes(s)) : cmds
+  }, [q, apps])
+  return (
+    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(9,9,11,.32)', zIndex: 90, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '14vh' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 560, maxWidth: '90vw', background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,.18)', overflow: 'hidden' }}>
+        <input ref={ref} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps, commands…" style={{ width: '100%', border: 'none', borderBottom: `1px solid ${c.border}`, padding: '14px 16px', fontSize: 14, color: c.fg, outline: 'none', fontFamily: font.sans }} />
+        <div style={{ maxHeight: 320, overflowY: 'auto', padding: 6 }}>
+          {items.length === 0 ? (
+            <div style={{ padding: 16, textAlign: 'center', color: c.muted2, fontSize: 12.5 }}>No matching commands</div>
+          ) : items.map((it, i) => (
+            <div key={i} onClick={() => onGo(it.go)} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 7, cursor: 'pointer', border: '1px solid transparent' }}>
+              <span style={{ ...mono, fontSize: 10.5, color: c.muted2, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 6px', minWidth: 44, textAlign: 'center' }}>{it.kind}</span>
+              <span style={{ fontSize: 13 }}>{it.label}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 14, padding: '8px 14px', borderTop: `1px solid ${c.panel2}`, background: c.panel3, fontSize: 11, color: c.faint }}>
+          <span>↑↓ navigate</span><span>↵ run</span><span>esc close</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Helper() {
+  const [open, setOpen] = useState(false)
+  if (!open) {
+    return (
+      <div onClick={() => setOpen(true)} title="Ask sandboxd" style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 80, width: 44, height: 44, borderRadius: '50%', background: c.ink, color: c.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 15, cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,.22)' }}>?</div>
+    )
+  }
+  return (
+    <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 81, width: 320, height: 380, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, boxShadow: '0 16px 48px rgba(0,0,0,.2)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3, borderRadius: '12px 12px 0 0' }}>
+        <div style={{ width: 22, height: 22, borderRadius: 6, background: 'linear-gradient(135deg,#3f3f46,#18181b)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 10, color: c.bg }}>?</div>
+        <div>
+          <div style={{ fontFamily: font.display, fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>Ask sandboxd</div>
+          <div style={{ fontSize: 10.5, color: c.muted2, lineHeight: 1.2 }}>Platform-wide help</div>
+        </div>
+        <div onClick={() => setOpen(false)} className="dc-hoverink" style={{ marginLeft: 'auto', color: c.muted2, cursor: 'pointer', fontSize: 15, padding: '2px 6px', borderRadius: 5 }}>×</div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 12, color: c.muted2, fontSize: 12 }}>
+        Ask about sandboxes, agents, git, snapshots, networking. (Chat wiring coming in a later phase.)
+      </div>
     </div>
   )
 }
