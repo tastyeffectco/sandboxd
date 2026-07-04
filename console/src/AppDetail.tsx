@@ -1496,6 +1496,7 @@ function TaskPanel({
   const [agent, setAgent] = useState('opencode')
   const [model, setModel] = useState('') // actual value sent ('' = agent default)
   const [customModel, setCustomModel] = useState(false) // free-text mode
+  const [resolvedModel, setResolvedModel] = useState('') // actual model the agent ran (from its init event)
   const [status, setStatus] = useState<string | null>(null)
   const [log, setLog] = useState<string[]>([])
   const esRef = useRef<EventSource | null>(null)
@@ -1509,15 +1510,28 @@ function TaskPanel({
   const run = async () => {
     if (!sandboxId || !prompt.trim()) return
     setLog([])
+    setResolvedModel('')
     setStatus('running')
     try {
       const t = await api.submitTask(sandboxId, prompt.trim(), agent, model)
       esRef.current?.close()
       const es = new EventSource(api.taskEventsURL(sandboxId, t.id))
       esRef.current = es
-      for (const type of ['status', 'message', 'tool', 'build']) {
+      for (const type of ['message', 'tool', 'build']) {
         es.addEventListener(type, (m) => setLog((l) => [...l, `[${type}] ${(m as MessageEvent).data}`]))
       }
+      // status events: log them, and surface the resolved model (the agent's
+      // init event reports which model actually ran — asking the model is unreliable).
+      es.addEventListener('status', (m) => {
+        const data = (m as MessageEvent).data
+        setLog((l) => [...l, `[status] ${data}`])
+        try {
+          const j = JSON.parse(data)
+          if (j.model) setResolvedModel(j.model)
+        } catch {
+          /* non-JSON status */
+        }
+      })
       es.addEventListener('done', () => {
         es.close()
         api
@@ -1607,6 +1621,11 @@ function TaskPanel({
           Run task
         </button>
         <div className="spacer" />
+        {resolvedModel && (
+          <span className="badge" data-testid="task-resolved-model" title="The model the agent actually ran">
+            ▸ {resolvedModel}
+          </span>
+        )}
         {status && (
           <span className="badge" data-testid="task-status">
             {status}

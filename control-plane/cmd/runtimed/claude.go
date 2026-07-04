@@ -32,6 +32,7 @@ func (c *claudeCodeAgent) name() string { return "claude-code" }
 type claudeEvent struct {
 	Type    string  `json:"type"`    // system | assistant | user | result
 	Subtype string  `json:"subtype"` // on result: success | error_* …
+	Model   string  `json:"model"`   // on system/init: the RESOLVED model id
 	Result  string  `json:"result"`  // on result: the final assistant text
 	IsError bool    `json:"is_error"`
 	Cost    float64 `json:"total_cost_usd"`
@@ -109,6 +110,14 @@ func parseClaudeStream(r io.Reader, emit eventSink) claudeParseResult {
 			continue
 		}
 		switch ev.Type {
+		case "system":
+			// The init event reports the RESOLVED model (an alias like "sonnet"
+			// becomes e.g. "claude-sonnet-5"). Surface it so the user sees which
+			// model actually ran — the model's own "what model are you" answer is
+			// unreliable (it reports its system-prompt identity).
+			if ev.Subtype == "init" && ev.Model != "" {
+				emit(runtime.EventStatus, map[string]any{"phase": "model", "model": ev.Model})
+			}
 		case "assistant":
 			// An assistant turn carrying a top-level error (e.g. auth failure)
 			// is NOT real output: capture its text as the failure reason and do
