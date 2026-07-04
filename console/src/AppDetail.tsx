@@ -1475,6 +1475,7 @@ function TaskPanel({
 }) {
   const [prompt, setPrompt] = useState('')
   const [agent, setAgent] = useState('opencode')
+  const [model, setModel] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [log, setLog] = useState<string[]>([])
   const esRef = useRef<EventSource | null>(null)
@@ -1490,7 +1491,7 @@ function TaskPanel({
     setLog([])
     setStatus('running')
     try {
-      const t = await api.submitTask(sandboxId, prompt.trim(), agent)
+      const t = await api.submitTask(sandboxId, prompt.trim(), agent, model)
       esRef.current?.close()
       const es = new EventSource(api.taskEventsURL(sandboxId, t.id))
       esRef.current = es
@@ -1544,6 +1545,17 @@ function TaskPanel({
           <option value="opencode">OpenCode</option>
           <option value="claude-code">Claude Code (your subscription)</option>
         </select>
+        <input
+          className="input"
+          style={{ maxWidth: 260 }}
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          data-testid="task-model"
+          placeholder={
+            agent === 'opencode' ? 'model (opencode/… — optional)' : 'model (sonnet / opus — optional)'
+          }
+          title="Optional per-task model. OpenCode: provider/model. Claude: an alias or id. Empty = agent default."
+        />
         <button className="btn btn-primary" disabled={!running || !prompt.trim()} onClick={run} data-testid="run-task">
           Run task
         </button>

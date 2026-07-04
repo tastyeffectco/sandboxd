@@ -369,8 +369,12 @@ export const api = {
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
 
-  submitTask: (id: string, prompt: string, agent: string = 'opencode') =>
-    req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, { prompt, agent }),
+  submitTask: (id: string, prompt: string, agent: string = 'opencode', model?: string) =>
+    req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, {
+      prompt,
+      agent,
+      ...(model && model.trim() ? { model: model.trim() } : {}),
+    }),
   getTask: (id: string, taskId: string) =>
     req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
   taskEventsURL: (id: string, taskId: string) =>

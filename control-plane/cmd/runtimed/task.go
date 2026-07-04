@@ -30,6 +30,7 @@ type task struct {
 	id        string
 	prompt    string
 	agentName string
+	model     string
 	env       map[string]string
 	timeout   time.Duration
 	dir       string // .runtimed/tasks/<id>
@@ -60,7 +61,7 @@ func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
 		timeout = time.Duration(req.TimeoutS) * time.Second
 	}
 	return &task{
-		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, env: req.Env,
+		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, env: req.Env,
 		timeout: timeout, dir: dir, createdAt: time.Now().UTC(),
 		updatedCh: make(chan struct{}), phase: "queued", eventsW: f,
 	}, nil
@@ -210,7 +211,7 @@ func (a *app) runTask(t *task) {
 		defer rawLog.Close()
 	}
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
-		workDir: a.appDir, prompt: t.prompt, env: t.env, rawLog: rl,
+		workDir: a.appDir, prompt: t.prompt, model: t.model, env: t.env, rawLog: rl,
 	}, t.emit)
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage

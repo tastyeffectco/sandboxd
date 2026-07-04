@@ -20,6 +20,7 @@ import (
 type agentSpec struct {
 	workDir string
 	prompt  string
+	model   string // per-task model (agent CLI --model); empty = agent default
 	env     map[string]string
 	rawLog  io.Writer // the agent's own diagnostics (stderr)
 }
@@ -202,11 +203,15 @@ func toolTarget(raw json.RawMessage) string {
 
 func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (string, runtime.TokenUsage, error) {
 	var usage runtime.TokenUsage
-	// Optional model (e.g. an OpenCode Zen model like "opencode/claude-sonnet-4-5")
-	// via RUNTIMED_OPENCODE_MODEL; unset lets opencode pick its configured default.
+	// Model precedence: per-task (spec.model) > global default (RUNTIMED_OPENCODE_MODEL)
+	// > opencode's own configured default. Model is "provider/model" for opencode.
 	args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
-	if m := os.Getenv("RUNTIMED_OPENCODE_MODEL"); m != "" {
-		args = append(args, "--model", m)
+	model := spec.model
+	if model == "" {
+		model = os.Getenv("RUNTIMED_OPENCODE_MODEL")
+	}
+	if model != "" {
+		args = append(args, "--model", model)
 	}
 	args = append(args, spec.prompt)
 	cmd := exec.Command("opencode", args...)

@@ -1355,7 +1355,14 @@ components:
       required: [prompt]
       properties:
         prompt: { type: string }
-        agent: { type: string, enum: [opencode], default: opencode }
+        agent: { type: string, enum: [opencode, claude-code], default: opencode }
+        model:
+          type: string
+          description: >
+            Optional per-task model, passed to the agent CLI's --model. Agent-namespaced:
+            opencode wants "provider/model" (e.g. opencode/claude-sonnet-4-5), claude an
+            alias/id (e.g. sonnet). Empty = the agent's default. Max 200 chars; validity
+            is the agent's concern (an unknown model fails the task).
         timeout_s: { type: integer, description: "0/omitted = 10m default; max 86400." }
     TaskResult:
       type: object

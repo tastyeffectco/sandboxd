@@ -177,9 +177,13 @@ func parseClaudeStream(r io.Reader, emit eventSink) claudeParseResult {
 
 func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (string, runtime.TokenUsage, error) {
 	var usage runtime.TokenUsage
-	cmd := exec.Command("claude", "-p",
-		"--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions",
-		spec.prompt)
+	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"}
+	// Per-task model (claude accepts an alias like "sonnet"/"opus" or a full id).
+	if spec.model != "" {
+		args = append(args, "--model", spec.model)
+	}
+	args = append(args, spec.prompt)
+	cmd := exec.Command("claude", args...)
 	cmd.Dir = spec.workDir
 	// Scrub secret-shaped vars and point HOME at THIS agent's mounted auth dir
 	// (/run/agent-auth/claude-code = the imported Claude creds), keyed on the

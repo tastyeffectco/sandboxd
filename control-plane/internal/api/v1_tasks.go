@@ -26,6 +26,11 @@ func (s *Server) runtimeClientFor(id string) *runtime.Client {
 type v1TaskSubmitReq struct {
 	Prompt string `json:"prompt"`
 	Agent  string `json:"agent,omitempty"`
+	// Model, when set, runs this task on the given model (passed to the agent
+	// CLI's --model). Agent-namespaced: opencode wants "provider/model" (e.g.
+	// "opencode/claude-sonnet-4-5"), claude an alias/id ("sonnet"). Empty = the
+	// agent's default. Unknown/unavailable models fail the task at the agent.
+	Model string `json:"model,omitempty"`
 	// TimeoutS sets the maximum task runtime in seconds.
 	// 0 or omitted means use the runtimed default (10m).
 	TimeoutS int `json:"timeout_s,omitempty"`
@@ -100,10 +105,16 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("timeout_s must be <= %d", maxTimeoutS))
 		return
 	}
+	// Model is opaque + agent-namespaced; sandboxd only length-bounds it and
+	// leaves validity to the agent (which fails the task on an unknown model).
+	if len(req.Model) > 200 {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "model too long")
+		return
+	}
 
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
-		TaskID: taskID, Prompt: req.Prompt, Agent: agent, TimeoutS: req.TimeoutS,
+		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, TimeoutS: req.TimeoutS,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")

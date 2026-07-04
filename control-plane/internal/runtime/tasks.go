@@ -35,11 +35,15 @@ const (
 
 // StartTaskRequest is the POST /tasks body.
 type StartTaskRequest struct {
-	TaskID   string            `json:"task_id"`
-	Prompt   string            `json:"prompt"`
-	Agent    string            `json:"agent,omitempty"` // "opencode" only in this slice
-	Env      map[string]string `json:"env,omitempty"`   // passed to the agent process (credentials)
-	TimeoutS int               `json:"timeout_s,omitempty"`
+	TaskID string            `json:"task_id"`
+	Prompt string            `json:"prompt"`
+	Agent  string            `json:"agent,omitempty"` // opencode | claude-code
+	Env    map[string]string `json:"env,omitempty"`   // passed to the agent process (credentials)
+	// Model, when set, is the model this task runs on — passed to the agent CLI's
+	// model flag (opencode -m, claude --model). Agent-namespaced (opencode wants
+	// provider/model). Empty = the agent's configured/global default.
+	Model    string `json:"model,omitempty"`
+	TimeoutS int    `json:"timeout_s,omitempty"`
 }
 
 // Event is one task progress event. Data is type-specific JSON.
