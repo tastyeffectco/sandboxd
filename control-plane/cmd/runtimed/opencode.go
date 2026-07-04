@@ -23,6 +23,10 @@ type agentSpec struct {
 	model   string // per-task model (agent CLI --model); empty = agent default
 	env     map[string]string
 	rawLog  io.Writer // the agent's own diagnostics (stderr)
+	// systemPrompt is the rendered platform briefing (agentprompt.Render). Each
+	// adapter delivers it in its own supported way (claude: --append-system-prompt;
+	// opencode: a preamble on the user prompt). Empty = inject nothing.
+	systemPrompt string
 }
 
 // agent is the coding-agent adapter boundary. This slice implements
@@ -213,7 +217,13 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	args = append(args, spec.prompt)
+	// opencode `run` has no system-prompt flag, so deliver the platform briefing
+	// as a clearly-delimited preamble on the prompt.
+	prompt := spec.prompt
+	if spec.systemPrompt != "" {
+		prompt = spec.systemPrompt + "\n\n---\n\n# Your task\n\n" + spec.prompt
+	}
+	args = append(args, prompt)
 	cmd := exec.Command("opencode", args...)
 	cmd.Dir = spec.workDir
 	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sandboxd/control-plane/internal/agentprompt"
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/preset"
 	"github.com/sandboxd/control-plane/internal/store"
@@ -69,6 +70,10 @@ type v1SettingsEgress struct {
 }
 type v1SettingsAgents struct {
 	Providers []string `json:"providers"`
+	// SystemPrompt is the platform briefing appended to every agent run (read
+	// only). Rendered with default port/health for display; runtimed renders it
+	// with each sandbox's real values at task time. Single source: internal/agentprompt.
+	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // v1GetSettings — GET /v1/settings. Read-only, tokenless-safe instance summary.
@@ -103,7 +108,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 		Runtime:   v1SettingsRuntime{StorageMode: storageMode, BaseImage: s.Image},
 		Lifecycle: s.lifecycleView(),
 		Egress:    v1SettingsEgress{Mode: egressMode},
-		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders},
+		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{})},
 		Presets:   presets,
 		Capabilities: map[string]bool{
 			"snapshots":      s.Snapshot != nil,

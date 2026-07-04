@@ -38,7 +38,7 @@ export interface Settings {
   runtime: { storage_mode: string; base_image: string }
   lifecycle: { idle_reap_enabled: boolean; idle_threshold_seconds: number; keepalive_max_seconds: number }
   egress: { mode: string }
-  agents: { providers: string[] }
+  agents: { providers: string[]; system_prompt?: string }
   presets: Preset[]
   capabilities: Record<string, boolean>
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
@@ -303,6 +303,15 @@ export const api = {
     req<ManifestValidation>('POST', '/v1/runtime/manifest/validate', { manifest: mfst }),
   // Write one workspace file via the existing generic PUT endpoint (raw body).
   // Used by the explicit "Apply sandbox.yaml" CTA — console-only, no new endpoint.
+  // Read a workspace file. NOTE the path asymmetry: GET content is relative to
+  // the APP dir (e.g. "AGENTS.md"), while putWorkspaceFile is relative to the
+  // workspace MOUNT (e.g. "workspace/app/AGENTS.md"). Returns null on 404.
+  getWorkspaceFile: async (sandboxId: string, appRelPath: string): Promise<string | null> => {
+    const res = await fetch(`/v1/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(appRelPath)}`)
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return res.text()
+  },
   putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
     const res = await fetch(`/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`, {
       method: 'PUT',

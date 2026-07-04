@@ -72,6 +72,18 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
         <div style={{ color: c.muted2, fontSize: 12 }}>Each agent runs on your own account. Credentials are stored opaquely server-side, never shown in the browser, and kept out of every sandbox snapshot.</div>
       </Card>
 
+      {s.agents.system_prompt && (
+        <Card style={{ padding: 16, marginBottom: 16 }} data-testid="settings-system-prompt">
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+            <H>Agent system prompt</H>
+            <Pill tone="neutral">read-only</Pill>
+            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>from <span style={{ ...mono, fontSize: 11 }}>prompt.md</span></span>
+          </div>
+          <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 10 }}>Appended to every agent run so it understands the sandbox environment and guardrails. The <span style={{ ...mono, fontSize: 11.5 }}>{'{{PORT}}'}</span>/paths shown here use defaults; each sandbox is rendered with its real values at run time.</div>
+          <pre style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 7, padding: '12px 14px', ...mono, fontSize: 11.5, color: c.fg2, margin: 0, maxHeight: 320, overflow: 'auto', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{s.agents.system_prompt}</pre>
+        </Card>
+      )}
+
       <Card style={{ padding: 16, marginBottom: 16 }} data-testid="settings-lifecycle">
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
           <H>Lifecycle</H><span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>editable</span>
