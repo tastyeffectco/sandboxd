@@ -25,7 +25,14 @@ export function AppView({
     } catch (e) { onError((e as Error).message) }
   }, [appId, onError])
   useEffect(() => { refresh() }, [refresh])
-  useEffect(() => { const t = setInterval(refresh, 4000); return () => clearInterval(t) }, [refresh])
+  // Poll fast while anything is in flight (sandbox starting/stopping, or the dev
+  // server not yet answering the preview probe) so first-run readiness surfaces
+  // quickly; back off once it's settled.
+  const settled = sb?.status === 'running' && sb?.preview?.status === 'ready'
+  useEffect(() => {
+    const t = setInterval(refresh, settled ? 5000 : 2000)
+    return () => clearInterval(t)
+  }, [refresh, settled])
 
   // Detect → apply the recommended sandbox.yaml, then restart. Shared by the
   // auto-apply-on-import path and the manual "Apply detected runtime" button.
@@ -146,6 +153,17 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
 function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canApply }: { app: TApp; sb: Sandbox | null; previewURL?: string; onError: (m: string) => void; refresh: () => void; onApplyRuntime: () => void; canApply: boolean }) {
   const running = sb?.status === 'running'
   const procs: Process[] = sb?.processes || []
+  // The dev server isn't up the instant the sandbox is "running" — the control
+  // plane HTTP-probes it and flips preview.status to "ready". Only mount the
+  // iframe once ready (so it never caches a connection-refused page), and let it
+  // remount whenever readiness toggles (e.g. the apply→restart cycle).
+  const ready = running && !!previewURL && sb?.preview?.status === 'ready'
+  const [nonce, setNonce] = useState(0) // manual "reload" bump
+  const wasReady = useRef(false)
+  useEffect(() => {
+    if (ready && !wasReady.current) setNonce((n) => n + 1) // fresh load on first-ready
+    wasReady.current = ready
+  }, [ready])
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 400px', gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -155,11 +173,17 @@ function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canAp
             <span onClick={() => { if (previewURL) { navigator.clipboard?.writeText(previewURL) } }} title="Copy URL" style={{ ...mono, fontSize: 11.5, color: c.muted, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
               {previewURL || 'no preview'}{previewURL ? ' ⧉' : ''}
             </span>
+            {ready && <a onClick={() => setNonce((n) => n + 1)} title="Reload preview" className="dc-hoverink" data-testid="preview-reload" style={{ color: c.muted, fontSize: 13, cursor: 'pointer' }}>↻</a>}
             {previewURL && running && <a onClick={() => window.open(previewURL, '_blank')} style={{ color: c.link, fontSize: 12, cursor: 'pointer' }}>Open ↗</a>}
           </div>
-          <div style={{ height: 420, position: 'relative', background: running && previewURL ? '#fff' : 'repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5 12px,#eeeef0 12px,#eeeef0 24px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {running && previewURL ? (
-              <iframe src={previewURL} title="preview" data-testid="preview" style={{ width: '100%', height: '100%', border: 'none' }} />
+          <div style={{ height: 420, position: 'relative', background: ready ? '#fff' : 'repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5 12px,#eeeef0 12px,#eeeef0 24px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {ready ? (
+              <iframe key={`${previewURL}-${nonce}`} src={previewURL} title="preview" data-testid="preview" style={{ width: '100%', height: '100%', border: 'none' }} />
+            ) : running && previewURL && sb?.preview?.status !== 'none' ? (
+              <div style={{ ...mono, fontSize: 11.5, color: c.muted, background: '#ffffffcc', border: `1px dashed ${c.border2}`, borderRadius: 7, padding: '10px 16px', textAlign: 'center' }} data-testid="preview-starting">
+                <div style={{ animation: 'pulse 1.4s ease-in-out infinite' }}>▍ starting dev server…</div>
+                <div style={{ fontSize: 10.5, color: c.muted2, marginTop: 4 }}>waiting for the first response — this refreshes automatically</div>
+              </div>
             ) : (
               <div style={{ ...mono, fontSize: 11.5, color: c.muted2, background: '#ffffffcc', border: `1px dashed ${c.border2}`, borderRadius: 7, padding: '8px 14px' }} data-testid="preview-empty">
                 {!sb ? 'No sandbox yet — create one from the header' : sb.preview?.status === 'none' ? 'No public endpoint — worker running' : 'Sandbox not running'}
