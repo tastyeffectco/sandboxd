@@ -18,7 +18,10 @@
 // never hit.
 package traefik
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Labels returns the slice of "key=value" label strings for a
 // sandbox with the given ports. If ports is empty, Labels returns
@@ -80,10 +83,16 @@ func Labels(id string, ports []int, domain, visibility, entrypoint string, tls b
 			// store. One cert for every preview host — no per-host ACME.
 			out = append(out, fmt.Sprintf("traefik.http.routers.%s.tls=true", router))
 		}
+		// Every preview router strips X-Frame-Options so the console can embed
+		// the app in an <iframe> (many apps ship SAMEORIGIN → "refused to
+		// connect"). Private sandboxes ALSO run forward-auth first. Middlewares
+		// apply in the listed order.
+		mws := []string{"sandbox-preview-embed@file"}
 		if visibility == "private" {
-			out = append(out,
-				fmt.Sprintf("traefik.http.routers.%s.middlewares=sandbox-preview-auth@file", router))
+			mws = append([]string{"sandbox-preview-auth@file"}, mws...)
 		}
+		out = append(out,
+			fmt.Sprintf("traefik.http.routers.%s.middlewares=%s", router, strings.Join(mws, ",")))
 	}
 	return out
 }

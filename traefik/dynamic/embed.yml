@@ -1,0 +1,19 @@
+# Preview embedding middleware.
+#
+# sandboxd attaches
+#   traefik.http.routers.<router>.middlewares=sandbox-preview-embed@file
+# to every sandbox preview router. The console renders each app's preview in an
+# <iframe>, but many apps ship X-Frame-Options: SAMEORIGIN (Chrome shows
+# "refused to connect") which blocks cross-origin framing. The preview host is
+# purpose-built to be embedded in the console, so we drop that header on the
+# preview route only. Setting the value empty removes the header in Traefik.
+#
+# NOTE: this relaxes clickjacking protection for the preview host specifically;
+# that is the intended behaviour for a preview surface. It does not touch the
+# app's other security headers (e.g. Content-Security-Policy is left as-is).
+http:
+  middlewares:
+    sandbox-preview-embed:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: ""
