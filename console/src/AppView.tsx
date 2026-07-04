@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, RuntimeSuggestion } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
+import { DeployModal } from './DeployModal'
 
 type Msg = { role: 'user' | 'agent'; text: string; taskId?: string; done?: boolean }
 const TABS = ['overview', 'git', 'config', 'snapshots', 'activity'] as const
@@ -52,6 +53,7 @@ export function AppView({
   const [busy, setBusy] = useState(false)
   const [menu, setMenu] = useState(false)
   const [applied, setApplied] = useState<{ preset: string } | null>(null) // auto-applied runtime banner (Undo)
+  const [deployOpen, setDeployOpen] = useState(false)
   const autoRef = useRef<string>('') // guards one auto-apply attempt per sandbox
 
   const refresh = useCallback(async () => {
@@ -144,6 +146,10 @@ export function AppView({
           {sb && status === 'stopped' && <Btn disabled={busy} onClick={() => act(() => api.startSandbox(sb.id))}>Start</Btn>}
           {sb && status === 'running' && <Btn disabled={busy} onClick={() => act(() => api.stopSandbox(sb.id))}>Stop</Btn>}
           {previewURL && status === 'running' && <Btn onClick={() => window.open(previewURL, '_blank')}>Open ↗</Btn>}
+          <button onClick={() => setDeployOpen(true)} data-testid="deploy-btn" className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 7, padding: '6px 13px', cursor: 'pointer', background: 'linear-gradient(135deg,#3f3f46,#18181b)', color: '#fff', fontFamily: font.sans, fontSize: 12.5, fontWeight: 600 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6Z" opacity=".35" /><path d="m9 12 2 2 4-4" /></svg>
+            Deploy
+          </button>
           <Btn onClick={() => setMenu((m) => !m)} style={{ letterSpacing: 1 }}>⋯</Btn>
           {menu && (
             <Card style={{ position: 'absolute', top: 38, right: 0, padding: 4, minWidth: 180, zIndex: 40, boxShadow: '0 8px 24px rgba(0,0,0,.08)' }}>
@@ -179,6 +185,7 @@ export function AppView({
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
       {tabName === 'activity' && <ActivityTab appId={appId} onError={onError} />}
+      {deployOpen && <DeployModal appName={app.name} close={() => setDeployOpen(false)} />}
     </div>
   )
 }

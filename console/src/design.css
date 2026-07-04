@@ -25,3 +25,5 @@ h1,h2,h3{font-family:var(--display)}
 a{color:inherit}
 .dc-hoverborder:hover{border-color:var(--faint)!important}
 .dc-hoverink:hover{color:var(--fg)!important}
+.prov-ico{display:flex;align-items:center;justify-content:center}
+.prov-ico svg{width:100%;height:100%;display:block}
