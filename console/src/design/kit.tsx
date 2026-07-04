@@ -14,9 +14,9 @@ export const font = {
 }
 export const mono: CSSProperties = { fontFamily: font.mono }
 
-export function Card({ children, style, pad }: { children: ReactNode; style?: CSSProperties; pad?: number | boolean }) {
+export function Card({ children, style, pad, onClick }: { children: ReactNode; style?: CSSProperties; pad?: number | boolean; onClick?: (e: React.MouseEvent) => void }) {
   return (
-    <div style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, ...(pad ? { padding: pad === true ? 16 : pad } : {}), ...style }}>
+    <div onClick={onClick} style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, ...(pad ? { padding: pad === true ? 16 : pad } : {}), ...style }}>
       {children}
     </div>
   )
