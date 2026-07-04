@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 
@@ -121,36 +121,70 @@ function Overview({ app, sb, previewURL, onError, refresh }: { app: TApp; sb: Sa
         </Card>
 
         {/* processes */}
-        <Card style={{ padding: 16 }} >
-          <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 10 }}>
-            <H>Processes</H>
-            <span style={{ marginLeft: 'auto', ...mono, fontSize: 10.5, color: c.muted2 }}>supervised · auto-restart</span>
-          </div>
-          {procs.length === 0 ? (
-            <div style={{ color: c.muted2, fontSize: 12.5 }} data-testid="processes-empty">No processes {running ? 'reported' : '— sandbox not running'}.</div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr .7fr .8fr', gap: '0 12px', fontSize: 12.5 }} data-testid="processes-list">
-              {['Name', 'Kind', 'Status', 'PID', 'Restarts'].map((h) => (
-                <div key={h} style={{ color: c.muted2, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.7px', padding: '6px 0', borderBottom: `1px solid ${c.border}` }}>{h}</div>
-              ))}
-              {procs.map((p) => (
-                <>
-                  <div key={p.name + 'n'} style={{ ...mono, padding: '9px 0' }}>{p.name}</div>
-                  <div style={{ color: c.muted, padding: '9px 0' }}>{p.kind}</div>
-                  <div style={{ padding: '9px 0' }}><Pill tone={p.running ? 'good' : 'neutral'} dot>{p.running ? 'running' : 'stopped'}</Pill></div>
-                  <div style={{ ...mono, color: c.muted, padding: '9px 0' }}>{p.pid || '—'}</div>
-                  <div style={{ ...mono, color: c.muted, padding: '9px 0' }}>{p.restarts ?? 0}</div>
-                </>
-              ))}
-            </div>
-          )}
-        </Card>
+        <ProcessesCard sb={sb} running={running} procs={procs} onError={onError} />
 
         <RuntimeCard appId={app.id} />
       </div>
 
       <AgentChat sb={sb} onError={onError} refresh={refresh} />
     </div>
+  )
+}
+
+function ProcessesCard({ sb, running, procs, onError }: { sb: Sandbox | null; running: boolean; procs: Process[]; onError: (m: string) => void }) {
+  const [logsFor, setLogsFor] = useState<string | null>(null)
+  const [lines, setLines] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const logRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight }, [lines])
+
+  const viewLogs = async (name: string) => {
+    if (!sb) return
+    if (logsFor === name) { setLogsFor(null); return }
+    setLogsFor(name); setLines([]); setLoading(true)
+    try { const r = await api.getProcessLogs(sb.id, name, 200); setLines(r.lines) }
+    catch (e) { onError((e as Error).message) } finally { setLoading(false) }
+  }
+
+  return (
+    <Card style={{ padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 10 }}>
+        <H>Processes</H>
+        <span style={{ marginLeft: 'auto', ...mono, fontSize: 10.5, color: c.muted2 }}>supervised · auto-restart</span>
+      </div>
+      {procs.length === 0 ? (
+        <div style={{ color: c.muted2, fontSize: 12.5 }} data-testid="processes-empty">No processes {running ? 'reported' : '— sandbox not running'}.</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr .9fr .9fr .6fr .7fr auto', gap: '0 12px', fontSize: 12.5, alignItems: 'center' }} data-testid="processes-list">
+          {['Name', 'Kind', 'Status', 'PID', 'Restarts', ''].map((h, i) => (
+            <div key={i} style={{ color: c.muted2, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.7px', padding: '6px 0', borderBottom: `1px solid ${c.border}` }}>{h}</div>
+          ))}
+          {procs.map((p) => (
+            <Fragment key={p.name}>
+              <div style={{ ...mono, padding: '9px 0' }}>{p.name}</div>
+              <div style={{ color: c.muted, padding: '9px 0' }}>{p.kind}</div>
+              <div style={{ padding: '9px 0' }}><Pill tone={p.running ? 'good' : 'neutral'} dot>{p.running ? 'running' : 'stopped'}</Pill></div>
+              <div style={{ ...mono, color: c.muted, padding: '9px 0' }}>{p.pid || '—'}</div>
+              <div style={{ ...mono, color: c.muted, padding: '9px 0' }}>{p.restarts ?? 0}</div>
+              <div style={{ padding: '9px 0', textAlign: 'right' }}>
+                <a onClick={() => viewLogs(p.name)} className="dc-hoverink" data-testid={`process-logs-${p.name}`} style={{ fontSize: 12, color: logsFor === p.name ? c.fg : c.muted2, cursor: 'pointer' }}>{logsFor === p.name ? 'Hide' : 'Logs'}</a>
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {logsFor && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ ...mono, fontSize: 11.5, color: c.muted }}>{logsFor} — last 200 lines</span>
+            <a onClick={() => viewLogs(logsFor)} className="dc-hoverink" style={{ marginLeft: 'auto', fontSize: 11.5, color: c.link, cursor: 'pointer' }}>Refresh</a>
+          </div>
+          <div ref={logRef} data-testid="process-log-output" style={{ background: '#0a0a0a', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '10px 12px', ...mono, fontSize: 11.5, color: '#d4d4d8', lineHeight: 1.6, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+            {loading ? 'loading…' : lines.length === 0 ? '(no output)' : lines.join('\n')}
+          </div>
+        </div>
+      )}
+    </Card>
   )
 }
 
