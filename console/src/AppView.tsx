@@ -14,6 +14,8 @@ export function AppView({
   const [tabName, setTabName] = useState<Tab>((initialTab as Tab) || 'overview')
   const [busy, setBusy] = useState(false)
   const [menu, setMenu] = useState(false)
+  const [applied, setApplied] = useState<{ preset: string } | null>(null) // auto-applied runtime banner (Undo)
+  const autoRef = useRef<string>('') // guards one auto-apply attempt per sandbox
 
   const refresh = useCallback(async () => {
     try {
@@ -24,6 +26,43 @@ export function AppView({
   }, [appId, onError])
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => { const t = setInterval(refresh, 4000); return () => clearInterval(t) }, [refresh])
+
+  // Detect → apply the recommended sandbox.yaml, then restart. Shared by the
+  // auto-apply-on-import path and the manual "Apply detected runtime" button.
+  // Never overrides an authoritative manifest (the repo's / user's own).
+  const applyRuntime = useCallback(async (sandboxId: string, opts: { auto: boolean }): Promise<boolean> => {
+    const insp = await api.runtimeInspect(appId)
+    if (insp.existing_manifest?.present) { if (!opts.auto) toast('This app already has a sandbox.yaml'); return false }
+    const pick = insp.suggestions.find((s) => s.preset === insp.default_suggestion && s.suggested_manifest)
+      || insp.suggestions.find((s) => s.suggested_manifest && (opts.auto ? s.confidence === 'high' : true))
+    if (!pick?.suggested_manifest) { if (!opts.auto) onError('No runtime could be confidently detected — add a sandbox.yaml manually'); return false }
+    await api.putWorkspaceFile(sandboxId, 'workspace/app/sandbox.yaml', pick.suggested_manifest)
+    await api.stopSandbox(sandboxId).catch(() => undefined)
+    await api.startSandbox(sandboxId)
+    setApplied({ preset: pick.preset })
+    toast(`Detected ${pick.preset} — applied runtime`)
+    await refresh()
+    return true
+  }, [appId, onError, toast, refresh])
+
+  // Auto-apply once per sandbox: git-imported app + running sandbox + no manifest.
+  useEffect(() => {
+    if (!app?.git || !sb || sb.status !== 'running') return
+    if (autoRef.current === sb.id) return
+    autoRef.current = sb.id
+    applyRuntime(sb.id, { auto: true }).catch(() => { /* advisory; ignore */ })
+  }, [app?.git, sb, applyRuntime])
+
+  const undoRuntime = useCallback(async () => {
+    if (!sb) return
+    setBusy(true)
+    try {
+      await api.putWorkspaceFile(sb.id, 'workspace/app/sandbox.yaml', '')
+      await api.stopSandbox(sb.id).catch(() => undefined)
+      await api.startSandbox(sb.id)
+      setApplied(null); toast('Reverted to defaults'); await refresh()
+    } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
+  }, [sb, onError, toast, refresh])
 
   if (!app) return <div style={{ padding: 40, color: c.muted2 }}>Loading…</div>
   const status = sb?.status
@@ -72,6 +111,15 @@ export function AppView({
         </div>
       </div>
 
+      {applied && (
+        <div data-testid="runtime-applied-banner" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 18, borderRadius: 9, border: `1px solid ${c.border}`, background: c.panel2, fontSize: 12.5 }}>
+          <Pill tone="good" dot>runtime applied</Pill>
+          <span style={{ color: c.fg2 }}>Detected <b style={{ color: c.fg }}>{applied.preset}</b> and wrote a <span style={{ ...mono, fontSize: 11.5 }}>sandbox.yaml</span> so the preview boots — your source was not modified.</span>
+          <a onClick={undoRuntime} className="dc-hoverink" style={{ marginLeft: 'auto', color: c.link, cursor: 'pointer' }}>Undo</a>
+          <a onClick={() => setApplied(null)} className="dc-hoverink" style={{ color: c.muted2, cursor: 'pointer' }}>Dismiss</a>
+        </div>
+      )}
+
       {/* tabs */}
       <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${c.border}`, marginBottom: 24 }}>
         {TABS.map((t) => (
@@ -81,7 +129,7 @@ export function AppView({
         ))}
       </div>
 
-      {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} refresh={refresh} />}
+      {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
@@ -95,7 +143,7 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
 }
 
 // ---------- OVERVIEW (preview + processes + runtime + AGENT CHAT) ----------
-function Overview({ app, sb, previewURL, onError, refresh }: { app: TApp; sb: Sandbox | null; previewURL?: string; onError: (m: string) => void; refresh: () => void }) {
+function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canApply }: { app: TApp; sb: Sandbox | null; previewURL?: string; onError: (m: string) => void; refresh: () => void; onApplyRuntime: () => void; canApply: boolean }) {
   const running = sb?.status === 'running'
   const procs: Process[] = sb?.processes || []
   return (
@@ -123,7 +171,7 @@ function Overview({ app, sb, previewURL, onError, refresh }: { app: TApp; sb: Sa
         {/* processes */}
         <ProcessesCard sb={sb} running={running} procs={procs} onError={onError} />
 
-        <RuntimeCard appId={app.id} />
+        <RuntimeCard appId={app.id} onApplyRuntime={onApplyRuntime} canApply={canApply} />
       </div>
 
       <AgentChat sb={sb} onError={onError} refresh={refresh} />
@@ -188,26 +236,42 @@ function ProcessesCard({ sb, running, procs, onError }: { sb: Sandbox | null; ru
   )
 }
 
-function RuntimeCard({ appId }: { appId: string }) {
+function RuntimeCard({ appId, onApplyRuntime, canApply }: { appId: string; onApplyRuntime: () => void; canApply: boolean }) {
   const [eff, setEff] = useState<{ command?: string; port?: number; health?: string } | null>(null)
   const [valid, setValid] = useState<boolean | null>(null)
+  const [present, setPresent] = useState(false)
+  const [detected, setDetected] = useState<{ preset: string; confidence: string } | null>(null)
   useEffect(() => {
     api.appManifest(appId).then((m) => {
       const w = m.effective?.web
       if (w) setEff({ command: w.command, port: w.port, health: w.health_path })
+      setPresent(m.present)
       setValid(m.present ? m.validation?.valid ?? null : null)
     }).catch(() => {})
+    // Advisory detection — surfaced so the user can one-click apply it.
+    api.runtimeInspect(appId).then((r) => {
+      const s = r.suggestions.find((x) => x.preset === r.default_suggestion) || r.suggestions[0]
+      if (s?.suggested_manifest) setDetected({ preset: s.preset, confidence: s.confidence })
+    }).catch(() => {})
   }, [appId])
+  const showApply = !present && !!detected // no manifest yet + something detected
   return (
     <Card style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <H>Runtime</H>
         {valid !== null && <Pill tone={valid ? 'good' : 'bad'}>{valid ? 'sandbox.yaml valid' : 'sandbox.yaml invalid'}</Pill>}
-        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>Advisory — nothing applied automatically</span>
+        {showApply && <Pill tone="warn">detected: {detected!.preset}</Pill>}
+        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>Runtime config — never touches your source</span>
       </div>
       <pre style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 7, padding: '12px 14px', ...mono, fontSize: 12, color: c.fg2, margin: '10px 0 0', overflowX: 'auto', lineHeight: 1.6 }}>
 {eff ? `command: ${eff.command || '(default)'}\nport: ${eff.port ?? 3000}\nhealth: ${eff.health || '/'}` : 'no sandbox.yaml — using defaults'}
       </pre>
+      {showApply && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+          <span style={{ fontSize: 12, color: c.muted }}>Detected <b style={{ color: c.fg }}>{detected!.preset}</b> ({detected!.confidence}). Apply the recommended <span style={{ ...mono, fontSize: 11.5 }}>sandbox.yaml</span> so the preview boots.</span>
+          <Btn sm variant="primary" disabled={!canApply} title={canApply ? '' : 'Start the sandbox first'} onClick={onApplyRuntime} data-testid="apply-runtime" style={{ marginLeft: 'auto' }}>Apply detected runtime</Btn>
+        </div>
+      )}
     </Card>
   )
 }

@@ -24,6 +24,7 @@ func TestLabels_SinglePort_HTTP(t *testing.T) {
 		"traefik.http.routers.s-nx-3000.entrypoints=web",
 		"traefik.http.routers.s-nx-3000.priority=100",
 		"traefik.http.services.s-nx-3000.loadbalancer.server.port=3000",
+		"traefik.http.services.s-nx-3000.loadbalancer.passHostHeader=false",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected label set\ngot:  %#v\nwant: %#v", got, want)
@@ -40,6 +41,7 @@ func TestLabels_SinglePort_TLS(t *testing.T) {
 		"traefik.http.routers.s-nx-3000.entrypoints=websecure",
 		"traefik.http.routers.s-nx-3000.priority=100",
 		"traefik.http.services.s-nx-3000.loadbalancer.server.port=3000",
+		"traefik.http.services.s-nx-3000.loadbalancer.passHostHeader=false",
 		"traefik.http.routers.s-nx-3000.tls=true",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -52,10 +54,10 @@ func TestLabels_MultiPort(t *testing.T) {
 	if got[0] != "traefik.enable=true" {
 		t.Fatalf("first label must be enable; got %q", got[0])
 	}
-	// Two fixed lines (enable + managed), then 4 lines per port (rule,
-	// entrypoints, priority, service) when TLS is off.
-	if len(got) != 2+4*2 {
-		t.Fatalf("want 10 labels for 2 ports (no TLS); got %d (%v)", len(got), got)
+	// Two fixed lines (enable + managed), then 5 lines per port (rule,
+	// entrypoints, priority, service port, passHostHeader) when TLS is off.
+	if len(got) != 2+5*2 {
+		t.Fatalf("want 12 labels for 2 ports (no TLS); got %d (%v)", len(got), got)
 	}
 	gotMap := map[string]bool{}
 	for _, l := range got {

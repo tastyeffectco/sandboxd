@@ -65,6 +65,14 @@ func Labels(id string, ports []int, domain, visibility, entrypoint string, tls b
 			// implicit-priority changes.
 			fmt.Sprintf("traefik.http.routers.%s.priority=100", router),
 			fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%d", router, p),
+			// Forward an upstream Host the dev server trusts, instead of the
+			// public preview host. Vite/Astro/Nuxt/etc. reject unknown Host
+			// headers (allowedHosts → HTTP 403) but accept IP/loopback hosts
+			// by default; with passHostHeader=false Traefik sends the backend
+			// address (container IP) as Host, so any framework's dev server is
+			// previewable WITHOUT editing the user's source (no allowedHosts
+			// config edit). The browser-facing URL is unchanged.
+			fmt.Sprintf("traefik.http.services.%s.loadbalancer.passHostHeader=false", router),
 		)
 		if tls {
 			// TLS on, but no per-router certresolver: Traefik serves the
