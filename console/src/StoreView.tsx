@@ -2,20 +2,20 @@ import { useMemo, useState } from 'react'
 import { api } from './api'
 import { CATALOG, CATEGORIES, CatalogRecipe, recipeManifest, recipeAgentsMd } from './catalog'
 import { c, font, Card, Btn, Input } from './design/kit'
+import { APP_ICONS } from './appIcons'
 
 const initials = (name: string) => name.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
 
-// Real project logo from the repo owner's avatar (the project mark for orgs),
-// with a monogram fallback for non-GitHub repos or when the avatar 404s/offline.
-const repoOwner = (repo?: string) => repo?.match(/github\.com\/([^/]+)\//)?.[1] || null
-function AppLogo({ repo, name }: { repo?: string; name: string }) {
+// Real project logo (curated open-source app icons served from /app-icons).
+// No owner avatars — apps without a real logo get a clean monogram, never a face.
+function AppLogo({ id, name }: { id: string; name: string }) {
   const [failed, setFailed] = useState(false)
-  const owner = repoOwner(repo)
+  const src = APP_ICONS[id]
   const box = { width: 30, height: 30, borderRadius: 8, border: `1px solid ${c.border}`, flexShrink: 0 } as const
-  if (!owner || failed) {
+  if (!src || failed) {
     return <span style={{ ...box, background: c.panel2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 11, fontWeight: 600, color: c.muted }}>{initials(name)}</span>
   }
-  return <img src={`https://github.com/${owner}.png?size=80`} alt="" loading="lazy" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover', background: '#fff' }} />
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{ ...box, objectFit: 'contain', background: '#fff', padding: 2 }} />
 }
 
 export function StoreView({ onError, toast, onOpen, reloadApps }: { onError: (m: string) => void; toast: (m: string) => void; onOpen: (id: string) => void; reloadApps: () => void }) {
@@ -59,7 +59,7 @@ export function StoreView({ onError, toast, onOpen, reloadApps }: { onError: (m:
         {items.map((r) => (
           <Card key={r.id} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <AppLogo repo={r.repo} name={r.name} />
+              <AppLogo id={r.id} name={r.name} />
               <span style={{ fontFamily: font.display, fontWeight: 600, fontSize: 14.5 }}>{r.name}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11, color: c.muted2, textTransform: 'capitalize' }}>{r.category}</span>
             </div>
