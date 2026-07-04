@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, App as TApp, Preset } from './api'
+import { api, App as TApp, Preset, GitCredential } from './api'
 import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
 import { AppView } from './AppView'
 import { StoreView } from './StoreView'
@@ -113,10 +113,16 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
   const [preset, setPreset] = useState('')
   const [presets, setPresets] = useState<Preset[]>([])
   const [repo, setRepo] = useState('')
+  const [branch, setBranch] = useState('main')
+  const [credId, setCredId] = useState('')
+  const [creds, setCreds] = useState<GitCredential[]>([])
   const [busy, setBusy] = useState(false)
   const [sbStatus, setSbStatus] = useState<Record<string, string>>({})
 
-  useEffect(() => { api.listPresets().then(setPresets).catch(() => {}) }, [])
+  useEffect(() => {
+    api.listPresets().then(setPresets).catch(() => {})
+    api.listGitCredentials().then(setCreds).catch(() => {})
+  }, [])
   useEffect(() => {
     Promise.all(apps.filter((a) => a.current_sandbox_id).map(async (a) => {
       try { const s = await api.getSandbox(a.current_sandbox_id as string); return [a.id, s.status] as const } catch { return [a.id, 'unknown'] as const }
@@ -126,10 +132,15 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
   const create = async () => {
     if (!name.trim()) return
     if (mode === 'git' && !repo.trim()) { onError('Enter a repo URL'); return }
+    if (mode === 'git' && !credId) { onError('Pick a Git credential (add one in Settings → Git credentials)'); return }
     setBusy(true)
     try {
-      const a = await api.createApp({ name: name.trim(), runtime_preset: mode === 'template' && preset ? preset : undefined })
-      setName(''); reload(); onOpen(a.id)
+      const a = await api.createApp({
+        name: name.trim(),
+        runtime_preset: mode === 'template' && preset ? preset : undefined,
+        git: mode === 'git' ? { repo_url: repo.trim(), branch: branch.trim() || 'main', credential_id: credId } : undefined,
+      })
+      setName(''); setRepo(''); reload(); onOpen(a.id)
     } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -156,10 +167,20 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
               {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           ) : (
-            <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo" style={{ flex: 1, fontSize: 12.5 }} />
+            <>
+              <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ flex: 1, fontSize: 12.5 }} data-testid="git-repo-url" />
+              <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch" style={{ width: 120, fontSize: 12.5 }} data-testid="git-branch" />
+              <select value={credId} onChange={(e) => setCredId(e.target.value)} data-testid="git-cred" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
+                <option value="">Credential…</option>
+                {creds.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </>
           )}
           <span style={{ color: c.muted2, fontSize: 12, marginLeft: 'auto' }}>Want a ready-made app? Browse the <a onClick={goStore} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }}>App Store</a>.</span>
         </div>
+        {mode === 'git' && creds.length === 0 && (
+          <div style={{ marginTop: 8, fontSize: 12, color: c.warn }} data-testid="git-no-creds">No Git credentials yet — add a personal access token in <b>Settings → Git credentials</b> first. Cloning runs control-plane-side, so a credential is required even for public repos.</div>
+        )}
       </Card>
 
       {apps.length === 0 ? (
