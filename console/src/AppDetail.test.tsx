@@ -185,7 +185,7 @@ describe('app detail — web app', () => {
     render(<AppDetail appId="01APPAAAAAAAAAAAAAAAAAAAAA" onError={noop} onInfo={noop} />)
     const files = await screen.findByTestId('git-files') // waits for status to load
     const panel = screen.getByTestId('git-panel')
-    expect(panel.textContent).toMatch(/Git review/i)
+    expect(panel.textContent).toMatch(/version .* ship your code/i)
     expect(panel.textContent).toMatch(/main/) // branch
     // user files listed; runtime files in their own group, labelled not-your-edits
     expect(files.textContent).toMatch(/src\/App\.tsx/)

@@ -131,7 +131,7 @@ export function AppDetail({
             className="btn btn-outline"
             disabled={busy}
             data-testid="snapshot"
-            title="Capture a snapshot (stop the sandbox first)"
+            title="Snapshot the whole workspace — code + installed packages + data (stop the sandbox first)"
             onClick={snapshot}
           >
             Snapshot
@@ -796,7 +796,12 @@ function GitPanel({
 
   return (
     <div className="card" data-testid="git-panel">
-      <h2>Git review</h2>
+      <h2>Git — version &amp; ship your code</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Git tracks your <strong>source code</strong> line-by-line and pushes it to GitHub (commit,
+        review the diff, push). For a full copy of the running environment — dependencies, build
+        output, data — use <strong>Snapshots</strong> below.
+      </p>
 
       {!loaded ? (
         <div className="muted" data-testid="git-loading" style={{ fontSize: 13 }}>
@@ -1157,7 +1162,7 @@ function SnapshotsPanel({
   const restore = async (snap: Snapshot) => {
     if (
       !window.confirm(
-        `Restore "${snap.name}"?\n\nThis REPLACES the app's current sandbox and permanently discards any work that has not been snapshotted. Continue?`,
+        `Roll back to "${snap.name}"?\n\nThis REPLACES this app's current sandbox with the snapshot and permanently discards any work not captured in a snapshot. Continue?`,
       )
     ) {
       return
@@ -1175,12 +1180,12 @@ function SnapshotsPanel({
   }
 
   const fork = async (snap: Snapshot) => {
-    const name = window.prompt('Fork into a new app named:', `${appName} fork`)
+    const name = window.prompt('Duplicate into a new app named:', `${appName} copy`)
     if (name === null || !name.trim()) return
     setBusy(true)
     try {
       const res = await api.forkApp(appId, snap.id, name.trim())
-      onInfo(`Forked into new app "${res.app?.name ?? name.trim()}".`)
+      onInfo(`Duplicated into new app "${res.app?.name ?? name.trim()}".`)
     } catch (e) {
       onError((e as Error).message)
     } finally {
@@ -1190,14 +1195,18 @@ function SnapshotsPanel({
 
   return (
     <div className="card" data-testid="snapshots-panel">
-      <div className="row">
-        <h2 className="card-title">Snapshots</h2>
-        <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>
-          Capture from the controls above (stop the sandbox first). Restore replaces the
-          current sandbox; fork creates a new app.
-        </span>
-      </div>
+      <h2 className="card-title">Snapshots — save the whole environment</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        A snapshot freezes the <strong>entire workspace</strong> — your code <em>plus</em> installed
+        packages, build output, and data — so you can roll back or clone the exact running setup in
+        seconds. (To version and ship just your <strong>source code</strong>, use <strong>Git</strong>
+        above.)
+      </p>
+      <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+        Take one with <span className="mono">Snapshot</span> in the controls above (stop the sandbox
+        first). <strong>Roll back</strong> replaces this app&apos;s sandbox; <strong>Duplicate</strong>{' '}
+        spins up a separate new app from the snapshot.
+      </p>
       {snaps === null ? (
         <p className="muted">Loading…</p>
       ) : snaps.length === 0 ? (
@@ -1225,17 +1234,19 @@ function SnapshotsPanel({
                     className="btn btn-outline btn-sm"
                     disabled={busy || s.status !== 'ready'}
                     data-testid={`snapshot-restore-${s.id}`}
+                    title="Replace THIS app's sandbox with this snapshot (discards un-snapshotted work)"
                     onClick={() => restore(s)}
                   >
-                    Restore
+                    Roll back
                   </button>
                   <button
                     className="btn btn-ghost btn-sm"
                     disabled={busy || s.status !== 'ready'}
                     data-testid={`snapshot-fork-${s.id}`}
+                    title="Create a SEPARATE new app from this snapshot (this app is untouched)"
                     onClick={() => fork(s)}
                   >
-                    Fork
+                    Duplicate app
                   </button>
                 </td>
               </tr>
