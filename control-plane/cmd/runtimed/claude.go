@@ -191,6 +191,11 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 	if spec.model != "" {
 		args = append(args, "--model", spec.model)
 	}
+	// Platform briefing → appended to claude's default system prompt (out of the
+	// workspace, so it can't be committed or edited by the agent).
+	if spec.systemPrompt != "" {
+		args = append(args, "--append-system-prompt", spec.systemPrompt)
+	}
 	args = append(args, spec.prompt)
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = spec.workDir

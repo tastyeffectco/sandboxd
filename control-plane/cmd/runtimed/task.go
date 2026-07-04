@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sandboxd/control-plane/internal/agentprompt"
 	"github.com/sandboxd/control-plane/internal/runtime"
 )
 
@@ -210,8 +211,14 @@ func (a *app) runTask(t *task) {
 		rl = rawLog
 		defer rawLog.Close()
 	}
+	// Render the platform briefing with THIS sandbox's real values (no hard-coded
+	// loopback address or port) and hand it to the adapter.
+	sysPrompt := agentprompt.Render(agentprompt.Vars{
+		AppDir: a.appDir, Port: a.previewPort, HealthPath: a.webHealthPath,
+	})
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
 		workDir: a.appDir, prompt: t.prompt, model: t.model, env: t.env, rawLog: rl,
+		systemPrompt: sysPrompt,
 	}, t.emit)
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage
