@@ -20,7 +20,7 @@ PROCEED on 2026-05-14).
 ```
 image/
 ├── Dockerfile                       # sandbox-base:0.2.0 — durable base image
-├── build.sh                         # build helper (linux/arm64, --load into local registry)
+├── build.sh                         # build helper (native platform by default)
 ├── etc/
 │   ├── npmrc                        # registry proxy + pnpm store-dir + prefer-offline
 │   ├── pip.conf                     # registry proxy + cache-dir
@@ -81,12 +81,15 @@ it from Phase 2 without an explicit operator instruction.
 ```bash
 sudo bash image/build.sh                # builds sandbox-base:0.2.0
 sudo bash image/build.sh 0.2.1          # iterate on a patch tag
+sudo SANDBOXD_PLATFORM=linux/arm64 bash image/build.sh 0.2.1
 ```
 
-`build.sh` runs `docker buildx build --platform linux/arm64 --load`
-and reports the uncompressed size. There is no `latest` tag — every
-consumer (`provision-home`, `sandbox-up`, the eventual Phase 4
-control plane) pins the exact version.
+`build.sh` uses the host Docker builder's native platform by default
+and reports the uncompressed size. Set `SANDBOXD_PLATFORM` when you
+need an explicit Docker platform such as `linux/arm64` on Apple
+Silicon or `linux/amd64` for an x86 deployment target. There is no
+`latest` tag — consumers pin the exact version through
+`SANDBOXD_IMAGE`.
 
 Soft size target: ≤ 500 MB compressed (goal, not a gate). Phase 1's
 image was ~1.8 GB uncompressed; the Phase 2 Dockerfile bakes in

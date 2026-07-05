@@ -15,13 +15,24 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:-1.0.0}"
 IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:${VERSION}}"
+PLATFORM="${SANDBOXD_PLATFORM:-}"
 
 # `docker` may need sudo on some hosts; honour a DOCKER override that can
 # include arguments (e.g. DOCKER="sudo docker").
 DOCKER="${DOCKER:-docker}"
 
-echo "Building ${IMAGE} (context: ${REPO_ROOT}) ..."
+BUILD_ARGS=()
+if [ -n "${PLATFORM}" ]; then
+  BUILD_ARGS+=(--platform "${PLATFORM}")
+fi
+
+if [ -n "${PLATFORM}" ]; then
+  echo "Building ${IMAGE} for ${PLATFORM} (context: ${REPO_ROOT}) ..."
+else
+  echo "Building ${IMAGE} for native platform (context: ${REPO_ROOT}) ..."
+fi
 $DOCKER build \
+  "${BUILD_ARGS[@]}" \
   -f "${REPO_ROOT}/image/Dockerfile" \
   -t "${IMAGE}" \
   "${REPO_ROOT}"
