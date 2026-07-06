@@ -169,7 +169,7 @@ control plane, and starts the stack. The API is then live at
 
 The base image already includes the **OpenCode** and **Claude Code** CLIs. Hand
 a sandbox a prompt and watch it build (OpenCode runs on its free plan out of the
-box; pass your own provider key via `env` to use your account):
+box; to use your own account, **connect a provider** — see below):
 
 ```bash
 API=http://127.0.0.1:9090
@@ -190,12 +190,21 @@ curl -s -XPOST $API/v1/sandboxes/$ID/tasks -H 'content-type: application/json' -
 curl -N $API/v1/sandboxes/$ID/tasks/<taskId>/events
 ```
 
-To use your own model account instead of the free plan, inject a key at create
-time — it's available to the agent and any shell in the sandbox:
+To use your own model account, **connect a provider** — the control plane stores
+the credential encrypted server-side and supplies it to the agent, so it never
+lives in the sandbox. (Credential-shaped env vars like `ANTHROPIC_API_KEY` passed
+via `env` are deliberately **scrubbed** from the agent process; they won't work.)
 
 ```bash
-curl -s -XPOST $API/sandbox -d '{"ports":[3000],"env":{"ANTHROPIC_API_KEY":"sk-ant-..."}}'
+# API key:
+curl -s -XPOST $API/v1/agents/anthropic/api-key -d '{"api_key":"sk-ant-..."}'
+# or a subscription via guided OAuth:
+curl -s -XPOST $API/v1/agents/claude-code/oauth/start   # → open the URL, then /oauth/finish
 ```
+
+For a subscription, the real token stays behind a control-plane **auth proxy** —
+the sandbox only ever sees a dummy key and the proxy URL. See
+[`docs/agent-auth.md`](docs/agent-auth.md).
 
 ### 3. Open the live preview
 
@@ -475,13 +484,10 @@ Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-m
 - **Compose / local service stacks are not first-class yet**, and there is no
   built-in database/sidecar story — run **Postgres/Supabase/Neon etc. as remote
   services** for now.
-- **No in-sandbox terminal yet**, and **no Git/private-repo import** yet.
-- **Claude Code *subscription* support is post-v0.4** — the managed agent-auth
-  store + Claude Code task adapter are **accepted on the `feat/phase-10b-agent-auth`
-  branch, not part of the v0.4 release** (documented in
-  [`docs/agent-auth.md`](docs/agent-auth.md)). v0.4 ships the OpenCode/Claude Code
-  CLIs in the image and the OpenCode task agent; an API-key agent works via the
-  sandbox `env` on v0.4.
+- **No in-sandbox terminal yet** (no PTY endpoint).
+- **Package managers**: the default install path is `pnpm`. A repo that pins
+  `bun`/`yarn` via `packageManager`, or needs an external DB, won't boot
+  zero-config — set an explicit `web.command` in `sandbox.yaml`.
 
 ## License
 

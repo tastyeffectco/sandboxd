@@ -22,7 +22,7 @@ wake on the next request. Workspaces persist on disk.
 ## Install
 ```bash
 git clone https://github.com/tastyeffectco/sandboxd.git
-cd sandboxes
+cd sandboxd
 ./install.sh
 ```
 `install.sh` is idempotent. It: checks Docker, copies `.env.example`→`.env`,
@@ -88,26 +88,31 @@ curl -s -XPOST $API/sandbox/$ID/purge
 ```
 
 ## Running Claude Code / OpenCode inside a sandbox
-Both CLIs (`claude`, `opencode`) are pre-installed in every sandbox; outbound
-network is allowed. The clean path is to inject the key at **create** time so
-both the tasks API and any shell see it:
+Both CLIs (`claude`, `opencode`) are pre-installed in every sandbox. OpenCode
+works on its free plan out of the box. To use your own account, **connect a
+provider** — the control plane stores the credential encrypted server-side and
+supplies it to the agent process at task time.
+
+> Credential-shaped env vars (`*_KEY`, `*_TOKEN`, `*_SECRET`, …) passed via a
+> sandbox's `env` are deliberately **scrubbed** from the agent process
+> (`cmd/runtimed/agentenv.go`). Injecting `ANTHROPIC_API_KEY` at create time no
+> longer reaches the agent — connect a provider instead.
+
 ```bash
-# create with the key, then drive OpenCode headlessly via the tasks API:
-ID=$(curl -s -XPOST $API/sandbox -H 'content-type: application/json' \
-       -d '{"ports":[3000],"env":{"ANTHROPIC_API_KEY":"sk-ant-..."}}' \
-       | sed -E 's/.*"id":"([^"]+)".*/\1/')
+# API key:
+curl -s -XPOST $API/v1/agents/anthropic/api-key -d '{"api_key":"sk-ant-..."}'
+# or a Claude subscription via guided OAuth (setup-token / PKCE):
+curl -s -XPOST $API/v1/agents/claude-code/oauth/start   # open the URL, then /oauth/finish
+
+# then drive a task normally:
 curl -s -XPOST $API/v1/sandboxes/$ID/tasks -H 'content-type: application/json' \
-  -d '{"prompt":"build a Vite todo app and run it on port 3000","agent":"opencode"}'
-# stream progress: curl -N $API/v1/sandboxes/$ID/tasks/<taskId>/events
+  -d '{"prompt":"build a Vite todo app and run it on port 3000","agent":"claude-code"}'
 ```
-Other ways to supply the key:
-```bash
-# one-off via exec (claude print mode is non-interactive-friendly):
-curl -s -XPOST $API/sandbox/$ID/exec -H 'content-type: application/json' \
-  -d '{"cmd":["bash","-lc","ANTHROPIC_API_KEY=sk-ant-... claude -p \"write hello.py\""]}'
-# interactive TUI on the host:
-docker exec -it -e ANTHROPIC_API_KEY=sk-ant-... s-$ID bash   # then: claude
-```
+
+For a Claude **subscription**, the real bearer token stays behind a
+control-plane **auth proxy**; the sandbox only ever sees `ANTHROPIC_BASE_URL`
+(the proxy) and a dummy key, so a task can't read or exfiltrate it. See
+`docs/agent-auth.md`.
 
 ## Web console (optional)
 A web UI over the public `/v1` API — apps, live preview, agent tasks + logs,
