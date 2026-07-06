@@ -118,12 +118,22 @@ func TestCloneRejectsBadInput(t *testing.T) {
 	bad := []Spec{
 		{RepoURL: "http://x/r", Branch: "main", Token: "t", DestDir: "/tmp/a"},
 		{RepoURL: "https://github.com/o/r", Branch: "-evil", Token: "t", DestDir: "/tmp/a"},
-		{RepoURL: "https://github.com/o/r", Branch: "main", Token: "", DestDir: "/tmp/a"},
 		{RepoURL: "https://github.com/o/r", Branch: "main", Token: "t", DestDir: "relative"},
 	}
 	for i, sp := range bad {
 		if err := Clone(context.Background(), sp); err == nil {
 			t.Errorf("case %d: expected error", i)
 		}
+	}
+}
+
+// A missing token is VALID: public repos/starters clone tokenless (no askpass).
+func TestCloneTokenlessPublic(t *testing.T) {
+	fakeGit(t)
+	dest := filepath.Join(t.TempDir(), "app")
+	if err := Clone(context.Background(), Spec{
+		RepoURL: "https://github.com/o/r", Branch: "main", Token: "", DestDir: dest,
+	}); err != nil {
+		t.Fatalf("tokenless clone should succeed on valid input: %v", err)
 	}
 }

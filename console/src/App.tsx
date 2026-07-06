@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, App as TApp, Preset, GitCredential } from './api'
 import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
+import { STARTERS, STARTER_ICONS } from './design/starters'
 import { AppView } from './AppView'
 import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
@@ -119,7 +120,8 @@ const PRESET_META: Record<string, { short: string; tag: string }> = {
 
 function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; reload: () => void; onOpen: (id: string) => void; onError: (m: string) => void; goStore: () => void }) {
   const [name, setName] = useState('')
-  const [mode, setMode] = useState<'template' | 'git'>('template')
+  const [mode, setMode] = useState<'template' | 'starter' | 'git'>('template')
+  const [starter, setStarter] = useState('')
   const [preset, setPreset] = useState('')
   const [presets, setPresets] = useState<Preset[]>([])
   const [repo, setRepo] = useState('')
@@ -143,19 +145,23 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
     if (!name.trim()) return
     if (mode === 'git' && !repo.trim()) { onError('Enter a repo URL'); return }
     if (mode === 'git' && !credId) { onError('Pick a Git credential (add one in Settings → Git credentials)'); return }
+    if (mode === 'starter' && !starter) { onError('Pick a starter'); return }
+    const pick = STARTERS.find((s) => s.id === starter)
     setBusy(true)
     try {
       const a = await api.createApp({
         name: name.trim(),
         runtime_preset: mode === 'template' && preset ? preset : undefined,
-        git: mode === 'git' ? { repo_url: repo.trim(), branch: branch.trim() || 'main', credential_id: credId } : undefined,
+        git: mode === 'git' ? { repo_url: repo.trim(), branch: branch.trim() || 'main', credential_id: credId }
+          : mode === 'starter' && pick ? { repo_url: `https://github.com/${pick.repo}`, branch: pick.branch } // public → tokenless
+          : undefined,
       })
       setName(''); setRepo(''); reload(); onOpen(a.id)
     } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
   }
 
-  const modeChip = (m: 'template' | 'git', label: string) => (
-    <div onClick={() => setMode(m)} className="dc-hoverborder" style={{ padding: '6px 12px', fontSize: 12.5, borderRadius: 7, cursor: 'pointer', border: `1px solid ${mode === m ? c.faint : c.border}`, color: mode === m ? c.fg : c.muted, background: mode === m ? c.panel2 : 'transparent' }}>{label}</div>
+  const modeChip = (m: 'template' | 'starter' | 'git', label: string) => (
+    <div onClick={() => setMode(m)} className="dc-hoverborder" data-testid={`mode-${m}`} style={{ padding: '6px 12px', fontSize: 12.5, borderRadius: 7, cursor: 'pointer', border: `1px solid ${mode === m ? c.faint : c.border}`, color: mode === m ? c.fg : c.muted, background: mode === m ? c.panel2 : 'transparent' }}>{label}</div>
   )
 
   return (
@@ -166,15 +172,37 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
       <Card style={{ padding: 16, marginBottom: 28 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
           <Input mono value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="new-app-name" style={{ flex: 1, fontSize: 13 }} data-testid="app-name" />
-          <Btn variant="primary" disabled={busy || !name.trim()} onClick={create} style={{ padding: '9px 18px', fontSize: 13 }}>Create app</Btn>
+          <Btn variant="primary" disabled={busy || !name.trim() || (mode === 'starter' && !starter)} onClick={create} style={{ padding: '9px 18px', fontSize: 13 }}>{mode === 'starter' ? 'Create from starter' : 'Create app'}</Btn>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {modeChip('template', 'Start from a template')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {modeChip('template', 'Blank template')}
+          {modeChip('starter', 'Starter project')}
           {modeChip('git', 'Import from Git')}
           <span style={{ color: c.muted2, fontSize: 12, marginLeft: 'auto' }}>Want a ready-made app? Browse the <a onClick={goStore} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }}>App Store</a>.</span>
         </div>
 
-        {mode === 'template' ? (
+        {mode === 'starter' ? (
+          <div data-testid="starter-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(212px,1fr))', gap: 10, marginTop: 14 }}>
+            {STARTERS.map((s) => {
+              const active = starter === s.id
+              return (
+                <div key={s.id} data-testid={`starter-${s.id}`} onClick={() => setStarter(active ? '' : s.id)} className="dc-hoverborder"
+                  style={{ position: 'relative', display: 'flex', gap: 10, padding: '12px 13px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${active ? c.ink : c.border}`, background: active ? c.panel2 : c.panel, boxShadow: active ? `inset 0 0 0 1px ${c.ink}` : 'none' }}>
+                  {active && <span style={{ position: 'absolute', top: 8, right: 8, width: 15, height: 15, borderRadius: '50%', background: c.ink, color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</span>}
+                  <span className="prov-ico" style={{ width: 24, height: 24, flexShrink: 0, marginTop: 1 }} dangerouslySetInnerHTML={{ __html: STARTER_ICONS[s.tech] || '' }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontFamily: font.display, fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                      <span style={{ ...mono, fontSize: 10, color: c.muted2, flexShrink: 0 }}>★{s.stars}</span>
+                    </div>
+                    <div style={{ color: c.muted2, fontSize: 11, lineHeight: 1.35, marginTop: 2 }}>{s.blurb}</div>
+                    <div style={{ ...mono, fontSize: 10, color: c.faint, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.repo}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : mode === 'template' ? (
           <div data-testid="app-preset" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(158px,1fr))', gap: 10, marginTop: 14 }}>
             {presets.map((p) => {
               const meta = PRESET_META[p.id] || { short: p.label, tag: p.description }

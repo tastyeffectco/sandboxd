@@ -78,43 +78,50 @@ func Clone(ctx context.Context, spec Spec) error {
 	if err := ValidateBranch(spec.Branch); err != nil {
 		return err
 	}
-	if spec.Token == "" {
-		return fmt.Errorf("missing token")
-	}
 	if !filepath.IsAbs(spec.DestDir) {
 		return fmt.Errorf("dest must be absolute")
 	}
-	username := spec.Username
-	if username == "" {
-		username = "x-access-token"
-	}
 
-	// Token + askpass live in a 0700 control-plane-only temp dir, removed after.
-	tmp, err := os.MkdirTemp("", "gitimport-")
-	if err != nil {
-		return fmt.Errorf("scratch dir: %w", err)
-	}
-	defer os.RemoveAll(tmp)
-	tokenFile := filepath.Join(tmp, "token")
-	if err := os.WriteFile(tokenFile, []byte(spec.Token), 0o600); err != nil {
-		return fmt.Errorf("write token: %w", err)
-	}
-	askpass := filepath.Join(tmp, "askpass.sh")
-	// $1 is git's prompt ("Username for ..." / "Password for ..."). Username is
-	// not secret (returned inline); the token is only ever read from the file.
-	script := "#!/bin/sh\ncase \"$1\" in\n  Username*) printf %s \"$GIT_IMPORT_USER\" ;;\n  *) cat \"$GIT_IMPORT_TOKEN_FILE\" ;;\nesac\n"
-	if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
-		return fmt.Errorf("write askpass: %w", err)
-	}
-
+	// Base env: never prompt (so a private repo fails fast instead of hanging),
+	// ignore system git config, skip LFS smudge.
 	env := append(os.Environ(),
-		"GIT_ASKPASS="+askpass,
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_IMPORT_USER="+username,        // not secret
-		"GIT_IMPORT_TOKEN_FILE="+tokenFile, // the PATH, never the token
 		"GIT_LFS_SKIP_SMUDGE=1",
 	)
+
+	// A token is OPTIONAL: public starters/repos clone tokenless (the URL is
+	// already tokenless — creds only ever come from askpass). When a token IS
+	// given, it + the askpass helper live in a 0700 control-plane-only temp dir,
+	// removed after. Without a token we set no askpass; GIT_TERMINAL_PROMPT=0
+	// makes a private repo fail cleanly rather than block on a credential prompt.
+	if spec.Token != "" {
+		username := spec.Username
+		if username == "" {
+			username = "x-access-token"
+		}
+		tmp, err := os.MkdirTemp("", "gitimport-")
+		if err != nil {
+			return fmt.Errorf("scratch dir: %w", err)
+		}
+		defer os.RemoveAll(tmp)
+		tokenFile := filepath.Join(tmp, "token")
+		if err := os.WriteFile(tokenFile, []byte(spec.Token), 0o600); err != nil {
+			return fmt.Errorf("write token: %w", err)
+		}
+		askpass := filepath.Join(tmp, "askpass.sh")
+		// $1 is git's prompt ("Username for ..." / "Password for ..."). Username is
+		// not secret (returned inline); the token is only ever read from the file.
+		script := "#!/bin/sh\ncase \"$1\" in\n  Username*) printf %s \"$GIT_IMPORT_USER\" ;;\n  *) cat \"$GIT_IMPORT_TOKEN_FILE\" ;;\nesac\n"
+		if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
+			return fmt.Errorf("write askpass: %w", err)
+		}
+		env = append(env,
+			"GIT_ASKPASS="+askpass,
+			"GIT_IMPORT_USER="+username,        // not secret
+			"GIT_IMPORT_TOKEN_FILE="+tokenFile, // the PATH, never the token
+		)
+	}
 
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
