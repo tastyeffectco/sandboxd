@@ -1,0 +1,14 @@
+# Default reviewers for everything.
+*                       @tastyeffectco
+
+# sandboxd core — the control plane, engine, and in-sandbox supervisor.
+/control-plane/         @tastyeffectco
+/image/                 @tastyeffectco
+/traefik/               @tastyeffectco
+
+# console — the web client on top of the /v1 API.
+/console/               @tastyeffectco
+
+# API contract & docs.
+/docs/openapi.yaml      @tastyeffectco
+/docs/                  @tastyeffectco
