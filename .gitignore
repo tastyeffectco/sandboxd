@@ -19,3 +19,9 @@
 *.swp
 .idea/
 .vscode/
+
+# Stray dev/generated files — never commit
+*.log
+docker-compose.override.yml
+/abs-manifest.yaml
+/gitea.yaml
