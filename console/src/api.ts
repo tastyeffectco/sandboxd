@@ -343,7 +343,7 @@ export const api = {
     description?: string
     tags?: string[]
     runtime_preset?: string
-    git?: { repo_url: string; branch?: string; credential_id: string }
+    git?: { repo_url: string; branch?: string; credential_id?: string } // credential_id omitted → public tokenless clone
   }) => req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
   // Full delete: the app AND everything it owns (sandbox container, workspace

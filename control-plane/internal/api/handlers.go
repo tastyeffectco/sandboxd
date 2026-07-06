@@ -619,30 +619,36 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 				Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch, "reason": reason}})
 			abort("git clone: " + reason)
 		}
-		// Decrypt the owner-scoped credential here and nowhere else.
-		if s.Secrets == nil {
-			failClone("credential store unavailable")
-			writeErr(w, http.StatusServiceUnavailable, "git clone: credential store unavailable")
-			return
-		}
-		enc, nonce, found, err := s.Store.GetGitCredentialSecret(r.Context(), req.Git.Owner, req.Git.CredentialID)
-		if err != nil || !found {
-			failClone("credential not found")
-			writeErr(w, http.StatusBadRequest, "git clone: credential not found")
-			return
-		}
-		token, derr := s.Secrets.Open(enc, nonce)
-		if derr != nil {
-			failClone("credential decrypt failed")
-			writeErr(w, http.StatusInternalServerError, "git clone: credential decrypt failed")
-			return
+		// Credential is OPTIONAL: an empty credential_id means a PUBLIC repo (a
+		// curated starter or any public URL) — clone tokenless. Only when a
+		// credential_id is given do we require the secrets store + decrypt it.
+		var token []byte
+		if req.Git.CredentialID != "" {
+			if s.Secrets == nil {
+				failClone("credential store unavailable")
+				writeErr(w, http.StatusServiceUnavailable, "git clone: credential store unavailable")
+				return
+			}
+			enc, nonce, found, err := s.Store.GetGitCredentialSecret(r.Context(), req.Git.Owner, req.Git.CredentialID)
+			if err != nil || !found {
+				failClone("credential not found")
+				writeErr(w, http.StatusBadRequest, "git clone: credential not found")
+				return
+			}
+			tok, derr := s.Secrets.Open(enc, nonce)
+			if derr != nil {
+				failClone("credential decrypt failed")
+				writeErr(w, http.StatusInternalServerError, "git clone: credential decrypt failed")
+				return
+			}
+			token = tok
 		}
 		appDir := filepath.Join(mntPath, "workspace", "app")
 		_ = os.MkdirAll(filepath.Dir(appDir), 0o755) // ensure workspace/ exists; clone creates app/
 		cerr := gitimport.Clone(r.Context(), gitimport.Spec{
 			RepoURL: req.Git.RepoURL, Branch: req.Git.Branch, Token: string(token), DestDir: appDir,
 		})
-		for i := range token { // best-effort scrub of the decrypted token
+		for i := range token { // best-effort scrub of the decrypted token (nil-safe)
 			token[i] = 0
 		}
 		if cerr != nil {
