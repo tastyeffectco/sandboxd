@@ -193,7 +193,7 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
                   <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: font.display, fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-                      <span style={{ ...mono, fontSize: 10, color: c.muted2, flexShrink: 0 }}>★{s.stars}</span>
+                      {s.stars && <span style={{ ...mono, fontSize: 10, color: c.muted2, flexShrink: 0 }}>★{s.stars}</span>}
                     </div>
                     <div style={{ color: c.muted2, fontSize: 11, lineHeight: 1.35, marginTop: 2 }}>{s.blurb}</div>
                     <div style={{ ...mono, fontSize: 10, color: c.faint, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.repo}</div>

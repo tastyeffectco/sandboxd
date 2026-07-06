@@ -12,24 +12,6 @@ export const STARTER_ICONS: Record<string,string> = {
 export interface Starter { id: string; name: string; tech: string; repo: string; branch: string; stars: string; blurb: string }
 export const STARTERS: Starter[] = [
   {
-    "id": "hackathon-starter",
-    "name": "Hackathon Starter",
-    "tech": "node",
-    "repo": "sahat/hackathon-starter",
-    "branch": "master",
-    "stars": "35k",
-    "blurb": "Node/Express app boilerplate with auth & APIs"
-  },
-  {
-    "id": "react-starter-kit",
-    "name": "React Starter Kit",
-    "tech": "react",
-    "repo": "kriasoft/react-starter-kit",
-    "branch": "main",
-    "stars": "24k",
-    "blurb": "Modern React + Bun + TS + Tailwind"
-  },
-  {
     "id": "nextjs-boilerplate",
     "name": "Next.js Boilerplate",
     "tech": "nextjs",
@@ -37,24 +19,6 @@ export const STARTERS: Starter[] = [
     "branch": "main",
     "stars": "13k",
     "blurb": "Next.js App Router starter, fully tooled"
-  },
-  {
-    "id": "tailwind-nextjs-blog",
-    "name": "Tailwind Next.js Blog",
-    "tech": "nextjs",
-    "repo": "timlrx/tailwind-nextjs-starter-blog",
-    "branch": "main",
-    "stars": "11k",
-    "blurb": "Next.js + Tailwind blogging template"
-  },
-  {
-    "id": "ai-town",
-    "name": "AI Town",
-    "tech": "nextjs",
-    "repo": "a16z-infra/ai-town",
-    "branch": "main",
-    "stars": "10k",
-    "blurb": "Deployable AI-agent town (Next.js + Convex)"
   },
   {
     "id": "vitesse",
@@ -75,15 +39,6 @@ export const STARTERS: Starter[] = [
     "blurb": "Next.js + Tailwind + Shadcn SaaS starter"
   },
   {
-    "id": "notion-starter-kit",
-    "name": "Notion Starter Kit",
-    "tech": "nextjs",
-    "repo": "transitive-bullshit/nextjs-notion-starter-kit",
-    "branch": "main",
-    "stars": "7k",
-    "blurb": "Notion-powered site with Next.js"
-  },
-  {
     "id": "shadcn-dashboard",
     "name": "Shadcn Dashboard",
     "tech": "nextjs",
@@ -93,12 +48,39 @@ export const STARTERS: Starter[] = [
     "blurb": "Next.js + Shadcn admin dashboard"
   },
   {
-    "id": "astrowind",
-    "name": "AstroWind",
-    "tech": "astro",
-    "repo": "arthelokyo/astrowind",
+    "id": "notion-starter-kit",
+    "name": "Notion Starter Kit",
+    "tech": "nextjs",
+    "repo": "transitive-bullshit/nextjs-notion-starter-kit",
     "branch": "main",
-    "stars": "6k",
-    "blurb": "Astro + Tailwind marketing template"
+    "stars": "7k",
+    "blurb": "Notion-powered site with Next.js"
+  },
+  {
+    "id": "open-react-template",
+    "name": "Open React Template",
+    "tech": "nextjs",
+    "repo": "cruip/open-react-template",
+    "branch": "master",
+    "stars": "5k",
+    "blurb": "Next.js + Tailwind landing page"
+  },
+  {
+    "id": "astro-paper",
+    "name": "AstroPaper",
+    "tech": "astro",
+    "repo": "satnaing/astro-paper",
+    "branch": "main",
+    "stars": "5k",
+    "blurb": "Minimal, accessible Astro blog theme"
+  },
+  {
+    "id": "vite-react",
+    "name": "Vite + React",
+    "tech": "react",
+    "repo": "SafdarJamal/vite-template-react",
+    "branch": "main",
+    "stars": "",
+    "blurb": "Minimal React + Vite SPA starter"
   }
 ]
