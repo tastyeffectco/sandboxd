@@ -15,9 +15,14 @@ rewrite framework config. You adopt it explicitly (Copy YAML / Ask agent / manua
 edit), then **restart the sandbox** so runtimed re-reads the new `sandbox.yaml`.
 
 > **Presets vs imports.** When you create an app from a **sandboxd preset**,
-> sandboxd may write the runtime files needed to run it immediately (that's the
-> point of a preset). For a **Git-imported repo**, recipes are advisory only —
-> sandboxd never silently mutates the repo's files.
+> sandboxd writes the runtime files needed to run it immediately (that's the
+> point of a preset). For a **Git-imported repo**, detection is advisory — the
+> **core** never writes anything. Note that a **client** may act on the
+> suggestion: the console auto-applies the detected `sandbox.yaml` on import (and
+> writes a per-app `AGENTS.md`), always with an **Undo** and never overwriting a
+> repo's existing files. The distinction that matters for the contract: the
+> *engine* mutates nothing; a *client* choosing to apply a suggestion is a client
+> decision over `/v1`.
 
 See [`sandbox-manifest.md`](./sandbox-manifest.md) for the full schema and
 [`git-workflow.md`](./git-workflow.md) for the import flow.
@@ -156,8 +161,9 @@ matching suggestion (with `suggested_manifest`, `config_snippets`, and `notes`).
   not a provisioned DB server. No separate DB container, no Compose.
 - **No executable scripts/hooks** — a recipe is declarative `sandbox.yaml` text +
   notes. Core never runs it; the agent or user applies it.
-- **No auto-apply** — `runtime-inspect` suggests; the console offers Copy YAML /
-  Ask agent. There is no write/PUT endpoint.
+- **Core never auto-applies** — `runtime-inspect` only suggests; the engine has
+  no path that writes a detected manifest. A client (e.g. the console) may apply
+  a suggestion by PUT-ing the file over `/v1` — that's a client action, with Undo.
 
 ## Service recipes (self-contained app + SQLite)
 

@@ -1,17 +1,24 @@
 # Git workflow (optional)
 
-**Status: feature branches `feat/v0.4.2-git-credentials` → `feat/v0.4.8-git-push`,
-stacked off `release/v0.4-apps-console`. Post-v0.4.0; NOT in the v0.4.0 launch and
-NOT on `main`.**
-
 Git support is an **optional workflow layered on top of sandboxd core** — a way to
-import a private repo into an app, inspect what the agent changed, and commit/push
-it back. It is driven entirely through the public `/v1` API; the web console adds a
-UI for it, but the console is optional and the core engine works without any of
-this. If you never touch the Git endpoints, nothing here is active.
+import a repo into an app, inspect what the agent changed, and commit/push it back.
+It is driven entirely through the public `/v1` API; the web console adds a UI for
+it, but the console is optional and the core engine works without any of this. If
+you never touch the Git endpoints, nothing here is active.
 
-It is intentionally small and PAT-based: **HTTPS + a personal access token only**
-— no SSH, no GitHub/GitLab App, no OAuth, no provider APIs.
+It is intentionally small and HTTPS-based (no SSH, no GitHub/GitLab App, no
+provider APIs). Two import modes:
+
+- **Public repos** — a curated **starter project** or any public URL clones
+  **tokenless**: pass `git:{repo_url, branch}` with **no** `credential_id`. The
+  URL is tokenless and `GIT_TERMINAL_PROMPT=0` makes a private repo fail cleanly
+  rather than hang.
+- **Private repos** — reference an encrypted, owner-scoped **PAT** by
+  `credential_id`; it is decrypted host-side at clone time via a `GIT_ASKPASS`
+  helper and never enters the sandbox.
+
+For claude-code subscriptions there is also a real server-side OAuth flow (see
+[`agent-auth.md`](./agent-auth.md)) — that is agent auth, separate from Git PATs.
 
 ---
 
@@ -32,7 +39,8 @@ It is intentionally small and PAT-based: **HTTPS + a personal access token only*
 | Step | Endpoint | Where it runs |
 |---|---|---|
 | Credentials | `POST` / `GET /v1/git-credentials`, `DELETE /v1/git-credentials/{id}` | control plane |
-| Import | `POST /v1/apps` with a `git: {repo_url, branch, credential_id}` block | clone host-side |
+| Import (public) | `POST /v1/apps` with `git: {repo_url, branch}` (no credential) | clone host-side, tokenless |
+| Import (private) | `POST /v1/apps` with `git: {repo_url, branch, credential_id}` | clone host-side, via PAT |
 | Runtime detect | `GET /v1/apps/{id}/runtime-inspect` | control plane (read-only) |
 | Status | `GET /v1/apps/{id}/git/status` | **in-sandbox** |
 | Diff | `GET /v1/apps/{id}/git/diff?path=` | **in-sandbox** |
