@@ -24,6 +24,7 @@ tags:
 paths:
   /v1/settings:
     get:
+      operationId: getSettings
       tags: [apps]
       summary: Read-only instance/settings summary (safe metadata only; no secrets)
       responses:
@@ -31,53 +32,9 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  version: { type: string }
-                  git_commit: { type: string }
-                  networking:
-                    type: object
-                    properties:
-                      preview_domain: { type: string }
-                      public_http_port: { type: string }
-                      preview_base: { type: string }
-                      preview_tls: { type: boolean }
-                      preview_entrypoint: { type: string }
-                  auth:
-                    type: object
-                    properties:
-                      enabled: { type: boolean }
-                  runtime:
-                    type: object
-                    properties:
-                      storage_mode: { type: string }
-                      base_image: { type: string }
-                  lifecycle:
-                    type: object
-                    properties:
-                      idle_reap_enabled: { type: boolean }
-                      idle_threshold_seconds: { type: integer }
-                      keepalive_max_seconds: { type: integer }
-                  egress:
-                    type: object
-                    properties:
-                      mode: { type: string }
-                  agents:
-                    type: object
-                    properties:
-                      providers: { type: array, items: { type: string } }
-                      system_prompt: { type: string, description: "Read-only platform system prompt appended to every agent run (rendered with default port/health for display; runtimed renders per-sandbox values at task time)." }
-                  presets:
-                    type: array
-                    items: { $ref: "#/components/schemas/Preset" }
-                  capabilities:
-                    type: object
-                    additionalProperties: { type: boolean }
-                  editable:
-                    type: array
-                    items: { type: string }
+              schema: { $ref: "#/components/schemas/Settings" }
     patch:
+      operationId: updateSettings
       tags: [apps]
       summary: Edit the runtime-editable lifecycle tunables only (allowlisted)
       description: >
@@ -98,7 +55,10 @@ paths:
                     keepalive_max_seconds: { type: integer }
       responses:
         "200":
-          description: Updated settings (same shape as GET /v1/settings).
+          description: Updated settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
         "400": { $ref: "#/components/responses/Error" }
         "503":
           description: Settings are not editable on this instance.
@@ -108,6 +68,7 @@ paths:
 
   /v1/git-credentials:
     post:
+      operationId: createGitCredential
       tags: [apps]
       summary: Store an owner-scoped Git credential (token write-only, encrypted at rest). Returns metadata only.
       requestBody:
@@ -128,6 +89,7 @@ paths:
         "409": { description: A credential with that name already exists }
         "503": { description: Credential store not configured }
     get:
+      operationId: listGitCredentials
       tags: [apps]
       summary: List the tenant's Git credentials (metadata only — no token)
       responses:
@@ -152,6 +114,7 @@ paths:
                         updated_at: { type: string }
   /v1/git-credentials/{id}:
     delete:
+      operationId: deleteGitCredential
       tags: [apps]
       summary: Delete a Git credential (owner-scoped)
       parameters:
@@ -162,6 +125,7 @@ paths:
 
   /v1/agents:
     get:
+      operationId: listAgents
       tags: [apps]
       summary: List coding-agent providers with installed + connected status (read-only, no tokens)
       responses:
@@ -188,6 +152,7 @@ paths:
 
   /v1/agents/{provider}/import:
     post:
+      operationId: importAgentCredential
       tags: [apps]
       summary: Connect a provider by subscription — import the credential bundle its `<cli> login` produced (opaque, never parsed).
       parameters:
@@ -207,6 +172,7 @@ paths:
         "503": { description: Agent auth not configured }
   /v1/agents/{provider}/api-key:
     post:
+      operationId: setAgentApiKey
       tags: [apps]
       summary: Connect a provider by API key (opaque). Injected as the provider's key env var at task time only.
       parameters:
@@ -226,6 +192,7 @@ paths:
         "503": { description: Agent auth not configured }
   /v1/agents/{provider}/disconnect:
     post:
+      operationId: disconnectAgent
       tags: [apps]
       summary: Disconnect a provider — deletes the stored auth dir.
       parameters:
@@ -236,6 +203,7 @@ paths:
         "503": { description: Agent auth not configured }
   /v1/agents/claude-code/oauth/start:
     post:
+      operationId: startClaudeOAuth
       tags: [apps]
       summary: Begin the guided Claude subscription login — returns the authorize URL the user opens in a browser.
       responses:
@@ -250,6 +218,7 @@ paths:
         "503": { description: OAuth not configured }
   /v1/agents/claude-code/oauth/finish:
     post:
+      operationId: finishClaudeOAuth
       tags: [apps]
       summary: Complete the login — exchange the pasted code for tokens, stored host-side (never returned). Refreshed automatically thereafter.
       requestBody:
@@ -268,6 +237,7 @@ paths:
 
   /v1/presets:
     get:
+      operationId: listPresets
       tags: [apps]
       summary: List available runtime presets
       responses:
@@ -284,6 +254,7 @@ paths:
 
   /v1/apps:
     get:
+      operationId: listApps
       tags: [apps]
       summary: List apps (tenant-scoped)
       parameters:
@@ -303,6 +274,7 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/App" }
     post:
+      operationId: createApp
       tags: [apps]
       summary: Create an app
       requestBody:
@@ -322,6 +294,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: getApp
       tags: [apps]
       summary: Get an app
       responses:
@@ -332,6 +305,7 @@ paths:
               schema: { $ref: "#/components/schemas/App" }
         "404": { $ref: "#/components/responses/Error" }
     patch:
+      operationId: updateApp
       tags: [apps]
       summary: Update an app (partial)
       requestBody:
@@ -347,6 +321,7 @@ paths:
               schema: { $ref: "#/components/schemas/App" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
+      operationId: deleteApp
       tags: [apps]
       summary: Delete an app and EVERYTHING it owns — purges every sandbox (container, workspace image, snapshots) and all app rows (config, events, snapshots). Irreversible.
       responses:
@@ -357,6 +332,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
+      operationId: createAppSandbox
       tags: [apps]
       summary: Create the app's current sandbox (one live sandbox per app)
       requestBody:
@@ -386,6 +362,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: listAppSnapshots
       tags: [apps]
       summary: List snapshots captured from this app (tenant-scoped, newest first)
       responses:
@@ -405,6 +382,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
+      operationId: restoreApp
       tags: [apps]
       summary: Restore the app from a snapshot (REPLACES its current sandbox)
       description: >
@@ -433,6 +411,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
+      operationId: forkApp
       tags: [apps]
       summary: Fork a snapshot into a new app (source app untouched)
       requestBody:
@@ -462,6 +441,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: listAppEvents
       tags: [apps]
       summary: App activity timeline (newest-first, tenant-scoped)
       description: >
@@ -493,6 +473,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: streamTaskEvents
       tags: [tasks]
       summary: Task activity timeline (newest-first, tenant-scoped)
       parameters:
@@ -517,6 +498,7 @@ paths:
 
   /v1/runtime/manifest/validate:
     post:
+      operationId: validateManifest
       tags: [apps]
       summary: Validate a sandbox.yaml manifest (stateless; nothing is applied or written).
       requestBody:
@@ -538,6 +520,7 @@ paths:
 
   /v1/runtime/recipes:
     get:
+      operationId: listRecipes
       tags: [apps]
       summary: List the embedded advisory runtime recipes (per-framework sandbox.yaml guidance). Read-only data; nothing is applied.
       responses:
@@ -581,6 +564,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: getAppManifest
       tags: [apps]
       summary: The app's current sandbox.yaml (or the preset/default that would apply), validated. Owner-scoped, read-only.
       responses:
@@ -603,6 +587,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: inspectAppRuntime
       tags: [apps]
       summary: Advisory runtime detection for the app's workspace (read-only; no code run, no credentials). Suggestions only — never applied.
       responses:
@@ -642,6 +627,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: getAppGitStatus
       tags: [apps]
       summary: Read-only Git status for the app's workspace (runs in-sandbox; no network, no credentials, no fetch/commit/push).
       responses:
@@ -684,6 +670,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: getAppGitDiff
       tags: [apps]
       summary: Read-only unified Git diff (working tree vs HEAD) for the app's workspace. In-sandbox; no network/credentials.
       parameters:
@@ -710,6 +697,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
+      operationId: commitAppGit
       tags: [apps]
       summary: Local Git commit of selected workspace changes (B1). Runs in-sandbox; no credentials, no network, no push.
       description: >
@@ -751,6 +739,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
+      operationId: pushAppGit
       tags: [apps]
       summary: Push locally-committed changes to the app's remote (B2). Host-side/control-plane; new branch only, no force, no PR.
       description: >
@@ -791,6 +780,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: listAppConfig
       tags: [apps]
       summary: List an app's config entries (metadata; secret values redacted)
       description: >
@@ -810,6 +800,7 @@ paths:
                     items: { $ref: "#/components/schemas/ConfigItem" }
         "404": { $ref: "#/components/responses/Error" }
     post:
+      operationId: createAppConfig
       tags: [apps]
       summary: Create a config entry (set sensitive=true to encrypt at rest)
       description: >
@@ -844,6 +835,7 @@ paths:
         required: true
         schema: { type: string }
     patch:
+      operationId: updateAppConfig
       tags: [apps]
       summary: Update a config entry (value, sensitivity, or access policy)
       description: >
@@ -864,6 +856,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
+      operationId: deleteAppConfig
       tags: [apps]
       summary: Delete a config entry
       responses:
@@ -872,6 +865,7 @@ paths:
 
   /v1/sandboxes:
     post:
+      operationId: createSandbox
       tags: [sandboxes]
       summary: Create a sandbox (programmatic; apps usually use /v1/apps/{id}/sandbox)
       requestBody:
@@ -891,6 +885,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      operationId: getSandbox
       tags: [sandboxes]
       summary: Get a sandbox (status + live preview state)
       responses:
@@ -901,6 +896,7 @@ paths:
               schema: { $ref: "#/components/schemas/Sandbox" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
+      operationId: deleteSandbox
       tags: [sandboxes]
       summary: Destroy the sandbox (container + workspace)
       responses:
@@ -910,6 +906,7 @@ paths:
   /v1/sandboxes/{id}/start:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
+      operationId: startSandbox
       tags: [sandboxes]
       summary: Start (wake) a stopped sandbox. Idempotent when running.
       responses:
@@ -928,6 +925,7 @@ paths:
   /v1/sandboxes/{id}/stop:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
+      operationId: stopSandbox
       tags: [sandboxes]
       summary: Stop a running sandbox (frees RAM; wakes on start). Idempotent when stopped.
       responses:
@@ -945,6 +943,7 @@ paths:
   /v1/sandboxes/{id}/tasks:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
+      operationId: submitTask
       tags: [tasks]
       summary: Submit a coding-agent task (wakes a stopped sandbox first)
       requestBody:
@@ -980,6 +979,7 @@ paths:
         required: true
         schema: { type: string }
     get:
+      operationId: getTask
       tags: [tasks]
       summary: Get a task's canonical result
       responses:
@@ -998,6 +998,7 @@ paths:
         required: true
         schema: { type: string }
     get:
+      operationId: streamSandboxTaskEvents
       tags: [tasks]
       summary: Live task event stream (Server-Sent Events)
       description: >
@@ -1018,6 +1019,7 @@ paths:
         required: true
         schema: { type: string }
     post:
+      operationId: cancelTask
       tags: [tasks]
       summary: Cancel a running task
       responses:
@@ -1026,11 +1028,32 @@ paths:
   /v1/sandboxes/{id}/files:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
+      operationId: listSandboxFiles
       tags: [sandboxes]
       summary: List workspace files
+      parameters:
+        - { in: query, name: path, schema: { type: string }, description: "Directory relative to the app dir (default '.')." }
+        - { in: query, name: recursive, schema: { type: boolean } }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string }
+                  recursive: { type: boolean }
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path: { type: string, description: "Relative to the app dir." }
+                        type: { type: string, enum: [file, dir] }
+                        size: { type: integer }
     put:
+      operationId: putSandboxFile
       tags: [sandboxes]
       summary: Write a workspace file (atomic)
       description: >
@@ -1065,6 +1088,7 @@ paths:
   /v1/sandboxes/{id}/files/content:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
+      operationId: getSandboxFileContent
       tags: [sandboxes]
       summary: Read a workspace file
       parameters:
@@ -1072,8 +1096,14 @@ paths:
           name: path
           required: true
           schema: { type: string }
+          description: "Path relative to the APP dir (e.g. `AGENTS.md`). Note: read is app-relative, whereas PUT /files is mount-relative."
       responses:
-        "200": { description: OK }
+        "200":
+          description: Raw file content.
+          content:
+            text/plain:
+              schema: { type: string }
+        "404": { description: No such file }
 
   /v1/sandboxes/{id}/processes/{name}/logs:
     parameters:
@@ -1084,6 +1114,7 @@ paths:
         schema: { type: string }
         description: Process name ([A-Za-z0-9_-], e.g. "web" or a worker name).
     get:
+      operationId: getProcessLogs
       tags: [sandboxes]
       summary: Tail a supervised process's logs (read-only)
       parameters:
@@ -1110,6 +1141,7 @@ paths:
   /v1/sandboxes/{id}/export:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
+      operationId: exportSandbox
       tags: [sandboxes]
       summary: Export the workspace as a zip
       responses:
@@ -1121,6 +1153,7 @@ paths:
 
   /v1/snapshots:
     get:
+      operationId: listSnapshots
       tags: [snapshots]
       summary: List snapshots (tenant-scoped)
       responses:
@@ -1135,6 +1168,7 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/Snapshot" }
     post:
+      operationId: createSnapshot
       tags: [snapshots]
       summary: Capture a snapshot of a stopped sandbox
       requestBody:
@@ -1162,6 +1196,7 @@ paths:
   /v1/snapshots/{id}:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
+      operationId: getSnapshot
       tags: [snapshots]
       summary: Get a snapshot
       responses:
@@ -1172,6 +1207,7 @@ paths:
               schema: { $ref: "#/components/schemas/Snapshot" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
+      operationId: deleteSnapshot
       tags: [snapshots]
       summary: Delete a snapshot
       responses:
@@ -1195,6 +1231,53 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    Settings:
+      type: object
+      description: Read-only instance summary (GET /v1/settings) and the shape returned by PATCH.
+      properties:
+        version: { type: string }
+        git_commit: { type: string }
+        networking:
+          type: object
+          properties:
+            preview_domain: { type: string }
+            public_http_port: { type: string }
+            preview_base: { type: string }
+            preview_tls: { type: boolean }
+            preview_entrypoint: { type: string }
+        auth:
+          type: object
+          properties:
+            enabled: { type: boolean }
+        runtime:
+          type: object
+          properties:
+            storage_mode: { type: string }
+            base_image: { type: string }
+        lifecycle:
+          type: object
+          properties:
+            idle_reap_enabled: { type: boolean }
+            idle_threshold_seconds: { type: integer }
+            keepalive_max_seconds: { type: integer }
+        egress:
+          type: object
+          properties:
+            mode: { type: string }
+        agents:
+          type: object
+          properties:
+            providers: { type: array, items: { type: string } }
+            system_prompt: { type: string, description: "Read-only platform system prompt appended to every agent run." }
+        presets:
+          type: array
+          items: { $ref: "#/components/schemas/Preset" }
+        capabilities:
+          type: object
+          additionalProperties: { type: boolean }
+        editable:
+          type: array
+          items: { type: string }
     Error:
       type: object
       properties:
