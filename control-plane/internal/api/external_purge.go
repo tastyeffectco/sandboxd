@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 )
 
 // purgeOne is the irreversible per-sandbox teardown shared by all

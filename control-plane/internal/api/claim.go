@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // claimReq is the body of POST /sandbox/{id}/claim.

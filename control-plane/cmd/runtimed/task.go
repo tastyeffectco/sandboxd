@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/agentprompt"
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentprompt"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 var errTaskInProgress = errors.New("a task is already in progress")

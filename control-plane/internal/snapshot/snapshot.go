@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/idlock"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // tsLayout is the timestamp format embedded in snapshot filenames.

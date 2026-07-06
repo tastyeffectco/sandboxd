@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/instancecfg"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/instancecfg"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func newSettingsServer(t *testing.T) *Server {

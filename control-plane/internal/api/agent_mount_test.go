@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
 func connect(t *testing.T, st *agentauth.Store, provider string) {

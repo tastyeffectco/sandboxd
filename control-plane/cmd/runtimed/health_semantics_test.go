@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 func webStatus(p runtime.PreviewStatus) runtime.Status {

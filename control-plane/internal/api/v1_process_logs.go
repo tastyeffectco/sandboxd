@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 const (

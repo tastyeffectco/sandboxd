@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sandboxd/control-plane/internal/manifest"
-	"github.com/sandboxd/control-plane/internal/recipes"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/recipes"
 )
 
 // osReadFile/osExists read a workspace-relative file under root, refusing any

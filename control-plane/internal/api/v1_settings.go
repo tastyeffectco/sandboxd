@@ -11,10 +11,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/agentprompt"
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/preset"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentprompt"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // InstanceInfo is the static, safe instance metadata, populated once in main

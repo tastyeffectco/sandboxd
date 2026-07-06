@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/gitimport"
-	"github.com/sandboxd/control-plane/internal/idlock"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/gitimport"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // wsFake models a workspace's change set: a commit removes the committed paths,

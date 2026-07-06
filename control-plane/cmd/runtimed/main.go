@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/preset"
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 const version = "0.1.0"

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // fakeExecer returns canned ExecResults keyed by the git subcommand.

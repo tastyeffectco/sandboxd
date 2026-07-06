@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 // claudeCodeAgent drives the official Claude Code CLI:

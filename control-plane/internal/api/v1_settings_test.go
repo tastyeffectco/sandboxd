@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 )
 
 // GET /v1/settings returns a stable, safe shape and never leaks the encryption

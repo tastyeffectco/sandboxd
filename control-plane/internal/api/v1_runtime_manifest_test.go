@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/manifest"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func TestValidateManifestEndpoint(t *testing.T) {

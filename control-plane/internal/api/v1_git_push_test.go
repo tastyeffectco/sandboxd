@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/gitimport"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/gitimport"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 type fakePusher struct {

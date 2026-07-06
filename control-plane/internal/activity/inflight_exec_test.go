@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
-	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 )
 
 func inflightGauge(t *testing.T) float64 {

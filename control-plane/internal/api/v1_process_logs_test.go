@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/loopback"
-	"github.com/sandboxd/control-plane/internal/runtime"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func newProcLogsServer(t *testing.T) (*Server, string, string) {

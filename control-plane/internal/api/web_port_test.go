@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/store"
-	"github.com/sandboxd/control-plane/internal/traefik"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/traefik"
 )
 
 func TestPresetWebPort(t *testing.T) {

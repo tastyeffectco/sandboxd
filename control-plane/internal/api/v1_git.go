@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // sandboxAppDir is the FIXED in-container path of the app workspace (the mnt is
