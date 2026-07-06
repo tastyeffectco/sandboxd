@@ -123,8 +123,10 @@ How an app actually runs, layered create-time → run-time:
 3. **`sandbox.yaml`** — the manifest runtimed reads: the `web` process (previewed),
    N background `workers`, the post-task `build` check, `health`, and
    `restart_after_task`. Full schema: `docs/sandbox-manifest.md`.
-4. **Starter / import** — the app's source code (seeded from the preset's
-   template; Git/private-repo import is not implemented yet).
+4. **Starter / import** — the app's source code: seeded from a preset template,
+   or cloned from Git. Public repos (curated starters or any public URL) clone
+   **tokenless**; private repos reference an encrypted credential, decrypted
+   control-plane-side and never exposed to the sandbox. See the Git section below.
 5. **Snapshot** — a capture of the app **workspace state**, deliberately
    **excluding** installed dependencies and build output
    (`node_modules`, `.next`, `out`, `.venv`, `__pycache__`, `.cache`).

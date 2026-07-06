@@ -67,6 +67,7 @@ paths:
                     type: object
                     properties:
                       providers: { type: array, items: { type: string } }
+                      system_prompt: { type: string, description: "Read-only platform system prompt appended to every agent run (rendered with default port/health for display; runtimed renders per-sandbox values at task time)." }
                   presets:
                     type: array
                     items: { $ref: "#/components/schemas/Preset" }
@@ -1236,12 +1237,16 @@ components:
         runtime_preset: { type: string, description: "Runtime preset id; see GET /v1/presets." }
         git:
           type: object
-          description: "Import from a private HTTPS repo (Git A1). The token is referenced by credential_id (from /v1/git-credentials), never inline; it is decrypted control-plane-side at clone time and never enters the sandbox."
-          required: [repo_url, credential_id]
+          description: >-
+            Import from an HTTPS repo. PUBLIC repos (curated starters or any public URL)
+            clone tokenless — omit credential_id. PRIVATE repos reference a token by
+            credential_id (from /v1/git-credentials), never inline; it is decrypted
+            control-plane-side at clone time and never enters the sandbox.
+          required: [repo_url]
           properties:
             repo_url: { type: string, description: "HTTPS repo URL, tokenless (no credentials in the URL)." }
             branch: { type: string, description: "Branch to clone (default main)." }
-            credential_id: { type: string, description: "Owner-scoped git_credential id." }
+            credential_id: { type: string, description: "Owner-scoped git_credential id. Omit for a public tokenless clone." }
     PatchAppRequest:
       type: object
       properties:
