@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/recipes"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/recipes"
 )
 
 func TestRuntimeRecipesEndpoint(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
 )
 
 func TestAllLoadAndValidate(t *testing.T) {

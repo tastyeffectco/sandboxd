@@ -20,8 +20,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sandboxd/control-plane/internal/manifest"
-	"github.com/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
 )
 
 //go:embed data/*.yaml

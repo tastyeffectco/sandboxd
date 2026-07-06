@@ -16,11 +16,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/events"
-	"github.com/sandboxd/control-plane/internal/preset"
-	"github.com/sandboxd/control-plane/internal/runtime"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // defaultTemplate is the one fixed snapshot variant in v1.

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/sandboxd/control-plane/internal/detect"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/detect"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // GET /v1/apps/{id}/runtime-inspect

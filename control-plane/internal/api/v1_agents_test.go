@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
 func newAgentsServer(t *testing.T, installed map[string]string) (*Server, *agentauth.Store) {

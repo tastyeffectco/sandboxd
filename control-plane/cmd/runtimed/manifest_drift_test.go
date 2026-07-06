@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/manifest"
-	"github.com/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
 )
 
 // TestPresetManifestParsersAgree guards against drift between the control-plane

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/auth"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func newPresetTestServer(t *testing.T) *Server {

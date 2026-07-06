@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func inspectServer(t *testing.T) (*Server, *store.App) {

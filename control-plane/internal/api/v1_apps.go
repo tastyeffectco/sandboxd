@@ -13,11 +13,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/events"
-	"github.com/sandboxd/control-plane/internal/gitimport"
-	"github.com/sandboxd/control-plane/internal/preset"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/gitimport"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // v1AppGit is the git block on create (token referenced by credential_id, never

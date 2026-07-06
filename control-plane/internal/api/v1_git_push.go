@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/events"
-	"github.com/sandboxd/control-plane/internal/gitimport"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/gitimport"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // pushRunner is the host-side git seam (real impl = gitimport.Runner; faked in tests).

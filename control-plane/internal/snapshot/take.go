@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/metrics"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // Take produces one snapshot of sandbox id's loopback `.img`.

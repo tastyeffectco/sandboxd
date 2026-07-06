@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
 func newImportServer(t *testing.T) (*Server, *agentauth.Store) {

@@ -20,9 +20,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/events"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // v1ListAppSnapshots — GET /v1/apps/{id}/snapshots. Tenant- and

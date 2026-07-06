@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/events"
-	"github.com/sandboxd/control-plane/internal/runtime"
-	"github.com/sandboxd/control-plane/internal/secrets"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func newEventsTestServer(t *testing.T) (*Server, *store.App) {

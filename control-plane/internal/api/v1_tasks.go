@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/sandboxd/control-plane/internal/agentauth"
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/events"
-	"github.com/sandboxd/control-plane/internal/runtime"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // runtimeClientFor builds a runtime.Client for a sandbox's runtimed.

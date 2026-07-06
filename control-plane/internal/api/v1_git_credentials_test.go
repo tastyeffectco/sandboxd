@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/auth"
-	"github.com/sandboxd/control-plane/internal/secrets"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // gitAuditSink records every InsertAudit call so a test can assert no secret

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/idlock"
-	"github.com/sandboxd/control-plane/internal/secrets"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 func appsGitServer(t *testing.T) *Server {

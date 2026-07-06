@@ -17,7 +17,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
 // provider validates {provider} against the registry, returning it and writing a

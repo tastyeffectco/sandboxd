@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/auth"
-	"github.com/sandboxd/control-plane/internal/metrics"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // handleForwardAuth is called by Traefik's forwardAuth middleware on

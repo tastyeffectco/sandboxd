@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/idlock"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // commitFake routes git subcommands to canned results and records every argv.

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
 // agentAuthBaseDir is the in-container parent of per-provider auth mounts

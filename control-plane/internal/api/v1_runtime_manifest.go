@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sandboxd/control-plane/internal/manifest"
-	"github.com/sandboxd/control-plane/internal/preset"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 type v1ValidateManifestReq struct {

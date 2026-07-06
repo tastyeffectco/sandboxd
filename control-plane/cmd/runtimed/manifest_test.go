@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 var testDefaults = Defaults{

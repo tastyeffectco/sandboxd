@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
 )
 
 var presetTestLog = slog.New(slog.NewTextHandler(io.Discard, nil))
