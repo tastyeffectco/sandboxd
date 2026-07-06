@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, App as TApp, Preset, GitCredential } from './api'
 import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
+import { PRESET_ICONS } from './design/presetIcons'
 import { AppView } from './AppView'
 import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
@@ -107,6 +108,15 @@ export default function App() {
   )
 }
 
+// Short label + tagline per preset (cleaner than the API's full sentences).
+const PRESET_META: Record<string, { short: string; tag: string }> = {
+  'react-vite': { short: 'React', tag: 'Vite SPA · hot reload' },
+  nextjs: { short: 'Next.js', tag: 'App Router · SSR' },
+  'node-express': { short: 'Express', tag: 'Node REST API' },
+  fastapi: { short: 'FastAPI', tag: 'Python REST API' },
+  worker: { short: 'Worker', tag: 'Background · no preview' },
+}
+
 function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; reload: () => void; onOpen: (id: string) => void; onError: (m: string) => void; goStore: () => void }) {
   const [name, setName] = useState('')
   const [mode, setMode] = useState<'template' | 'git'>('template')
@@ -161,23 +171,37 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {modeChip('template', 'Start from a template')}
           {modeChip('git', 'Import from Git')}
-          {mode === 'template' ? (
-            <select value={preset} onChange={(e) => setPreset(e.target.value)} data-testid="app-preset" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
-              <option value="">Template…</option>
-              {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          ) : (
-            <>
-              <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ flex: 1, fontSize: 12.5 }} data-testid="git-repo-url" />
-              <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch" style={{ width: 120, fontSize: 12.5 }} data-testid="git-branch" />
-              <select value={credId} onChange={(e) => setCredId(e.target.value)} data-testid="git-cred" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
-                <option value="">Credential…</option>
-                {creds.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            </>
-          )}
           <span style={{ color: c.muted2, fontSize: 12, marginLeft: 'auto' }}>Want a ready-made app? Browse the <a onClick={goStore} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }}>App Store</a>.</span>
         </div>
+
+        {mode === 'template' ? (
+          <div data-testid="app-preset" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(158px,1fr))', gap: 10, marginTop: 14 }}>
+            {presets.map((p) => {
+              const meta = PRESET_META[p.id] || { short: p.label, tag: p.description }
+              const active = preset === p.id
+              return (
+                <div key={p.id} data-testid={`preset-${p.id}`} onClick={() => setPreset(active ? '' : p.id)} className="dc-hoverborder"
+                  style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 8, padding: '13px 13px 12px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${active ? c.ink : c.border}`, background: active ? c.panel2 : c.panel, boxShadow: active ? `inset 0 0 0 1px ${c.ink}` : 'none' }}>
+                  {active && <span style={{ position: 'absolute', top: 9, right: 9, width: 16, height: 16, borderRadius: '50%', background: c.ink, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</span>}
+                  <span className="prov-ico" style={{ width: 26, height: 26 }} dangerouslySetInnerHTML={{ __html: PRESET_ICONS[p.id] || '' }} />
+                  <div>
+                    <div style={{ fontFamily: font.display, fontWeight: 600, fontSize: 13.5 }}>{meta.short}</div>
+                    <div style={{ color: c.muted2, fontSize: 11.5, lineHeight: 1.35, marginTop: 1 }}>{meta.tag}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+            <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ flex: 1, minWidth: 220, fontSize: 12.5 }} data-testid="git-repo-url" />
+            <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch" style={{ width: 120, fontSize: 12.5 }} data-testid="git-branch" />
+            <select value={credId} onChange={(e) => setCredId(e.target.value)} data-testid="git-cred" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
+              <option value="">Credential…</option>
+              {creds.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+        )}
         {mode === 'git' && creds.length === 0 && (
           <div style={{ marginTop: 8, fontSize: 12, color: c.warn }} data-testid="git-no-creds">No Git credentials yet — add a personal access token in <b>Settings → Git credentials</b> first. Cloning runs control-plane-side, so a credential is required even for public repos.</div>
         )}
