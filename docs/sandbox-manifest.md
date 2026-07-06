@@ -26,9 +26,11 @@ existing apps keep working unchanged. runtimed reads the manifest on (re)start.
 > "Final acceptance" below). `GET /v1/sandboxes/{id}` includes `processes[]`;
 > `GET /v1/sandboxes/{id}/processes/{name}/logs` tails a process's log;
 > `GET /v1/presets` lists the five presets and `runtime_preset` is accepted on
-> app/sandbox create. Remaining items are **non-blocking follow-ups** (see end).
-> 7C-2 (manifest view/edit/validate, advanced override, agent-instructions,
-> app+DB preset) is **not started**.
+> app/sandbox create. Manifest view/validate now ship:
+> `GET /v1/apps/{id}/runtime/manifest` (effective manifest) and
+> `POST /v1/runtime/manifest/validate` (validate a `sandbox.yaml`), plus advisory
+> detection at `GET /v1/apps/{id}/runtime-inspect`. Advanced override UI and an
+> app+DB preset remain follow-ups.
 
 ## Schema (version 1)
 
