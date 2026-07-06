@@ -78,7 +78,7 @@ func TestAppGitImportValidation(t *testing.T) {
 		{`{"name":"a","git":{"repo_url":"https://github.com/o/r","branch":"-evil","credential_id":"` + cid + `"}}`, "tenantA", 400, "bad branch"},
 		{`{"name":"a","git":{"repo_url":"https://github.com/o/r","credential_id":"01NONEXISTENT"}}`, "tenantA", 404, "unknown credential"},
 		{`{"name":"a","git":{"repo_url":"https://github.com/o/r","credential_id":"` + cid + `"}}`, "tenantB", 404, "cross-owner credential"},
-		{`{"name":"a","git":{"repo_url":"https://github.com/o/r"}}`, "tenantA", 400, "missing credential_id"},
+		{`{"name":"a","git":{"repo_url":"https://github.com/o/r"}}`, "tenantA", 201, "no credential_id → public tokenless import allowed"},
 	}
 	for _, c := range cases {
 		w := createApp(s, c.body, c.owner)

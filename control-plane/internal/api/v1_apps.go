@@ -159,23 +159,23 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 			writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid git.branch")
 			return
 		}
-		if req.Git.CredentialID == "" {
-			writeV1Err(w, http.StatusBadRequest, "invalid_request", "git.credential_id is required for import")
-			return
-		}
-		// owner-scoped existence check (cross-owner / unknown -> 404)
-		if s.Secrets == nil {
-			writeV1Err(w, http.StatusServiceUnavailable, "unavailable", "credential store not configured")
-			return
-		}
-		_, _, found, err := s.Store.GetGitCredentialSecret(r.Context(), tenantToken(r), req.Git.CredentialID)
-		if err != nil {
-			writeV1Err(w, http.StatusInternalServerError, "internal", "credential lookup failed")
-			return
-		}
-		if !found {
-			writeV1Err(w, http.StatusNotFound, "not_found", "no such git credential")
-			return
+		// An empty credential_id means a PUBLIC repo (a curated starter or any
+		// public URL) — cloned tokenless. Only validate the credential when one
+		// is provided (private import).
+		if req.Git.CredentialID != "" {
+			if s.Secrets == nil {
+				writeV1Err(w, http.StatusServiceUnavailable, "unavailable", "credential store not configured")
+				return
+			}
+			_, _, found, err := s.Store.GetGitCredentialSecret(r.Context(), tenantToken(r), req.Git.CredentialID)
+			if err != nil {
+				writeV1Err(w, http.StatusInternalServerError, "internal", "credential lookup failed")
+				return
+			}
+			if !found {
+				writeV1Err(w, http.StatusNotFound, "not_found", "no such git credential")
+				return
+			}
 		}
 		app.GitRepoURL = nullStr(req.Git.RepoURL)
 		app.GitBranch = nullStr(branch)
