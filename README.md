@@ -167,9 +167,10 @@ control plane, and starts the stack. The API is then live at
 
 ### 2. Have an agent build an app
 
-The base image already includes the **OpenCode** and **Claude Code** CLIs. Hand
-a sandbox a prompt and watch it build (OpenCode runs on its free plan out of the
-box; to use your own account, **connect a provider** — see below):
+The base image already includes the **OpenCode** and **Claude Code** CLIs, but
+an agent needs a credential to reach its model. **Connect an agent first**
+(OpenCode or Claude Code — see **connect a provider** just below), then hand a
+sandbox a prompt and watch it build:
 
 ```bash
 API=http://127.0.0.1:9090
