@@ -101,7 +101,7 @@ infrastructure underneath it:
 That's months of platform work. sandboxd is that platform, distilled to one
 command:
 
-- ⚡ **One-command install.** `./install.sh` and you have a working API + previews.
+- ⚡ **One-line install.** `curl -fsSL …/install.sh | bash` and you have a working API + previews.
 - 🧠 **Agents included.** The OpenCode and Claude Code CLIs ship in every sandbox;
   hand a sandbox a prompt and it builds.
 - 💸 **Dense by design.** Stop-on-idle + wake-on-request means dozens of sandboxes
@@ -151,9 +151,19 @@ one-offs; reach for it when "just a script" has started keeping you up at night.
 
 ## Quick start
 
-Requirements: **Docker Engine + the Compose plugin**, on Linux. That's it.
+Requirements: **Docker + the Compose plugin** (Docker Engine on Linux, or Docker
+Desktop on macOS) and **git**. That's it.
 
 ### 1. Install
+
+One line — it fetches the repo, builds the images, and starts the stack:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash
+```
+
+<details>
+<summary>Prefer to clone first? (or pin a version)</summary>
 
 ```bash
 git clone https://github.com/tastyeffectco/sandboxd.git
@@ -161,9 +171,17 @@ cd sandboxd
 ./install.sh
 ```
 
+The installer is idempotent and safe to re-run. Override the source with
+`SANDBOXD_REPO_URL` / `SANDBOXD_REF` (branch or tag) when piping.
+</details>
+
 `install.sh` checks Docker, writes a `.env`, builds the sandbox base image + the
 control plane, and starts the stack. The API is then live at
 `http://127.0.0.1:9090` (verify: `curl http://127.0.0.1:9090/healthz` → `ok`).
+
+> **Linux** is the primary target. **macOS** works via Docker Desktop (the
+> installer points the data dir at `~/.sandboxd`, which Docker Desktop shares by
+> default) — treat it as best-effort for local development.
 
 ### 2. Have an agent build an app
 
