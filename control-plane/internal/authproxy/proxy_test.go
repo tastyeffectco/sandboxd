@@ -10,7 +10,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
-func writeCred(t *testing.T, st *agentauth.Store, body string) {
+func writeClaudeOAuth(t *testing.T, st *agentauth.Store, body string) {
 	t.Helper()
 	dir := filepath.Join(st.Dir("claude-code"), ".claude")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -19,6 +19,26 @@ func writeCred(t *testing.T, st *agentauth.Store, body string) {
 	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeAPIKey(t *testing.T, st *agentauth.Store, provider, key string) {
+	t.Helper()
+	if err := os.MkdirAll(st.Dir(provider), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.Dir(provider), agentauth.APIKeyFile), []byte(key), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stubUpstream points a named upstream at a test server for the test's duration.
+func stubUpstream(t *testing.T, name string, h http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	s := httptest.NewServer(h)
+	old := upstreams[name]
+	upstreams[name] = s.URL
+	t.Cleanup(func() { upstreams[name] = old; s.Close() })
+	return s
 }
 
 func TestMergeBeta(t *testing.T) {
@@ -33,62 +53,39 @@ func TestMergeBeta(t *testing.T) {
 	}
 }
 
-func TestToken(t *testing.T) {
-	st := agentauth.NewStore(t.TempDir())
-	p := New(st, nil)
-	// No file => not connected.
-	if _, ok := p.token(); ok {
-		t.Error("no cred => token should be absent")
-	}
-	// Empty accessToken (the corruption case) => not connected.
-	writeCred(t, st, `{"claudeAiOauth":{"accessToken":"","refreshToken":""}}`)
-	if _, ok := p.token(); ok {
-		t.Error("empty accessToken => token should be absent")
-	}
-	// Real token => present.
-	writeCred(t, st, `{"claudeAiOauth":{"accessToken":"sk-ant-REAL","refreshToken":"r"}}`)
-	tok, ok := p.token()
-	if !ok || tok != "sk-ant-REAL" {
-		t.Errorf("token = %q,%v; want sk-ant-REAL,true", tok, ok)
+// Bad path (missing <agent>/<upstream>) → 400, never forwards.
+func TestServeBadPath(t *testing.T) {
+	p := New(agentauth.NewStore(t.TempDir()), nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, httptest.NewRequest("POST", "/v1/messages", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("got %d; want 400", w.Code)
 	}
 }
 
-// A request with no usable credential returns 401 with an actionable message,
-// and never forwards.
+// A valid path but no usable credential → 401 with an actionable message.
 func TestServeNoCredential(t *testing.T) {
-	st := agentauth.NewStore(t.TempDir())
-	p := New(st, nil)
+	p := New(agentauth.NewStore(t.TempDir()), nil)
 	w := httptest.NewRecorder()
-	p.ServeHTTP(w, httptest.NewRequest("POST", "/v1/messages", nil))
+	p.ServeHTTP(w, httptest.NewRequest("POST", "/claude-code/anthropic/v1/messages", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("got %d; want 401", w.Code)
 	}
 }
 
-// The proxy injects the real bearer + oauth beta and drops the sandbox's dummy
-// key before forwarding — verified against a stub "Anthropic".
-func TestInjectsRealBearer(t *testing.T) {
-	var gotAuth, gotKey, gotBeta string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotKey = r.Header.Get("X-Api-Key")
-		gotBeta = r.Header.Get("anthropic-beta")
+// claude-code OAuth: the proxy injects the real bearer + oauth beta, strips the
+// sandbox's dummy key, and forwards the upstream path.
+func TestInjectsClaudeBearer(t *testing.T) {
+	var gotAuth, gotKey, gotBeta, gotPath string
+	stubUpstream(t, "anthropic", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotKey, gotBeta, gotPath = r.Header.Get("Authorization"), r.Header.Get("X-Api-Key"), r.Header.Get("anthropic-beta"), r.URL.Path
 		w.WriteHeader(200)
-	}))
-	defer upstream.Close()
-
+	})
 	st := agentauth.NewStore(t.TempDir())
-	writeCred(t, st, `{"claudeAiOauth":{"accessToken":"REAL-BEARER"}}`)
+	writeClaudeOAuth(t, st, `{"claudeAiOauth":{"accessToken":"REAL-BEARER"}}`)
 	p := New(st, nil)
-	// Point the reverse proxy at the stub instead of api.anthropic.com.
-	target := upstream.URL
-	p.rp.Director = func(r *http.Request) {
-		r.URL.Scheme = "http"
-		r.URL.Host = target[len("http://"):]
-		r.Host = r.URL.Host
-	}
 
-	req := httptest.NewRequest("POST", "/v1/messages", nil)
+	req := httptest.NewRequest("POST", "/claude-code/anthropic/v1/messages", nil)
 	req.Header.Set("X-Api-Key", "sandboxd-proxy-injected") // the dummy the sandbox sent
 	w := httptest.NewRecorder()
 	p.ServeHTTP(w, req)
@@ -101,5 +98,51 @@ func TestInjectsRealBearer(t *testing.T) {
 	}
 	if gotBeta != oauthBeta {
 		t.Errorf("anthropic-beta = %q; want %q", gotBeta, oauthBeta)
+	}
+	if gotPath != "/v1/messages" {
+		t.Errorf("forwarded path = %q; want /v1/messages", gotPath)
+	}
+}
+
+// opencode API key → Zen upstream, injected as a Bearer, dummy stripped.
+func TestInjectsOpencodeZenKey(t *testing.T) {
+	var gotAuth, gotPath string
+	stubUpstream(t, "zen", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotPath = r.Header.Get("Authorization"), r.URL.Path
+		w.WriteHeader(200)
+	})
+	st := agentauth.NewStore(t.TempDir())
+	writeAPIKey(t, st, "opencode", "zen-REAL-KEY")
+	p := New(st, nil)
+
+	req := httptest.NewRequest("POST", "/opencode/zen/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer sandboxd-proxy-injected")
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if gotAuth != "Bearer zen-REAL-KEY" {
+		t.Errorf("Authorization = %q; want the injected real key", gotAuth)
+	}
+	if gotPath != "/v1/chat/completions" {
+		t.Errorf("forwarded path = %q", gotPath)
+	}
+}
+
+// Anthropic API key uses the x-api-key header (not Bearer).
+func TestInjectsAnthropicAPIKeyHeader(t *testing.T) {
+	var gotKey string
+	stubUpstream(t, "anthropic", func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("X-Api-Key")
+		w.WriteHeader(200)
+	})
+	st := agentauth.NewStore(t.TempDir())
+	writeAPIKey(t, st, "claude-code", "sk-ant-REAL")
+	p := New(st, nil)
+
+	req := httptest.NewRequest("POST", "/claude-code/anthropic/v1/messages", nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+	if gotKey != "sk-ant-REAL" {
+		t.Errorf("X-Api-Key = %q; want the injected key", gotKey)
 	}
 }

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -55,90 +53,45 @@ func TestBuildAgentEnvNoOverlayKeepsHome(t *testing.T) {
 	}
 }
 
-// agentEnv keys HOME on the AGENT NAME, so each agent gets its own mounted auth
-// dir — claude-code works even when opencode is also (or only) present.
-func TestAgentEnvPerAgentHome(t *testing.T) {
-	base := t.TempDir()
-	for _, p := range []string{"opencode", "claude-code"} {
-		if err := os.MkdirAll(filepath.Join(base, p), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", base)
-
-	if got := envMap(agentEnv("claude-code", nil))["HOME"]; got != filepath.Join(base, "claude-code") {
-		t.Errorf("claude-code HOME = %q", got)
-	}
-	if got := envMap(agentEnv("opencode", nil))["HOME"]; got != filepath.Join(base, "opencode") {
-		t.Errorf("opencode HOME = %q", got)
-	}
-	// Unmounted agent → no HOME override (runs with default HOME).
-	if got := envMap(agentEnv("codex", nil))["HOME"]; got == filepath.Join(base, "codex") {
-		t.Error("codex has no mounted auth dir; HOME must not point there")
-	}
-}
-
-// When a provider is connected by API key, agentEnv injects its one key env var
-// from the stored file — the single allowlisted exception to the scrub. Other
-// secret-shaped inherited vars are still dropped.
-func TestAgentEnvInjectsAPIKey(t *testing.T) {
-	base := t.TempDir()
-	dir := filepath.Join(base, "claude-code")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	// APIKeyFile is agentauth.APIKeyFile ('.sandboxd-apikey'); write with trailing
-	// newline to confirm it is trimmed.
-	if err := os.WriteFile(filepath.Join(dir, ".sandboxd-apikey"), []byte("sk-ant-INJECTED\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", base)
-	t.Setenv("ANTHROPIC_API_KEY", "sk-inherited-should-be-overridden")
-
-	got := envMap(agentEnv("claude-code", nil))
-	if got["ANTHROPIC_API_KEY"] != "sk-ant-INJECTED" {
-		t.Errorf("ANTHROPIC_API_KEY = %q; want injected+trimmed value", got["ANTHROPIC_API_KEY"])
-	}
-	if got["HOME"] != dir {
-		t.Errorf("HOME = %q; want %q", got["HOME"], dir)
-	}
-
-	// A provider with a mounted dir but NO key file gets no injected key, and the
-	// inherited secret is still scrubbed.
-	oc := filepath.Join(base, "opencode")
-	if err := os.MkdirAll(oc, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := envMap(agentEnv("opencode", nil))["ANTHROPIC_API_KEY"]; ok {
-		t.Error("opencode has no key file; ANTHROPIC_API_KEY must be scrubbed, not injected")
-	}
-}
-
-// With the auth proxy enabled, a claude-code task gets ANTHROPIC_BASE_URL (the
-// proxy) + a dummy ANTHROPIC_API_KEY, and does NOT read a mounted credential —
-// the real token never reaches the sandbox.
-func TestAgentEnvClaudeProxy(t *testing.T) {
-	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", t.TempDir()) // nothing mounted
+// Every agent is pointed at the proxy per provider with a dummy key; no
+// credential and no auth-dir HOME is placed in the sandbox.
+func TestAgentEnvProxyRouting(t *testing.T) {
 	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "http://sandboxd:9100")
 
-	got := envMap(agentEnv("claude-code", nil))
-	if got["ANTHROPIC_BASE_URL"] != "http://sandboxd:9100" {
-		t.Errorf("ANTHROPIC_BASE_URL = %q; want the proxy url", got["ANTHROPIC_BASE_URL"])
+	cc := envMap(agentEnv("claude-code", nil))
+	if cc["ANTHROPIC_BASE_URL"] != "http://sandboxd:9100/claude-code/anthropic" {
+		t.Errorf("claude ANTHROPIC_BASE_URL = %q", cc["ANTHROPIC_BASE_URL"])
 	}
-	if got["ANTHROPIC_API_KEY"] == "" {
-		t.Error("expected a dummy ANTHROPIC_API_KEY so claude skips its local login gate")
+	if cc["ANTHROPIC_API_KEY"] != dummyKey {
+		t.Errorf("claude key = %q; want dummy", cc["ANTHROPIC_API_KEY"])
 	}
 
-	// opencode is unaffected by the Anthropic proxy env.
+	// opencode gets dummy keys; its per-provider base URLs are supplied by the
+	// OPENCODE_CONFIG file the adapter writes, not env.
 	oc := envMap(agentEnv("opencode", nil))
-	if _, ok := oc["ANTHROPIC_BASE_URL"]; ok {
-		t.Error("opencode must not get ANTHROPIC_BASE_URL from the claude proxy")
+	if oc["OPENCODE_API_KEY"] != dummyKey || oc["ANTHROPIC_API_KEY"] != dummyKey || oc["OPENAI_API_KEY"] != dummyKey {
+		t.Error("opencode should get dummy keys for its providers")
 	}
 
-	// No proxy configured → no base url injected (legacy path).
+	// No proxy configured → no base urls (fallback path).
 	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "")
 	if _, ok := envMap(agentEnv("claude-code", nil))["ANTHROPIC_BASE_URL"]; ok {
-		t.Error("no proxy configured => no ANTHROPIC_BASE_URL")
+		t.Error("no proxy => no ANTHROPIC_BASE_URL")
+	}
+}
+
+// No real credential reaches the agent: an inherited real key is scrubbed and
+// replaced by the dummy, and HOME is never pointed at an auth dir.
+func TestAgentEnvNoCredentialInSandbox(t *testing.T) {
+	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "http://sandboxd:9100")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-REAL-should-not-leak")
+
+	got := envMap(agentEnv("claude-code", nil))
+	if got["ANTHROPIC_API_KEY"] != dummyKey {
+		t.Errorf("ANTHROPIC_API_KEY = %q; a real inherited key must be replaced by the dummy", got["ANTHROPIC_API_KEY"])
+	}
+	if strings.Contains(got["HOME"], "agent-auth") {
+		t.Errorf("HOME must not point at an auth dir: %q", got["HOME"])
 	}
 }
 

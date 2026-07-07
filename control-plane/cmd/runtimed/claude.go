@@ -191,8 +191,12 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 	if spec.model != "" {
 		args = append(args, "--model", spec.model)
 	}
+	if spec.cont {
+		args = append(args, "--continue") // continue the most recent conversation in this workspace
+	}
 	// Platform briefing → appended to claude's default system prompt (out of the
-	// workspace, so it can't be committed or edited by the agent).
+	// workspace, so it can't be committed or edited by the agent). It's a system
+	// prompt append (not conversation), so it's safe to include on --continue too.
 	if spec.systemPrompt != "" {
 		args = append(args, "--append-system-prompt", spec.systemPrompt)
 	}

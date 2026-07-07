@@ -44,6 +44,7 @@ func Get(id string) (Provider, bool) {
 var runnable = map[string]bool{
 	"opencode":    true,
 	"claude-code": true,
+	"codex":       true,
 }
 
 // Runnable reports whether a provider has a runtimed task adapter.
