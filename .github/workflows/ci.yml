@@ -87,3 +87,21 @@ jobs:
       - name: build console image
         working-directory: .
         run: docker build -t sandboxd-console:ci ./console
+
+  # Installer smoke test on BOTH Linux and real macOS (macos-latest is Apple
+  # hardware). Docker can't run macOS, so this exercises install.sh's shell
+  # logic with docker stubbed — catching BSD/GNU (sed, mktemp), bash-3.2, and
+  # the Darwin data-dir portability issues on the actual OS.
+  install:
+    name: install-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: parse install.sh
+        run: bash -n install.sh
+      - name: install.sh platform logic (docker stubbed)
+        run: bash scripts/test-install.sh
