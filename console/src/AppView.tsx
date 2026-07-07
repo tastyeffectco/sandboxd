@@ -120,6 +120,13 @@ export function AppView({
     try { await fn(); await refresh(); if (ok) toast(ok) } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
   }
   const snapshot = () => { if (sb) act(() => api.createSnapshot(sb.id, `${app.name}-${Date.now()}`), 'Snapshot captured') }
+  const renameApp = async () => {
+    if (!app) return
+    const next = window.prompt('Rename app', app.name)?.trim()
+    if (!next || next === app.name) return
+    try { setApp(await api.updateApp(appId, { name: next })); toast('Renamed') }
+    catch (e) { onError((e as Error).message) }
+  }
 
   const tabBadge: Record<Tab, string> = { overview: '', git: '', config: '', snapshots: '', activity: '' }
 
@@ -134,7 +141,8 @@ export function AppView({
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h1 style={{ fontFamily: font.display, fontSize: 26, fontWeight: 700, margin: 0 }}>{app.name}</h1>
+            <h1 onDoubleClick={renameApp} title="Double-click to rename" style={{ fontFamily: font.display, fontSize: 26, fontWeight: 700, margin: 0, cursor: 'text' }}>{app.name}</h1>
+            <button onClick={renameApp} title="Rename app" className="dc-hoverink" aria-label="Rename app" style={{ background: 'none', border: 'none', cursor: 'pointer', color: c.muted2, fontSize: 15, lineHeight: 1, padding: 2 }}>✎</button>
             {sb ? <StatusPill status={status} /> : <Pill tone="neutral">no sandbox</Pill>}
           </div>
           <div onClick={() => { if (sb) { navigator.clipboard?.writeText(sb.id); toast('Sandbox ID copied') } }} title="Copy sandbox ID" style={{ ...mono, fontSize: 11, color: c.muted2, marginTop: 2, cursor: 'pointer' }}>
