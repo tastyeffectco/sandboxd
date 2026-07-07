@@ -346,6 +346,10 @@ export const api = {
     git?: { repo_url: string; branch?: string; credential_id?: string } // credential_id omitted → public tokenless clone
   }) => req<App>('POST', '/v1/apps', b),
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
+  // Partial update (rename / description / tags). Returns the updated app. The
+  // server rejects an empty name.
+  updateApp: (id: string, patch: { name?: string; description?: string; tags?: string[] }) =>
+    req<App>('PATCH', `/v1/apps/${id}`, patch),
   // Full delete: the app AND everything it owns (sandbox container, workspace
   // image, snapshots, and all app rows). Irreversible.
   deleteApp: (id: string) => req<unknown>('DELETE', `/v1/apps/${id}`),

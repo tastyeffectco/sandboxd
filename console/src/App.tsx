@@ -142,15 +142,20 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
   }, [apps])
 
   const create = async () => {
-    if (!name.trim()) return
     if (mode === 'git' && !repo.trim()) { onError('Enter a repo URL'); return }
     if (mode === 'git' && !credId) { onError('Pick a Git credential (add one in Settings → Git credentials)'); return }
     if (mode === 'starter' && !starter) { onError('Pick a starter'); return }
     const pick = STARTERS.find((s) => s.id === starter)
+    // No forced naming: derive a sensible default (from the repo/starter, else a
+    // short slug) when the field is blank. Renameable anytime from the app header.
+    const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40)
+    const derived = mode === 'git' && repo.trim() ? slug(repo.trim().replace(/\.git$/, '').split('/').pop() || '')
+      : mode === 'starter' && pick ? slug(pick.id) : ''
+    const finalName = name.trim() || derived || `app-${Math.random().toString(36).slice(2, 6)}`
     setBusy(true)
     try {
       const a = await api.createApp({
-        name: name.trim(),
+        name: finalName,
         runtime_preset: mode === 'template' && preset ? preset : undefined,
         git: mode === 'git' ? { repo_url: repo.trim(), branch: branch.trim() || 'main', credential_id: credId }
           : mode === 'starter' && pick ? { repo_url: `https://github.com/${pick.repo}`, branch: pick.branch } // public → tokenless
@@ -171,8 +176,8 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
 
       <Card style={{ padding: 16, marginBottom: 28 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-          <Input mono value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="new-app-name" style={{ flex: 1, fontSize: 13 }} data-testid="app-name" />
-          <Btn variant="primary" disabled={busy || !name.trim() || (mode === 'starter' && !starter)} onClick={create} style={{ padding: '9px 18px', fontSize: 13 }}>{mode === 'starter' ? 'Create from starter' : 'Create app'}</Btn>
+          <Input mono value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="name — optional, rename anytime" style={{ flex: 1, fontSize: 13 }} data-testid="app-name" />
+          <Btn variant="primary" disabled={busy || (mode === 'starter' && !starter)} onClick={create} style={{ padding: '9px 18px', fontSize: 13 }}>{mode === 'starter' ? 'Create from starter' : 'Create app'}</Btn>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {modeChip('template', 'Blank template')}
