@@ -1,7 +1,11 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, RuntimeSuggestion } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 import { DeployModal } from './DeployModal'
+
+// Code-split the CodeMirror editor: it's the app's heaviest dependency and only
+// needed on the Files tab, so it loads on demand rather than in the main bundle.
+const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })))
 
 type Msg = { role: 'user' | 'agent'; text: string; taskId?: string; done?: boolean }
 const TABS = ['overview', 'files', 'git', 'config', 'snapshots', 'activity'] as const
@@ -492,8 +496,6 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
   const [view, setView] = useState<'idle' | 'loading' | 'ok' | 'toobig' | 'binary'>('idle')
   const [saving, setSaving] = useState(false)
   const [treeLoading, setTreeLoading] = useState(false)
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  const gutRef = useRef<HTMLDivElement>(null)
   const dirty = view === 'ok' && content !== orig
 
   const loadTree = useCallback(() => {
@@ -522,19 +524,8 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
     try { await api.writeAppFile(sandboxId, path, content); setOrig(content); toast('Saved'); loadTree() }
     catch (e) { onError((e as Error).message) } finally { setSaving(false) }
   }
-  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return }
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const ta = e.currentTarget, s = ta.selectionStart, en = ta.selectionEnd
-      setContent(content.slice(0, s) + '  ' + content.slice(en))
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = s + 2 })
-    }
-  }
-
   if (!sandboxId) return <Card style={{ padding: 18, color: c.muted, fontSize: 13 }}>Create a sandbox to browse and edit files.</Card>
 
-  const lines = content.length ? content.split('\n').length : 1
   const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
     nodes.map((n) => n.type === 'dir' ? (
       <Fragment key={n.path}>
@@ -580,14 +571,7 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
             {view === 'loading' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Loading…</div>
               : view === 'toobig' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Larger than the 2&nbsp;MiB editor cap — <a href={`/v1/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(path)}`} style={{ color: c.link }}>open raw</a>.</div>
               : view === 'binary' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Binary file — not shown in the editor.</div>
-              : (
-                <div style={{ display: 'flex', maxHeight: 580, overflow: 'hidden' }}>
-                  <div ref={gutRef} style={{ ...mono, fontSize: 12.5, lineHeight: '20px', textAlign: 'right', padding: '10px 8px', color: c.faint, background: c.panel3, borderRight: `1px solid ${c.border}`, overflow: 'hidden', userSelect: 'none', whiteSpace: 'pre' }}>
-                    {Array.from({ length: lines }, (_, i) => i + 1).join('\n')}
-                  </div>
-                  <textarea ref={taRef} value={content} onChange={(e) => setContent(e.target.value)} onKeyDown={onKey} onScroll={() => { if (gutRef.current && taRef.current) gutRef.current.scrollTop = taRef.current.scrollTop }} spellCheck={false} style={{ ...mono, flex: 1, fontSize: 12.5, lineHeight: '20px', padding: '10px 12px', border: 'none', outline: 'none', resize: 'none', minHeight: 420, maxHeight: 580, color: c.fg, background: c.panel, whiteSpace: 'pre', overflow: 'auto', tabSize: 2 }} />
-                </div>
-              )}
+              : <Suspense fallback={<div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Loading editor…</div>}><CodeEditor path={path} value={content} onChange={setContent} onSave={save} /></Suspense>}
           </>
         )}
       </Card>
