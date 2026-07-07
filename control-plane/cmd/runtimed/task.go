@@ -32,6 +32,7 @@ type task struct {
 	prompt    string
 	agentName string
 	model     string
+	cont      bool // continue the sandbox's most recent agent session
 	env       map[string]string
 	timeout   time.Duration
 	dir       string // .runtimed/tasks/<id>
@@ -49,6 +50,17 @@ type task struct {
 }
 
 func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
+	// Continue is the default: resume the sandbox's prior session unless this is
+	// the first task (nothing to continue) or the caller forced a choice. This
+	// makes `--continue` the out-of-the-box behavior while the first run in a
+	// sandbox still starts cleanly.
+	cont := hasPriorTask(tasksRoot, req.TaskID)
+	if req.Continue != nil {
+		cont = *req.Continue
+		if cont && !hasPriorTask(tasksRoot, req.TaskID) {
+			cont = false // forced continue but no session yet — start fresh
+		}
+	}
 	dir := filepath.Join(tasksRoot, req.TaskID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -62,10 +74,26 @@ func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
 		timeout = time.Duration(req.TimeoutS) * time.Second
 	}
 	return &task{
-		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, env: req.Env,
+		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, cont: cont, env: req.Env,
 		timeout: timeout, dir: dir, createdAt: time.Now().UTC(),
 		updatedCh: make(chan struct{}), phase: "queued", eventsW: f,
 	}, nil
+}
+
+// hasPriorTask reports whether the sandbox already ran an earlier task (a proxy
+// for "an agent session exists to continue"). True when tasksRoot holds any task
+// directory other than the one being created.
+func hasPriorTask(tasksRoot, selfID string) bool {
+	entries, err := os.ReadDir(tasksRoot)
+	if err != nil {
+		return false // first task — tasksRoot doesn't exist yet
+	}
+	for _, e := range entries {
+		if e.IsDir() && e.Name() != selfID {
+			return true
+		}
+	}
+	return false
 }
 
 // emit appends an event to the in-memory log and events.jsonl, then
@@ -139,8 +167,10 @@ func selectAgent(name string, log *slog.Logger) (agent, error) {
 		return &opencodeAgent{log: log}, nil
 	case "claude-code":
 		return &claudeCodeAgent{log: log}, nil
+	case "codex":
+		return &codexAgent{log: log}, nil
 	}
-	return nil, fmt.Errorf("unsupported agent %q (supported: opencode, claude-code)", name)
+	return nil, fmt.Errorf("unsupported agent %q (supported: opencode, claude-code, codex)", name)
 }
 
 // startTask enforces one active task per sandbox and launches the run.
@@ -218,7 +248,7 @@ func (a *app) runTask(t *task) {
 	})
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
 		workDir: a.appDir, prompt: t.prompt, model: t.model, env: t.env, rawLog: rl,
-		systemPrompt: sysPrompt,
+		systemPrompt: sysPrompt, cont: t.cont,
 	}, t.emit)
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage

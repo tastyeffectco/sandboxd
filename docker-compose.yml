@@ -74,6 +74,9 @@ services:
       # Default coding agent for tasks that don't specify one. Explicit
       # agent:"claude-code" tasks work regardless (creds are mounted per provider).
       SANDBOXD_DEFAULT_AGENT: ${SANDBOXD_DEFAULT_AGENT:-opencode}
+      # Which OpenCode Zen endpoint opencode routes through the auth proxy:
+      # "zen" (pay-as-you-go, full catalog) or "zengo" (Zen "go" subscription).
+      SANDBOXD_OPENCODE_ZEN_PATH: ${SANDBOXD_OPENCODE_ZEN_PATH:-zen}
       SANDBOXD_DATA_DIR: ${SANDBOXD_DATA_DIR:-/var/lib/sandboxed}
       SANDBOXD_LOG_DIR: ${SANDBOXD_LOG_DIR:-/var/lib/sandboxed/log}
       SANDBOXD_ACCESS_LOG: ${SANDBOXD_LOG_DIR:-/var/lib/sandboxed/log}/traefik-access.log

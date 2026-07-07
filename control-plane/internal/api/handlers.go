@@ -718,6 +718,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if s.OpencodeModel != "" {
 		envFlags = append(envFlags, "RUNTIMED_OPENCODE_MODEL="+s.OpencodeModel)
 	}
+	// Which OpenCode Zen endpoint opencode routes through the proxy (zen | zengo).
+	if s.OpencodeZenPath != "" {
+		envFlags = append(envFlags, "SANDBOXD_OPENCODE_ZEN_PATH="+s.OpencodeZenPath)
+	}
 
 	// 2. docker run with the locked flag set + traefik labels.
 	// A1.5a — ensure the resolved web port has a preview router. ADDITIVE: never

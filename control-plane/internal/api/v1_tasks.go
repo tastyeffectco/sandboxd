@@ -34,6 +34,11 @@ type v1TaskSubmitReq struct {
 	// TimeoutS sets the maximum task runtime in seconds.
 	// 0 or omitted means use the runtimed default (10m).
 	TimeoutS int `json:"timeout_s,omitempty"`
+	// Continue resumes the sandbox's most recent agent session instead of a fresh
+	// one (works for all agents: claude/opencode --continue, codex resume --last).
+	// Tri-state: omitted = default (continue when a prior session exists, else
+	// fresh); true/false force the choice.
+	Continue *bool `json:"continue,omitempty"`
 }
 
 func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +119,7 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
-		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, TimeoutS: req.TimeoutS,
+		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, TimeoutS: req.TimeoutS, Continue: req.Continue,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")
