@@ -119,6 +119,14 @@ export interface RuntimeInspect {
   warnings?: string[]
 }
 
+// Workspace file entry (GET /v1/sandboxes/{id}/files). Paths are relative to the
+// app dir; node_modules/.git/dist/.vite are excluded server-side.
+export interface FileEntry {
+  path: string
+  type: 'file' | 'dir'
+  size?: number
+}
+
 // Read-only Git status/diff (A2). Runs in-sandbox; no network/credentials.
 export interface GitFile {
   path: string
@@ -306,6 +314,18 @@ export const api = {
   // Read a workspace file. NOTE the path asymmetry: GET content is relative to
   // the APP dir (e.g. "AGENTS.md"), while putWorkspaceFile is relative to the
   // workspace MOUNT (e.g. "workspace/app/AGENTS.md"). Returns null on 404.
+  // List workspace files. Pass recursive:true for the whole tree in one call.
+  listFiles: (sandboxId: string, opts: { path?: string; recursive?: boolean } = {}) =>
+    req<{ path: string; recursive: boolean; entries: FileEntry[] }>(
+      'GET',
+      `/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(opts.path || '')}&recursive=${opts.recursive ? 'true' : 'false'}`,
+    ),
+  // Write a file by its APP-relative path — hides the read(app-dir)/write(mount)
+  // root asymmetry so callers use one consistent path everywhere.
+  writeAppFile: (sandboxId: string, appRelPath: string, content: string) =>
+    api.putWorkspaceFile(sandboxId, `workspace/app/${appRelPath}`, content),
+  // Download the whole workspace as a zip (href for an <a download>).
+  exportUrl: (sandboxId: string) => `/v1/sandboxes/${sandboxId}/export`,
   getWorkspaceFile: async (sandboxId: string, appRelPath: string): Promise<string | null> => {
     const res = await fetch(`/v1/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(appRelPath)}`)
     if (res.status === 404) return null

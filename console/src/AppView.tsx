@@ -1,10 +1,10 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, RuntimeSuggestion } from './api'
+import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, RuntimeSuggestion } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 import { DeployModal } from './DeployModal'
 
 type Msg = { role: 'user' | 'agent'; text: string; taskId?: string; done?: boolean }
-const TABS = ['overview', 'git', 'config', 'snapshots', 'activity'] as const
+const TABS = ['overview', 'files', 'git', 'config', 'snapshots', 'activity'] as const
 type Tab = (typeof TABS)[number]
 
 // Per-app agent context (Layer 2). Platform/sandbox conventions come from the
@@ -128,7 +128,7 @@ export function AppView({
     catch (e) { onError((e as Error).message) }
   }
 
-  const tabBadge: Record<Tab, string> = { overview: '', git: '', config: '', snapshots: '', activity: '' }
+  const tabBadge: Record<Tab, string> = { overview: '', files: '', git: '', config: '', snapshots: '', activity: '' }
 
   return (
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 40px 80px' }}>
@@ -189,6 +189,7 @@ export function AppView({
       </div>
 
       {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
+      {tabName === 'files' && <FilesTab sb={sb} onError={onError} toast={toast} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
@@ -459,50 +460,248 @@ function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: 
 }
 const selStyle: React.CSSProperties = { background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '5px 7px', color: c.fg, fontSize: 11.5, fontFamily: font.sans }
 
+// ---------- FILES ----------
+type TreeNode = { name: string; path: string; type: 'file' | 'dir'; size?: number; children: TreeNode[] }
+
+function buildFileTree(entries: FileEntry[]): TreeNode[] {
+  const root: TreeNode = { name: '', path: '', type: 'dir', children: [] }
+  const dirs = new Map<string, TreeNode>([['', root]])
+  for (const e of [...entries].sort((a, b) => a.path.localeCompare(b.path))) {
+    const parts = e.path.split('/')
+    const parentPath = parts.slice(0, -1).join('/')
+    const parent = dirs.get(parentPath) || root
+    const node: TreeNode = { name: parts[parts.length - 1], path: e.path, type: e.type, size: e.size, children: [] }
+    parent.children.push(node)
+    if (e.type === 'dir') dirs.set(e.path, node)
+  }
+  const sortNodes = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => (a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name)))
+    nodes.forEach((n) => sortNodes(n.children))
+  }
+  sortNodes(root.children)
+  return root.children
+}
+
+function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void }) {
+  const sandboxId = sb?.id
+  const [entries, setEntries] = useState<FileEntry[]>([])
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [path, setPath] = useState<string | null>(null)
+  const [content, setContent] = useState('')
+  const [orig, setOrig] = useState('')
+  const [view, setView] = useState<'idle' | 'loading' | 'ok' | 'toobig' | 'binary'>('idle')
+  const [saving, setSaving] = useState(false)
+  const [treeLoading, setTreeLoading] = useState(false)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  const gutRef = useRef<HTMLDivElement>(null)
+  const dirty = view === 'ok' && content !== orig
+
+  const loadTree = useCallback(() => {
+    if (!sandboxId) return
+    setTreeLoading(true)
+    api.listFiles(sandboxId, { recursive: true }).then((r) => setEntries(r.entries || [])).catch((e) => onError((e as Error).message)).finally(() => setTreeLoading(false))
+  }, [sandboxId, onError])
+  useEffect(() => { loadTree() }, [loadTree])
+
+  const openFile = async (p: string) => {
+    if (dirty && !window.confirm('Discard unsaved changes?')) return
+    setPath(p); setView('loading')
+    try {
+      const body = (await api.getWorkspaceFile(sandboxId!, p)) ?? ''
+      if (body.includes('\u0000')) { setView('binary'); return }
+      setContent(body); setOrig(body); setView('ok')
+    } catch (e) {
+      const m = (e as Error).message
+      if (m.startsWith('400')) setView('toobig')
+      else { setView('idle'); onError(m) }
+    }
+  }
+  const save = async () => {
+    if (!sandboxId || path == null || view !== 'ok') return
+    setSaving(true)
+    try { await api.writeAppFile(sandboxId, path, content); setOrig(content); toast('Saved'); loadTree() }
+    catch (e) { onError((e as Error).message) } finally { setSaving(false) }
+  }
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return }
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const ta = e.currentTarget, s = ta.selectionStart, en = ta.selectionEnd
+      setContent(content.slice(0, s) + '  ' + content.slice(en))
+      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = s + 2 })
+    }
+  }
+
+  if (!sandboxId) return <Card style={{ padding: 18, color: c.muted, fontSize: 13 }}>Create a sandbox to browse and edit files.</Card>
+
+  const lines = content.length ? content.split('\n').length : 1
+  const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
+    nodes.map((n) => n.type === 'dir' ? (
+      <Fragment key={n.path}>
+        <div className="dc-hoverink" onClick={() => setOpen((o) => ({ ...o, [n.path]: !o[n.path] }))} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', paddingLeft: 8 + depth * 13, cursor: 'pointer', fontSize: 12.5, color: c.fg2, userSelect: 'none' }}>
+          <span style={{ width: 9, color: c.muted2, fontSize: 9 }}>{open[n.path] ? '▾' : '▸'}</span>{n.name}
+        </div>
+        {open[n.path] && renderNodes(n.children, depth + 1)}
+      </Fragment>
+    ) : (
+      <div key={n.path} className="dc-hoverink" onClick={() => openFile(n.path)} title={`${n.path}${n.size != null ? ` · ${n.size} B` : ''}`} style={{ display: 'flex', alignItems: 'center', paddingLeft: 21 + depth * 13, paddingRight: 8, paddingTop: 3, paddingBottom: 3, cursor: 'pointer', fontSize: 12.5, borderRadius: 5, background: path === n.path ? c.panel2 : 'transparent', color: path === n.path ? c.fg : c.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span style={{ ...mono, fontSize: 12.5 }}>{n.name}</span>
+      </div>
+    ))
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '270px minmax(0,1fr)', gap: 14, alignItems: 'start' }}>
+      <Card style={{ padding: 10, maxHeight: 660, overflow: 'auto' }} data-testid="files-tree">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 6px 8px' }}>
+          <H size={13}>Files</H>
+          <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+            <span onClick={loadTree} title="Refresh" className="dc-hoverink" style={{ cursor: 'pointer', fontSize: 13, color: c.muted2 }}>⟳</span>
+            <a href={api.exportUrl(sandboxId)} title="Download workspace (.zip)" style={{ fontSize: 13, color: c.muted2, textDecoration: 'none' }}>⬇</a>
+          </div>
+        </div>
+        {treeLoading && entries.length === 0 ? <div style={{ padding: 8, color: c.muted2, fontSize: 12 }}>Loading…</div>
+          : entries.length === 0 ? <div style={{ padding: 8, color: c.muted2, fontSize: 12 }}>No files.</div>
+          : renderNodes(buildFileTree(entries), 0)}
+      </Card>
+
+      <Card style={{ padding: 0, overflow: 'hidden', minHeight: 440 }}>
+        {path == null ? (
+          <div style={{ padding: 44, textAlign: 'center', color: c.muted2, fontSize: 13 }}>Select a file to view or edit.</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3 }}>
+              <span style={{ ...mono, fontSize: 12.5, color: c.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
+              {dirty && <span title="Unsaved changes" style={{ width: 7, height: 7, borderRadius: '50%', background: c.warn, flex: '0 0 auto' }} />}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: '0 0 auto' }}>
+                <Btn sm onClick={() => openFile(path)} disabled={saving}>Reload</Btn>
+                <Btn sm variant="primary" onClick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save'}</Btn>
+              </div>
+            </div>
+            {view === 'loading' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Loading…</div>
+              : view === 'toobig' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Larger than the 2&nbsp;MiB editor cap — <a href={`/v1/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(path)}`} style={{ color: c.link }}>open raw</a>.</div>
+              : view === 'binary' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Binary file — not shown in the editor.</div>
+              : (
+                <div style={{ display: 'flex', maxHeight: 580, overflow: 'hidden' }}>
+                  <div ref={gutRef} style={{ ...mono, fontSize: 12.5, lineHeight: '20px', textAlign: 'right', padding: '10px 8px', color: c.faint, background: c.panel3, borderRight: `1px solid ${c.border}`, overflow: 'hidden', userSelect: 'none', whiteSpace: 'pre' }}>
+                    {Array.from({ length: lines }, (_, i) => i + 1).join('\n')}
+                  </div>
+                  <textarea ref={taRef} value={content} onChange={(e) => setContent(e.target.value)} onKeyDown={onKey} onScroll={() => { if (gutRef.current && taRef.current) gutRef.current.scrollTop = taRef.current.scrollTop }} spellCheck={false} style={{ ...mono, flex: 1, fontSize: 12.5, lineHeight: '20px', padding: '10px 12px', border: 'none', outline: 'none', resize: 'none', minHeight: 420, maxHeight: 580, color: c.fg, background: c.panel, whiteSpace: 'pre', overflow: 'auto', tabSize: 2 }} />
+                </div>
+              )}
+          </>
+        )}
+      </Card>
+    </div>
+  )
+}
+
 // ---------- GIT ----------
+function DiffView({ text }: { text: string }) {
+  return (
+    <div style={{ ...mono, fontSize: 12, lineHeight: '18px', overflow: 'auto', maxHeight: 580, padding: '6px 0' }}>
+      {text.split('\n').map((ln, i) => {
+        let bg = 'transparent', col = c.fg2
+        if (ln.startsWith('@@')) { bg = c.panel2; col = c.muted }
+        else if (/^(diff |index |--- |\+\+\+ )/.test(ln)) { col = c.muted2 }
+        else if (ln.startsWith('+')) { bg = 'rgba(21,128,61,.10)'; col = c.good }
+        else if (ln.startsWith('-')) { bg = 'rgba(220,38,38,.10)'; col = c.bad }
+        return <div key={i} style={{ background: bg, color: col, padding: '0 12px', whiteSpace: 'pre' }}>{ln || ' '}</div>
+      })}
+    </div>
+  )
+}
+
 function GitTab({ appId, onError, toast, goSettings }: { appId: string; onError: (m: string) => void; toast: (m: string) => void; goSettings: () => void }) {
   const [st, setSt] = useState<GitStatus | null>(null)
   const [sel, setSel] = useState<Record<string, boolean>>({})
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [pushing, setPushing] = useState(false)
+  const [showRuntime, setShowRuntime] = useState(false)
+  const [diffPath, setDiffPath] = useState<string | null>(null)
+  const [diff, setDiff] = useState('')
+  const [diffLoading, setDiffLoading] = useState(false)
   const load = useCallback(() => api.gitStatus(appId).then((s) => { setSt(s); const init: Record<string, boolean> = {}; (s.files || []).forEach((f) => (init[f.path] = true)); setSel(init) }).catch((e) => onError((e as Error).message)), [appId, onError])
   useEffect(() => { load() }, [load])
+
   const files: GitFile[] = st?.files || []
+  const runtimeFiles: GitFile[] = st?.runtime_files || []
+  const selected = files.filter((f) => sel[f.path]).map((f) => f.path)
+
+  const viewDiff = async (p: string) => {
+    setDiffPath(p); setDiffLoading(true); setDiff('')
+    try { const d = await api.gitDiff(appId, p); setDiff(d.diff || (d.available ? '(no textual diff — likely a binary or mode change)' : d.reason || 'unavailable')) }
+    catch (e) { onError((e as Error).message) } finally { setDiffLoading(false) }
+  }
   const commit = async () => {
     if (!msg.trim()) return
     setBusy(true)
-    try { const r = await api.gitCommit(appId, { message: msg.trim(), paths: files.filter((f) => sel[f.path]).map((f) => f.path) }); if (r.committed) { toast(`Committed ${r.sha?.slice(0, 7)}`); setMsg(''); load() } else onError(r.reason || 'nothing committed') } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
+    try { const r = await api.gitCommit(appId, { message: msg.trim(), paths: selected }); if (r.committed) { toast(`Committed ${r.sha?.slice(0, 7)}`); setMsg(''); setDiffPath(null); load() } else onError(r.reason || 'nothing committed') } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
   }
+  const push = async () => {
+    setPushing(true)
+    try {
+      const r = await api.gitPush(appId, {})
+      if (r.pushed) toast(`Pushed ${r.commits ?? ''} commit${r.commits === 1 ? '' : 's'}${r.branch ? ` → ${r.branch}` : ''}`.replace(/\s+/g, ' ').trim())
+      else onError(r.reason === 'no_credential' ? 'No Git credential — add one in Settings → Git credentials.' : (r.reason || 'push failed'))
+      load()
+    } catch (e) { onError((e as Error).message) } finally { setPushing(false) }
+  }
+
   if (st && !st.available) return <Card style={{ padding: 16, color: c.muted2, fontSize: 13 }}>{st.reason === 'not_a_git_repo' ? 'This app is not a Git repository.' : 'Git is unavailable — start the sandbox.'}</Card>
+
+  const statusColor = (s: string) => (s.startsWith('add') || s === 'untracked' ? c.good : s.startsWith('del') ? c.bad : c.warn)
+  const badge = (s: string) => (s === 'untracked' ? '?' : s[0].toUpperCase())
+  const fileRow = (f: GitFile, stageable: boolean) => (
+    <div key={f.path} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: `1px solid ${diffPath === f.path ? c.border2 : c.border}`, borderRadius: 7, marginBottom: 5, background: diffPath === f.path ? c.panel2 : c.panel }}>
+      {stageable && <span onClick={() => setSel((s) => ({ ...s, [f.path]: !s[f.path] }))} style={{ width: 15, height: 15, borderRadius: 4, border: `1px solid ${c.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, cursor: 'pointer', background: sel[f.path] ? c.ink : '#fff', color: '#fff', flex: '0 0 auto' }}>{sel[f.path] ? '✓' : ''}</span>}
+      <span title={f.status} style={{ ...mono, fontSize: 10.5, fontWeight: 700, width: 14, textAlign: 'center', color: statusColor(f.status), flex: '0 0 auto' }}>{badge(f.status)}</span>
+      <span onClick={() => viewDiff(f.path)} className="dc-hoverink" style={{ ...mono, fontSize: 12.5, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
+    </div>
+  )
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 16, alignItems: 'start' }}>
-      <Card style={{ padding: 16 }} data-testid="git-panel">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <H>Changes</H>
-          <span style={{ ...mono, fontSize: 11, color: c.muted, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 5, padding: '2px 8px' }}>branch {st?.branch || 'main'}</span>
-          <span style={{ fontSize: 12, color: c.muted2 }}>{files.length ? `${files.length} changed` : 'clean'}</span>
+    <div style={{ display: 'grid', gridTemplateColumns: '360px minmax(0,1fr)', gap: 14, alignItems: 'start' }}>
+      <Card style={{ padding: 14 }} data-testid="git-panel">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <H size={14}>Changes</H>
+          <span style={{ ...mono, fontSize: 11, color: c.muted, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 5, padding: '2px 7px' }}>{st?.branch || 'main'}</span>
+          {(st?.ahead ?? 0) > 0 && <span title="commits ahead of remote" style={{ fontSize: 11, color: c.good }}>↑{st?.ahead}</span>}
+          {(st?.behind ?? 0) > 0 && <span title="commits behind remote" style={{ fontSize: 11, color: c.warn }}>↓{st?.behind}</span>}
+          <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>{files.length ? `${files.length} changed` : 'clean'}</span>
+          <span onClick={load} title="Refresh" className="dc-hoverink" style={{ cursor: 'pointer', color: c.muted2 }}>⟳</span>
         </div>
-        {files.length === 0 ? <div style={{ color: c.muted2, fontSize: 12.5 }}>No changes.</div> : files.map((f) => (
-          <div key={f.path} onClick={() => setSel((s) => ({ ...s, [f.path]: !s[f.path] }))} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: `1px solid ${c.border}`, borderRadius: 7, marginBottom: 6, cursor: 'pointer', background: c.panel2 }}>
-            <span style={{ width: 15, height: 15, borderRadius: 4, border: `1px solid ${c.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, background: sel[f.path] ? c.ink : '#fff', color: '#fff' }}>{sel[f.path] ? '✓' : ''}</span>
-            <span style={{ ...mono, fontSize: 11, color: c.muted }}>{f.status}</span>
-            <span style={{ ...mono, fontSize: 12.5 }}>{f.path}</span>
+        {files.length === 0 ? <div style={{ color: c.muted2, fontSize: 12.5, padding: '2px 0 8px' }}>No user changes.</div> : (
+          <>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 8, fontSize: 11.5 }}>
+              <span onClick={() => setSel(Object.fromEntries(files.map((f) => [f.path, true])))} className="dc-hoverink" style={{ cursor: 'pointer', color: c.link }}>Select all</span>
+              <span onClick={() => setSel({})} className="dc-hoverink" style={{ cursor: 'pointer', color: c.link }}>None</span>
+            </div>
+            {files.map((f) => fileRow(f, true))}
+          </>
+        )}
+        {runtimeFiles.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <div onClick={() => setShowRuntime((v) => !v)} className="dc-hoverink" style={{ cursor: 'pointer', fontSize: 11.5, color: c.muted2, padding: '4px 0' }}>{showRuntime ? '▾' : '▸'} {runtimeFiles.length} runtime-generated (sandbox.yaml, lockfiles…)</div>
+            {showRuntime && <div style={{ marginTop: 4 }}>{runtimeFiles.map((f) => fileRow(f, false))}</div>}
           </div>
-        ))}
-        <Input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Commit message…" style={{ width: '100%', margin: '10px 0', fontSize: 13, fontFamily: font.sans }} />
-        <Btn variant="primary" disabled={busy || !msg.trim() || files.length === 0} onClick={commit} style={{ padding: '9px 16px', fontSize: 13 }}>Commit</Btn>
+        )}
+        <Input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Commit message…" style={{ width: '100%', margin: '10px 0 8px', fontSize: 13, fontFamily: font.sans }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn variant="primary" disabled={busy || !msg.trim() || selected.length === 0} onClick={commit} style={{ fontSize: 13 }}>Commit{selected.length ? ` (${selected.length})` : ''}</Btn>
+          <Btn disabled={pushing} onClick={push} title="Push commits to the remote">{pushing ? 'Pushing…' : `Push${(st?.ahead ?? 0) > 0 ? ` ↑${st?.ahead}` : ''}`}</Btn>
+        </div>
+        <div style={{ fontSize: 11.5, color: c.muted2, marginTop: 8 }}>Push needs a Git credential — <span onClick={goSettings} className="dc-hoverink" style={{ cursor: 'pointer', color: c.link }}>manage in Settings</span>.</div>
       </Card>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Card style={{ padding: 16 }}>
-          <H style={{ marginBottom: 6 }}>Remote</H>
-          <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 10 }}>Add a Git credential in Settings to push, or import private repos.</div>
-          <Btn onClick={goSettings}>Git credentials →</Btn>
-        </Card>
-        <Card style={{ padding: 16 }}>
-          <H style={{ marginBottom: 6 }}>Git vs Snapshots</H>
-          <div style={{ color: c.muted, fontSize: 12.5 }}>Use <b style={{ color: c.fg }}>Git</b> to version and ship your source code. A <b style={{ color: c.fg }}>Snapshot</b> freezes the entire workspace — code plus installed packages, build output and data.</div>
-        </Card>
-      </div>
+
+      <Card style={{ padding: 0, overflow: 'hidden', minHeight: 440 }}>
+        {diffPath == null ? <div style={{ padding: 44, textAlign: 'center', color: c.muted2, fontSize: 13 }}>Click a changed file to see its diff.</div> : (
+          <>
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3, ...mono, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diffPath}</div>
+            {diffLoading ? <div style={{ padding: 24, color: c.muted2, fontSize: 13 }}>Loading diff…</div> : <DiffView text={diff} />}
+          </>
+        )}
+      </Card>
     </div>
   )
 }
