@@ -5,8 +5,9 @@ environment context — **without** putting secrets in the workspace, snapshots,
 container env, logs, events, or task results.
 
 Two agents ship today behind one adapter interface: **opencode** and
-**claude-code** are runnable (they have `runtimed` task adapters); **codex** can
-be connected but is not runnable yet. Every provider carries its **own**
+**claude-code** are runnable (they have `runtimed` task adapters). **codex** is
+runnable by the backend too but is **parked** — disabled/hidden in the UI until
+its ChatGPT-subscription auth can be secured (see below). Every provider carries its **own**
 credentials, connected by the owner and stored opaquely; a provider's material
 is only ever used for that provider.
 

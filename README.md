@@ -197,7 +197,7 @@ via `env` are deliberately **scrubbed** from the agent process; they won't work.
 
 ```bash
 # API key:
-curl -s -XPOST $API/v1/agents/anthropic/api-key -d '{"api_key":"sk-ant-..."}'
+curl -s -XPOST $API/v1/agents/claude-code/api-key -d '{"api_key":"sk-ant-..."}'
 # or a subscription via guided OAuth:
 curl -s -XPOST $API/v1/agents/claude-code/oauth/start   # → open the URL, then /oauth/finish
 ```

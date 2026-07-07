@@ -38,9 +38,9 @@ func Get(id string) (Provider, bool) {
 }
 
 // runnable is the set of providers runtimed can actually run as a task agent.
-// MUST be kept in sync with runtimed's selectAgent. claude-code joins this when
-// its adapter lands (Phase 10B slice 3); until then a connected claude-code is
-// "imported, runner not enabled yet".
+// MUST be kept in sync with runtimed's selectAgent. All three have adapters;
+// codex is runnable here but parked in the UI (its ChatGPT-subscription auth
+// isn't proxyable yet), so the console hides it from the run picker.
 var runnable = map[string]bool{
 	"opencode":    true,
 	"claude-code": true,
