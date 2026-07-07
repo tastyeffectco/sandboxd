@@ -151,6 +151,11 @@ type Server struct {
 	// OpenCode Zen model "opencode/claude-sonnet-4-5"). Empty → opencode's default.
 	OpencodeModel string
 
+	// OpencodeZenPath selects which OpenCode Zen endpoint opencode routes through
+	// the proxy: "zen" (pay-as-you-go, full catalog) or "zengo" (the Zen "go"
+	// subscription's models). Empty → runtimed's default ("zen").
+	OpencodeZenPath string
+
 	// AgentProxyURL is the in-network URL of the credential-injecting auth proxy
 	// (see internal/authproxy). When set, claude-code runs proxy-side: the real
 	// subscription credential is NOT mounted into the sandbox; instead the sandbox
@@ -172,14 +177,16 @@ func (s *Server) agentAuthMounts() []string {
 	if s.AgentAuth == nil {
 		return nil
 	}
+	// When the auth proxy is enabled, NO agent credential is mounted into the
+	// sandbox: every agent reaches its provider through the control-plane proxy,
+	// which holds and injects the credential. The workspace can never read,
+	// exfiltrate, or clobber any credential.
+	if s.AgentProxyURL != "" {
+		return nil
+	}
+	// Proxy disabled (fallback): mount each connected provider's auth dir.
 	var vols []string
 	for _, p := range agentauth.Providers() {
-		// When the auth proxy is enabled, claude-code runs proxy-side: its real
-		// credential stays control-plane-side and is deliberately NOT mounted into
-		// the sandbox (so the workspace can never read, exfiltrate, or clobber it).
-		if p.ID == "claude-code" && s.AgentProxyURL != "" {
-			continue
-		}
 		if s.AgentAuth.Connected(p.ID) {
 			vols = append(vols, s.AgentAuth.Dir(p.ID)+":"+agentAuthBaseMount+"/"+p.ID)
 		}

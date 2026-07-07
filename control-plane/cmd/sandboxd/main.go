@@ -32,10 +32,10 @@ import (
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/activity"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
-	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/api"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/egress"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
@@ -405,6 +405,7 @@ func main() {
 		AgentAuth:           agentAuth,
 		AgentOAuth:          agentOAuth,
 		OpencodeModel:       envDefault("SANDBOXD_OPENCODE_MODEL", ""),
+		OpencodeZenPath:     envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
 		DefaultAgent:        defaultAgent,
 		AgentProxyURL:       agentProxyURL,
 		Docker:              dockerClient,

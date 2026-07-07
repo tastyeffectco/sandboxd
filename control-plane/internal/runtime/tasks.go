@@ -44,6 +44,11 @@ type StartTaskRequest struct {
 	// provider/model). Empty = the agent's configured/global default.
 	Model    string `json:"model,omitempty"`
 	TimeoutS int    `json:"timeout_s,omitempty"`
+	// Continue resumes the sandbox's most recent agent session instead of starting
+	// fresh (claude/opencode --continue, codex `exec resume --last`). Tri-state:
+	// nil (omitted) = the default, which is to continue when the sandbox already
+	// has a prior session and start fresh otherwise; true/false force the choice.
+	Continue *bool `json:"continue,omitempty"`
 }
 
 // Event is one task progress event. Data is type-specific JSON.
