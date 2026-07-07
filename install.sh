@@ -63,7 +63,7 @@ fi
 set -a; . ./.env; set +a
 DATA_DIR="${SANDBOXD_DATA_DIR:-/var/lib/sandboxed}"
 LOG_DIR="${SANDBOXD_LOG_DIR:-$DATA_DIR/log}"
-BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:1.0.0}"
+BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:0.3.0}"
 
 # ── data dir ─────────────────────────────────────────────────────────
 # Create it (sudo if we don't own the parent). Workspaces + SQLite + the

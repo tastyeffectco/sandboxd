@@ -50,7 +50,7 @@ services:
   sandboxd:
     build:
       context: ./control-plane
-    image: sandboxd-control-plane:1.0.0
+    image: sandboxd-control-plane:0.3.0
     restart: unless-stopped
     userns_mode: "host"  # see traefik above
     # Reachable on the internal network as http://sandboxd:9000. The API
@@ -68,7 +68,7 @@ services:
     environment:
       # --- core ---
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-localhost}
-      SANDBOXD_IMAGE: ${SANDBOXD_IMAGE:-sandboxd-base:1.0.0}
+      SANDBOXD_IMAGE: ${SANDBOXD_IMAGE:-sandboxd-base:0.3.0}
       SANDBOXD_NETWORK: ${SANDBOXD_NETWORK:-sandboxd_net}
       SANDBOXD_USERNS: ${SANDBOXD_USERNS:-host}
       # Default coding agent for tasks that don't specify one. Explicit
@@ -120,7 +120,7 @@ services:
     profiles: [console]
     build:
       context: ./console
-    image: sandboxd-console:0.1.0
+    image: sandboxd-console:0.3.0
     restart: unless-stopped
     depends_on:
       - sandboxd

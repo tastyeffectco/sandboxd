@@ -262,8 +262,9 @@ profile) runs sandboxd without the console.
 > **fail-closed**: without `CONSOLE_BASIC_AUTH` it returns `401` (the default is
 > a locked, unknown password) — it is never exposed open. Set
 > `CONSOLE_BASIC_AUTH="user:HASH"` (`HASH` from `htpasswd -nbB` or
-> `openssl passwd -apr1`; in a `.env` file double every `$` → `$$`). The
-> [installer](#1-install) generates and prints one for you. This is **separate
+> `openssl passwd -apr1`; in a `.env` file double every `$` → `$$`). The dev
+> installer (`scripts/dev/install-v04-ubuntu.sh`) generates and prints one for
+> you; with the plain `./install.sh` you set it yourself. This is **separate
 > from API auth** — see [Authentication](#authentication).
 
 The console never touches the database or workspaces — it's a pure `/v1` client
@@ -385,7 +386,7 @@ The defaults run a complete local stack. The knobs you'll touch most:
 ## Authentication
 
 sandboxd has **two independent** auth layers. They are separate knobs — neither
-is required for core use, and there is **no token-management UI in v0.4**.
+is required for core use, and there is **no token-management UI in v0.3**.
 
 **API auth — protects the sandboxd `/v1` API (application layer).**
 - **Off by default** (`SANDBOXD_API_AUTH_DISABLED=true`). To enable:
@@ -404,8 +405,10 @@ is required for core use, and there is **no token-management UI in v0.4**.
   un-configured console returns `401` — it is **never exposed open**.
 - Set your own: `CONSOLE_BASIC_AUTH="user:HASH"` (`HASH` from `htpasswd -nbB user 'pass'`
   or `openssl passwd -apr1 'pass'`). In a `.env` file, **double every `$` → `$$`**.
-- The [installer](#1-install) generates a random password, wires it, and prints
-  it once. Override with `CONSOLE_USER` / `CONSOLE_PASS` before running it.
+- The dev installer (`scripts/dev/install-v04-ubuntu.sh`) generates a random
+  password, wires it, and prints it once (override with `CONSOLE_USER` /
+  `CONSOLE_PASS` before running it). The plain `./install.sh` does not — set
+  `CONSOLE_BASIC_AUTH` yourself before `docker compose --profile console up`.
 - This is a **separate gate** from API auth; the console reaches `/v1` over an
   internal proxy, so the basic-auth login is what stands in front of the browser.
 
@@ -449,7 +452,7 @@ to be read and extended. Launch lean on it; harden as you grow (next section).
 
 ## Before you scale hard: what's simple on purpose, and what to harden
 
-sandboxd v1 is tuned for "**works anywhere with just Docker, in one command**."
+sandboxd is tuned for "**works anywhere with just Docker, in one command**."
 To keep it that simple, a few things were left basic **on purpose**. None of
 them affect the core loop (create → build → preview → sleep → wake → persist) —
 they're the knobs to tighten once you have real users and real money on the line.
@@ -470,7 +473,7 @@ Plain version:
 machine**. Everything else above is a config change, not a rewrite. Start lean,
 revisit these as you grow — and PRs are very welcome ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
-### Known limitations (v0.4.0)
+### Known limitations (v0.3.0)
 
 Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-manifest.md):
 
