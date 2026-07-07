@@ -112,35 +112,33 @@ func TestParseClaudeStreamResultError(t *testing.T) {
 
 func TestSelectAgentClaudeCode(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	a, err := selectAgent("claude-code", log)
-	if err != nil || a.name() != "claude-code" {
-		t.Fatalf("selectAgent(claude-code) = %v, %v", a, err)
+	for _, name := range []string{"claude-code", "opencode", "codex"} {
+		a, err := selectAgent(name, log)
+		if err != nil || a.name() != name {
+			t.Fatalf("selectAgent(%q) = %v, %v", name, a, err)
+		}
 	}
-	if _, err := selectAgent("codex", log); err == nil {
-		t.Error("codex should be unsupported")
+	if _, err := selectAgent("bogus", log); err == nil {
+		t.Error("unknown agent should be unsupported")
 	}
 }
 
-// Fake `claude` binary: proves run() execs the CLI, injects HOME from
-// RUNTIMED_AGENT_HOME, scrubs env, and parses the stream into a final message.
+// Fake `claude` binary: proves run() execs the CLI, points it at the proxy with
+// a DUMMY key (the real inherited secret is scrubbed), and parses the stream.
 func TestClaudeAgentRunWithFakeBinary(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "claude")
-	// Emits a result whose text echoes $HOME, proving HOME was injected.
+	// Emits a result whose text echoes $ANTHROPIC_API_KEY — so we can assert the
+	// agent saw the dummy, never the real inherited key.
 	script := "#!/bin/sh\n" +
 		`printf '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n'` + "\n" +
-		`printf '{"type":"result","subtype":"success","result":"home=%s","usage":{"input_tokens":1,"output_tokens":1}}\n' "$HOME"` + "\n"
+		`printf '{"type":"result","subtype":"success","result":"key=%s","usage":{"input_tokens":1,"output_tokens":1}}\n' "$ANTHROPIC_API_KEY"` + "\n"
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Per-agent auth home: claude-code -> <base>/claude-code.
-	base := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(base, "claude-code"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	t.Setenv("RUNTIMED_AGENT_AUTH_BASE", base)
-	// A secret in the inherited env must NOT reach the agent.
+	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "http://sandboxd:9100")
+	// A real secret in the inherited env must NOT reach the agent.
 	t.Setenv("ANTHROPIC_API_KEY", "sk-should-be-scrubbed")
 
 	sink, _ := collectSink()
@@ -150,8 +148,8 @@ func TestClaudeAgentRunWithFakeBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run err: %v", err)
 	}
-	if final != "home="+filepath.Join(base, "claude-code") {
-		t.Errorf("HOME not set to the claude-code auth dir; final = %q", final)
+	if final != "key="+dummyKey {
+		t.Errorf("agent saw key %q; want the dummy (real inherited key must be scrubbed)", final)
 	}
 	if usage.Total == 0 {
 		t.Error("usage not parsed")

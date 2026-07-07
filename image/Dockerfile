@@ -112,8 +112,8 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
  && mv /root/.bun/bin/bun /usr/local/bin/bun \
  && rm -rf /root/.bun
 
-# OpenCode (npm global) + Claude Code (official native installer).
-RUN npm install -g opencode-ai \
+# OpenCode (npm global) + Claude Code (official native installer) + Codex CLI.
+RUN npm install -g opencode-ai @openai/codex@0.142.5 \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && cp /root/.local/bin/claude /usr/local/bin/claude \
  && chmod 755 /usr/local/bin/claude

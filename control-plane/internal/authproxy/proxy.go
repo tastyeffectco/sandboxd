@@ -1,15 +1,20 @@
 // Package authproxy is the credential-injecting reverse proxy that lets a
-// sandbox's Claude Code CLI reach Anthropic WITHOUT the subscription credential
-// ever entering the sandbox. The sandbox gets only ANTHROPIC_BASE_URL (this
-// proxy) + a dummy ANTHROPIC_API_KEY (enough for the CLI to skip its local
-// "Not logged in" gate). This proxy — running control-plane-side, holding the
-// real credential — strips the dummy auth and injects the real subscription
-// OAuth bearer on the wire, then forwards to api.anthropic.com.
+// sandbox's coding agent reach its model provider WITHOUT the credential ever
+// entering the sandbox. Every agent (claude-code, opencode, …) is pointed at
+// this proxy per provider with a DUMMY key; the proxy — running control-plane
+// side, holding the real credentials — strips the dummy auth and injects the
+// real one on the wire, then forwards to the provider.
 //
-// Why: mounting the raw credential into the sandbox exposed it to the untrusted
-// workspace AND let the CLI mutate/erase the shared file on a failed refresh
-// (which corrupted it for every task). Keeping the credential here fixes both:
-// the sandbox can neither read, exfiltrate, nor clobber it.
+// Sandbox base URLs take the form `<proxy>/<agent>/<upstream>/…`, e.g.
+// `<proxy>/opencode/zen/v1/chat/completions`. The proxy parses <agent> and
+// <upstream>, resolves that agent's stored credential, injects it for the
+// upstream, and forwards the remaining path. No credential — API key or OAuth
+// token — is ever mounted or env-injected into the sandbox.
+//
+// Why: mounting/injecting the raw credential exposed it to the untrusted
+// workspace AND let a CLI mutate/erase the shared file on a failed refresh.
+// Keeping every credential here fixes both: the sandbox can neither read,
+// exfiltrate, nor clobber it.
 package authproxy
 
 import (
@@ -25,88 +30,147 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
-const (
-	anthropicBase = "https://api.anthropic.com"
-	// oauthBeta is the anthropic-beta flag Claude Code sends in subscription
-	// (OAuth) mode — extracted from the claude binary. Required for the OAuth
-	// bearer to be accepted on /v1/messages.
-	oauthBeta = "oauth-2025-04-20"
-	credRel   = ".claude/.credentials.json"
-)
+// oauthBeta is the anthropic-beta flag Claude Code sends in subscription (OAuth)
+// mode — required for the OAuth bearer to be accepted on /v1/messages.
+const oauthBeta = "oauth-2025-04-20"
 
-// Proxy injects the real Claude subscription bearer into forwarded requests.
+// upstreams the proxy forwards to, keyed by the <upstream> segment of the
+// sandbox base URL. A base path (e.g. /zen/v1) is preserved: the incoming path
+// after /<agent>/<upstream> is appended to it.
+var upstreams = map[string]string{
+	"anthropic": "https://api.anthropic.com",
+	"openai":    "https://api.openai.com/v1",
+	"zen":       "https://opencode.ai/zen/v1",    // opencode's hosted gateway (pay-as-you-go)
+	"zengo":     "https://opencode.ai/zen/go/v1", // opencode Zen "go" subscription
+}
+
+// Proxy injects the real provider credential into forwarded requests.
 type Proxy struct {
 	store *agentauth.Store
-	rp    *httputil.ReverseProxy
 	log   *slog.Logger
 }
 
-// New builds the proxy over the agent-auth store (which holds the claude-code
+// New builds the proxy over the agent-auth store (which holds every provider's
 // credential). Returns nil if store is nil (proxy disabled).
 func New(store *agentauth.Store, log *slog.Logger) *Proxy {
 	if store == nil {
 		return nil
 	}
-	target, _ := url.Parse(anthropicBase)
-	p := &Proxy{store: store, log: log}
-	p.rp = &httputil.ReverseProxy{
-		// Director only fixes the destination; auth is injected in ServeHTTP so
-		// the (possibly refreshed) token is read per request.
-		Director: func(r *http.Request) {
-			r.URL.Scheme = target.Scheme
-			r.URL.Host = target.Host
-			r.Host = target.Host
-		},
-		FlushInterval: -1, // stream SSE token-by-token, no buffering
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			if log != nil {
-				log.Warn("authproxy: upstream error", "err", err.Error())
-			}
-			http.Error(w, "upstream error", http.StatusBadGateway)
-		},
-	}
-	return p
+	return &Proxy{store: store, log: log}
 }
 
-// ServeHTTP forwards to Anthropic with the real subscription bearer swapped in.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 		return
 	}
-	tok, ok := p.token()
-	if !ok {
-		// No usable credential — surface a clear 401 so the task result reads
-		// "reconnect your subscription" rather than a cryptic upstream error.
-		http.Error(w, "claude-code not connected: import a valid subscription credential in Settings → AI Agents", http.StatusUnauthorized)
+	// /<agent>/<upstream>/<rest...>
+	segs := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 3)
+	if len(segs) < 2 {
+		http.Error(w, "bad proxy path (want /<agent>/<upstream>/...)", http.StatusBadRequest)
 		return
 	}
-	// Drop whatever the sandbox sent (the dummy key / any bearer) and inject the
-	// real subscription auth. The token never travels back to the sandbox.
-	r.Header.Del("X-Api-Key")
-	r.Header.Del("Authorization")
-	r.Header.Set("Authorization", "Bearer "+tok)
-	r.Header.Set("anthropic-beta", mergeBeta(r.Header.Get("anthropic-beta")))
-	p.rp.ServeHTTP(w, r)
+	agent, up := segs[0], segs[1]
+	rest := "/"
+	if len(segs) == 3 {
+		rest = "/" + segs[2]
+	}
+	base, ok := upstreams[up]
+	if !ok {
+		http.Error(w, "unknown upstream: "+up, http.StatusBadRequest)
+		return
+	}
+	inject, ok := p.credFor(agent, up)
+	if !ok {
+		// No usable/proxyable credential — a clear 401 so the task reads
+		// "reconnect this agent" rather than a cryptic upstream error.
+		http.Error(w, agent+" is not connected (or not proxyable) — connect it in Settings → AI Agents", http.StatusUnauthorized)
+		return
+	}
+	target, _ := url.Parse(base)
+	// Preserve the upstream's base path (e.g. /zen/v1) + the request suffix.
+	r.URL.Path = strings.TrimRight(target.Path, "/") + rest
+	r.URL.RawPath = ""
+	inject(r.Header)
+	rp := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			req.Host = target.Host
+		},
+		FlushInterval: -1, // stream SSE token-by-token
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			if p.log != nil {
+				p.log.Warn("authproxy: upstream error", "upstream", up, "err", err.Error())
+			}
+			http.Error(w, "upstream error", http.StatusBadGateway)
+		},
+	}
+	rp.ServeHTTP(w, r)
 }
 
-// token reads the current subscription access token from the store. Opaque read
-// of the CLI's own credential file; empty/absent token => not connected.
-func (p *Proxy) token() (string, bool) {
-	b, err := os.ReadFile(filepath.Join(p.store.Dir("claude-code"), credRel))
+// credFor returns a header-injector for (agent, upstream) using the agent's
+// stored credential, or ok=false when there's no usable/proxyable credential.
+func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
+	switch p.store.Method(agent) {
+	case "api_key":
+		key := readTrim(filepath.Join(p.store.Dir(agent), agentauth.APIKeyFile))
+		if key == "" {
+			return nil, false
+		}
+		return func(h http.Header) {
+			h.Del("Authorization")
+			h.Del("X-Api-Key")
+			if up == "anthropic" {
+				h.Set("X-Api-Key", key) // Anthropic API-key header
+			} else {
+				h.Set("Authorization", "Bearer "+key) // OpenAI / Zen (OpenAI-compatible)
+			}
+		}, true
+	case "oauth":
+		// Only claude-code's Anthropic OAuth is proxyable today (opencode/codex
+		// OAuth/subscription formats are not — they connect by API key instead).
+		if agent == "claude-code" && up == "anthropic" {
+			tok := claudeOAuthToken(p.store)
+			if tok == "" {
+				return nil, false
+			}
+			return func(h http.Header) {
+				h.Del("X-Api-Key")
+				h.Del("Authorization")
+				h.Set("Authorization", "Bearer "+tok)
+				h.Set("anthropic-beta", mergeBeta(h.Get("anthropic-beta")))
+			}, true
+		}
+	}
+	return nil, false
+}
+
+// claudeOAuthToken reads the current subscription access token from the claude
+// credential file. Opaque read; empty when absent/unparseable.
+func claudeOAuthToken(store *agentauth.Store) string {
+	b, err := os.ReadFile(filepath.Join(store.Dir("claude-code"), ".claude/.credentials.json"))
 	if err != nil {
-		return "", false
+		return ""
 	}
 	var d struct {
 		ClaudeAiOauth struct {
 			AccessToken string `json:"accessToken"`
 		} `json:"claudeAiOauth"`
 	}
-	if json.Unmarshal(b, &d) != nil || d.ClaudeAiOauth.AccessToken == "" {
-		return "", false
+	if json.Unmarshal(b, &d) != nil {
+		return ""
 	}
-	return d.ClaudeAiOauth.AccessToken, true
+	return d.ClaudeAiOauth.AccessToken
+}
+
+func readTrim(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // mergeBeta ensures the OAuth beta flag is present without dropping any the CLI

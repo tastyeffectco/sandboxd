@@ -2,78 +2,50 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
-
-	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 )
 
-// agentAuthBaseDir is the in-container parent of per-provider auth mounts
-// (sandboxd mounts <data>/agent-auth/<provider> at /run/agent-auth/<provider>).
-// Overridable for tests.
-func agentAuthBaseDir() string {
-	if b := os.Getenv("RUNTIMED_AGENT_AUTH_BASE"); b != "" {
-		return b
-	}
-	return "/run/agent-auth"
-}
+// dummyKey is handed to every agent so its CLI skips the local "not logged in"
+// gate; the real credential is injected by the proxy on the wire, never here.
+const dummyKey = "sandboxd-proxy-injected"
 
-// agentAuthHome returns the HOME an agent should use to find its credentials —
-// /run/agent-auth/<agent> — but only if that dir is actually mounted. Empty
-// means "no auth mounted for this agent": the agent runs with its default HOME.
-func agentAuthHome(agentName string) string {
-	p := filepath.Join(agentAuthBaseDir(), agentName)
-	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
-		return p
-	}
-	return ""
-}
+// agentEnv builds the spawned agent's environment: it scrubs secret-shaped vars
+// out of the inherited env, applies the task's env, and points every provider's
+// base URL at the credential-injecting proxy with a dummy key. No credential is
+// ever placed in the sandbox — the proxy holds and injects it on the wire.
 
-// agentEnv builds the spawned agent's environment: scrub secret-shaped vars,
-// apply the task's injected env, and point HOME at the selected agent's mounted
-// auth dir (if any). HOME is keyed on the AGENT NAME, so a claude-code task gets
-// the claude-code creds even when the sandbox's default agent is opencode.
 func agentEnv(agentName string, specEnv map[string]string) []string {
-	overlay := make(map[string]string, len(specEnv)+1)
+	overlay := make(map[string]string, len(specEnv)+8)
 	for k, v := range specEnv {
 		overlay[k] = v
 	}
-	if h := agentAuthHome(agentName); h != "" {
-		overlay["HOME"] = h
-		// API-key auth: if the owner connected this provider by API key, the key
-		// was stored opaquely at HOME/<APIKeyFile>. Inject it as the provider's
-		// one key env var — the SINGLE deliberate exception to the secret scrub
-		// below (buildAgentEnv drops every other secret-shaped var). OAuth-imported
-		// providers have no such file, so nothing is injected.
-		if env, ok := agentauth.APIKeyEnv(agentName); ok {
-			if key := readAPIKey(filepath.Join(h, agentauth.APIKeyFile)); key != "" {
-				overlay[env] = key
-			}
-		}
-	}
-	// claude-code via the credential-injecting proxy: the real subscription
-	// credential is NOT mounted here (see api.agentAuthMounts). Instead point the
-	// CLI at the proxy and give it a DUMMY api key — enough for claude to skip its
-	// local "Not logged in" gate (apiKeySource: ANTHROPIC_API_KEY) and send its
-	// requests to ANTHROPIC_BASE_URL, where the proxy swaps in the real bearer.
-	// The sandbox never holds the real token.
-	if agentName == "claude-code" {
-		if proxy := os.Getenv("RUNTIMED_ANTHROPIC_PROXY"); proxy != "" {
-			overlay["ANTHROPIC_BASE_URL"] = proxy
-			overlay["ANTHROPIC_API_KEY"] = "sandboxd-proxy-injected"
+	// EVERY agent reaches its provider through the credential-injecting proxy:
+	// point each provider's base URL at `<proxy>/<agent>/<upstream>` and give the
+	// CLI only a DUMMY key. No credential — API key or OAuth token — is mounted or
+	// env-injected into the sandbox; the proxy holds and injects the real one.
+	// HOME is left at the container default (writable, credential-free) so session
+	// state (e.g. --continue) persists without any secret on disk.
+	if proxy := os.Getenv("RUNTIMED_ANTHROPIC_PROXY"); proxy != "" {
+		base := strings.TrimRight(proxy, "/") + "/" + agentName
+		switch agentName {
+		case "claude-code":
+			overlay["ANTHROPIC_BASE_URL"] = base + "/anthropic"
+			overlay["ANTHROPIC_API_KEY"] = dummyKey
+		case "opencode":
+			// opencode is multi-provider; its per-provider base URLs are written to
+			// an OPENCODE_CONFIG file by the opencode adapter (env overrides don't
+			// reach the Zen provider). Here we only supply dummy keys so the CLI
+			// skips its local login gate.
+			overlay["OPENCODE_API_KEY"] = dummyKey
+			overlay["ANTHROPIC_API_KEY"] = dummyKey
+			overlay["OPENAI_API_KEY"] = dummyKey
+		case "codex":
+			// codex is parked (its ChatGPT-subscription auth can't be proxied yet);
+			// the API-key path would set model_providers.openai.base_url in the
+			// adapter. No env credential either way.
 		}
 	}
 	return buildAgentEnv(os.Environ(), overlay)
-}
-
-// readAPIKey reads a stored API-key file, returning its trimmed contents (or ""
-// if absent/empty). The file is a single opaque line; only whitespace is stripped.
-func readAPIKey(path string) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
 }
 
 // buildAgentEnv constructs the environment for a spawned coding-agent process.
