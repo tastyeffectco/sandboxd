@@ -76,3 +76,41 @@ func TestCheckpointIsolatedFromUserHistory(t *testing.T) {
 		t.Errorf("checkpoint staged b.txt into the user's index; status:\n%s", status)
 	}
 }
+
+// restoreCheckpoint must rewind the worktree to the checkpoint (undoing a task's
+// file changes) without moving HEAD, and reject an unknown commit.
+func TestRestoreCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	gitT(t, dir, "init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitT(t, dir, "add", "-A")
+	gitT(t, dir, "-c", "user.email=u@e", "-c", "user.name=u", "commit", "-q", "-m", "user: base")
+	headBefore := gitT(t, dir, "rev-parse", "HEAD")
+
+	cp, err := checkpoint(dir, "taskA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a task edits a tracked file and adds a new one
+	os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("v2-by-agent\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "added.txt"), []byte("agent\n"), 0o644)
+
+	// an arbitrary (non-checkpoint) sha is refused
+	if err := restoreCheckpoint(dir, headBefore); err == nil {
+		t.Error("restoring a non-checkpoint commit should be refused")
+	}
+	if err := restoreCheckpoint(dir, cp); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "keep.txt")); strings.TrimSpace(string(b)) != "v1" {
+		t.Errorf("keep.txt = %q; want the pre-task v1", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "added.txt")); !os.IsNotExist(err) {
+		t.Error("added.txt should be gone after revert")
+	}
+	if got := gitT(t, dir, "rev-parse", "HEAD"); got != headBefore {
+		t.Errorf("HEAD moved during revert: %s -> %s", headBefore, got)
+	}
+}

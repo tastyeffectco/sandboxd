@@ -71,6 +71,7 @@ const (
 // final outcome from this alone, with no event replay.
 type TaskResult struct {
 	ID                string     `json:"id"`
+	Prompt            string     `json:"prompt,omitempty"` // the request, for task-history display
 	Status            TaskStatus `json:"status"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	ErrorMessage      string     `json:"error_message,omitempty"`

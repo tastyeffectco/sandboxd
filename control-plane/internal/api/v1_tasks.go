@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
@@ -199,6 +200,86 @@ func (s *Server) v1GetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, v1Task{SandboxID: id, TaskResult: tr})
+}
+
+// --- GET /v1/sandboxes/{id}/tasks -----------------------------------
+
+// v1TaskSummary is one row of the task-history list.
+type v1TaskSummary struct {
+	ID           string   `json:"id"`
+	Prompt       string   `json:"prompt,omitempty"`
+	Agent        string   `json:"agent,omitempty"`
+	Status       string   `json:"status"`
+	FilesChanged []string `json:"files_changed,omitempty"`
+	CheckpointID string   `json:"checkpoint_id,omitempty"`
+	CanRevert    bool     `json:"can_revert"` // a checkpoint exists to go back to
+	CreatedAt    string   `json:"created_at,omitempty"`
+}
+
+// v1ListTasks returns a sandbox's task history (newest first) from the durable
+// store — the "go back" list. Each row carries its files_changed and whether it
+// can be reverted to (a pre-task checkpoint exists).
+func (s *Server) v1ListTasks(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	tasks, err := s.Store.ListTasksForSandbox(r.Context(), id, 100)
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := []v1TaskSummary{}
+	for _, t := range tasks {
+		sum := v1TaskSummary{ID: t.TaskID, Prompt: t.Prompt, Agent: t.Agent, Status: t.Status, CreatedAt: t.CreatedAt.Format(time.RFC3339)}
+		if t.ResultJSON.Valid {
+			var tr runtime.TaskResult
+			if json.Unmarshal([]byte(t.ResultJSON.String), &tr) == nil {
+				sum.FilesChanged = tr.FilesChanged
+				sum.CheckpointID = tr.CheckpointID
+				sum.CanRevert = tr.CheckpointID != ""
+			}
+		}
+		out = append(out, sum)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": out})
+}
+
+// --- POST /v1/sandboxes/{id}/tasks/{taskId}/revert ------------------
+
+// v1RevertTask restores the workspace to a task's pre-task checkpoint — undoing
+// that task and everything after it. The git restore runs in the workspace via
+// runtimed, so the sandbox must be running.
+func (s *Server) v1RevertTask(w http.ResponseWriter, r *http.Request) {
+	id, taskID := r.PathValue("id"), r.PathValue("taskId")
+	sb, err := s.Store.Get(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such sandbox")
+		return
+	}
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	t, err := s.Store.GetTask(r.Context(), taskID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such task")
+		return
+	}
+	if err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if t.SandboxID != id {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such task for that sandbox")
+		return
+	}
+	if sb.Status != "running" {
+		writeV1Err(w, http.StatusConflict, "conflict", "start the sandbox to revert (the restore runs in the workspace)")
+		return
+	}
+	if err := s.runtimeClientFor(id).RevertTask(r.Context(), taskID); err != nil {
+		writeV1Err(w, http.StatusBadRequest, "revert_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"task_id": taskID, "status": "reverted"})
 }
 
 // --- GET /v1/sandboxes/{id}/tasks/{taskId}/events (SSE) -------------

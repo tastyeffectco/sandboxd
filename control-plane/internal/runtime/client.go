@@ -98,6 +98,28 @@ func (c *Client) CancelTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+// RevertTask restores the workspace to a task's pre-task checkpoint.
+func (c *Client) RevertTask(ctx context.Context, taskID string) error {
+	resp, err := c.do(ctx, c.http, http.MethodPost,
+		"http://runtimed/tasks/"+url.PathEscape(taskID)+"/revert", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		var e struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(b, &e)
+		if e.Error != "" {
+			return fmt.Errorf("%s", e.Error)
+		}
+		return fmt.Errorf("runtimed revert: %s", resp.Status)
+	}
+	return nil
+}
+
 // TaskEvents opens the task event stream from event index `since`.
 // The returned ReadCloser is a stream of newline-delimited JSON
 // Events; the caller decodes and must Close it. The stream ends after

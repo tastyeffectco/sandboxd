@@ -27,8 +27,10 @@ func serve(ctx context.Context, socketPath string, a *app) error {
 		writeJSON(w, http.StatusOK, a.status())
 	})
 	mux.HandleFunc("POST /tasks", a.handleStartTask)
+	mux.HandleFunc("GET /tasks", a.handleListTasks)
 	mux.HandleFunc("GET /tasks/{id}/events", a.handleTaskEvents)
 	mux.HandleFunc("POST /tasks/{id}/cancel", a.handleCancelTask)
+	mux.HandleFunc("POST /tasks/{id}/revert", a.handleRevertTask)
 
 	srv := &http.Server{Handler: mux}
 	go func() {
