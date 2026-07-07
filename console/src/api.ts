@@ -378,11 +378,14 @@ export const api = {
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
 
-  submitTask: (id: string, prompt: string, agent: string = 'opencode', model?: string) =>
+  submitTask: (id: string, prompt: string, agent: string = 'opencode', model?: string, cont?: boolean) =>
     req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, {
       prompt,
       agent,
       ...(model && model.trim() ? { model: model.trim() } : {}),
+      // Send the choice explicitly so unchecking forces a fresh session; omitting
+      // it would let the server fall back to its continue-by-default behavior.
+      ...(cont !== undefined ? { continue: cont } : {}),
     }),
   getTask: (id: string, taskId: string) =>
     req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),

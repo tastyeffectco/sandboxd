@@ -86,25 +86,33 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
       <Card style={{ padding: 16, marginBottom: 12 }}>
         <H style={{ marginBottom: 10 }}>Agents</H>
         <div data-testid="settings-agents-list">
-          {agents.map((a) => (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', border: `1px solid ${c.border}`, borderRadius: 8, background: c.panel2, marginBottom: 8 }} data-testid={`agent-${a.id}`}>
+          {agents.map((a) => {
+            // Codex is disabled for now — its ChatGPT-subscription auth can't be
+            // put behind the credential proxy yet (see the note below).
+            const disabled = a.id === 'codex'
+            return (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', border: `1px solid ${c.border}`, borderRadius: 8, background: c.panel2, marginBottom: 8, opacity: disabled ? 0.6 : 1 }} data-testid={`agent-${a.id}`}>
               <div>
                 <div style={{ fontWeight: 500 }}>{a.label}</div>
-                <div style={{ ...mono, fontSize: 11, color: c.muted2 }}>{a.installed_state === 'installed' ? 'installed' : 'not installed'}{a.status === 'connected' && a.method ? ` · via ${a.method === 'oauth' ? 'subscription' : 'API key'}` : ''}</div>
+                <div style={{ ...mono, fontSize: 11, color: c.muted2 }}>{disabled ? 'temporarily unavailable' : `${a.installed_state === 'installed' ? 'installed' : 'not installed'}${a.status === 'connected' && a.method ? ` · via ${a.method === 'oauth' ? 'subscription' : 'API key'}` : ''}`}</div>
               </div>
-              <span style={{ marginLeft: 'auto' }}><Pill tone={a.status === 'connected' ? 'good' : 'warn'}>{a.status === 'connected' ? 'connected' : 'needs login'}</Pill></span>
-              {a.status === 'connected' ? (
-                <Btn sm variant="ghost" onClick={() => api.disconnectAgent(a.id).then(() => { toast('Disconnected'); loadAgents() })} data-testid="agent-disconnect">Disconnect</Btn>
-              ) : (
-                <>
-                  {a.supports_oauth && <Btn sm onClick={() => (a.id === 'claude-code' ? connectClaude() : importCred(a.id))} data-testid="agent-connect-oauth">Connect subscription</Btn>}
-                  {a.supports_api_key && <Btn sm variant="ghost" onClick={() => apiKey(a.id)} data-testid="agent-connect-apikey">Use API key</Btn>}
-                </>
-              )}
+              {disabled ? (
+                <span style={{ marginLeft: 'auto' }}><Pill tone="neutral">disabled</Pill></span>
+              ) : (<>
+                <span style={{ marginLeft: 'auto' }}><Pill tone={a.status === 'connected' ? 'good' : 'warn'}>{a.status === 'connected' ? 'connected' : 'needs login'}</Pill></span>
+                {a.status === 'connected' ? (
+                  <Btn sm variant="ghost" onClick={() => api.disconnectAgent(a.id).then(() => { toast('Disconnected'); loadAgents() })} data-testid="agent-disconnect">Disconnect</Btn>
+                ) : (
+                  <>
+                    {a.supports_oauth && <Btn sm onClick={() => (a.id === 'claude-code' ? connectClaude() : importCred(a.id))} data-testid="agent-connect-oauth">Connect subscription</Btn>}
+                    {a.supports_api_key && <Btn sm variant="ghost" onClick={() => apiKey(a.id)} data-testid="agent-connect-apikey">Use API key</Btn>}
+                  </>
+                )}
+              </>)}
             </div>
-          ))}
+          )})}
         </div>
-        <div style={{ color: c.muted2, fontSize: 12 }}>Each agent runs on your own account. Credentials are stored opaquely server-side, never shown in the browser, and kept out of every sandbox snapshot.</div>
+        <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5 }}>Each agent runs on your own account; credentials are stored opaquely server-side, never shown in the browser, and kept out of snapshots. <b style={{ color: c.fg2 }}>Claude Code</b> subscriptions run through a credential-injecting proxy — the token never enters the sandbox. <b style={{ color: c.fg2 }}>Codex is disabled for now</b>: its ChatGPT-subscription auth uses a WebSocket backend that can't yet be put behind that proxy, and we won't mount a raw token into the sandbox.</div>
       </Card>
 
       <Card style={{ padding: 16, marginBottom: 12 }} data-testid="settings-lifecycle">
