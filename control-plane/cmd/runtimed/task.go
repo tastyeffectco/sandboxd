@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -218,7 +219,7 @@ func (a *app) runTask(t *task) {
 	t.startedAt = time.Now().UTC()
 	t.mu.Unlock()
 
-	res := runtime.TaskResult{ID: t.id, CreatedAt: t.createdAt, StartedAt: t.startedAt, FilesChanged: []string{}}
+	res := runtime.TaskResult{ID: t.id, Prompt: t.prompt, CreatedAt: t.createdAt, StartedAt: t.startedAt, FilesChanged: []string{}}
 
 	// 1. pre-task checkpoint.
 	t.setPhase("checkpoint")
@@ -453,6 +454,71 @@ func (a *app) handleStartTask(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("task started", "task", t.id, "agent", t.agentName)
 	writeJSON(w, http.StatusAccepted, map[string]string{"task_id": t.id, "status": "running"})
+}
+
+// handleListTasks returns a newest-first summary of finalized tasks (those with
+// a result.json), for the task-history UI.
+func (a *app) handleListTasks(w http.ResponseWriter, _ *http.Request) {
+	root := filepath.Join(a.runtimeDir, "tasks")
+	entries, _ := os.ReadDir(root)
+	type summary struct {
+		ID           string   `json:"id"`
+		Prompt       string   `json:"prompt,omitempty"`
+		Status       string   `json:"status"`
+		FilesChanged []string `json:"files_changed"`
+		CheckpointID string   `json:"checkpoint_id,omitempty"`
+		CreatedAt    string   `json:"created_at,omitempty"`
+		DurationMS   int64    `json:"duration_ms"`
+	}
+	out := []summary{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, e.Name(), "result.json"))
+		if err != nil {
+			continue
+		}
+		var r runtime.TaskResult
+		if json.Unmarshal(b, &r) != nil {
+			continue
+		}
+		out = append(out, summary{
+			ID: r.ID, Prompt: r.Prompt, Status: string(r.Status), FilesChanged: r.FilesChanged,
+			CheckpointID: r.CheckpointID, CreatedAt: r.CreatedAt.Format(time.RFC3339), DurationMS: r.DurationMS,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID }) // ULID → newest first
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": out})
+}
+
+// handleRevertTask restores the workspace to a task's PRE-task checkpoint —
+// undoing that task (and everything after it). Refused while a task runs.
+func (a *app) handleRevertTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	a.taskMu.Lock()
+	busy := a.task != nil && !a.task.isDone()
+	a.taskMu.Unlock()
+	if busy {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a task is in progress"})
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(a.runtimeDir, "tasks", id, "result.json"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such task"})
+		return
+	}
+	var res runtime.TaskResult
+	if json.Unmarshal(b, &res) != nil || res.CheckpointID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "task has no checkpoint to revert to"})
+		return
+	}
+	if err := restoreCheckpoint(a.appDir, res.CheckpointID); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "revert failed (the checkpoint may have expired): " + err.Error()})
+		return
+	}
+	a.log.Info("reverted workspace to task checkpoint", "task", id, "checkpoint", res.CheckpointID)
+	writeJSON(w, http.StatusOK, map[string]string{"task_id": id, "checkpoint_id": res.CheckpointID, "status": "reverted"})
 }
 
 func (a *app) handleCancelTask(w http.ResponseWriter, r *http.Request) {

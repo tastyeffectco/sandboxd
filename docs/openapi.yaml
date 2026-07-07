@@ -942,6 +942,34 @@ paths:
 
   /v1/sandboxes/{id}/tasks:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List a sandbox's task history (newest first)
+      description: >
+        Durable task history from the store — each row includes files_changed
+        and can_revert (whether a pre-task checkpoint exists to go back to).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        prompt: { type: string }
+                        agent: { type: string }
+                        status: { type: string }
+                        files_changed: { type: array, items: { type: string } }
+                        checkpoint_id: { type: string }
+                        can_revert: { type: boolean }
+                        created_at: { type: string, format: date-time }
     post:
       operationId: submitTask
       tags: [tasks]
@@ -1024,6 +1052,27 @@ paths:
       summary: Cancel a running task
       responses:
         "200": { description: Cancelled }
+
+  /v1/sandboxes/{id}/tasks/{taskId}/revert:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - in: path
+        name: taskId
+        required: true
+        schema: { type: string }
+    post:
+      operationId: revertTask
+      tags: [tasks]
+      summary: Revert the workspace to a task's pre-task checkpoint
+      description: >
+        Restores the working files to how they were before the task ran (undoing
+        that task and everything after it), without moving the branch/HEAD.
+        Requires a running sandbox; the task must have a checkpoint.
+      responses:
+        "200": { description: Reverted }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /v1/sandboxes/{id}/files:
     parameters: [ { $ref: "#/components/parameters/Id" } ]

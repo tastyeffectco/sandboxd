@@ -99,17 +99,55 @@ func checkpoint(appDir, taskID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Tasks run one at a time, so only the current checkpoint is needed — prune
-	// prior ones to keep the private refs from accumulating.
-	if refs, _ := runGit(appDir, "for-each-ref", "--format=%(refname)", checkpointRefPrefix); refs != "" {
-		for _, r := range strings.Split(refs, "\n") {
-			_, _ = runGit(appDir, "update-ref", "-d", r)
-		}
-	}
 	if _, err := runGit(appDir, "update-ref", checkpointRefPrefix+taskID, sha); err != nil {
 		return "", err
 	}
+	// Keep one checkpoint per task (they're the task-history revert seam), capped
+	// so they don't grow without bound.
+	capCheckpointRefs(appDir, maxCheckpoints)
 	return sha, nil
+}
+
+const maxCheckpoints = 100
+
+// capCheckpointRefs keeps only the newest `keep` checkpoint refs. Task IDs are
+// ULIDs, so refname order is chronological — the oldest sort first.
+func capCheckpointRefs(appDir string, keep int) {
+	refs, _ := runGit(appDir, "for-each-ref", "--sort=refname", "--format=%(refname)", checkpointRefPrefix)
+	if refs == "" {
+		return
+	}
+	all := strings.Split(refs, "\n")
+	for i := 0; i < len(all)-keep; i++ {
+		_, _ = runGit(appDir, "update-ref", "-d", all[i])
+	}
+}
+
+// restoreCheckpoint rewinds the worktree to a checkpoint's tree WITHOUT moving
+// HEAD or the branch — the history is preserved, only the working files go back.
+// sha must be a checkpoint we recorded (a live private ref points at it), so an
+// arbitrary commit can't be restored. Files the task added are removed; ignored
+// paths (node_modules, build caches) survive.
+func restoreCheckpoint(appDir, sha string) error {
+	if !isCheckpoint(appDir, sha) {
+		return fmt.Errorf("unknown checkpoint")
+	}
+	if _, err := runGit(appDir, "read-tree", "-u", "--reset", sha); err != nil {
+		return err
+	}
+	_, err := runGit(appDir, "clean", "-fd")
+	return err
+}
+
+// isCheckpoint reports whether sha is one of our recorded checkpoints.
+func isCheckpoint(appDir, sha string) bool {
+	refs, _ := runGit(appDir, "for-each-ref", "--format=%(objectname)", checkpointRefPrefix)
+	for _, r := range strings.Split(refs, "\n") {
+		if r == sha {
+			return true
+		}
+	}
+	return false
 }
 
 // filesChanged lists workspace paths the task changed, relative to the app dir,
