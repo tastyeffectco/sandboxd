@@ -83,7 +83,8 @@ if [ ! -f .env ]; then
   # symmetric data-dir bind mount would fail there. Point it at $HOME instead.
   if [ "$(uname -s)" = "Darwin" ]; then
     MAC_DATA="$HOME/.sandboxd/data"
-    tmp="$(mktemp)"
+    # BSD/macOS mktemp needs an explicit template (GNU works without one).
+    tmp="$(mktemp "${TMPDIR:-/tmp}/sandboxd-env.XXXXXX")"
     sed -e "s#^SANDBOXD_DATA_DIR=.*#SANDBOXD_DATA_DIR=$MAC_DATA#" \
         -e "s#^SANDBOXD_LOG_DIR=.*#SANDBOXD_LOG_DIR=$MAC_DATA/log#" .env > "$tmp" && mv "$tmp" .env
     info "macOS detected — data dir set to $MAC_DATA (Docker Desktop shares \$HOME)"
