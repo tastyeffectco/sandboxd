@@ -372,8 +372,9 @@ function RuntimeCard({ appId, onApplyRuntime, canApply }: { appId: string; onApp
 }
 
 function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: string) => void; refresh: () => void }) {
-  const [agent, setAgent] = useState('claude-code')
+  const [agent, setAgent] = useState('opencode')
   const [model, setModel] = useState('')
+  const [cont, setCont] = useState(true) // continue the last agent session by default
   const [text, setText] = useState('')
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [running, setRunning] = useState(false)
@@ -390,7 +391,7 @@ function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: 
     setMsgs((m) => [...m, { role: 'user', text: prompt }])
     setResolved(''); setRunning(true)
     try {
-      const t = await api.submitTask(sb.id, prompt, agent, model || undefined)
+      const t = await api.submitTask(sb.id, prompt, agent, model || undefined, cont)
       let agentText = ''
       const es = new EventSource(api.taskEventsURL(sb.id, t.id))
       esRef.current = es
@@ -411,13 +412,19 @@ function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: 
     <Card style={{ display: 'flex', flexDirection: 'column', height: 640, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3 }}>
         <H size={14}>Agent</H>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <label title="Continue the sandbox's most recent agent session instead of starting fresh" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: cont ? c.fg : c.muted2, cursor: 'pointer' }} data-testid="task-continue">
+            <input type="checkbox" checked={cont} onChange={(e) => setCont(e.target.checked)} style={{ accentColor: c.ink, width: 13, height: 13 }} />
+            Continue
+          </label>
           <select value={agent} onChange={(e) => { setAgent(e.target.value); setModel('') }} data-testid="task-agent" style={selStyle}>
             <option value="claude-code">Claude Code</option><option value="opencode">OpenCode</option>
+            {/* Codex hidden from the run picker until it's behind the auth proxy — the adapter is wired but subscription auth can't be secured yet. */}
           </select>
           <select value={model} onChange={(e) => setModel(e.target.value)} data-testid="task-model" style={selStyle}>
             <option value="">Default model</option>
-            {agent === 'claude-code' ? <><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></> : <><option value="opencode/claude-opus-4-5">Zen Opus</option><option value="opencode/claude-haiku-4-5">Zen Haiku</option></>}
+            {agent === 'claude-code' && <><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></>}
+            {agent === 'opencode' && <><option value="opencode/glm-5">GLM-5</option><option value="opencode/kimi-k2.6">Kimi K2.6</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/minimax-m3">MiniMax M3</option></>}
           </select>
         </div>
       </div>
