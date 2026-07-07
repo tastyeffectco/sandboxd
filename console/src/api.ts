@@ -119,6 +119,19 @@ export interface RuntimeInspect {
   warnings?: string[]
 }
 
+// One row of the task history (GET /v1/sandboxes/{id}/tasks). can_revert means a
+// pre-task checkpoint exists to roll the workspace back to.
+export interface TaskSummary {
+  id: string
+  prompt?: string
+  agent?: string
+  status: string
+  files_changed?: string[]
+  checkpoint_id?: string
+  can_revert: boolean
+  created_at?: string
+}
+
 // Workspace file entry (GET /v1/sandboxes/{id}/files). Paths are relative to the
 // app dir; node_modules/.git/dist/.vite are excluded server-side.
 export interface FileEntry {
@@ -413,6 +426,11 @@ export const api = {
     }),
   getTask: (id: string, taskId: string) =>
     req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
+  // Task history (newest first) + revert-to-checkpoint.
+  listTasks: (id: string) =>
+    req<{ tasks: TaskSummary[] }>('GET', `/v1/sandboxes/${id}/tasks`).then((r) => r.tasks || []),
+  revertTask: (id: string, taskId: string) =>
+    req<{ status: string }>('POST', `/v1/sandboxes/${id}/tasks/${taskId}/revert`),
   taskEventsURL: (id: string, taskId: string) =>
     `/v1/sandboxes/${id}/tasks/${taskId}/events`,
 

@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, RuntimeSuggestion } from './api'
+import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, TaskSummary, RuntimeSuggestion } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 import { DeployModal } from './DeployModal'
 
@@ -8,7 +8,7 @@ import { DeployModal } from './DeployModal'
 const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })))
 
 type Msg = { role: 'user' | 'agent'; text: string; taskId?: string; done?: boolean }
-const TABS = ['overview', 'files', 'git', 'config', 'snapshots', 'activity'] as const
+const TABS = ['overview', 'files', 'tasks', 'git', 'config', 'snapshots', 'activity'] as const
 type Tab = (typeof TABS)[number]
 
 // Per-app agent context (Layer 2). Platform/sandbox conventions come from the
@@ -132,7 +132,7 @@ export function AppView({
     catch (e) { onError((e as Error).message) }
   }
 
-  const tabBadge: Record<Tab, string> = { overview: '', files: '', git: '', config: '', snapshots: '', activity: '' }
+  const tabBadge: Record<Tab, string> = { overview: '', files: '', tasks: '', git: '', config: '', snapshots: '', activity: '' }
 
   return (
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 40px 80px' }}>
@@ -194,6 +194,7 @@ export function AppView({
 
       {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
       {tabName === 'files' && <FilesTab appId={appId} sb={sb} onError={onError} toast={toast} />}
+      {tabName === 'tasks' && <TasksTab sb={sb} onError={onError} toast={toast} refresh={refresh} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
@@ -598,6 +599,73 @@ function FilesTab({ appId, sb, onError, toast }: { appId: string; sb: Sandbox | 
           </>
         )}
       </Card>
+    </div>
+  )
+}
+
+// ---------- TASKS (history + revert) ----------
+function TasksTab({ sb, onError, toast, refresh }: { sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void; refresh: () => Promise<void> }) {
+  const sandboxId = sb?.id
+  const running = sb?.status === 'running'
+  const [tasks, setTasks] = useState<TaskSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [reverting, setReverting] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  const load = useCallback(() => {
+    if (!sandboxId) { setTasks([]); setLoading(false); return }
+    setLoading(true)
+    api.listTasks(sandboxId).then(setTasks).catch((e) => onError((e as Error).message)).finally(() => setLoading(false))
+  }, [sandboxId, onError])
+  useEffect(() => { load() }, [load])
+
+  const revert = async (t: TaskSummary) => {
+    if (!sandboxId) return
+    if (!window.confirm('Revert the workspace to BEFORE this task?\n\nThis discards every file change from this task onward (installed packages and build caches are kept). It cannot be undone.')) return
+    setReverting(t.id)
+    try { await api.revertTask(sandboxId, t.id); toast('Reverted to checkpoint'); await refresh(); load() }
+    catch (e) { onError((e as Error).message) } finally { setReverting(null) }
+  }
+
+  const tone = (s: string) => (s === 'succeeded' ? c.good : s === 'failed' ? c.bad : s === 'cancelled' ? c.muted2 : c.warn)
+
+  if (!sandboxId) return <Card style={{ padding: 18, color: c.muted, fontSize: 13 }}>Create a sandbox to see its task history.</Card>
+  if (loading && !tasks.length) return <Card style={{ padding: 18, color: c.muted2, fontSize: 13 }}>Loading…</Card>
+  if (!tasks.length) return <Card style={{ padding: 18, color: c.muted2, fontSize: 13 }}>No tasks yet — ask the agent to build something, then come back to review and revert.</Card>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 900 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+        <H size={14}>Task history</H>
+        <span style={{ fontSize: 11.5, color: c.muted2 }}>revert the workspace to before any task</span>
+        <span onClick={load} title="Refresh" className="dc-hoverink" style={{ marginLeft: 'auto', cursor: 'pointer', color: c.muted2 }}>⟳</span>
+      </div>
+      {tasks.map((t) => {
+        const files = t.files_changed || []
+        const shown = expanded[t.id] ? files : files.slice(0, 6)
+        return (
+          <Card key={t.id} style={{ padding: 13 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+              <span style={{ ...mono, fontSize: 10.5, fontWeight: 700, color: tone(t.status), textTransform: 'uppercase', flex: '0 0 auto' }}>{t.status}</span>
+              <span style={{ fontSize: 13, color: c.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.prompt || '(no prompt recorded)'}</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flex: '0 0 auto' }}>
+                {t.agent && <span style={{ ...mono, fontSize: 10.5, color: c.muted2 }}>{t.agent}</span>}
+                <Btn sm variant="danger" disabled={!t.can_revert || !running || reverting === t.id} title={!t.can_revert ? 'No checkpoint for this task' : !running ? 'Start the sandbox to revert' : 'Revert the workspace to before this task'} onClick={() => revert(t)}>
+                  {reverting === t.id ? 'Reverting…' : 'Revert'}
+                </Btn>
+              </div>
+            </div>
+            {files.length > 0 && (
+              <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: c.muted2, marginRight: 2 }}>{files.length} file{files.length === 1 ? '' : 's'}:</span>
+                {shown.map((f) => <span key={f} style={{ ...mono, fontSize: 11, color: c.muted, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 5, padding: '1px 7px' }}>{f}</span>)}
+                {files.length > 6 && <span onClick={() => setExpanded((e) => ({ ...e, [t.id]: !e[t.id] }))} className="dc-hoverink" style={{ fontSize: 11, color: c.link, cursor: 'pointer' }}>{expanded[t.id] ? 'less' : `+${files.length - 6} more`}</span>}
+              </div>
+            )}
+          </Card>
+        )
+      })}
+      {!running && <div style={{ fontSize: 11.5, color: c.muted2 }}>Start the sandbox to enable revert (the restore runs in the workspace).</div>}
     </div>
   )
 }
