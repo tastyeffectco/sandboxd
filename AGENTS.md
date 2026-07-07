@@ -26,7 +26,7 @@ cd sandboxd
 ./install.sh
 ```
 `install.sh` is idempotent. It: checks Docker, copies `.env.example`→`.env`,
-builds the base image (`sandboxd-base:1.0.0`) and the control plane, creates the
+builds the base image (`sandboxd-base:0.3.0`) and the control plane, creates the
 data dir, and runs `docker compose up -d`. The base-image build takes a few
 minutes the first time, then caches.
 

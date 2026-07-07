@@ -59,7 +59,7 @@ const (
 	// all interfaces (it is NOT published to the host — only reachable
 	// on the internal sandboxd_net). Override with SANDBOXD_ADDR.
 	defaultListenAddr = "0.0.0.0:9000"
-	defaultImage      = "sandboxd-base:1.0.0"
+	defaultImage      = "sandboxd-base:0.3.0"
 	migrationsDir     = "/usr/local/share/sandboxd/migrations"
 
 	// Default data root for the portable build. The compose file

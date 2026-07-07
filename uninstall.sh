@@ -45,8 +45,8 @@ else COMPOSE=""; fi
 # Load .env (if present) for the data dir / image names.
 [ -f .env ] && { set -a; . ./.env; set +a; }
 DATA_DIR="${SANDBOXD_DATA_DIR:-/var/lib/sandboxed}"
-BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:1.0.0}"
-CP_IMAGE="sandboxd-control-plane:1.0.0"
+BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:0.3.0}"
+CP_IMAGE="sandboxd-control-plane:0.3.0"
 
 bold "sandboxd — uninstall"
 

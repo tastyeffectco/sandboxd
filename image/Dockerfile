@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 #
-# sandbox-base:0.4.0 — durable base image (Phase 2 lineage).
+# sandboxd-base:0.3.0 — durable base image (Phase 2 lineage).
 #
 # 0.3.0 adds the in-sandbox supervisor `runtimed` as the container's
 # main process (CMD) — see control-plane/cmd/runtimed.

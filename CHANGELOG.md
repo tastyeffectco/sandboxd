@@ -5,6 +5,35 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
+## [0.3.0] — 2026-07-07 — first public release
+
+The first public open-source release of sandboxd. It bundles the full feature set
+built pre-launch (see the development history below) with one headline change:
+**every coding agent now reaches its model provider through a credential-injecting
+proxy, so no API key or OAuth token ever enters a sandbox.**
+
+### Added
+- **Credential-injecting auth proxy for all agents.** claude-code and opencode
+  route through a control-plane proxy (`internal/authproxy`) that holds the real
+  credential and injects it on the wire; the sandbox gets only a base URL + a
+  dummy key, and nothing secret is mounted or env-injected into the workspace.
+  `SANDBOXD_OPENCODE_ZEN_PATH` selects the OpenCode Zen endpoint (`zen`
+  pay-as-you-go or `zengo` subscription).
+- **OpenCode is the default agent, and `--continue` is the default** for
+  follow-up tasks — tri-state (`continue` omitted → continue when a prior session
+  exists, gated so the first task in a sandbox starts fresh; `true`/`false` force
+  it).
+
+### Included from pre-launch development
+- Managed agent auth (API-key / import / guided OAuth), git import + commit +
+  push, runtime detection & manifest, preview routing, idle/pressure lifecycle.
+
+---
+
+_Entries below are pre-launch internal development milestones, retained for
+provenance. Their version labels (v0.4.x, 0.2.0, 0.1.x) predate the public 0.3.0
+launch numbering._
+
 ## [Unreleased] — v0.4.9 (branch `feat/v0.4.9-runtime-manifest`, stacked on v0.4.8; NOT in v0.4.0)
 
 > Post-v0.4.0, on a feature branch (depends on v0.4.8); not part of the v0.4.0 launch.

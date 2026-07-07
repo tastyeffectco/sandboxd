@@ -13,7 +13,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.0.0}"
+VERSION="${1:-0.3.0}"
 IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:${VERSION}}"
 
 # `docker` may need sudo on some hosts; honour a DOCKER override that can

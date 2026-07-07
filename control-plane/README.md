@@ -48,7 +48,7 @@ from `../.env`. The ones the OSS build adds or changes:
 | `SANDBOXD_USERNS` | `host` | `--userns` for sandboxes + the seed container |
 | `SANDBOXD_DATA_DIR` | `/var/lib/sandboxed` | workspaces + SQLite + logs |
 | `SANDBOXD_SET_MEMORY_HIGH` | `false` | write cgroup `memory.high` (needs host cgroup access) |
-| `SANDBOXD_IMAGE` | `sandboxd-base:1.0.0` | per-sandbox base image |
+| `SANDBOXD_IMAGE` | `sandboxd-base:0.3.0` | per-sandbox base image |
 | `SANDBOXD_API_AUTH_DISABLED` | `true` | open API for local use |
 | `SANDBOXD_API_TOKENS` | — | `name:secret` pairs for service-token auth |
 | `SANDBOXD_IDLE_THRESHOLD_SECONDS` | `2100` | idle window before `docker stop` |
