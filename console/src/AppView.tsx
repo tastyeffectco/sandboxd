@@ -193,7 +193,7 @@ export function AppView({
       </div>
 
       {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
-      {tabName === 'files' && <FilesTab sb={sb} onError={onError} toast={toast} />}
+      {tabName === 'files' && <FilesTab appId={appId} sb={sb} onError={onError} toast={toast} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
@@ -486,8 +486,9 @@ function buildFileTree(entries: FileEntry[]): TreeNode[] {
   return root.children
 }
 
-function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void }) {
+function FilesTab({ appId, sb, onError, toast }: { appId: string; sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void }) {
   const sandboxId = sb?.id
+  const running = sb?.status === 'running'
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [path, setPath] = useState<string | null>(null)
@@ -496,6 +497,9 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
   const [view, setView] = useState<'idle' | 'loading' | 'ok' | 'toobig' | 'binary'>('idle')
   const [saving, setSaving] = useState(false)
   const [treeLoading, setTreeLoading] = useState(false)
+  const [git, setGit] = useState<Record<string, string>>({}) // path → git status (needs a running sandbox)
+  const [showDiff, setShowDiff] = useState(false)
+  const [diffText, setDiffText] = useState('')
   const dirty = view === 'ok' && content !== orig
 
   const loadTree = useCallback(() => {
@@ -505,9 +509,17 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
   }, [sandboxId, onError])
   useEffect(() => { loadTree() }, [loadTree])
 
+  // Overlay git status onto the tree (runs in-sandbox via docker exec, so it
+  // needs a running sandbox — the same workspace repo runtimed checkpoints into).
+  const loadGit = useCallback(() => {
+    if (!appId || !running) { setGit({}); return }
+    api.gitStatus(appId).then((s) => { const m: Record<string, string> = {}; (s.files || []).forEach((f) => (m[f.path] = f.status)); setGit(m) }).catch(() => setGit({}))
+  }, [appId, running])
+  useEffect(() => { loadGit() }, [loadGit])
+
   const openFile = async (p: string) => {
     if (dirty && !window.confirm('Discard unsaved changes?')) return
-    setPath(p); setView('loading')
+    setPath(p); setView('loading'); setShowDiff(false)
     try {
       const body = (await api.getWorkspaceFile(sandboxId!, p)) ?? ''
       if (body.includes('\u0000')) { setView('binary'); return }
@@ -521,8 +533,16 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
   const save = async () => {
     if (!sandboxId || path == null || view !== 'ok') return
     setSaving(true)
-    try { await api.writeAppFile(sandboxId, path, content); setOrig(content); toast('Saved'); loadTree() }
+    try { await api.writeAppFile(sandboxId, path, content); setOrig(content); toast('Saved'); loadTree(); loadGit() }
     catch (e) { onError((e as Error).message) } finally { setSaving(false) }
+  }
+  const gitColor = (s: string) => (s.startsWith('add') || s === 'untracked' ? c.good : s.startsWith('del') ? c.bad : c.warn)
+  const gitBadge = (s: string) => (s === 'untracked' ? '?' : s[0].toUpperCase())
+  const toggleDiff = async () => {
+    if (showDiff || path == null) { setShowDiff(false); return }
+    setShowDiff(true); setDiffText('Loading diff…')
+    try { const d = await api.gitDiff(appId, path); setDiffText(d.diff || (d.available ? '(no textual diff)' : d.reason || 'unavailable')) }
+    catch (e) { onError((e as Error).message); setShowDiff(false) }
   }
   if (!sandboxId) return <Card style={{ padding: 18, color: c.muted, fontSize: 13 }}>Create a sandbox to browse and edit files.</Card>
 
@@ -537,6 +557,7 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
     ) : (
       <div key={n.path} className="dc-hoverink" onClick={() => openFile(n.path)} title={`${n.path}${n.size != null ? ` · ${n.size} B` : ''}`} style={{ display: 'flex', alignItems: 'center', paddingLeft: 21 + depth * 13, paddingRight: 8, paddingTop: 3, paddingBottom: 3, cursor: 'pointer', fontSize: 12.5, borderRadius: 5, background: path === n.path ? c.panel2 : 'transparent', color: path === n.path ? c.fg : c.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         <span style={{ ...mono, fontSize: 12.5 }}>{n.name}</span>
+        {git[n.path] && <span title={git[n.path]} style={{ marginLeft: 'auto', paddingLeft: 6, ...mono, fontSize: 10, fontWeight: 700, color: gitColor(git[n.path]) }}>{gitBadge(git[n.path])}</span>}
       </div>
     ))
 
@@ -564,6 +585,7 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
               <span style={{ ...mono, fontSize: 12.5, color: c.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
               {dirty && <span title="Unsaved changes" style={{ width: 7, height: 7, borderRadius: '50%', background: c.warn, flex: '0 0 auto' }} />}
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: '0 0 auto' }}>
+                {git[path] && <Btn sm onClick={toggleDiff} title="Toggle git diff for this file">{showDiff ? 'Edit' : 'Diff'}</Btn>}
                 <Btn sm onClick={() => openFile(path)} disabled={saving}>Reload</Btn>
                 <Btn sm variant="primary" onClick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save'}</Btn>
               </div>
@@ -571,6 +593,7 @@ function FilesTab({ sb, onError, toast }: { sb: Sandbox | null; onError: (m: str
             {view === 'loading' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Loading…</div>
               : view === 'toobig' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Larger than the 2&nbsp;MiB editor cap — <a href={`/v1/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(path)}`} style={{ color: c.link }}>open raw</a>.</div>
               : view === 'binary' ? <div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Binary file — not shown in the editor.</div>
+              : showDiff ? <DiffView text={diffText} />
               : <Suspense fallback={<div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Loading editor…</div>}><CodeEditor path={path} value={content} onChange={setContent} onSave={save} /></Suspense>}
           </>
         )}
