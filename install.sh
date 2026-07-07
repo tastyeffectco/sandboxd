@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
-# sandboxd — one-click installer.
+# sandboxd — one-click installer (Linux, and macOS via Docker Desktop).
 #
-#   curl -fsSL .../install.sh | bash      # or: ./install.sh
+#   curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash
+#   # …or, from a clone:  ./install.sh
+#
+# Run standalone (curl | bash) it clones the repo first, then installs.
 #
 # Brings up the whole stack on a single host with nothing but Docker:
 #   1. checks Docker + Compose are present
@@ -17,14 +20,35 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$REPO_ROOT"
-
 # ── pretty output ────────────────────────────────────────────────────
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  \033[36m›\033[0m %s\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+
+# ── bootstrap: fetch the repo when run standalone (curl … | bash) ────
+# Piped from curl, this script has no repo around it. Detect that, clone
+# sandboxd, and re-exec the in-repo installer. Overridable via env:
+#   SANDBOXD_REPO_URL, SANDBOXD_REF (branch/tag), SANDBOXD_SRC (checkout dir).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "$PWD")"
+if [ ! -f "$REPO_ROOT/docker-compose.yml" ] || [ ! -d "$REPO_ROOT/control-plane" ]; then
+  REPO_URL="${SANDBOXD_REPO_URL:-https://github.com/tastyeffectco/sandboxd.git}"
+  REF="${SANDBOXD_REF:-main}"
+  SRC="${SANDBOXD_SRC:-$HOME/.sandboxd/src}"
+  command -v git >/dev/null 2>&1 || die "git is required to install sandboxd — install git and re-run."
+  bold "sandboxd — fetching source"
+  if [ -d "$SRC/.git" ]; then
+    info "updating existing checkout at $SRC"
+    git -C "$SRC" fetch --depth 1 -q origin "$REF" && git -C "$SRC" reset --hard -q FETCH_HEAD
+  else
+    info "cloning $REPO_URL ($REF) → $SRC"
+    mkdir -p "$(dirname "$SRC")"
+    git clone --depth 1 --branch "$REF" -q "$REPO_URL" "$SRC"
+  fi
+  ok "source ready"
+  exec bash "$SRC/install.sh" "$@"
+fi
+cd "$REPO_ROOT"
 
 # ── docker / sudo detection ──────────────────────────────────────────
 # Use sudo for docker only if the current user can't reach the daemon.
@@ -55,6 +79,15 @@ ok "Compose: $($COMPOSE version --short 2>/dev/null || echo present)"
 if [ ! -f .env ]; then
   cp .env.example .env
   ok "created .env from .env.example"
+  # macOS (Docker Desktop) shares $HOME by default but NOT /var/lib, so the
+  # symmetric data-dir bind mount would fail there. Point it at $HOME instead.
+  if [ "$(uname -s)" = "Darwin" ]; then
+    MAC_DATA="$HOME/.sandboxd/data"
+    tmp="$(mktemp)"
+    sed -e "s#^SANDBOXD_DATA_DIR=.*#SANDBOXD_DATA_DIR=$MAC_DATA#" \
+        -e "s#^SANDBOXD_LOG_DIR=.*#SANDBOXD_LOG_DIR=$MAC_DATA/log#" .env > "$tmp" && mv "$tmp" .env
+    info "macOS detected — data dir set to $MAC_DATA (Docker Desktop shares \$HOME)"
+  fi
 else
   info ".env already exists — leaving it untouched"
 fi
