@@ -8,7 +8,7 @@ import { DeployModal } from './DeployModal'
 const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })))
 
 type Msg = { role: 'user' | 'agent'; text: string; taskId?: string; done?: boolean }
-const TABS = ['overview', 'files', 'tasks', 'git', 'config', 'snapshots', 'activity'] as const
+const TABS = ['overview', 'files', 'git', 'config', 'snapshots', 'activity'] as const
 type Tab = (typeof TABS)[number]
 
 // Per-app agent context (Layer 2). Platform/sandbox conventions come from the
@@ -132,7 +132,7 @@ export function AppView({
     catch (e) { onError((e as Error).message) }
   }
 
-  const tabBadge: Record<Tab, string> = { overview: '', files: '', tasks: '', git: '', config: '', snapshots: '', activity: '' }
+  const tabBadge: Record<Tab, string> = { overview: '', files: '', git: '', config: '', snapshots: '', activity: '' }
 
   return (
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 40px 80px' }}>
@@ -192,9 +192,8 @@ export function AppView({
         ))}
       </div>
 
-      {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
+      {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} toast={toast} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
       {tabName === 'files' && <FilesTab appId={appId} sb={sb} onError={onError} toast={toast} />}
-      {tabName === 'tasks' && <TasksTab sb={sb} onError={onError} toast={toast} refresh={refresh} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
@@ -209,7 +208,7 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
 }
 
 // ---------- OVERVIEW (preview + processes + runtime + AGENT CHAT) ----------
-function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canApply }: { app: TApp; sb: Sandbox | null; previewURL?: string; onError: (m: string) => void; refresh: () => void; onApplyRuntime: () => void; canApply: boolean }) {
+function Overview({ app, sb, previewURL, onError, toast, refresh, onApplyRuntime, canApply }: { app: TApp; sb: Sandbox | null; previewURL?: string; onError: (m: string) => void; toast: (m: string) => void; refresh: () => void; onApplyRuntime: () => void; canApply: boolean }) {
   const running = sb?.status === 'running'
   const procs: Process[] = sb?.processes || []
   // The dev server isn't up the instant the sandbox is "running" — the control
@@ -283,7 +282,7 @@ function Overview({ app, sb, previewURL, onError, refresh, onApplyRuntime, canAp
         <RuntimeCard appId={app.id} onApplyRuntime={onApplyRuntime} canApply={canApply} />
       </div>
 
-      <AgentChat sb={sb} onError={onError} refresh={refresh} />
+      <AgentChat sb={sb} onError={onError} toast={toast} refresh={refresh} />
     </div>
   )
 }
@@ -385,25 +384,42 @@ function RuntimeCard({ appId, onApplyRuntime, canApply }: { appId: string; onApp
   )
 }
 
-function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: string) => void; refresh: () => void }) {
+function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void; refresh: () => void }) {
   const [agent, setAgent] = useState('opencode')
   const [model, setModel] = useState('')
   const [cont, setCont] = useState(true) // continue the last agent session by default
   const [text, setText] = useState('')
-  const [msgs, setMsgs] = useState<Msg[]>([])
+  const [history, setHistory] = useState<TaskSummary[]>([]) // completed turns, chronological (durable)
+  const [live, setLive] = useState<{ prompt: string; text: string } | null>(null) // the in-flight turn
   const [running, setRunning] = useState(false)
   const [resolved, setResolved] = useState('')
+  const [reverting, setReverting] = useState<string | null>(null)
   const esRef = useRef<EventSource | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const sandboxRunning = sb?.status === 'running'
+
   useEffect(() => () => esRef.current?.close(), [])
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [msgs, running])
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [history, live, running])
+
+  const loadHistory = useCallback(async () => {
+    if (!sb) { setHistory([]); return }
+    try { const ts = await api.listTasks(sb.id); setHistory([...ts].reverse()) } catch { /* history is best-effort */ }
+  }, [sb?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadHistory() }, [loadHistory])
+
+  // The task result lands in the store a beat after `done`; poll until it shows.
+  const reloadUntil = async (taskId: string) => {
+    for (let i = 0; i < 8; i++) {
+      try { const ts = await api.listTasks(sb!.id); if (ts.some((t) => t.id === taskId)) { setHistory([...ts].reverse()); return } } catch { /* retry */ }
+      await new Promise((r) => setTimeout(r, 800))
+    }
+    loadHistory()
+  }
 
   const send = async () => {
-    if (!sb || sb.status !== 'running' || !text.trim() || running) return
+    if (!sb || !sandboxRunning || !text.trim() || running) return
     const prompt = text.trim()
-    setText('')
-    setMsgs((m) => [...m, { role: 'user', text: prompt }])
-    setResolved(''); setRunning(true)
+    setText(''); setLive({ prompt, text: '' }); setResolved(''); setRunning(true)
     try {
       const t = await api.submitTask(sb.id, prompt, agent, model || undefined, cont)
       let agentText = ''
@@ -411,16 +427,27 @@ function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: 
       esRef.current = es
       es.addEventListener('status', (m) => { try { const j = JSON.parse((m as MessageEvent).data); if (j.model) setResolved(j.model) } catch { /* */ } })
       es.addEventListener('message', (m) => {
-        try { const j = JSON.parse((m as MessageEvent).data); if (j.role === 'agent' && j.text) { agentText += j.text; setMsgs((cur) => { const copy = [...cur]; const last = copy[copy.length - 1]; if (last && last.role === 'agent' && !last.done) last.text = agentText; else copy.push({ role: 'agent', text: agentText, taskId: t.id }); return copy }) } } catch { /* */ }
+        try { const j = JSON.parse((m as MessageEvent).data); if (j.role === 'agent' && j.text) { agentText += j.text; setLive((l) => (l ? { ...l, text: agentText } : l)) } } catch { /* */ }
       })
-      es.addEventListener('done', () => {
-        es.close(); setRunning(false)
-        setMsgs((cur) => { const copy = [...cur]; const last = copy[copy.length - 1]; if (last && last.role === 'agent') last.done = true; else copy.push({ role: 'agent', text: '(done)', taskId: t.id, done: true }); return copy })
-        refresh()
-      })
-      es.onerror = () => { es.close(); setRunning(false) }
-    } catch (e) { setRunning(false); onError((e as Error).message) }
+      es.addEventListener('done', async () => { es.close(); setRunning(false); refresh(); await reloadUntil(t.id); setLive(null) })
+      es.onerror = () => { es.close(); setRunning(false); setLive(null); loadHistory() }
+    } catch (e) { setRunning(false); setLive(null); onError((e as Error).message) }
   }
+
+  const revert = async (t: TaskSummary) => {
+    if (!sb) return
+    if (!window.confirm('Revert the workspace to BEFORE this task?\n\nThis discards every file change from this task onward (installed packages and build caches are kept). It cannot be undone.')) return
+    setReverting(t.id)
+    try { await api.revertTask(sb.id, t.id); toast('Reverted to checkpoint'); refresh(); await loadHistory() }
+    catch (e) { onError((e as Error).message) } finally { setReverting(null) }
+  }
+
+  const tone = (s: string) => (s === 'succeeded' ? c.good : s === 'failed' ? c.bad : s === 'cancelled' ? c.muted2 : c.warn)
+  const bubble = (role: 'user' | 'agent', text: string) => (
+    <div style={{ display: 'flex', justifyContent: role === 'user' ? 'flex-end' : 'flex-start' }}>
+      <div style={{ maxWidth: '85%', fontSize: 12.5, borderRadius: 9, padding: '8px 11px', whiteSpace: 'pre-wrap', background: role === 'user' ? c.ink : c.panel2, color: role === 'user' ? '#fff' : c.fg, border: role === 'user' ? 'none' : `1px solid ${c.border}` }}>{text}</div>
+    </div>
+  )
 
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', height: 640, overflow: 'hidden' }}>
@@ -443,22 +470,37 @@ function AgentChat({ sb, onError, refresh }: { sb: Sandbox | null; onError: (m: 
         </div>
       </div>
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {msgs.length === 0 && !running && (
+        {history.length === 0 && !live && !running && (
           <div style={{ margin: 'auto', textAlign: 'center', color: c.muted2, fontSize: 12.5, maxWidth: 220 }}>Ask the agent to change this app — it works inside the sandbox and nothing is committed until you approve.</div>
         )}
-        {msgs.map((m, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div style={{ maxWidth: '85%', fontSize: 12.5, borderRadius: 9, padding: '8px 11px', whiteSpace: 'pre-wrap', background: m.role === 'user' ? c.ink : c.panel2, color: m.role === 'user' ? '#fff' : c.fg, border: m.role === 'user' ? 'none' : `1px solid ${c.border}` }}>
-              {m.text}
-            </div>
-          </div>
-        ))}
+        {history.map((t) => {
+          const files = t.files_changed || []
+          return (
+            <Fragment key={t.id}>
+              {t.prompt && bubble('user', t.prompt)}
+              {bubble('agent', t.agent_message || `(${t.status})`)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2, fontSize: 11, color: c.muted2 }}>
+                <span style={{ ...mono, fontWeight: 700, color: tone(t.status), textTransform: 'uppercase' }}>{t.status}</span>
+                {files.length > 0 && <span title={files.join('\n')}>{files.length} file{files.length === 1 ? '' : 's'} changed</span>}
+                {t.can_revert && (
+                  <span
+                    onClick={() => sandboxRunning && reverting !== t.id && revert(t)}
+                    title={sandboxRunning ? 'Revert the workspace to before this task' : 'Start the sandbox to revert'}
+                    className={sandboxRunning ? 'dc-hoverink' : undefined}
+                    style={{ marginLeft: 'auto', cursor: sandboxRunning ? 'pointer' : 'default', color: sandboxRunning ? c.link : c.faint }}
+                  >{reverting === t.id ? 'reverting…' : '↩ revert'}</span>
+                )}
+              </div>
+            </Fragment>
+          )
+        })}
+        {live && <>{bubble('user', live.prompt)}{bubble('agent', live.text || '…')}</>}
         {resolved && <div style={{ ...mono, fontSize: 10.5, color: c.muted2 }}>▸ {resolved}</div>}
         {running && <div style={{ ...mono, fontSize: 11.5, color: c.muted2, animation: 'pulse 1.4s ease-in-out infinite' }}>▍ working…</div>}
       </div>
       <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: `1px solid ${c.border}`, background: c.panel3 }}>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={sb?.status === 'running' ? 'Message the agent…' : 'Start the sandbox to run tasks'} data-testid="task-prompt" rows={1} style={{ flex: 1, background: '#fff', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px', color: c.fg, fontSize: 12.5, fontFamily: font.sans, resize: 'none' }} />
-        <Btn variant="primary" onClick={send} disabled={!sb || sb.status !== 'running' || running} data-testid="run-task">Send</Btn>
+        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={sandboxRunning ? 'Message the agent…' : 'Start the sandbox to run tasks'} data-testid="task-prompt" rows={1} style={{ flex: 1, background: '#fff', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px', color: c.fg, fontSize: 12.5, fontFamily: font.sans, resize: 'none' }} />
+        <Btn variant="primary" onClick={send} disabled={!sb || !sandboxRunning || running} data-testid="run-task">Send</Btn>
       </div>
     </Card>
   )
@@ -599,73 +641,6 @@ function FilesTab({ appId, sb, onError, toast }: { appId: string; sb: Sandbox | 
           </>
         )}
       </Card>
-    </div>
-  )
-}
-
-// ---------- TASKS (history + revert) ----------
-function TasksTab({ sb, onError, toast, refresh }: { sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void; refresh: () => Promise<void> }) {
-  const sandboxId = sb?.id
-  const running = sb?.status === 'running'
-  const [tasks, setTasks] = useState<TaskSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [reverting, setReverting] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-
-  const load = useCallback(() => {
-    if (!sandboxId) { setTasks([]); setLoading(false); return }
-    setLoading(true)
-    api.listTasks(sandboxId).then(setTasks).catch((e) => onError((e as Error).message)).finally(() => setLoading(false))
-  }, [sandboxId, onError])
-  useEffect(() => { load() }, [load])
-
-  const revert = async (t: TaskSummary) => {
-    if (!sandboxId) return
-    if (!window.confirm('Revert the workspace to BEFORE this task?\n\nThis discards every file change from this task onward (installed packages and build caches are kept). It cannot be undone.')) return
-    setReverting(t.id)
-    try { await api.revertTask(sandboxId, t.id); toast('Reverted to checkpoint'); await refresh(); load() }
-    catch (e) { onError((e as Error).message) } finally { setReverting(null) }
-  }
-
-  const tone = (s: string) => (s === 'succeeded' ? c.good : s === 'failed' ? c.bad : s === 'cancelled' ? c.muted2 : c.warn)
-
-  if (!sandboxId) return <Card style={{ padding: 18, color: c.muted, fontSize: 13 }}>Create a sandbox to see its task history.</Card>
-  if (loading && !tasks.length) return <Card style={{ padding: 18, color: c.muted2, fontSize: 13 }}>Loading…</Card>
-  if (!tasks.length) return <Card style={{ padding: 18, color: c.muted2, fontSize: 13 }}>No tasks yet — ask the agent to build something, then come back to review and revert.</Card>
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 900 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-        <H size={14}>Task history</H>
-        <span style={{ fontSize: 11.5, color: c.muted2 }}>revert the workspace to before any task</span>
-        <span onClick={load} title="Refresh" className="dc-hoverink" style={{ marginLeft: 'auto', cursor: 'pointer', color: c.muted2 }}>⟳</span>
-      </div>
-      {tasks.map((t) => {
-        const files = t.files_changed || []
-        const shown = expanded[t.id] ? files : files.slice(0, 6)
-        return (
-          <Card key={t.id} style={{ padding: 13 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-              <span style={{ ...mono, fontSize: 10.5, fontWeight: 700, color: tone(t.status), textTransform: 'uppercase', flex: '0 0 auto' }}>{t.status}</span>
-              <span style={{ fontSize: 13, color: c.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.prompt || '(no prompt recorded)'}</span>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flex: '0 0 auto' }}>
-                {t.agent && <span style={{ ...mono, fontSize: 10.5, color: c.muted2 }}>{t.agent}</span>}
-                <Btn sm variant="danger" disabled={!t.can_revert || !running || reverting === t.id} title={!t.can_revert ? 'No checkpoint for this task' : !running ? 'Start the sandbox to revert' : 'Revert the workspace to before this task'} onClick={() => revert(t)}>
-                  {reverting === t.id ? 'Reverting…' : 'Revert'}
-                </Btn>
-              </div>
-            </div>
-            {files.length > 0 && (
-              <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: c.muted2, marginRight: 2 }}>{files.length} file{files.length === 1 ? '' : 's'}:</span>
-                {shown.map((f) => <span key={f} style={{ ...mono, fontSize: 11, color: c.muted, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 5, padding: '1px 7px' }}>{f}</span>)}
-                {files.length > 6 && <span onClick={() => setExpanded((e) => ({ ...e, [t.id]: !e[t.id] }))} className="dc-hoverink" style={{ fontSize: 11, color: c.link, cursor: 'pointer' }}>{expanded[t.id] ? 'less' : `+${files.length - 6} more`}</span>}
-              </div>
-            )}
-          </Card>
-        )
-      })}
-      {!running && <div style={{ fontSize: 11.5, color: c.muted2 }}>Start the sandbox to enable revert (the restore runs in the workspace).</div>}
     </div>
   )
 }

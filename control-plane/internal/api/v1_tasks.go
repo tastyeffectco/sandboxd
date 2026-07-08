@@ -210,6 +210,7 @@ type v1TaskSummary struct {
 	Prompt       string   `json:"prompt,omitempty"`
 	Agent        string   `json:"agent,omitempty"`
 	Status       string   `json:"status"`
+	AgentMessage string   `json:"agent_message,omitempty"` // the agent's final reply, for the chat history
 	FilesChanged []string `json:"files_changed,omitempty"`
 	CheckpointID string   `json:"checkpoint_id,omitempty"`
 	CanRevert    bool     `json:"can_revert"` // a checkpoint exists to go back to
@@ -232,6 +233,7 @@ func (s *Server) v1ListTasks(w http.ResponseWriter, r *http.Request) {
 		if t.ResultJSON.Valid {
 			var tr runtime.TaskResult
 			if json.Unmarshal([]byte(t.ResultJSON.String), &tr) == nil {
+				sum.AgentMessage = tr.AgentMessageFinal
 				sum.FilesChanged = tr.FilesChanged
 				sum.CheckpointID = tr.CheckpointID
 				sum.CanRevert = tr.CheckpointID != ""
