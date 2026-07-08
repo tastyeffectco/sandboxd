@@ -24,7 +24,9 @@
 - **Web console** — create and open apps, watch previews, run agent tasks, manage everything from a browser (or drive the same `/v1` API directly).
 - **Runtime presets** — one-step React/Vite, Next.js, Node/Express, FastAPI, or Worker apps (`GET /v1/presets`); each boots and reloads after agent edits.
 - **Live preview URLs** — each app is reachable at its own shareable link; sleeps when idle, wakes on request.
-- **Agent tasks** — submit a prompt, stream the agent's progress, get the build/health result.
+- **Agent tasks** — submit a prompt, stream the agent's progress, get the build/health result. **No credential ever enters the sandbox**: agents reach their model provider through a credential-injecting proxy, so no API key or OAuth token lands in the workspace.
+- **Undo a task** — every task is checkpointed first, so you can **revert** the workspace to before any task from the history (kept off your git branch — nothing to clean up).
+- **Browse & edit files, review & push Git** — an in-console file tree + code editor with inline git diff, and a Git tab to commit and push.
 - **App config & secrets** — per-app key/values; sensitive values are write-only (set once, encrypted at rest, never returned).
 - **Snapshots / fork / restore** — capture a workspace, fork it into a new app, or restore in place.
 - **Activity / events** — a durable per-app timeline of what happened.
@@ -256,13 +258,21 @@ that talks **only** to the public `/v1` API. From it you can:
 
 - **create apps** and **choose a runtime preset**;
 - **create / start / stop / delete** a sandbox and **open its live preview**;
-- **submit agent tasks** and **view task status + streamed logs**;
+- **chat with the agent** — submit tasks, watch streamed output, and see the
+  **full task history** (it persists across reloads), with a **↩ revert** on any
+  turn to roll the workspace back to before that task (see [Undo a task](#undo-a-task--checkpoints));
+- **browse & edit files** — a workspace file tree with an in-browser code editor
+  (syntax highlighting, `Cmd/Ctrl+S` to save), inline git status badges, and a
+  **download-as-zip**;
+- **review & ship with Git** — a Git tab with a per-file **diff viewer**, staged
+  **commit**, and **push** (ahead/behind); credentials live in **Settings → Git
+  credentials**;
 - **manage per-app config & secrets** (sensitive values are write-only: set
   once, never shown again);
 - **view the activity/events timeline** and **runtime processes + their logs**;
 - **snapshot / fork / restore** an app's workspace;
-- **read instance settings** and **edit the lifecycle tunables only** (idle
-  reaping + keepalive — see [Settings](#settings)).
+- **connect coding agents** (OpenCode, Claude Code — OAuth or API key) and
+  **read instance settings** / edit the lifecycle tunables (see [Settings](#settings)).
 
 ```bash
 # the console is gated by basic auth and ships FAIL-CLOSED — set a login first:
@@ -288,6 +298,25 @@ profile) runs sandboxd without the console.
 The console never touches the database or workspaces — it's a pure `/v1` client
 (contract in [`docs/openapi.yaml`](docs/openapi.yaml)). More detail:
 [`console/README.md`](console/README.md).
+
+## Undo a task — checkpoints
+
+Before **every** agent task, sandboxd snapshots the workspace to a private git
+ref (`refs/sandboxd/checkpoints/<task>`) — off to the side, so it never shows up
+in your branch history, `git log`, or a push. That snapshot is the **revert
+seam**.
+
+- **List history:** `GET /v1/sandboxes/{id}/tasks` returns every task (newest
+  first) with its `files_changed` and a `can_revert` flag. In the console it's
+  the task history in the agent chat.
+- **Revert:** `POST /v1/sandboxes/{id}/tasks/{taskId}/revert` (or the **↩ revert**
+  link on a turn) restores the working files to **before that task ran** —
+  undoing its changes and everything after. It keeps installed packages and
+  build caches, and it does **not** move your branch/HEAD. Requires a running
+  sandbox (the restore runs in the workspace).
+
+Checkpoints are distinct from **snapshots** (full workspace freezes, including
+installed deps) and from your own **git commits** (what you ship).
 
 ## Settings
 
@@ -363,11 +392,19 @@ by default** for local use; with `SANDBOXD_API_AUTH_DISABLED=false` +
 | `POST /v1/sandboxes/{id}/stop` | — | stop now to free RAM (wakes on next preview hit) |
 | `DELETE /sandbox/{id}` | — | destroy the container, **keep** the workspace |
 | `POST /sandbox/{id}/purge` | — | destroy **and delete** the workspace |
-| `POST /v1/sandboxes/{id}/tasks` | `{"prompt":"…","agent":"opencode","timeout_s":600}` | run a coding agent headlessly (`timeout_s` optional: 0/omitted → 10m default, max 24h) |
+| `POST /v1/sandboxes/{id}/tasks` | `{"prompt":"…","agent":"opencode","timeout_s":600}` | run a coding agent headlessly. `agent`/`model` optional (default agent = `opencode`); `continue` is a tri-state that defaults to resuming the last session |
+| `GET /v1/sandboxes/{id}/tasks` | — | **task history** (newest first) — each row has `files_changed` + `can_revert` |
 | `GET /v1/sandboxes/{id}/tasks/{taskId}` | — | task result |
 | `GET /v1/sandboxes/{id}/tasks/{taskId}/events` | — | live task event stream (SSE) |
-| `GET/PUT /v1/sandboxes/{id}/files` | `{"path","content","append"}` | list / read / write workspace files |
+| `POST /v1/sandboxes/{id}/tasks/{taskId}/revert` | — | **undo a task** — restore the workspace to its pre-task checkpoint |
+| `GET /v1/sandboxes/{id}/files?path=&recursive=` | — | list the workspace file tree |
+| `GET /v1/sandboxes/{id}/files/content?path=` | — | read a file (`text/plain`, 2 MiB cap) |
+| `PUT /v1/sandboxes/{id}/files?path=` | *(raw body = file contents)* | write a file |
+| `GET /v1/sandboxes/{id}/export` | — | download the whole workspace as a `.zip` |
 | `GET /healthz`, `GET /readyz` | — | liveness / readiness |
+
+The full, contract-tested reference (git, agents, apps, snapshots, settings…) is
+[`docs/openapi.yaml`](docs/openapi.yaml).
 
 A complete, copy-pasteable runbook (including driving it from your own agent) is
 in **[`AGENTS.md`](AGENTS.md)**.
@@ -400,6 +437,12 @@ The defaults run a complete local stack. The knobs you'll touch most:
 | `SANDBOXD_API_BIND` | `127.0.0.1:9090` | where the control-plane API is published |
 | `SANDBOXD_API_AUTH_DISABLED` | `true` | open API for local use; set `false` + tokens for prod |
 | `CONSOLE_BASIC_AUTH` | *(locked)* | `user:htpasswd-hash` gating the optional console; fail-closed default |
+| `SANDBOXD_DEFAULT_AGENT` | `opencode` | agent used for tasks that don't specify one |
+| `SANDBOXD_OPENCODE_ZEN_PATH` | `zen` | OpenCode Zen endpoint: `zen` (pay-as-you-go) or `zengo` (the "go" subscription). See [agent-auth](docs/agent-auth.md#opencode-zen-subscription-vs-pay-as-you-go) |
+| `SANDBOXD_AGENT_PROXY_URL` | `http://sandboxd:9100` | in-network URL of the credential-injecting auth proxy (empty disables it) |
+
+Agent auth, the proxy, and the full env reference live in
+[`docs/agent-auth.md`](docs/agent-auth.md).
 
 ## Authentication
 

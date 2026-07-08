@@ -22,8 +22,8 @@ High level:
   [Runtime model](#runtime-model)).
 - **Console** — a React SPA that talks **only** to `/v1`; never touches the DB or
   workspaces.
-- **Agent auth store** — opaque per-provider credential dirs under the data root,
-  **outside** any workspace (post-v0.4; see `docs/agent-auth.md`).
+- **Auth proxy** (`internal/authproxy`) — agents reach their model provider
+  through it, so **no credential ever enters a sandbox** (see `docs/agent-auth.md`).
 - **App config/secrets**, an **event timeline**, and **snapshots/fork/restore**
   are first-class app subsystems (below).
 
@@ -90,10 +90,13 @@ default; TLS is a config switch (see README → Production / TLS).
 ### Console (optional UI)
 A small React SPA served behind the same Traefik (`console.<domain>`). It is a
 **pure `/v1` API client** — it never opens the DB or a workspace. It creates
-apps, picks presets, drives sandbox lifecycle + preview, submits tasks and
-streams logs, manages config/secrets, shows the events timeline and per-process
-logs, does snapshot/fork/restore, and reads settings (editing only the lifecycle
-tunables). Contract: `docs/openapi.yaml`.
+apps, picks presets, drives sandbox lifecycle + preview, and runs the agent
+chat with **persistent task history + per-task revert**. It also **browses and
+edits workspace files** (a tree + an in-browser CodeMirror editor, lazy-loaded,
+with inline git status/diff), **reviews and pushes with Git** (diff viewer,
+commit, push), manages config/secrets, shows the events timeline and per-process
+logs, does snapshot/fork/restore, connects agents, and reads settings (editing
+only the lifecycle tunables). Contract: `docs/openapi.yaml`.
 
 ### App subsystems
 - **App config & secrets** — per-app key/values. Sensitive values are write-only:
@@ -105,12 +108,24 @@ tunables). Contract: `docs/openapi.yaml`.
 - **Snapshots / fork / restore** — capture an app's **workspace state**
   (`internal/snapshot`), excluding dependency/build artifacts; fork into a new
   app or restore in place. Ownership is normalized to the sandbox user.
-- **Agent auth store** (post-v0.4, `feat/phase-10b-agent-auth`) — opaque
-  per-provider credential dirs under `SANDBOXD_DATA_DIR/agent-auth/<provider>/`,
-  **outside** any workspace, mounted read-only-to-the-task at
-  `/run/agent-auth/<provider>` so the selected agent's `HOME` finds its creds.
-  Credentials never enter workspaces, snapshots, Docker env, logs, events, or
-  task results. See `docs/agent-auth.md`.
+- **Agent auth store** — opaque per-provider credentials under
+  `SANDBOXD_DATA_DIR/agent-auth/<provider>/`, **outside** any workspace,
+  encrypted/opaque and never returned by the API.
+- **Credential-injecting auth proxy** (`internal/authproxy`) — **the default
+  path.** Every agent reaches its model provider through a reverse proxy that
+  runs control-plane-side and holds the real credentials; the sandbox gets only
+  a base URL + a dummy key, and the proxy injects the real `Authorization` /
+  `X-Api-Key` on the wire. **No API key or OAuth token ever enters a sandbox** —
+  not in its filesystem, env, snapshots, logs, or task results. When the proxy
+  is disabled, a legacy fallback bind-mounts the provider's auth dir read-only at
+  `/run/agent-auth/<provider>`. See `docs/agent-auth.md`.
+- **Task checkpoints** (`cmd/runtimed/workspace.go`) — before every agent task,
+  runtimed snapshots the workspace as a git commit under a **private ref**
+  (`refs/sandboxd/checkpoints/<task>`), built with `commit-tree` and an isolated
+  index so it never touches HEAD, the branch history, a push, or the user's
+  staging area. It's the `files_changed` baseline and the **revert seam**:
+  `POST /v1/sandboxes/{id}/tasks/{taskId}/revert` restores the worktree to a
+  checkpoint. Distinct from snapshots (full workspace freezes) and user commits.
 
 ## Runtime model
 
@@ -186,7 +201,7 @@ Push targets the app's stored repo URL (never the repo's `.git/config` origin),
 pushes only to a new branch, never force-pushes, and creates no PRs. PAT + HTTPS
 only — no SSH, App/OAuth, or provider APIs.
 
-## Design choices & current limitations (v1)
+## Design choices & current limitations (v0.3)
 
 sandboxd v1 optimizes for "runs anywhere with just Docker, one command." A few
 mechanisms are deliberately simple so there's nothing host-specific to install

@@ -1,3 +1,5 @@
+> **Historical note.** This document predates the public **0.3.0** launch numbering (the pre-launch line was internally versioned v0.4.x). It is kept for provenance; for the current release see [`CHANGELOG.md`](../CHANGELOG.md).
+
 # Upgrading sandboxd v0.2.0 → v0.4
 
 **TL;DR — v0.4 is a backward-compatible, additive upgrade from v0.2.0.** No API
