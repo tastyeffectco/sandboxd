@@ -966,6 +966,7 @@ paths:
                         prompt: { type: string }
                         agent: { type: string }
                         status: { type: string }
+                        agent_message: { type: string }
                         files_changed: { type: array, items: { type: string } }
                         checkpoint_id: { type: string }
                         can_revert: { type: boolean }
