@@ -1,3 +1,5 @@
+> **Historical note.** This document predates the public **0.3.0** launch numbering (the pre-launch line was internally versioned v0.4.x). It is kept for provenance; for the current release see [`CHANGELOG.md`](../CHANGELOG.md).
+
 # sandboxd v0.4.0 — Self-hosted control plane for AI-built apps
 
 v0.4 turns sandboxd into a complete, operable platform for AI-built apps: a **web
