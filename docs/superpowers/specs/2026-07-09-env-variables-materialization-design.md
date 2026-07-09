@@ -48,17 +48,38 @@ Dev → prod = which environment you boot a sandbox with. Same code, zero change
 **Gaps:** `app_config` isn't environment-scoped, and the v1 create request
 (`v1CreateAppSandboxReq`, `v1_apps.go`) doesn't expose `env`.
 
-## Key decision: inject **process env**, do not write a file
+## Key decision: inject **process env**, do not write a file in the workspace
 
 - Injecting at the container level means **nothing is written to the workspace**
   → nothing to `.gitignore`, nothing to leak to GitHub. The original ".env in
-  git" concern **disappears** because there is no file.
+  git" concern **disappears** because there is no file in the repo.
 - **Stack-agnostic:** Node/Express + FastAPI read `process.env`/`os.environ`;
   Vite/Astro read `process.env` for prefixed vars at build. One mechanism, all
   stacks.
-- A stack-aware **`.env` file** is an **opt-in client convenience** for a stack
-  that reads *only* a file — a client drops it via the existing files API. **Not
-  core.**
+- A stack-aware **`.env` file in the workspace** is an **opt-in client
+  convenience** for a stack that reads *only* a file — a client drops it via the
+  existing files API. **Not core.**
+
+### Build-time works for free (unlike a separate `docker build`)
+
+Coolify needs a build-vs-runtime split because it runs a *separate* `docker
+build` that can't see runtime env, so build vars become Dockerfile `ARG`s /
+`--env-file`. sandboxd **builds inside the already-running container**
+(`build.command` / dev server via the manifest), so injected **process env is
+present at build time automatically** — Vite/Astro inline prefixed vars during the
+in-container build with no ARG plumbing. We get with one mechanism what Coolify
+needs two for. (Revisit only if we move to pre-baked images.)
+
+### Injection mechanism: prefer an env-file *outside the workspace* over `--env` flags
+
+The current path passes each var as `docker run --env KEY=VAL` and **rejects
+newlines** (`handlers.go`), so **multiline values (PEM keys, certs, JSON) can't go
+through** — the same case Coolify solves with a quoted `.env`. Recommended:
+control-plane writes the resolved set to an **env-file outside the git workspace**
+(e.g. `/run/sandboxd/env`) that `runtimed` sources into the app's process
+environment. This keeps process-env semantics (build-time works), handles
+multiline + large sets, and — being outside the repo — never risks GitHub. The
+simple `--env` path stays valid for small single-line sets.
 
 ## Scope: core vs not
 
@@ -99,12 +120,23 @@ Dev → prod = which environment you boot a sandbox with. Same code, zero change
 
 ## Not in core (client policy + follow-ons)
 - **Console:** environment switcher, env editor (keys validated
-  `[A-Za-z_][A-Za-z0-9_]*`, values masked in-UI), a "Spin production" action. All
-  over `/v1`.
+  `[A-Za-z_][A-Za-z0-9_]*`, values masked in-UI), **a bulk `.env` "Developer
+  View"** (Coolify-style paste/edit of the whole set), a "Spin production" action.
+  All over `/v1`.
 - **Optional `.env` drop:** for a stack that reads only a file, a client writes a
   gitignored `.env`/`.env.local` via `PUT …/files` + `.gitignore`. Documented, not
   engine behavior.
-- **Promotion / diff / inheritance:** entirely client-side.
+- **Scoped/shared variables + `{{scope.VAR}}` inheritance, preview-env sets,
+  promotion / diff** — all client-side (Coolify does these as policy above the
+  engine). Roadmap, not core.
+
+## Coolify parallels (reference)
+Validated against Coolify's model: environment scope (prod/staging), write-only
+"locked secrets", encryption at rest, and the bulk `.env` Developer View all match
+this design. Left as client policy (as Coolify layers them): `{{ }}` shared-var
+inheritance, preview-deployment env, `SERVICE_*` magic secrets. Optional small
+core extension worth considering: a few predefined `SANDBOXD_*` vars (preview URL,
+`PORT`, sandbox id), mirroring Coolify's `COOLIFY_*`/`PORT`/`HOST`.
 
 ## Secrets model (retained)
 Sensitive values encrypted at rest in `app_config` (protects DB/backups), API
