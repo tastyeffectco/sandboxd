@@ -1,7 +1,7 @@
 # Environments — env vars as a core engine primitive (mechanism, not policy)
 
 **Date:** 2026-07-09
-**Status:** Design approved, pending spec review
+**Status:** FINAL — ready for an implementation plan
 **Area:** `sandboxd` core (control-plane + a migration); clients (console, CLI)
 build the *policy* on top.
 
@@ -20,6 +20,22 @@ The engine ships the *mechanism* — "store env per app per environment" and
 what environments exist, dev/prod semantics, promotion, diffing, or UI — those are
 **client policy**. This is what keeps the engine usable across very different use
 cases.
+
+### The irreducible primitive, and two layers
+
+Strip every use-case assumption and the core reduces to **one thing**:
+`POST /apps/{id}/sandbox { env: {K:V} }` → inject at boot. The engine knows
+nothing about "dev"/"prod"/"environments"; the **caller** decides what env means.
+Named env sets are *optional sugar*, not the core concept. Hence two layers:
+
+| Layer | What | Consumers |
+|---|---|---|
+| **L0 — primitive (irreducible core)** | `env` map on sandbox-create → process env at boot | everyone (console, CLI, CI, any tool) |
+| **L1 — durable named sets (optional core sugar)** | store env sets on the app under a free-form `environment` label; boot with `{ environment }` to pull one | clients that don't hold their own env |
+| **Policy (NOT core)** | dev/prod meaning, promotion, inheritance, UI, `.env` files | console + other clients |
+
+The console uses L1; another tool can use L0 or build its own env system. The
+engine is the substrate; the console is one client. **This is the design.**
 
 ## Model: App · Environment · Sandbox
 
@@ -117,6 +133,47 @@ simple `--env` path stays valid for small single-line sets.
   injected `env` map (an explicit `env` on the request overrides stored values).
 - **Result:** `POST /apps/{id}/sandbox { environment: "production" }` → different
   values, same code.
+
+## Final plan — build order (file-level)
+
+**Phase 1 · L0 primitive** (ships value alone; enables every use case)
+1. `internal/api/v1_apps.go` — add `Env map[string]string` (+ later `Environment
+   string`) to `v1CreateAppSandboxReq`; validate keys `^[A-Za-z_][A-Za-z0-9_]*$`;
+   put into `createBody["env"]`.
+2. `internal/api/handlers.go` — accept `env` on the internal create body; **relax
+   the newline rejection** by routing values through an env-file instead of only
+   `--env` flags.
+3. `cmd/runtimed/*` — write the resolved set to an env-file **outside the
+   workspace** (e.g. `/run/sandboxd/env`) and source it into the app process env
+   **before web start** (extends the existing `os.Environ()` path in
+   `process.go`). Simple single-line sets may still use `--env`.
+4. Tests: v1 passes `env` through; multiline value survives; `printenv` in the
+   sandbox shows it; agent-key/`RUNTIMED_TEMPLATE` injection unregressed.
+
+**Phase 2 · L1 durable named sets**
+5. `migrations/0022_app_config_environment.sql` — `ADD COLUMN environment TEXT NOT
+   NULL DEFAULT 'default'`; new unique `(app_id, environment, key)`; backfill.
+6. `internal/store/app_config.go` — thread `environment` through
+   create/list/patch/delete + the unique constraint.
+7. `internal/api/v1_app_config.go` — `?environment=` (default `'default'`) on the
+   config endpoints; encryption/redaction/write-only unchanged.
+8. Tests: env-scoped isolation; migration backfill; tenant scoping holds.
+
+**Phase 3 · L1 boot-by-name**
+9. `internal/api/v1_apps.go` — on create, if `Environment` set, resolve
+   `app_config WHERE app_id, environment`, decrypt sensitive (existing secrets
+   seam, key stays in CP), merge under any explicit `env` (explicit wins), inject.
+10. Tests: right set resolved+decrypted; explicit overrides stored; unknown
+    environment → empty (not error).
+
+**Phase 4 · policy (NOT core) — separate specs/plans**
+11. Console: environment switcher, row editor, **bulk `.env` Developer View**,
+    "Spin production".
+12. Docs: `App · Environment · Sandbox` concept + Astro walkthrough; presets table.
+13. Optional: predefined `SANDBOXD_*` vars (preview URL, `PORT`, sandbox id).
+
+Phases 1–3 are the core work; each merges independently. Phase 1 alone already
+delivers "spin a sandbox with any env."
 
 ## Not in core (client policy + follow-ons)
 - **Console:** environment switcher, env editor (keys validated
