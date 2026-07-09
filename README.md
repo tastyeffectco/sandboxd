@@ -15,6 +15,15 @@
   <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-yellow.svg">
 </p>
 
+<p align="center">
+  <a href="https://github.com/sponsors/tastyeffectco"><img alt="Sponsor sandboxd" src="https://img.shields.io/badge/%E2%9D%A4%20Sponsor-tastyeffectco-db61a2?logo=githubsponsors&logoColor=white"></a>
+</p>
+
+> **sandboxd is MIT-licensed and free forever** — no paid tiers, no rug pulls.
+> If it's useful to you, [**sponsoring**](https://github.com/sponsors/tastyeffectco)
+> directly funds ongoing maintenance and the **deploy-feature roadmap** (one-click
+> deploys of the apps your users build). Thank you 🙏
+
 ---
 
 <img width="1100" height="816" alt="sandboxd-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
@@ -554,6 +563,35 @@ Tracked, non-blocking — details in [`docs/sandbox-manifest.md`](docs/sandbox-m
   `bun`/`yarn` via `packageManager`, or needs an external DB, won't boot
   zero-config — set an explicit `web.command` in `sandbox.yaml`.
 
+## Community & roadmap
+
+- **Roadmap** — what's shipped, what's next, and how versioning works before 1.0:
+  [`ROADMAP.md`](ROADMAP.md).
+- **Discussions** — questions, self-hosting help, and feature ideas:
+  [github.com/tastyeffectco/sandboxd/discussions](https://github.com/tastyeffectco/sandboxd/discussions).
+- **Contribute** — good first PRs include adding a runtime preset or an App Store
+  recipe; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Security** — report vulnerabilities privately per [`SECURITY.md`](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE). Use it, ship it, sell what you build on it.
+
+## Sponsors
+
+sandboxd is free and MIT-licensed. **Sponsors keep it maintained and fund the
+[deploy roadmap](https://github.com/sponsors/tastyeffectco)** — thank you to
+everyone who chips in.
+
+<!--
+  SPONSOR LOGO WALL — how to add a sponsor:
+  Drop a cell into the <p align="center"> grid below (highest tiers first):
+      <a href="https://SPONSOR_SITE"><img src="LOGO_URL" width="130" alt="Sponsor Name"></a>
+  Guidelines: logo ~130px wide, PNG or SVG, hosted on a stable URL (the
+  sponsor's site or this repo's assets). Remove the placeholder <em> line once
+  the first real logo lands. Ordering is by tier, then join date.
+-->
+<p align="center">
+  <!-- sponsor logos go here -->
+  <em>No sponsors yet — <a href="https://github.com/sponsors/tastyeffectco">be the first</a>.</em>
+</p>
