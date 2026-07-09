@@ -1,231 +1,150 @@
-# Environment variables — materializing config & secrets into the app
+# Environment variables — a console env editor over existing `/v1` primitives
 
 **Date:** 2026-07-09
 **Status:** Design approved, pending spec review
-**Area:** control-plane (`internal/api`, `internal/store`, `internal/gitimport`), `cmd/runtimed`, presets, docs
+**Area:** **console** (the web UI, a pure `/v1` client). **Zero changes to
+`sandboxd` core** (control-plane / runtimed) for the MVP.
 
 ## Problem
 
-App **config & secrets** is *store-only* today. The pieces that exist:
+Users need to set/override environment variables for an app — the driving case:
+*"I have an Astro blog with a `.env` for local dev. On deploy I want to change
+those values without the `.env` living in GitHub."*
 
-- `app_config` table + CRUD API (`/v1/apps/{id}/config`), AES encryption for
-  sensitive values (`ValueCiphertext`/`ValueNonce`), redaction on read, tenant
-  scoping, and audit — all covered by `v1_app_config_test.go`.
+App **config & secrets** exists in the DB (`app_config`, encrypted, write-only)
+but is **store-only** — nothing delivers it to the running app, and secrets are
+never returned, so a client can't read them back to materialize a file. Rather
+than build a server-side materialization pipeline, we deliver this **entirely in
+the console** using primitives that already exist.
 
-The missing piece: **nothing delivers those values to the running app.**
-`ListAppConfig` is only ever read by the API list endpoint; the web process
-launches via `bash -lc` with a plain `os.Environ()` (`runtimed/process.go`).
-Stored config/secrets never reach the app.
+## Decision (the reframe)
 
-Concrete user need (the driving case): *"I have an Astro blog with a `.env` for
-local dev. On deploy I want to change those values without the `.env` living in
-GitHub."*
+**The gitignored `.env` file in the workspace IS the store.** The console is an
+**"Environment variables" editor** over that file. No `app_config`, no DB copy,
+no runtimed/control-plane changes. Everything runs through existing `/v1` calls.
 
-## Goal
+Consequences we consciously accept:
 
-Materialize stored config/secrets into a **stack-aware, gitignored managed env
-file** that `runtimed` writes into the workspace and reloads live — so setting a
-config/secret makes it a real environment variable the app reads, and it is never
-pushed to git.
+- **The config-vs-secret flavor collapses.** Encryption/redaction only mattered
+  for the DB store; a gitignored file neither encrypts nor redacts. Every entry
+  is just an env var in a file. The one security property that matters —
+  *"not pushed to GitHub"* — applies to the whole file equally. (The console may
+  offer a cosmetic *mask-in-UI* toggle for shoulder-surfing; it's not storage.)
+- **Values are viewable** by opening the file in the **Files tab** — which is
+  exactly the "how do I see my env" answer we already chose.
+- **No auto-apply.** Env is read at process startup for the stacks that matter
+  (Node/Express, FastAPI read once; Vite/Next dev only *sometimes* restart on
+  `.env` change). So we expose a **manual Restart** instead of relying on HMR.
 
-## Non-goals
+## Existing primitives — proving zero core
 
-- Not building the console UI in this plan (the "developer view" is a thin
-  **follow-on** that consumes what this exposes — see §9).
-- Not adding per-entry "targets" or non-env config consumers (YAGNI; the model
-  below leaves room to add later).
-- Not encrypting values on disk *inside* the sandbox — resolved values must be
-  plaintext for the app to read them (accepted trade-off; see §7).
-
-## Unified model: config/secrets **are** environment variables
-
-There is **one** concept: the app's **environment variables**. Each entry is one
-of two flavors, distinguished only by the existing `sensitive` flag:
-
-- **config** — a non-sensitive env var (stored plaintext, returned on read).
-- **secret** — a sensitive env var (encrypted at rest, redacted on read).
-
-Both become env vars in the managed file. No separate "env variables" surface.
-
-**Implication:** keys become env-var *names*, so `validConfigKey` is tightened to
-`^[A-Za-z_][A-Za-z0-9_]*$` (max 256). Existing rows that violate this are handled
-by a **warn-not-break** migration (§8).
-
-**Encryption & visibility (decided).** Only sensitive **values** are encrypted
-(with `SANDBOXD_SECRETS_KEY`); keys/names are always plaintext — needed to list,
-validate, and write the file. The API stays **strict write-only** for secrets:
-values are never returned and are redacted forever on read. *Why encrypt:* the
-managed `.env` is plaintext on one isolated, ephemeral container, but the
-**database** holds every app's secrets plus backups — encrypting at rest means a
-stolen `sandboxd.db` yields no live credentials, and it blocks API-token
-exfiltration. *If a developer wants to see an effective value:* they open the
-managed env file in the sandbox (Files tab / workspace download) — the file, not
-the API, is the source of truth for values. **No reveal endpoint.**
-
-## Design
-
-### 1. Manifest gets an `env` section
-
-Add an optional block to `Manifest` (`cmd/runtimed/manifest.go`):
-
-```yaml
-env:
-  file: ".env.local"   # target file for managed values; per-stack default, overridable
-```
-
-```go
-type Manifest struct {
-    Version int
-    Web     *WebProc
-    Build   *BuildSpec
-    Workers []Worker
-    Env     *EnvSpec   `yaml:"env"` // NEW; nil => stack default
-}
-type EnvSpec struct {
-    File string `yaml:"file"` // e.g. ".env.local" or ".env"
-}
-```
-
-**Per-preset defaults** (preset manifests in `internal/preset/preset.go`):
-
-| Preset / stack | `env.file` | Why |
+| Need | Existing `/v1` primitive | Verified |
 |---|---|---|
-| `react-vite`, `nextjs` | `.env.local` | native higher-precedence override; gitignored by convention; never touches a committed `.env` |
-| `node-express`, `fastapi`, `worker` | `.env` | plain `dotenv` / `python-dotenv` only read `.env` |
+| Write `.env.local` / `.env` | `PUT /v1/sandboxes/{id}/files?path=<rel>` — atomic write, path-cleaned, **handles dotfiles** | `v1_files_write.go` + test writes `.config/...` |
+| Read current file / `.gitignore` | `GET /v1/sandboxes/{id}/files/content?path=<rel>` | `v1_files.go` |
+| Warn if target is git-tracked | `GET /v1/sandboxes/{id}/git/status` (returns `untracked`/`added`/…) | `v1_git.go` |
+| Apply the change (restart) | `POST /v1/sandboxes/{id}/stop` → next request **wakes** into a fresh boot that re-reads the file; `stop` keeps the workspace | quickstart + wake handler |
+| View values | open the file in the **Files tab** (a files read) | existing |
 
-**Runtime detection** (imported repos) sets `.env.local` for Vite/Astro/Next
-recipes, `.env` otherwise. If a manifest omits `env`, `runtimed` applies the
-stack default; a hardcoded fallback of `.env` applies when the stack is unknown.
+## Design (console)
 
-### 2. Effective-env resolution (control plane)
+### 1. Stack-aware target file
 
-New helper (e.g. `internal/api` or a small `internal/appenv` package):
+The console picks the target from the app's known preset/stack (no manifest change):
 
-```
-resolveEffectiveEnv(ctx, appID) -> map[string]string
-  - ListAppConfig(appID)
-  - for each entry: if sensitive -> secrets.Decrypt(ciphertext,nonce); else plaintext
-  - return {KEY: value}
-```
+| Preset / stack | Target file | Why |
+|---|---|---|
+| `react-vite`, `nextjs`, Astro | `.env.local` | native higher-precedence override; gitignored by convention; never touches a committed `.env` |
+| `node-express`, `fastapi`, `worker`, unknown | `.env` | plain `dotenv` / `python-dotenv` only read `.env` |
 
-The **secrets key never leaves the control plane**; only the resolved values are
-sent onward.
+### 2. The env editor
 
-### 3. `runtimed` — `applyEnv` + `POST /env`
+- A **key/value editor** (rows), keys validated as env names (`[A-Za-z_][A-Za-z0-9_]*`).
+- **Load:** `GET …/files/content?path=<target>` → parse existing managed block
+  (round-trips values the user previously set; ignores/preserves anything outside
+  the managed block).
+- **Save:** compose a dotenv document — a managed banner + `KEY="value"` lines
+  with correct quoting/escaping (newlines, quotes, `#`, spaces) — and
+  `PUT …/files?path=<target>` (atomic).
+  ```
+  # ---- managed by sandboxd console — edit here or in this file ----
+  DATABASE_URL="postgres://..."
+  PUBLIC_SITE=https://example.com
+  ```
 
-New endpoint on the runtimed server (`cmd/runtimed/server.go`):
+### 3. Keep it out of GitHub
 
-```
-POST /env   { file: ".env.local", vars: {KEY: VALUE, ...} }
-```
+- On save, the console reads `.gitignore` (`GET …/files/content`), and if the
+  target file isn't ignored, appends a managed block and writes it back
+  (`PUT …/files?path=.gitignore`).
+- It then calls `GET …/git/status`; if the target shows as **tracked** (not
+  `untracked`) — the committed-`.env` case — it shows a **warning banner**:
+  *"`.env` is committed to git; values here may be pushed. Run `git rm --cached
+  .env` to keep them private."* No auto-untrack.
 
-`applyEnv(file, vars)`:
+### 4. Apply = manual Restart
 
-1. **Write** `file` atomically (`tmp` + `rename`) with a managed banner and
-   correct dotenv quoting/escaping (values with newlines, quotes, `#`, spaces):
-   ```
-   # ------------------------------------------------------------
-   # Managed by sandboxd — do not edit. Generated from app config.
-   # ------------------------------------------------------------
-   DATABASE_URL="postgres://..."
-   PUBLIC_SITE=https://example.com
-   ```
-2. **Ensure `.gitignore`** contains `file` — append a managed block if absent:
-   ```
-   # managed by sandboxd
-   .env.local
-   ```
-3. **Warn if tracked**: if `file` is already tracked by git
-   (`git ls-files --error-unmatch <file>` succeeds), emit a `config.env.tracked`
-   activity event / log — *"`<file>` is tracked in git; managed values may be
-   pushed. Untrack it (`git rm --cached <file>`) to keep them private."* Do **not**
-   auto-untrack.
-4. **Reload**: restart the `web` process (+ workers); if the stack is build-time
-   (has a non-empty `build.command` and a `web` that serves a build), re-run
-   `build` before/with the restart.
+- The console gets a general **"Restart app"** action (useful beyond env),
+  implemented as `POST …/stop` (the next preview request wakes a fresh boot).
+- After a save, the editor surfaces *"Restart to apply"* pointing at that action.
 
-`applyEnv` also runs at **boot, before the web process starts**, so the app comes
-up with values present.
+### 5. View values
 
-### 4. Control-plane lifecycle
+Values are shown in the editor (optionally masked in-UI) and are always visible
+by opening the target file in the **Files tab**. There is no API that "reveals"
+anything the file doesn't already show.
 
-- **On sandbox boot:** `resolveEffectiveEnv` → call runtimed `/env` before web
-  start (wired into the existing boot/wake path).
-- **On config change** (`POST`/`PATCH`/`DELETE /v1/apps/{id}/config`):
-  re-resolve → call `/env`, **debounced** (~500ms) so a burst of edits collapses
-  into one rewrite+restart. This delivers the approved *auto-apply + restart*.
+## What we are NOT building (and why)
 
-### 5. Git-push safety
+- ❌ Manifest `env:` section, runtimed `applyEnv`, `POST /env` — unnecessary; the
+  console writes the file directly.
+- ❌ Control-plane resolve/decrypt/debounce — no DB copy to resolve.
+- ❌ `app_config` changes / encryption / key-validation migration — env no longer
+  routes through `app_config`.
+- ❌ Auto-restart — replaced by manual Restart (HMR is unreliable for env).
 
-- The managed file is always in `.gitignore`, so `git add -A` cannot stage it.
-- For `.env`-target stacks where the repo committed `.env`, we **warn** (§3.3)
-  rather than untracking — the operator decides.
-- Optional defense-in-depth: `gitimport/push` skips a managed file that is
-  untracked-but-present (already the case via gitignore; no extra pathspec needed
-  unless a tracked target is detected, in which case the warning is the contract).
+## Trade-offs
 
-## Data model
-
-No schema change. Reuse `app_config`. Only `validConfigKey` tightens (§Unified
-model). `access_policy` is retained but out of scope here.
-
-## API
-
-- Config endpoints unchanged in shape. `GET /v1/apps/{id}/config` responses gain
-  a derived, read-only **`env_file`** hint (the resolved target file) so clients
-  can show "written to `.env.local`". Optional: a `warnings` field surfacing the
-  `tracked` condition.
-- No new secret ever returned; redaction unchanged.
-
-## 9. Developer view (console — follow-on, described not built here)
-
-The console Config tab becomes **Environment variables**: one list, each row
-badged `secret`/`config`, showing the target `env_file` and a badge *"written to
-`.env.local` · gitignored · never pushed"*, plus the `tracked`-warning banner
-when present. Secret values render redacted (the API won't reveal them); a
-*"view values"* affordance deep-links to the managed env file in the **Files tab**
-(the only place values are visible). Consumes `env_file` + `warnings` from §API.
-Separate spec/plan.
+- **File-only store:** values live only in the gitignored workspace file (plaintext
+  on the sandbox disk — unavoidable for any env). Survives restarts and `stop`/wake;
+  **lost on a full workspace reset**; **carried into snapshots/forks** (a fork
+  inherits its env — usually desired; note it before sharing a snapshot publicly).
+- **No server-side guarantee:** a non-console API user manages the file themselves
+  — fine, it's just a file. If a first-class server-side env ever becomes needed,
+  the earlier core design (managed materialization) is the fallback, additive.
 
 ## Docs
 
-- New **Config & secrets** guide (framed as *Environment variables*) with the
-  Astro walkthrough: local `.env` → deploy-time override via managed `.env.local`,
-  not in GitHub.
-- Update `concepts.md` (the env-variables concept), `reference/architecture.md`
-  (add the env-materialization flow), `guides/runtime-and-store.md` (the `env:`
-  block), and the presets table (managed-file column).
+- New **Environment variables** guide with the **Astro walkthrough**: local `.env`
+  → deploy-time override via a gitignored `.env.local` edited in the console, never
+  in GitHub.
+- Update `concepts.md` (env vars = a gitignored file the console edits),
+  `guides/console.md` (the env editor + Restart), and the presets table
+  (target-file column). No architecture change (nothing new server-side).
 
-## Testing
+## Testing (console)
 
-**`runtimed`**
-- dotenv writer: quoting/escaping of tricky values; atomic replace; managed banner.
-- `.gitignore` ensure: appends once, idempotent, preserves existing entries.
-- warn-if-tracked: emits event when target is tracked, silent otherwise; never untracks.
-- reload: web (+workers) restart on apply; build-time stack re-runs build.
-- boot ordering: `applyEnv` runs before web start.
+- **dotenv compose/parse:** round-trips tricky values (quotes, newlines, `#`,
+  spaces, `=` in value); preserves content outside the managed block.
+- **key validation:** rejects non-env-safe names in the editor.
+- **gitignore ensure:** appends once, idempotent, preserves existing entries.
+- **warn-if-tracked:** banner shows when `git/status` reports the target tracked;
+  hidden when `untracked`.
+- **target selection:** `.env.local` for Vite/Astro/Next, `.env` otherwise.
+- **restart:** Restart action calls `stop`; editor shows "Restart to apply".
+- **integration (against a live sandbox):** set vars → file appears, gitignored →
+  open in Files tab shows them → restart → app reads them → `git/status` never
+  lists the target as staged.
 
-**Control plane**
-- `resolveEffectiveEnv`: decrypts sensitive, passes through plaintext.
-- lifecycle: `/env` called on boot and on config change; debounce collapses bursts.
-- key validation: rejects non-env-safe names on create; warn-migration for legacy.
+## Optional future (not MVP)
 
-**Integration**
-- set config → gitignored managed file appears with value → app reads it →
-  change value → restart → app sees new value → managed file never staged on push.
+- A lightweight `POST /v1/sandboxes/{id}/processes/{name}/restart` to bounce just
+  the web process (avoids the wake cold-start). Small, additive, if UX demands it.
+- Server-side materialization (the shelved core design) only if a non-console
+  client needs env without writing files itself.
 
-## Rollout / migration
+## Open questions
 
-- Ship `env.file` defaults in presets; existing sandboxes pick it up on next boot.
-- Legacy `app_config` rows with non-env-safe keys: **warn** (event + log) and skip
-  those keys from the managed file; do not delete or break. Document the fix
-  (rename the key).
-
-## Risks / open questions
-
-- **On-disk plaintext in the sandbox** — inherent to letting the app read env;
-  accepted. Mitigated by container isolation + the file being gitignored.
-- **Restart churn** on rapid edits — mitigated by debounce; revisit if noisy.
-- **Build-time detection** — deciding "is this a build-time stack" from the
-  manifest; start with `react-vite`/`nextjs`/Astro-detected and the presence of a
-  build step, refine as needed.
+- **Managed-block parsing:** simplest is "the console owns the whole file." If we
+  must coexist with hand-edited lines, define the managed-block markers precisely
+  (start/end sentinels) — decide during implementation.
