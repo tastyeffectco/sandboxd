@@ -1,150 +1,139 @@
-# Environment variables — a console env editor over existing `/v1` primitives
+# Environments — env vars as a core engine primitive (mechanism, not policy)
 
 **Date:** 2026-07-09
 **Status:** Design approved, pending spec review
-**Area:** **console** (the web UI, a pure `/v1` client). **Zero changes to
-`sandboxd` core** (control-plane / runtimed) for the MVP.
+**Area:** `sandboxd` core (control-plane + a migration); clients (console, CLI)
+build the *policy* on top.
 
-## Problem
+## The requirement that decides the architecture
 
-Users need to set/override environment variables for an app — the driving case:
-*"I have an Astro blog with a `.env` for local dev. On deploy I want to change
-those values without the `.env` living in GitHub."*
+Env vars must be **usable by every client** (console, CLI, CI, other tools) and
+support: *"for production, spin a **new** sandbox with **different** env vars, no
+code changes."* A hand-written file in one workspace can't do that — the values
+must be held by the **engine**, above any single sandbox, and injected when you
+boot one. So this is a lean **core** capability, not a console-only feature.
 
-App **config & secrets** exists in the DB (`app_config`, encrypted, write-only)
-but is **store-only** — nothing delivers it to the running app, and secrets are
-never returned, so a client can't read them back to materialize a file. Rather
-than build a server-side materialization pipeline, we deliver this **entirely in
-the console** using primitives that already exist.
+## Principle: mechanism in core, policy in clients
 
-## Decision (the reframe)
+The engine ships the *mechanism* — "store env per app per environment" and
+"inject an environment's env when booting a sandbox." It has **no opinion** about
+what environments exist, dev/prod semantics, promotion, diffing, or UI — those are
+**client policy**. This is what keeps the engine usable across very different use
+cases.
 
-**The gitignored `.env` file in the workspace IS the store.** The console is an
-**"Environment variables" editor** over that file. No `app_config`, no DB copy,
-no runtimed/control-plane changes. Everything runs through existing `/v1` calls.
+## Model: App · Environment · Sandbox
 
-Consequences we consciously accept:
+```
+APP (durable: code, git, runtime_preset)
+  └── environments:  dev {K=v}   production {K=v}   …   ← named env-var sets, in the engine
+                          │
+   POST /v1/apps/{id}/sandbox { environment: "production" }
+                          │
+                          ▼
+              SANDBOX  ← engine injects that set as PROCESS ENV at boot
+```
+Dev → prod = which environment you boot a sandbox with. Same code, zero changes.
 
-- **The config-vs-secret flavor collapses.** Encryption/redaction only mattered
-  for the DB store; a gitignored file neither encrypts nor redacts. Every entry
-  is just an env var in a file. The one security property that matters —
-  *"not pushed to GitHub"* — applies to the whole file equally. (The console may
-  offer a cosmetic *mask-in-UI* toggle for shoulder-surfing; it's not storage.)
-- **Values are viewable** by opening the file in the **Files tab** — which is
-  exactly the "how do I see my env" answer we already chose.
-- **No auto-apply.** Env is read at process startup for the stacks that matter
-  (Node/Express, FastAPI read once; Vite/Next dev only *sometimes* restart on
-  `.env` change). So we expose a **manual Restart** instead of relying on HMR.
+## What the engine already provides (verified in code)
 
-## Existing primitives — proving zero core
+1. **Injection at boot exists.** The internal create body has
+   `Env map[string]string` → `docker run --env` (`handlers.go` builds `envFlags`
+   with validation) → visible to runtimed (PID 1) and **inherited by the web
+   process** (`process.go` runs `bash -lc` with `os.Environ()`). Used today for
+   agent keys / `RUNTIMED_TEMPLATE`.
+2. **Durable per-app store exists.** `app_config` (`migrations/0014`): encrypted
+   secrets (`value_ciphertext`/`value_nonce`), write-only over the API,
+   `access_policy` with a "broker" already anticipated.
 
-| Need | Existing `/v1` primitive | Verified |
+**Gaps:** `app_config` isn't environment-scoped, and the v1 create request
+(`v1CreateAppSandboxReq`, `v1_apps.go`) doesn't expose `env`.
+
+## Key decision: inject **process env**, do not write a file
+
+- Injecting at the container level means **nothing is written to the workspace**
+  → nothing to `.gitignore`, nothing to leak to GitHub. The original ".env in
+  git" concern **disappears** because there is no file.
+- **Stack-agnostic:** Node/Express + FastAPI read `process.env`/`os.environ`;
+  Vite/Astro read `process.env` for prefixed vars at build. One mechanism, all
+  stacks.
+- A stack-aware **`.env` file** is an **opt-in client convenience** for a stack
+  that reads *only* a file — a client drops it via the existing files API. **Not
+  core.**
+
+## Scope: core vs not
+
+| Piece | Core? | Rationale |
 |---|---|---|
-| Write `.env.local` / `.env` | `PUT /v1/sandboxes/{id}/files?path=<rel>` — atomic write, path-cleaned, **handles dotfiles** | `v1_files_write.go` + test writes `.config/...` |
-| Read current file / `.gitignore` | `GET /v1/sandboxes/{id}/files/content?path=<rel>` | `v1_files.go` |
-| Warn if target is git-tracked | `GET /v1/sandboxes/{id}/git/status` (returns `untracked`/`added`/…) | `v1_git.go` |
-| Apply the change (restart) | `POST /v1/sandboxes/{id}/stop` → next request **wakes** into a fresh boot that re-reads the file; `stop` keeps the workspace | quickstart + wake handler |
-| View values | open the file in the **Files tab** (a files read) | existing |
+| Inject env as process env at boot | ✅ exists | universal mechanism |
+| Expose `env` on `POST /apps/{id}/sandbox` | ✅ tiny | any tool spins a sandbox with env |
+| `app_config.environment` column | ✅ small | durable, named env sets |
+| Boot with `{ environment }` → resolve + inject | ✅ small | "spin prod, no changes" |
+| Environment names, dev/prod, promotion, diff, inheritance | ❌ client | engine stays unopinionated |
+| `.env` file materialization (stack-aware) | ❌ opt-in client | process env covers the common case |
+| Env editor UI, masking, env switcher | ❌ console | pure `/v1` client |
 
-## Design (console)
+## Core design
 
-### 1. Stack-aware target file
+### Phase 1 — enabling primitive (smallest change, ships value alone)
+- Add `Env map[string]string` to `v1CreateAppSandboxReq` (`v1_apps.go`).
+- Pass it into `createBody["env"]` before delegating to `handleCreate` (which
+  already validates keys/values and injects). No new injection code.
+- **Result:** any client spins a sandbox with explicit env → dev/prod for tools
+  that hold their own env set.
 
-The console picks the target from the app's known preset/stack (no manifest change):
+### Phase 2 — durable, environment-scoped store
+- Migration `0022`: `ALTER TABLE app_config ADD COLUMN environment TEXT NOT NULL
+  DEFAULT 'default'`; uniqueness becomes `(app_id, environment, key)`; existing
+  rows fall to `'default'`.
+- Store + API: config CRUD gains an `environment` scope
+  (`?environment=` / body field), default `'default'`. Reuses existing
+  encryption, write-only, redaction, tenant scoping, tests.
 
-| Preset / stack | Target file | Why |
-|---|---|---|
-| `react-vite`, `nextjs`, Astro | `.env.local` | native higher-precedence override; gitignored by convention; never touches a committed `.env` |
-| `node-express`, `fastapi`, `worker`, unknown | `.env` | plain `dotenv` / `python-dotenv` only read `.env` |
+### Phase 3 — boot by environment name
+- `v1CreateAppSandboxReq` also accepts `Environment string`.
+- On create: resolve `app_config WHERE app_id, environment` → decrypt sensitive
+  values (same seam agent keys use, key never leaves the CP) → merge into the
+  injected `env` map (an explicit `env` on the request overrides stored values).
+- **Result:** `POST /apps/{id}/sandbox { environment: "production" }` → different
+  values, same code.
 
-### 2. The env editor
+## Not in core (client policy + follow-ons)
+- **Console:** environment switcher, env editor (keys validated
+  `[A-Za-z_][A-Za-z0-9_]*`, values masked in-UI), a "Spin production" action. All
+  over `/v1`.
+- **Optional `.env` drop:** for a stack that reads only a file, a client writes a
+  gitignored `.env`/`.env.local` via `PUT …/files` + `.gitignore`. Documented, not
+  engine behavior.
+- **Promotion / diff / inheritance:** entirely client-side.
 
-- A **key/value editor** (rows), keys validated as env names (`[A-Za-z_][A-Za-z0-9_]*`).
-- **Load:** `GET …/files/content?path=<target>` → parse existing managed block
-  (round-trips values the user previously set; ignores/preserves anything outside
-  the managed block).
-- **Save:** compose a dotenv document — a managed banner + `KEY="value"` lines
-  with correct quoting/escaping (newlines, quotes, `#`, spaces) — and
-  `PUT …/files?path=<target>` (atomic).
-  ```
-  # ---- managed by sandboxd console — edit here or in this file ----
-  DATABASE_URL="postgres://..."
-  PUBLIC_SITE=https://example.com
-  ```
-
-### 3. Keep it out of GitHub
-
-- On save, the console reads `.gitignore` (`GET …/files/content`), and if the
-  target file isn't ignored, appends a managed block and writes it back
-  (`PUT …/files?path=.gitignore`).
-- It then calls `GET …/git/status`; if the target shows as **tracked** (not
-  `untracked`) — the committed-`.env` case — it shows a **warning banner**:
-  *"`.env` is committed to git; values here may be pushed. Run `git rm --cached
-  .env` to keep them private."* No auto-untrack.
-
-### 4. Apply = manual Restart
-
-- The console gets a general **"Restart app"** action (useful beyond env),
-  implemented as `POST …/stop` (the next preview request wakes a fresh boot).
-- After a save, the editor surfaces *"Restart to apply"* pointing at that action.
-
-### 5. View values
-
-Values are shown in the editor (optionally masked in-UI) and are always visible
-by opening the target file in the **Files tab**. There is no API that "reveals"
-anything the file doesn't already show.
-
-## What we are NOT building (and why)
-
-- ❌ Manifest `env:` section, runtimed `applyEnv`, `POST /env` — unnecessary; the
-  console writes the file directly.
-- ❌ Control-plane resolve/decrypt/debounce — no DB copy to resolve.
-- ❌ `app_config` changes / encryption / key-validation migration — env no longer
-  routes through `app_config`.
-- ❌ Auto-restart — replaced by manual Restart (HMR is unreliable for env).
-
-## Trade-offs
-
-- **File-only store:** values live only in the gitignored workspace file (plaintext
-  on the sandbox disk — unavoidable for any env). Survives restarts and `stop`/wake;
-  **lost on a full workspace reset**; **carried into snapshots/forks** (a fork
-  inherits its env — usually desired; note it before sharing a snapshot publicly).
-- **No server-side guarantee:** a non-console API user manages the file themselves
-  — fine, it's just a file. If a first-class server-side env ever becomes needed,
-  the earlier core design (managed materialization) is the fallback, additive.
+## Secrets model (retained)
+Sensitive values encrypted at rest in `app_config` (protects DB/backups), API
+strict write-only. At boot they're injected as **process env** (not written to
+disk), which is *stronger* than a file: no plaintext lands in the workspace. To
+inspect effective values, a client reads process env inside the sandbox (e.g.
+exec `printenv`) — no reveal endpoint.
 
 ## Docs
+- New concept **App · Environment · Sandbox** (`concepts.md`); a guide with the
+  **Astro walkthrough** (local `.env` stays local; deploy = spin a sandbox in the
+  `production` environment; nothing committed); presets table unaffected (process
+  env, no per-stack file needed by default).
 
-- New **Environment variables** guide with the **Astro walkthrough**: local `.env`
-  → deploy-time override via a gitignored `.env.local` edited in the console, never
-  in GitHub.
-- Update `concepts.md` (env vars = a gitignored file the console edits),
-  `guides/console.md` (the env editor + Restart), and the presets table
-  (target-file column). No architecture change (nothing new server-side).
+## Testing
+- **Phase 1:** v1 create passes `env` through; `handleCreate` injects; web process
+  sees it (integration: `printenv` in the sandbox).
+- **Phase 2:** migration backfills `'default'`; env-scoped CRUD isolates
+  environments; encryption/redaction unchanged; tenant scoping holds.
+- **Phase 3:** boot-by-environment resolves + decrypts the right set; explicit
+  `env` overrides stored; unknown environment → empty set (not an error).
+- **Regression:** existing agent-key injection + `RUNTIMED_TEMPLATE` still work.
 
-## Testing (console)
-
-- **dotenv compose/parse:** round-trips tricky values (quotes, newlines, `#`,
-  spaces, `=` in value); preserves content outside the managed block.
-- **key validation:** rejects non-env-safe names in the editor.
-- **gitignore ensure:** appends once, idempotent, preserves existing entries.
-- **warn-if-tracked:** banner shows when `git/status` reports the target tracked;
-  hidden when `untracked`.
-- **target selection:** `.env.local` for Vite/Astro/Next, `.env` otherwise.
-- **restart:** Restart action calls `stop`; editor shows "Restart to apply".
-- **integration (against a live sandbox):** set vars → file appears, gitignored →
-  open in Files tab shows them → restart → app reads them → `git/status` never
-  lists the target as staged.
-
-## Optional future (not MVP)
-
-- A lightweight `POST /v1/sandboxes/{id}/processes/{name}/restart` to bounce just
-  the web process (avoids the wake cold-start). Small, additive, if UX demands it.
-- Server-side materialization (the shelved core design) only if a non-console
-  client needs env without writing files itself.
-
-## Open questions
-
-- **Managed-block parsing:** simplest is "the console owns the whole file." If we
-  must coexist with hand-edited lines, define the managed-block markers precisely
-  (start/end sentinels) — decide during implementation.
+## Trade-offs / open questions
+- **Process env vs file:** default is process env (no git risk, stack-agnostic).
+  File materialization is opt-in per stack — decide the exact trigger (manifest
+  hint vs client choice) if/when a file-only stack shows up.
+- **One live sandbox per app today** — dev and prod are sequential (delete then
+  respin) until multi-sandbox-per-app lands; the model already supports it when
+  it does.
+- **Changing env on a running sandbox** = respin (a new environment is a new
+  sandbox by design); no in-place mutation in core.
