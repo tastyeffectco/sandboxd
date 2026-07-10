@@ -49,7 +49,7 @@ export default function App() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: 52, flexShrink: 0, padding: '0 20px', borderBottom: `1px solid ${c.border}`, background: c.panel }}>
         <div onClick={() => setRoute({ name: 'apps' })} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
           <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg,#3f3f46,#18181b)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 11, color: c.bg }}>&gt;_</div>
-          <span style={{ fontFamily: font.display, fontWeight: 700, fontSize: 15, letterSpacing: '.2px' }}>sandboxd</span>
+          <span style={{ fontFamily: font.display, fontWeight: 700, fontSize: 15, letterSpacing: '.2px' }}>sandboxd <span style={{ fontWeight: 500, color: c.muted }}>console</span></span>
         </div>
         <div style={{ display: 'flex', gap: 2 }}>
           {nav.map((n) => (
@@ -70,7 +70,7 @@ export default function App() {
           <span style={{ ...mono, fontSize: 10, color: c.muted2, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 5px' }}>⌘K</span>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
-          <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Docs</a>
+          <a href="https://sandboxd.io" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Docs</a>
           <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>GitHub</a>
         </div>
       </div>
