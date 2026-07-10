@@ -118,10 +118,42 @@ bold "Building the sandbox base image (one-time, a few minutes)…"
 DOCKER="$DOCKER" SANDBOXD_IMAGE="$BASE_IMAGE" bash image/build.sh "${BASE_IMAGE##*:}"
 ok "base image: $BASE_IMAGE"
 
+# ── optional web console (ON by default) ─────────────────────────────
+# The console is the fastest way to *see* sandboxd, so it's brought up by
+# default with a generated login — no manual password step. Go headless with
+# SANDBOXD_CONSOLE=0  or  --no-console.
+CONSOLE=1
+case " $* " in *" --no-console "*) CONSOLE=0 ;; esac
+[ "${SANDBOXD_CONSOLE:-1}" = "0" ] && CONSOLE=0
+PROFILE_ARGS=""
+CONSOLE_LOGIN=""
+if [ "$CONSOLE" = "1" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    CUR="$(grep -E '^CONSOLE_BASIC_AUTH=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+    if [ -n "$CUR" ] && [ "${CUR#locked:}" = "$CUR" ]; then
+      info "console: using the CONSOLE_BASIC_AUTH already in .env"
+    else
+      CONSOLE_USER="${CONSOLE_USER:-admin}"
+      CONSOLE_PASS="${CONSOLE_PASS:-$(openssl rand -hex 8)}"
+      # apr1 hash for Traefik basic-auth; escape $ -> $$ so compose doesn't
+      # interpolate it out of .env.
+      ESCAPED="$(openssl passwd -apr1 "$CONSOLE_PASS" | sed 's/\$/\$\$/g')"
+      tmp="$(mktemp)"; grep -vE '^CONSOLE_BASIC_AUTH=' .env > "$tmp" 2>/dev/null || true; mv "$tmp" .env
+      printf 'CONSOLE_BASIC_AUTH=%s:%s\n' "$CONSOLE_USER" "$ESCAPED" >> .env
+      CONSOLE_LOGIN="$CONSOLE_USER / $CONSOLE_PASS"
+      ok "console login generated (shown at the end)"
+    fi
+    PROFILE_ARGS="--profile console"
+  else
+    warn "openssl not found — starting headless (add the console later: set CONSOLE_BASIC_AUTH + '$COMPOSE --profile console up -d')"
+    CONSOLE=0
+  fi
+fi
+
 # ── build + start the stack ──────────────────────────────────────────
-bold "Building the control plane and starting the stack…"
-$COMPOSE build
-$COMPOSE up -d
+bold "Building the control plane${CONSOLE:+ + console} and starting the stack…"
+$COMPOSE $PROFILE_ARGS build
+$COMPOSE $PROFILE_ARGS up -d
 ok "stack is up"
 
 # ── summary ──────────────────────────────────────────────────────────
@@ -148,3 +180,19 @@ cat <<EOF
   Logs:   $COMPOSE logs -f sandboxd
   Stop:   $COMPOSE down
 EOF
+
+if [ "$CONSOLE" = "1" ]; then
+  echo
+  bold "Web console — open this first 👇"
+  printf '\n  Console : http://console.%s%s\n' "$PREVIEW_DOMAIN" "$PORTSUFFIX"
+  if [ -n "$CONSOLE_LOGIN" ]; then
+    printf '  Login   : %s\n' "$CONSOLE_LOGIN"
+    printf '            (change it anytime in .env → CONSOLE_BASIC_AUTH)\n'
+  else
+    printf '  Login   : as set in .env (CONSOLE_BASIC_AUTH)\n'
+  fi
+  printf '  Connect an agent in Settings, then create an app and build.\n'
+fi
+
+# A single, plain (no-color) nudge — suppress with SANDBOXD_NO_SPONSOR=1.
+[ -z "${SANDBOXD_NO_SPONSOR:-}" ] && printf '\n  \342\230\205 sandboxd is free & MIT. If it saves you time: https://github.com/sponsors/tastyeffectco\n'
