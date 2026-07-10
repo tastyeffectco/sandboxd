@@ -18,6 +18,8 @@
 
 <img width="1100" height="816" alt="sandboxd-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
 
+> **▶ [Try the live demo](https://sandboxd.io/demo/)** — click around the console with sample data, no install (read-only).
+
 ## What is sandboxd?
 
 The apps where you type *"build me a todo app"* and a working site appears at its
