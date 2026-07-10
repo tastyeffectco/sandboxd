@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/mattn/go-sqlite3 v1.14.22
-	github.com/oklog/ulid/v2 v2.1.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
 	gopkg.in/yaml.v3 v3.0.1
