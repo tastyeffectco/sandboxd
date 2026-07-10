@@ -1,5 +1,5 @@
 # Build the SPA, then serve it from nginx with /v1 proxied to sandboxd.
-FROM node:20-slim AS build
+FROM node:26-slim AS build
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
