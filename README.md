@@ -28,6 +28,15 @@
 
 <img width="1100" height="816" alt="sandboxd-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
 
+> **Two ways to use it.** sandboxd is an **API-first engine** — everything is a
+> call to the public `/v1` API, so you can build it into your own product. It
+> also ships an **optional web console**: the fastest, no-code way to use
+> sandboxd hands-on — create apps, chat to a coding agent, watch the live
+> preview, edit files, and push with Git, all from a browser. The console is a
+> **pure `/v1` client** (it touches nothing the API doesn't expose), so the
+> engine runs perfectly headless — the console is a convenience, not a
+> dependency. New here? Start with the console; building a product? Drive the API.
+
 ## What you get
 
 - **Web console** — create and open apps, watch previews, run agent tasks, manage everything from a browser (or drive the same `/v1` API directly).
