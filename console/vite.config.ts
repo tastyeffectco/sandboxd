@@ -8,6 +8,8 @@ import react from '@vitejs/plugin-react'
 const target = process.env.SANDBOXD_URL || 'http://127.0.0.1:9090'
 
 export default defineConfig({
+  // Served under /demo on sandboxd.io in the static demo build (BASE_PATH=/demo/).
+  base: process.env.BASE_PATH || '/',
   plugins: [react()],
   server: {
     host: true,
