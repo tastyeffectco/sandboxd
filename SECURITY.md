@@ -10,8 +10,10 @@ that, we take security reports seriously and ask you to disclose them privately.
 
 Report privately through **GitHub's private vulnerability reporting**:
 [Security → Report a vulnerability](https://github.com/tastyeffectco/sandboxd/security/advisories/new).
-If you cannot use GitHub advisories, email **security@tastyeffectco.dev** (fill in
-your real contact) with the details.
+It notifies the maintainers directly and keeps the report private until a fix
+ships. If you can't access that form, open a **minimal** public issue that only
+says *"security report — please enable a private channel"* (no details) and we'll
+follow up.
 
 Please include:
 
