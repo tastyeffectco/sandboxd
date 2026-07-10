@@ -10,7 +10,7 @@
 # Build context is the control-plane/ directory.
 
 # --- Stage 1: build sandboxd (CGO) -----------------------------------
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
