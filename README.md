@@ -7,6 +7,14 @@
 </p>
 
 <p align="center">
+  <a href="https://sandboxd.io/demo/"><img alt="Live demo" src="https://img.shields.io/badge/%E2%96%B6%20Live%20demo-try%20it%20in%20your%20browser-ff6b00?style=for-the-badge"></a>
+  &nbsp;
+  <a href="https://sandboxd.io/quickstart"><img alt="Get started" src="https://img.shields.io/badge/Get%20started-one%20command-0a0a0a?style=for-the-badge"></a>
+  &nbsp;
+  <a href="https://github.com/tastyeffectco/sandboxd/stargazers"><img alt="Star sandboxd" src="https://img.shields.io/github/stars/tastyeffectco/sandboxd?style=for-the-badge&label=%E2%98%85%20Star&color=333"></a>
+</p>
+
+<p align="center">
   <a href="https://sandboxd.io"><img alt="Docs" src="https://img.shields.io/badge/docs-sandboxd.io-ff6b00.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <img alt="Runs on Docker" src="https://img.shields.io/badge/runs%20on-Docker-2496ED.svg">
@@ -124,6 +132,13 @@ copy-pasteable runbook.
 > by default — all fine for your own users; tighten before untrusted
 > multi-tenancy. See [Hardening](https://sandboxd.io/guides/hardening). Expect the
 > occasional breaking change before 1.0 — pin a version and update as you go.
+
+## ⭐ If sandboxd is useful, star it
+
+Stars are how other builders find sandboxd — it's the fastest way to support the
+project (and it keeps us going). Thank you 🙏
+
+[![Star History Chart](https://api.star-history.com/svg?repos=tastyeffectco/sandboxd&type=Date)](https://star-history.com/#tastyeffectco/sandboxd&Date)
 
 ## License
 
