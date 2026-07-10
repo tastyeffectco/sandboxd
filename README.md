@@ -53,17 +53,15 @@ Desktop is best-effort). Install in one line:
 curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash
 ```
 
-It builds the images and starts the stack; the API is then live at
-`http://127.0.0.1:9090` (`curl http://127.0.0.1:9090/healthz` → `ok`). Then pick one:
+It builds the images, starts the stack **with the web console**, and prints your
+**console URL + a generated login** — no password step. Open it, connect an agent
+under **Settings**, create an app, and build. No code needed.
 
-**Web console (no code):**
-```bash
-export CONSOLE_BASIC_AUTH="admin:$(openssl passwd -apr1 'choose-a-password')"  # fail-closed
-docker compose --profile console up -d
-# open http://console.localhost, connect an agent, and build
-```
+- **Console:** `http://console.localhost` (login printed by the installer)
+- **API:** `http://127.0.0.1:9090` (`curl http://127.0.0.1:9090/healthz` → `ok`)
+- **Headless (no console):** run with `SANDBOXD_CONSOLE=0` (or `--no-console`)
 
-**API:** connect an agent once, create a sandbox, hand it a prompt:
+Prefer the API? Connect an agent once, create a sandbox, hand it a prompt:
 ```bash
 API=http://127.0.0.1:9090
 curl -s -XPOST $API/v1/agents/claude-code/api-key -d '{"api_key":"sk-ant-..."}'
