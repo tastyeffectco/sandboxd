@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host --port 8787",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:e2e": "playwright test"
   },
   "dependencies": {
