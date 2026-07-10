@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/loopback"
-	"github.com/sandboxd/control-plane/internal/runtime"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // --- the policy: the watch window must outlive the task's timeout -----

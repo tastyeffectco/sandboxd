@@ -1,0 +1,17 @@
+id: eleventy
+display_name: Eleventy (11ty)
+detect:
+  deps: ["@11ty/eleventy"]
+  config_files: [.eleventy.js, eleventy.config.js, eleventy.config.cjs]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/eleventy ] || pnpm install; pnpm exec eleventy --serve --port 3000 --quiet"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Eleventy's dev server binds 0.0.0.0 by default; only --port 3000 is required (default is 8080)."
+  - "If the site sets a pathPrefix, set health_path to that base path."
+verified:
+  starter: 11ty/eleventy-base-blog
+  version: v0.4.9

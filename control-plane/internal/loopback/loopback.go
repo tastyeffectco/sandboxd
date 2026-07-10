@@ -28,11 +28,27 @@ package loopback
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// sandbox user/group inside the base image (`useradd -u 1000 -g 1000`). The OSS
+// build runs the sandbox container with --userns=host (no remap — see package
+// doc), so the host uid equals the container uid and a host-side chown to 1000
+// is correct. (If userns-remap is ever reintroduced, ownership normalization
+// must move into a container like the seed's `chown -R sandbox:sandbox`.)
+const (
+	sandboxUID = 1000
+	sandboxGID = 1000
+)
+
+// lchownFn is os.Lchown, overridable in tests (a real chown to another uid
+// needs root, which the test process usually lacks).
+var lchownFn = os.Lchown
 
 // Manager owns the workspace data root and the seeding image.
 type Manager struct {
@@ -40,6 +56,8 @@ type Manager struct {
 	SeedImage string // base image used for the one-shot seed container
 	DockerBin string // "docker"; injectable for tests
 	Userns    string // --userns for the seed container ("host" by default)
+
+	Log *slog.Logger // optional; ownership normalization is logged when set
 }
 
 // New constructs a Manager. The data root and seed image are normally
@@ -141,6 +159,46 @@ func (m *Manager) ProvisionFromTemplate(ctx context.Context, id, templatePath st
 	// contents into the (existing) workspace dir.
 	if err := runCmd(ctx, "cp", "-a", strings.TrimRight(templatePath, "/")+"/.", dir+"/"); err != nil {
 		return fmt.Errorf("clone template %s: %w", templatePath, err)
+	}
+	// `cp -a` preserves the SOURCE (snapshot/template, often root) ownership,
+	// and the freshly-created workspace dir is root-owned — so without this the
+	// sandbox user (uid 1000) hits EACCES writing ~/.cache, node_modules,
+	// .next, .venv, generated files. Normalize to the sandbox uid/gid, the same
+	// result the fresh seed's `chown -R sandbox:sandbox` produces. Never trust
+	// the ownership captured in the snapshot.
+	if err := m.normalizeOwnership(dir); err != nil {
+		return fmt.Errorf("normalize ownership %s: %w", dir, err)
+	}
+	return nil
+}
+
+// normalizeOwnership recursively sets the workspace tree (incl. the workspace
+// dir itself, so $HOME is writable) to the sandbox uid/gid. It uses Lchown and
+// does NOT follow symlinks — WalkDir lstat's each entry and never descends into
+// a symlinked directory, so a symlink pointing outside the workspace cannot
+// redirect the chown to a path outside the tree.
+//
+// NormalizeOwnership exposes this for the Git import path (a host-side clone is
+// owned by the control-plane root and must be chowned to the sandbox uid/gid).
+func (m *Manager) NormalizeOwnership(dir string) error { return m.normalizeOwnership(dir) }
+
+func (m *Manager) normalizeOwnership(dir string) error {
+	n := 0
+	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if cerr := lchownFn(path, sandboxUID, sandboxGID); cerr != nil {
+			return cerr
+		}
+		n++
+		return nil
+	}); err != nil {
+		return err
+	}
+	if m.Log != nil {
+		m.Log.Info("normalized workspace ownership for snapshot/template restore",
+			"dir", dir, "uid", sandboxUID, "gid", sandboxGID, "entries", n)
 	}
 	return nil
 }

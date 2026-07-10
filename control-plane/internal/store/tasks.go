@@ -69,6 +69,36 @@ func (s *Store) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	return &t, nil
 }
 
+// ListTasksForSandbox returns a sandbox's tasks, newest first (task_id is a
+// ULID, so id order is chronological), capped at limit. Durable — works after
+// the sandbox has stopped or been destroyed.
+func (s *Store) ListTasksForSandbox(ctx context.Context, sandboxID string, limit int) ([]*Task, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT task_id, sandbox_id, external_user_id, external_project_id,
+		       agent, prompt, status, result_json, timeout_s, created_at, finished_at
+		  FROM task WHERE sandbox_id=? ORDER BY task_id DESC LIMIT ?`, sandboxID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Task
+	for rows.Next() {
+		var t Task
+		var created int64
+		if err := rows.Scan(&t.TaskID, &t.SandboxID, &t.ExternalUserID,
+			&t.ExternalProjectID, &t.Agent, &t.Prompt, &t.Status,
+			&t.ResultJSON, &t.TimeoutS, &created, &t.FinishedAt); err != nil {
+			return nil, err
+		}
+		t.CreatedAt = time.Unix(created, 0).UTC()
+		out = append(out, &t)
+	}
+	return out, rows.Err()
+}
+
 // ListRunningTasks returns every task row still in the `running`
 // state — used by boot-time reconciliation.
 func (s *Store) ListRunningTasks(ctx context.Context) ([]*Task, error) {

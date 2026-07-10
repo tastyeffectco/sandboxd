@@ -24,7 +24,7 @@ FROM debian:stable-slim
 # coreutils/cp already present. No docker daemon here — we talk to the
 # host daemon over the bind-mounted /var/run/docker.sock.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg git \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://download.docker.com/linux/debian/gpg \
       -o /etc/apt/keyrings/docker.asc \

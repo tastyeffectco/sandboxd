@@ -30,22 +30,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/activity"
-	"github.com/sandboxd/control-plane/internal/api"
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/auth"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/egress"
-	"github.com/sandboxd/control-plane/internal/idlock"
-	"github.com/sandboxd/control-plane/internal/logging"
-	"github.com/sandboxd/control-plane/internal/loopback"
-	"github.com/sandboxd/control-plane/internal/metrics"
-	nginxwatch "github.com/sandboxd/control-plane/internal/nginx"
-	"github.com/sandboxd/control-plane/internal/reaper"
-	"github.com/sandboxd/control-plane/internal/reconcile"
-	"github.com/sandboxd/control-plane/internal/snapshot"
-	"github.com/sandboxd/control-plane/internal/store"
-	"github.com/sandboxd/control-plane/internal/wake"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/activity"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/api"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/egress"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/instancecfg"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/logging"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	nginxwatch "github.com/tastyeffectco/sandboxd/control-plane/internal/nginx"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/reaper"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/reconcile"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
 )
 
 const (
@@ -54,7 +59,7 @@ const (
 	// all interfaces (it is NOT published to the host — only reachable
 	// on the internal sandboxd_net). Override with SANDBOXD_ADDR.
 	defaultListenAddr = "0.0.0.0:9000"
-	defaultImage      = "sandboxd-base:1.0.0"
+	defaultImage      = "sandboxd-base:0.3.0"
 	migrationsDir     = "/usr/local/share/sandboxd/migrations"
 
 	// Default data root for the portable build. The compose file
@@ -128,6 +133,9 @@ func main() {
 	userns := envDefault("SANDBOXD_USERNS", "host") // sandbox + seed --userns; "host" is deterministic on any daemon
 	previewEntrypoint := envDefault("PREVIEW_ENTRYPOINT", "web")
 	previewTLS := boolFromEnv("PREVIEW_TLS", false)
+	// Host-facing port the preview/console URLs are reached on (compose passes
+	// the published HTTP_PORT here). Default "80": bare URLs on a dedicated host.
+	publicHTTPPort := envDefault("SANDBOXD_PUBLIC_HTTP_PORT", "80")
 	setMemoryHigh := boolFromEnv("SANDBOXD_SET_MEMORY_HIGH", false)
 
 	migrations := envDefault("SANDBOXD_MIGRATIONS", migrationsDir)
@@ -173,8 +181,10 @@ func main() {
 	// initial config is read from the process environment (systemd has
 	// already loaded the EnvironmentFile); SIGHUP re-reads the file.
 	auditLog := audit.New(st, log.With("component", "audit"))
+	eventRec := events.New(st, log.With("component", "events"))
 	envFile := envDefault("SANDBOXD_ENV_FILE", "/etc/sandboxed/sandboxd.env")
-	authMw := auth.NewMiddleware(auth.ParseConfig(os.Getenv), auditLog, log.With("component", "auth"))
+	authCfg := auth.ParseConfig(os.Getenv)
+	authMw := auth.NewMiddleware(authCfg, auditLog, log.With("component", "auth"))
 	denyMode := envDefault("SANDBOXD_FORWARD_AUTH_DENY_MODE", "redirect")
 	{
 		ac := authMw.Snapshot()
@@ -195,6 +205,7 @@ func main() {
 	loopMgr.SeedImage = image
 	loopMgr.DockerBin = "docker"
 	loopMgr.Userns = userns
+	loopMgr.Log = log.With("component", "loopback")
 
 	// Egress (nftables) is DISABLED in the portable OSS build: it
 	// requires host nftables + journald + systemd-timer refresh jobs
@@ -272,6 +283,23 @@ func main() {
 	wakeGrace := durationFromEnvSec("SANDBOXD_WAKE_GRACE_SECONDS", defaultWakeGraceSec)
 	keepaliveMax := durationFromEnvSec("SANDBOXD_KEEPALIVE_MAX_SECONDS", defaultKeepaliveMaxSec)
 
+	// Phase 8B — live, runtime-editable lifecycle tunables. Start from env
+	// defaults, then overlay any persisted edits (PATCH /v1/settings) so they
+	// survive restart. The reaper + keepalive path read this live.
+	live := instancecfg.New(instancecfg.Snapshot{
+		IdleEnabled:          idleInterval > 0,
+		IdleThresholdSeconds: int(idleThreshold.Seconds()),
+		KeepaliveMaxSeconds:  int(keepaliveMax.Seconds()),
+	})
+	if persisted, perr := st.GetInstanceSettings(ctx); perr == nil {
+		live.Set(instancecfg.Snapshot{
+			IdleEnabled:          persisted.IdleReapEnabled,
+			IdleThresholdSeconds: persisted.IdleThresholdSeconds,
+			KeepaliveMaxSeconds:  persisted.KeepaliveMaxSeconds,
+		})
+		log.Info("instance settings: loaded persisted lifecycle tunables")
+	}
+
 	inflight := activity.NewInflightExec()
 	refused := &atomic.Bool{}
 
@@ -322,8 +350,64 @@ func main() {
 	wakeHandler.ForwardAuthDenyMode = denyMode
 	wakeHandler.SetMemoryHigh = setMemoryHigh
 
+	// app_config/secrets encryption: SANDBOXD_SECRETS_KEY (base64 32
+	// bytes) or an auto-generated 0600 keyfile under the data dir.
+	secretsCipher, err := secrets.Load(os.Getenv("SANDBOXD_SECRETS_KEY"), filepath.Join(dataDir, "secrets.key"))
+	if err != nil {
+		log.Error("init secrets encryption", "err", err.Error())
+		os.Exit(1)
+	}
+
+	// Phase 10B A0 — host-side agent auth store (read-only here). Best-effort
+	// root creation; never fatal.
+	agentAuth := agentauth.NewStore(dataDir)
+	if err := agentAuth.EnsureRoot(); err != nil {
+		log.Warn("agent-auth: could not create store root", "err", err.Error())
+	}
+	// A1 — which provider's auth dir gets mounted into new sandboxes (as the
+	// agent's HOME) when connected. Must match the agent runtimed runs.
+	defaultAgent := envDefault("SANDBOXD_DEFAULT_AGENT", "opencode")
+
+	// Credential-injecting auth proxy for claude-code (internal/authproxy). The
+	// sandbox reaches it at SANDBOXD_AGENT_PROXY_URL (in-network name of THIS
+	// process); we listen on SANDBOXD_AGENT_PROXY_ADDR. The real credential stays
+	// here and is never mounted into the sandbox. Empty URL disables the proxy
+	// (legacy mounted-credential behaviour).
+	// Guided claude-code subscription login + token refresh (internal/agentauth).
+	agentOAuth := agentauth.NewOAuth(agentAuth)
+	if agentOAuth != nil {
+		go func() {
+			for {
+				if err := agentOAuth.Refresh(); err != nil {
+					log.Debug("claude oauth refresh", "err", err.Error())
+				}
+				time.Sleep(5 * time.Minute)
+			}
+		}()
+	}
+
+	agentProxyURL := envDefault("SANDBOXD_AGENT_PROXY_URL", "http://sandboxd:9100")
+	if proxy := authproxy.New(agentAuth, log.With("component", "authproxy")); proxy != nil && agentProxyURL != "" {
+		proxyAddr := envDefault("SANDBOXD_AGENT_PROXY_ADDR", "0.0.0.0:9100")
+		go func() {
+			log.Info("auth proxy listening", "addr", proxyAddr, "url", agentProxyURL)
+			if err := (&http.Server{Addr: proxyAddr, Handler: proxy}).ListenAndServe(); err != nil {
+				log.Error("auth proxy stopped", "err", err.Error())
+			}
+		}()
+	} else {
+		agentProxyURL = ""
+	}
+
 	server := &api.Server{
 		Store:               st,
+		Secrets:             secretsCipher,
+		AgentAuth:           agentAuth,
+		AgentOAuth:          agentOAuth,
+		OpencodeModel:       envDefault("SANDBOXD_OPENCODE_MODEL", ""),
+		OpencodeZenPath:     envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
+		DefaultAgent:        defaultAgent,
+		AgentProxyURL:       agentProxyURL,
 		Docker:              dockerClient,
 		Loopback:            loopMgr,
 		Log:                 log.With("component", "api"),
@@ -333,6 +417,7 @@ func main() {
 		Userns:              userns,
 		PreviewEntrypoint:   previewEntrypoint,
 		PreviewTLS:          previewTLS,
+		PublicHTTPPort:      publicHTTPPort,
 		SetMemoryHigh:       setMemoryHigh,
 		Inflight:            inflight,
 		Wake:                wakeHandler,
@@ -343,11 +428,23 @@ func main() {
 		Locks:               idLocks,
 		Auth:                authMw,
 		Audit:               auditLog,
+		Events:              eventRec,
 		SnapshotsRoot:       snapshotsRoot,
 		ForwardAuthDenyMode: denyMode,
 		TemplatesDir:        envDefault("SANDBOXD_TEMPLATES_DIR", templatesRoot),
 		LibraryRoot:         envDefault("SANDBOXD_LIBRARY_DIR", libraryRoot),
 		LLMTxtPath:          envDefault("SANDBOXD_LLM_TXT_PATH", "/etc/sandboxed/llm.txt"),
+		Instance: api.InstanceInfo{
+			Version:              version,
+			GitCommit:            gitCommit,
+			AuthEnabled:          !authCfg.Disabled,
+			StorageMode:          "directory", // OSS bind-mounted workspaces (see internal/loopback)
+			EgressMode:           egressModeLabel(egressMgr),
+			AgentProviders:       []string{"opencode"},
+			IdleReapEnabled:      idleInterval > 0,
+			IdleThresholdSeconds: int(idleThreshold.Seconds()),
+		},
+		Live: live,
 	}
 
 	// Finalize any coding task left `running` by a previous sandboxd
@@ -403,6 +500,9 @@ func main() {
 		Inflight: inflight,
 		Egress:   egressMgr,
 		Log:      log.With("component", "idle-reaper"),
+		// Phase 8B — hot-read the runtime-editable threshold + enable toggle.
+		ThresholdFn: live.IdleThreshold,
+		EnabledFn:   live.IdleEnabled,
 	}
 	go func() {
 		if err := idle.Run(gctx); err != nil {
@@ -710,6 +810,15 @@ func pollerModeLabel(re *regexp.Regexp) string {
 		return "fallback"
 	}
 	return "active"
+}
+
+// egressModeLabel is the safe egress mode string for GET /v1/settings. A nil
+// manager (the OSS default) means no egress policy is enforced.
+func egressModeLabel(m *egress.Manager) string {
+	if m == nil {
+		return "disabled"
+	}
+	return "enabled"
 }
 
 func buildIdent() (version, gitCommit string) {

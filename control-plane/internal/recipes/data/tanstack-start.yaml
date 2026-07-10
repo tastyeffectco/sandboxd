@@ -1,0 +1,20 @@
+id: tanstack-start
+display_name: TanStack Start (React SSR meta-framework)
+detect:
+  deps: ["@tanstack/react-start"]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/vite ] || pnpm install; exec pnpm exec vite dev --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: "vite.config.ts"
+    note: "TanStack Start dev is Vite — set server.allowedHosts: true in vite.config.ts (403 without it)."
+notes:
+  - "SSR + server functions (createServerFn) verified through the preview."
+  - "Dev-runtime oriented: `vite build` emits a web-standard fetch handler, NOT a self-listening server — production serving needs a deployment adapter (Nitro / node-server → .output/server/index.mjs)."
+tags: [ssr, meta_framework, needs_config_snippet]
+verified:
+  starter: "@tanstack/cli (TanStack Start)"
+  version: v0.4.9

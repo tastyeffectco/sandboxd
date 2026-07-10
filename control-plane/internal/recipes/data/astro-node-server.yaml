@@ -1,0 +1,20 @@
+id: astro-node-server
+display_name: Astro SSR — built node server (build-then-serve)
+detect:
+  deps: [astro, "@astrojs/node"]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/astro ] || pnpm install; pnpm exec astro build; exec env HOST=0.0.0.0 PORT=3000 node ./dist/server/entry.mjs"
+    port: 3000
+    health_path: "/"
+    restart_after_task: true
+notes:
+  - "Build-then-serve (production-style): `astro build` then the standalone node server. Requires the Astro node adapter (@astrojs/node, output: 'server' or 'hybrid')."
+  - "No allowedHosts needed — that's a Vite-dev-only concern; the built node server accepts any Host."
+  - "restart_after_task rebuilds + restarts after each coding task so agent edits are reflected (a full rebuild each task)."
+  - "For dev (HMR) instead, use the `astro` recipe (astro dev + allowedHosts)."
+tags: [ssr, build_then_serve]
+verified:
+  starter: "astro + @astrojs/node (output: server)"
+  version: v0.4.9

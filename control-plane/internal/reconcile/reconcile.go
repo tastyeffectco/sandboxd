@@ -21,12 +21,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/cgroup"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/egress"
-	"github.com/sandboxd/control-plane/internal/loopback"
-	"github.com/sandboxd/control-plane/internal/snapshot"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/cgroup"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/egress"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // Result is what Once returns to the caller (main.go logs + metrics).

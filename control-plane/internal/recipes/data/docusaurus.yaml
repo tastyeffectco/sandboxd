@@ -1,0 +1,14 @@
+id: docusaurus
+display_name: Docusaurus
+detect:
+  deps: ["@docusaurus/core"]
+  config_files: [docusaurus.config.js, docusaurus.config.ts]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/docusaurus ] || pnpm install; pnpm exec docusaurus start --host 0.0.0.0 --port 3000"
+    port: 3000
+    health_path: "/"
+verified:
+  starter: slorber/docusaurus-starter
+  version: v0.4.9

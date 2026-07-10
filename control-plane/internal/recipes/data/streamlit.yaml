@@ -1,0 +1,16 @@
+id: streamlit
+display_name: Streamlit (Python data app)
+detect:
+  requirements_contains: [streamlit]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install streamlit)); exec .venv/bin/streamlit run app.py --server.port 3000 --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false"
+    port: 3000
+    health_path: "/_stcore/health"
+notes:
+  - "Streamlit's WebSocket (/_stcore/stream) needs --server.enableCORS false --server.enableXsrfProtection false behind the preview proxy, plus --server.headless true. Adjust app.py to your entry."
+tags: [websocket, heavy_install]
+verified:
+  starter: authored-in-sandbox
+  version: v0.4.9

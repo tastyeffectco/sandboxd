@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentprompt"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 var errTaskInProgress = errors.New("a task is already in progress")
@@ -30,6 +32,8 @@ type task struct {
 	id        string
 	prompt    string
 	agentName string
+	model     string
+	cont      bool // continue the sandbox's most recent agent session
 	env       map[string]string
 	timeout   time.Duration
 	dir       string // .runtimed/tasks/<id>
@@ -47,6 +51,17 @@ type task struct {
 }
 
 func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
+	// Continue is the default: resume the sandbox's prior session unless this is
+	// the first task (nothing to continue) or the caller forced a choice. This
+	// makes `--continue` the out-of-the-box behavior while the first run in a
+	// sandbox still starts cleanly.
+	cont := hasPriorTask(tasksRoot, req.TaskID)
+	if req.Continue != nil {
+		cont = *req.Continue
+		if cont && !hasPriorTask(tasksRoot, req.TaskID) {
+			cont = false // forced continue but no session yet — start fresh
+		}
+	}
 	dir := filepath.Join(tasksRoot, req.TaskID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -60,10 +75,26 @@ func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
 		timeout = time.Duration(req.TimeoutS) * time.Second
 	}
 	return &task{
-		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, env: req.Env,
+		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, cont: cont, env: req.Env,
 		timeout: timeout, dir: dir, createdAt: time.Now().UTC(),
 		updatedCh: make(chan struct{}), phase: "queued", eventsW: f,
 	}, nil
+}
+
+// hasPriorTask reports whether the sandbox already ran an earlier task (a proxy
+// for "an agent session exists to continue"). True when tasksRoot holds any task
+// directory other than the one being created.
+func hasPriorTask(tasksRoot, selfID string) bool {
+	entries, err := os.ReadDir(tasksRoot)
+	if err != nil {
+		return false // first task — tasksRoot doesn't exist yet
+	}
+	for _, e := range entries {
+		if e.IsDir() && e.Name() != selfID {
+			return true
+		}
+	}
+	return false
 }
 
 // emit appends an event to the in-memory log and events.jsonl, then
@@ -132,10 +163,15 @@ func (t *task) finish(res runtime.TaskResult) {
 // --- task manager (methods on app) ---------------------------------
 
 func selectAgent(name string, log *slog.Logger) (agent, error) {
-	if name == "" || name == "opencode" {
+	switch name {
+	case "", "opencode":
 		return &opencodeAgent{log: log}, nil
+	case "claude-code":
+		return &claudeCodeAgent{log: log}, nil
+	case "codex":
+		return &codexAgent{log: log}, nil
 	}
-	return nil, fmt.Errorf("unsupported agent %q (this slice supports opencode only)", name)
+	return nil, fmt.Errorf("unsupported agent %q (supported: opencode, claude-code, codex)", name)
 }
 
 // startTask enforces one active task per sandbox and launches the run.
@@ -183,7 +219,7 @@ func (a *app) runTask(t *task) {
 	t.startedAt = time.Now().UTC()
 	t.mu.Unlock()
 
-	res := runtime.TaskResult{ID: t.id, CreatedAt: t.createdAt, StartedAt: t.startedAt, FilesChanged: []string{}}
+	res := runtime.TaskResult{ID: t.id, Prompt: t.prompt, CreatedAt: t.createdAt, StartedAt: t.startedAt, FilesChanged: []string{}}
 
 	// 1. pre-task checkpoint.
 	t.setPhase("checkpoint")
@@ -206,8 +242,14 @@ func (a *app) runTask(t *task) {
 		rl = rawLog
 		defer rawLog.Close()
 	}
+	// Render the platform briefing with THIS sandbox's real values (no hard-coded
+	// loopback address or port) and hand it to the adapter.
+	sysPrompt := agentprompt.Render(agentprompt.Vars{
+		AppDir: a.appDir, Port: a.previewPort, HealthPath: a.webHealthPath,
+	})
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
-		workDir: a.appDir, prompt: t.prompt, env: t.env, rawLog: rl,
+		workDir: a.appDir, prompt: t.prompt, model: t.model, env: t.env, rawLog: rl,
+		systemPrompt: sysPrompt, cont: t.cont,
 	}, t.emit)
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage
@@ -231,12 +273,38 @@ func (a *app) runTask(t *task) {
 	}
 
 	// 5. post-task build check (skipped on cancel — keep cancel fast).
-	if status != runtime.TaskCancelled {
+	// a.build is always non-nil from LoadManifest; the guard is defensive so a
+	// hand-built app{} (e.g. in a test) can't panic here. build_status is the
+	// honest outcome: a missing/empty build command is "skipped" (NOT a pass),
+	// and build_ok stays true only for a real "passed".
+	res.BuildStatus = runtime.BuildSkipped
+	buildCmd := ""
+	if a.build != nil && a.build.Command != nil {
+		buildCmd = *a.build.Command
+	}
+	if status != runtime.TaskCancelled && buildCmd != "" {
 		t.setPhase("build_check")
-		ok, bmsg := buildCheck(a.appDir, a.log)
-		res.BuildOK = ok
+		ok, bmsg := buildCheck(a.appDir, buildCmd, time.Duration(a.build.TimeoutSeconds)*time.Second, a.log)
 		res.BuildErrorMessage = bmsg
-		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_error_message": bmsg})
+		if ok {
+			res.BuildStatus = runtime.BuildPassed
+		} else {
+			res.BuildStatus = runtime.BuildFailed
+		}
+		t.emit(runtime.EventBuild, map[string]any{"build_ok": ok, "build_status": res.BuildStatus, "build_error_message": bmsg})
+	}
+	res.BuildOK = res.BuildStatus == runtime.BuildPassed
+
+	// 5.3 restart_after_task (skipped on cancel): bounce the web process so an
+	// agent-written production build can't poison a live dev server. The web
+	// command re-runs (e.g. `rm -rf .next; pnpm dev`), cleaning the artifact.
+	// Done before the health/probe steps so PreviewStatusAfter reflects the
+	// restarted server.
+	if status != runtime.TaskCancelled {
+		if a.web != nil && a.web.restartAfterTask {
+			a.restartWebAndWait(ctx)
+		}
+		a.restartWorkersAfterTask()
 	}
 
 	// 5.5 post-task health pipeline (skipped on cancel): remediate
@@ -249,12 +317,81 @@ func (a *app) runTask(t *task) {
 		res.PreviewErrorMessage = a.runPostTaskChecks(ctx, res.FilesChanged)
 	}
 
-	// 6. preview state after the task — now reflects entry-asset health,
-	// not just the HTML shell's 200.
+	// 6. preview state + overall app health after the task — preview now
+	// reflects entry-asset health, not just the HTML shell's 200.
 	a.probe()
-	res.PreviewStatusAfter = a.status().Preview.Status
+	st := a.status()
+	res.PreviewStatusAfter = st.Preview.Status
+	if status != runtime.TaskCancelled {
+		res.AppHealthy, res.PreviewOK = postTaskHealth(a.web == nil, res.BuildStatus, st)
+	}
 
 	a.finishTask(t, &res, status, reason, errMsg)
+}
+
+// restartWorkersAfterTask bounces any worker flagged restart_after_task so it
+// re-runs its command and picks up code the task changed (a long-running worker
+// otherwise keeps the old behavior). Workers have no readiness probe, so we
+// just stop() them — the supervisor re-runs the command after its backoff.
+func (a *app) restartWorkersAfterTask() {
+	for _, wp := range a.workers {
+		if wp.restartAfterTask {
+			a.log.Info("restarting worker after task (restart_after_task)", "worker", wp.name)
+			wp.stop()
+		}
+	}
+}
+
+// webRestartReadyTimeout bounds how long restartWebAndWait waits for the
+// bounced web process to serve again (a Next.js dev recompile can take a while).
+const webRestartReadyTimeout = 90 * time.Second
+
+// restartWebAndWait restarts the web process (via stop(); the supervisor then
+// re-runs its start command) and waits until it serves a 200 on the health
+// path again, so the post-task preview/health reflects the fresh server rather
+// than the mid-restart gap. Best-effort: returns on ctx cancel or timeout.
+func (a *app) restartWebAndWait(ctx context.Context) {
+	if a.web == nil {
+		return
+	}
+	a.log.Info("restarting web process after task (restart_after_task)")
+	a.web.stop() // blocks until the child is dead; supervisor re-runs the start cmd
+	deadline := time.Now().Add(webRestartReadyTimeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		if code, _ := a.devGet(ctx, a.webHealthPath); code == 200 {
+			a.log.Info("web process restarted and serving")
+			return
+		}
+		if time.Now().After(deadline) {
+			a.log.Warn("web process not ready after restart before timeout")
+			return
+		}
+	}
+}
+
+// postTaskHealth derives overall app health and the preview_ok signal.
+// A web app is healthy when the build did not fail and the preview is
+// serving; previewOK is set (pointer) for web apps. A worker-only app has
+// no public endpoint (previewOK nil/omitted) and is healthy when the build
+// did not fail and a worker process is running.
+func postTaskHealth(isWorkerOnly bool, buildStatus string, st runtime.Status) (appHealthy bool, previewOK *bool) {
+	buildNotFailed := buildStatus != runtime.BuildFailed
+	if isWorkerOnly {
+		anyWorker := false
+		for _, p := range st.Processes {
+			if p.Kind == "worker" && p.Running {
+				anyWorker = true
+			}
+		}
+		return buildNotFailed && anyWorker, nil
+	}
+	po := st.Preview.Status == runtime.PreviewReady
+	return buildNotFailed && po, &po
 }
 
 func (a *app) finishTask(t *task, res *runtime.TaskResult, status runtime.TaskStatus, reason, errMsg string) {
@@ -317,6 +454,71 @@ func (a *app) handleStartTask(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("task started", "task", t.id, "agent", t.agentName)
 	writeJSON(w, http.StatusAccepted, map[string]string{"task_id": t.id, "status": "running"})
+}
+
+// handleListTasks returns a newest-first summary of finalized tasks (those with
+// a result.json), for the task-history UI.
+func (a *app) handleListTasks(w http.ResponseWriter, _ *http.Request) {
+	root := filepath.Join(a.runtimeDir, "tasks")
+	entries, _ := os.ReadDir(root)
+	type summary struct {
+		ID           string   `json:"id"`
+		Prompt       string   `json:"prompt,omitempty"`
+		Status       string   `json:"status"`
+		FilesChanged []string `json:"files_changed"`
+		CheckpointID string   `json:"checkpoint_id,omitempty"`
+		CreatedAt    string   `json:"created_at,omitempty"`
+		DurationMS   int64    `json:"duration_ms"`
+	}
+	out := []summary{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, e.Name(), "result.json"))
+		if err != nil {
+			continue
+		}
+		var r runtime.TaskResult
+		if json.Unmarshal(b, &r) != nil {
+			continue
+		}
+		out = append(out, summary{
+			ID: r.ID, Prompt: r.Prompt, Status: string(r.Status), FilesChanged: r.FilesChanged,
+			CheckpointID: r.CheckpointID, CreatedAt: r.CreatedAt.Format(time.RFC3339), DurationMS: r.DurationMS,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID }) // ULID → newest first
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": out})
+}
+
+// handleRevertTask restores the workspace to a task's PRE-task checkpoint —
+// undoing that task (and everything after it). Refused while a task runs.
+func (a *app) handleRevertTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	a.taskMu.Lock()
+	busy := a.task != nil && !a.task.isDone()
+	a.taskMu.Unlock()
+	if busy {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a task is in progress"})
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(a.runtimeDir, "tasks", id, "result.json"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such task"})
+		return
+	}
+	var res runtime.TaskResult
+	if json.Unmarshal(b, &res) != nil || res.CheckpointID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "task has no checkpoint to revert to"})
+		return
+	}
+	if err := restoreCheckpoint(a.appDir, res.CheckpointID); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "revert failed (the checkpoint may have expired): " + err.Error()})
+		return
+	}
+	a.log.Info("reverted workspace to task checkpoint", "task", id, "checkpoint", res.CheckpointID)
+	writeJSON(w, http.StatusOK, map[string]string{"task_id": id, "checkpoint_id": res.CheckpointID, "status": "reverted"})
 }
 
 func (a *app) handleCancelTask(w http.ResponseWriter, r *http.Request) {

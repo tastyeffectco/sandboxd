@@ -24,11 +24,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/activity"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/egress"
-	"github.com/sandboxd/control-plane/internal/metrics"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/activity"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/egress"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // IdleConfig captures the env-tunable knobs from roadmap §12. Defaults
@@ -47,6 +47,22 @@ type Idle struct {
 	Inflight *activity.InflightExec
 	Egress   *egress.Manager // Phase 6 — nil-safe
 	Log      *slog.Logger
+
+	// Phase 8B — live overrides for the runtime-editable tunables. When set,
+	// they are read each tick so PATCH /v1/settings takes effect without a
+	// restart. nil = use the static Cfg (backward compatible).
+	ThresholdFn func() time.Duration
+	EnabledFn   func() bool
+}
+
+// threshold is the live idle threshold (ThresholdFn if set, else Cfg).
+func (i *Idle) threshold() time.Duration {
+	if i.ThresholdFn != nil {
+		if t := i.ThresholdFn(); t > 0 {
+			return t
+		}
+	}
+	return i.Cfg.Threshold
 }
 
 // Run blocks until ctx is cancelled. A zero or negative Interval
@@ -79,9 +95,13 @@ func (i *Idle) Run(ctx context.Context) error {
 }
 
 func (i *Idle) tick(ctx context.Context) error {
+	// Phase 8B — honor a live "reaping disabled" toggle (skip the sweep).
+	if i.EnabledFn != nil && !i.EnabledFn() {
+		return nil
+	}
 	metrics.IdleReaperRuns.Inc()
 	now := time.Now().UTC()
-	cutoff := now.Add(-i.Cfg.Threshold)
+	cutoff := now.Add(-i.threshold())
 
 	candidates, err := i.Store.ListIdleCandidates(ctx, cutoff)
 	if err != nil {

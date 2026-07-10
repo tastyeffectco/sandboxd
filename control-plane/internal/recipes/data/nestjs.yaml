@@ -1,0 +1,16 @@
+id: nestjs
+display_name: NestJS
+detect:
+  deps: ["@nestjs/core"]
+  config_files: [nest-cli.json]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/nest ] || pnpm install; exec pnpm exec nest start"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Nest's app.listen(3000) binds all interfaces — no host flag needed. Avoid `nest start --watch` here (hot-reload can EADDRINUSE on :3000); restart for live edits, or use start:prod."
+verified:
+  starter: nestjs/typescript-starter
+  version: v0.4.9

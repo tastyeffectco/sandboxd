@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
 )
 
 // authCfg returns the current auth config snapshot, or an empty config

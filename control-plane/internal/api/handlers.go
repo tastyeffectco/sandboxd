@@ -16,17 +16,21 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/auth"
-	"github.com/sandboxd/control-plane/internal/cgroup"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/logging"
-	"github.com/sandboxd/control-plane/internal/metrics"
-	"github.com/sandboxd/control-plane/internal/runtime"
-	"github.com/sandboxd/control-plane/internal/snapshot"
-	"github.com/sandboxd/control-plane/internal/store"
-	"github.com/sandboxd/control-plane/internal/traefik"
-	"github.com/sandboxd/control-plane/internal/wake"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/cgroup"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/gitimport"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/logging"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/manifest"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/traefik"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
 )
 
 // --- request / response payloads ------------------------------------
@@ -75,6 +79,75 @@ type createReq struct {
 	// POST /v1/apps/{id}/sandbox path; empty for the standalone sandbox
 	// API. The sandbox is the app's current running instance.
 	AppID string `json:"app_id,omitempty"`
+	// RuntimePreset, when set, names a runtime preset (react-vite, nextjs,
+	// node-express, fastapi, worker). runtimed applies the preset's template +
+	// sandbox.yaml on first boot. Takes precedence over Template.
+	RuntimePreset string `json:"runtime_preset,omitempty"`
+
+	// Git carries tokenless import metadata for a private-repo app (the token is
+	// referenced by credential_id and decrypted control-plane-side, never sent
+	// inline). Set by v1CreateAppSandbox; nil for blank/preset apps.
+	Git *createGitReq `json:"git,omitempty"`
+
+	// Image is rejected — per-app image selection is not supported (instance-wide
+	// via SANDBOXD_IMAGE). Declared so we 400 it instead of silently dropping it.
+	Image *string `json:"image,omitempty"`
+}
+
+type createGitReq struct {
+	RepoURL      string `json:"repo_url"`
+	Branch       string `json:"branch"`
+	CredentialID string `json:"credential_id"`
+	Owner        string `json:"owner"` // owner_token for the owner-scoped decrypt
+}
+
+// --- A1.5a: resolved preview web port ---------------------------------
+
+// webPortOf returns a sandbox's resolved preview web port, defaulting to 3000
+// (backward compatible for rows created before web_port existed).
+func webPortOf(sb *store.Sandbox) int {
+	if sb.WebPort.Valid && sb.WebPort.Int64 > 0 {
+		return int(sb.WebPort.Int64)
+	}
+	return 3000
+}
+
+// presetWebPort returns the web.port a preset's manifest declares, or 3000.
+func presetWebPort(presetID string) int {
+	if presetID != "" {
+		if p, ok := preset.Get(presetID); ok {
+			if m, err := manifest.Parse([]byte(p.Manifest)); err == nil {
+				if wp := m.WebPort(); wp > 0 {
+					return wp
+				}
+			}
+		}
+	}
+	return 3000
+}
+
+// workspaceWebPort reads <appDir>/sandbox.yaml's web.port if present (>0), else
+// 0. Used post-clone to honor an imported repo's declared port.
+func workspaceWebPort(appDir string) int {
+	raw, err := os.ReadFile(filepath.Join(appDir, manifest.File))
+	if err != nil {
+		return 0
+	}
+	m, err := manifest.Parse(raw)
+	if err != nil {
+		return 0
+	}
+	return m.WebPort()
+}
+
+// ensurePort appends p to ports if absent (never removes a requested port).
+func ensurePort(ports []int, p int) []int {
+	for _, x := range ports {
+		if x == p {
+			return ports
+		}
+	}
+	return append(ports, p)
 }
 
 type sandboxResp struct {
@@ -208,6 +281,19 @@ func (s *Server) auditAction(r *http.Request, e audit.Entry) {
 	s.Audit.Write(r.Context(), e)
 }
 
+// recordEvent appends one app_events timeline entry, best-effort. It fills
+// OwnerToken from the request actor (the tenant) unless the caller set it, so
+// handlers just pass type/severity/message + the relevant ids. nil-safe.
+func (s *Server) recordEvent(r *http.Request, e events.Event) {
+	if s.Events == nil {
+		return
+	}
+	if e.OwnerToken == "" {
+		e.OwnerToken = auth.ActorFrom(r.Context()).Name
+	}
+	s.Events.Record(r.Context(), e)
+}
+
 // validExternalID enforces the roadmap §4 constraint on the opaque
 // upstream identifier strings: len ≤ 256, no control codes, no commas
 // (we use these values in unstructured / comma-joined contexts). An
@@ -291,6 +377,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req createReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if req.Image != nil {
+		writeErr(w, http.StatusBadRequest, errPerAppImage)
 		return
 	}
 	if req.MemoryHigh == "" {
@@ -431,6 +521,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imgPath, mntPath := s.Loopback.Paths(req.ID)
+	// A1.5a — resolve the preview web port. Start from the selected preset's
+	// manifest (or 3000); a cloned repo sandbox.yaml may override it post-clone.
+	webPort := presetWebPort(req.RuntimePreset)
 	sb := &store.Sandbox{
 		ID:                  req.ID,
 		Status:              "creating",
@@ -439,6 +532,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		WorkspaceMnt:        mntPath,
 		MemoryHigh:          req.MemoryHigh,
 		Ports:               req.Ports,
+		WebPort:             sql.NullInt64{Int64: int64(webPort), Valid: true},
 		Visibility:          visibility,
 		IdlePolicy:          idlePolicy,
 		ExternalUserID:      nullStr(req.External.UserID),
@@ -455,6 +549,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = metrics.RefreshSandboxGauge(r.Context(), s.Store)
+	s.recordEvent(r, events.Event{Type: events.SandboxCreateStarted, Severity: events.SeverityInfo,
+		Message: "Creating sandbox", AppID: req.AppID, SandboxID: req.ID})
 
 	// From here on, any error path also marks the row as 'error' and
 	// attempts best-effort cleanup of the half-built state.
@@ -464,6 +560,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		_ = s.Loopback.Release(context.Background(), req.ID)
 		_ = s.Store.MarkError(r.Context(), req.ID, msg)
 		_ = metrics.RefreshSandboxGauge(r.Context(), s.Store)
+		s.recordEvent(r, events.Event{Type: events.SandboxCreateFailed, Severity: events.SeverityError,
+			Message: "Sandbox create failed", AppID: req.AppID, SandboxID: req.ID,
+			Payload: map[string]any{"reason": msg}})
 	}
 
 	// 1. Loopback provision (idempotent; reuses any existing .img).
@@ -502,6 +601,88 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 1c. Git import (A1): clone a private HTTPS repo into the workspace app dir,
+	//     host-side, BEFORE the container starts — so the token (decrypted only
+	//     here) never enters the sandbox. The cloned dir is non-empty, so runtimed
+	//     treats it as a populated workspace: it does NOT seed a template and does
+	//     NOT write the preset sandbox.yaml (applyPreset returns early — see
+	//     cmd/runtimed/manifest.go). The imported repo's own sandbox.yaml, if any,
+	//     is authoritative; with none, runtimed falls back to the Vite defaults.
+	//     (No runtime detection is run on import — that is advisory-only today.)
+	if req.Git != nil && req.Git.RepoURL != "" {
+		s.recordEvent(r, events.Event{Type: events.GitRepoCloneStarted, Severity: events.SeverityInfo,
+			Message: "Cloning repository", AppID: req.AppID, SandboxID: req.ID,
+			Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch}})
+		failClone := func(reason string) {
+			s.recordEvent(r, events.Event{Type: events.GitRepoCloneFailed, Severity: events.SeverityError,
+				Message: "Repository clone failed", AppID: req.AppID, SandboxID: req.ID,
+				Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch, "reason": reason}})
+			abort("git clone: " + reason)
+		}
+		// Credential is OPTIONAL: an empty credential_id means a PUBLIC repo (a
+		// curated starter or any public URL) — clone tokenless. Only when a
+		// credential_id is given do we require the secrets store + decrypt it.
+		var token []byte
+		if req.Git.CredentialID != "" {
+			if s.Secrets == nil {
+				failClone("credential store unavailable")
+				writeErr(w, http.StatusServiceUnavailable, "git clone: credential store unavailable")
+				return
+			}
+			enc, nonce, found, err := s.Store.GetGitCredentialSecret(r.Context(), req.Git.Owner, req.Git.CredentialID)
+			if err != nil || !found {
+				failClone("credential not found")
+				writeErr(w, http.StatusBadRequest, "git clone: credential not found")
+				return
+			}
+			tok, derr := s.Secrets.Open(enc, nonce)
+			if derr != nil {
+				failClone("credential decrypt failed")
+				writeErr(w, http.StatusInternalServerError, "git clone: credential decrypt failed")
+				return
+			}
+			token = tok
+		}
+		appDir := filepath.Join(mntPath, "workspace", "app")
+		_ = os.MkdirAll(filepath.Dir(appDir), 0o755) // ensure workspace/ exists; clone creates app/
+		cerr := gitimport.Clone(r.Context(), gitimport.Spec{
+			RepoURL: req.Git.RepoURL, Branch: req.Git.Branch, Token: string(token), DestDir: appDir,
+		})
+		for i := range token { // best-effort scrub of the decrypted token (nil-safe)
+			token[i] = 0
+		}
+		if cerr != nil {
+			failClone(cerr.Error()) // gitimport already redacts the token from messages
+			writeErr(w, http.StatusBadGateway, "git clone failed")
+			return
+		}
+		if oerr := s.Loopback.NormalizeOwnership(appDir); oerr != nil {
+			failClone("ownership normalize: " + oerr.Error())
+			writeErr(w, http.StatusInternalServerError, "git clone: ownership")
+			return
+		}
+		_ = s.Store.SetAppImported(r.Context(), req.AppID, time.Now().Unix())
+		s.recordEvent(r, events.Event{Type: events.GitRepoCloned, Severity: events.SeverityInfo,
+			Message: "Repository cloned", AppID: req.AppID, SandboxID: req.ID,
+			Payload: map[string]any{"repo_url": req.Git.RepoURL, "branch": req.Git.Branch}})
+	}
+
+	// A1.5a — if the workspace now has a sandbox.yaml (e.g. an imported repo)
+	// declaring a web.port, that is the source of truth: override the preset
+	// default so preview routing + URL match the app's actual port.
+	if wp := workspaceWebPort(filepath.Join(mntPath, "workspace", "app")); wp > 0 && wp != webPort {
+		webPort = wp
+		sb.WebPort = sql.NullInt64{Int64: int64(webPort), Valid: true}
+		// Must not silently continue: if this UPDATE fails, Traefik would route
+		// the resolved port while previewURL later reads the stale DB port. Abort
+		// the create so the row + container state stay consistent.
+		if err := s.Store.SetWebPort(r.Context(), req.ID, webPort); err != nil {
+			abort("web_port persist: " + err.Error())
+			writeErr(w, http.StatusInternalServerError, "web_port persist: "+err.Error())
+			return
+		}
+	}
+
 	// Build the optional env injection (e.g. agent API keys). Validate
 	// keys so a bad entry can't smuggle extra docker flags or break the
 	// KEY=VALUE encoding.
@@ -518,9 +699,44 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if templateName != "" {
 		envFlags = append(envFlags, "RUNTIMED_TEMPLATE="+templateName)
 	}
+	// A runtime preset supplies both the starter template and the sandbox.yaml;
+	// runtimed applies it on first boot and prefers it over RUNTIMED_TEMPLATE.
+	if req.RuntimePreset != "" {
+		if !preset.Valid(req.RuntimePreset) {
+			writeErr(w, http.StatusBadRequest, "unknown runtime_preset: "+req.RuntimePreset)
+			return
+		}
+		envFlags = append(envFlags, "RUNTIMED_RUNTIME_PRESET="+req.RuntimePreset)
+	}
+	// Credential-injecting auth proxy: tell runtimed where the Anthropic proxy is
+	// so claude-code tasks route through it (base URL + dummy key) instead of
+	// reading a mounted credential. runtimed only acts on this for claude-code.
+	if s.AgentProxyURL != "" {
+		envFlags = append(envFlags, "RUNTIMED_ANTHROPIC_PROXY="+s.AgentProxyURL)
+	}
+	// Optional OpenCode model (e.g. an OpenCode Zen model) for opencode tasks.
+	if s.OpencodeModel != "" {
+		envFlags = append(envFlags, "RUNTIMED_OPENCODE_MODEL="+s.OpencodeModel)
+	}
+	// Which OpenCode Zen endpoint opencode routes through the proxy (zen | zengo).
+	if s.OpencodeZenPath != "" {
+		envFlags = append(envFlags, "SANDBOXD_OPENCODE_ZEN_PATH="+s.OpencodeZenPath)
+	}
 
 	// 2. docker run with the locked flag set + traefik labels.
-	labels := traefik.Labels(req.ID, req.Ports, s.PreviewDomain, visibility, s.PreviewEntrypoint, s.PreviewTLS)
+	// A1.5a — ensure the resolved web port has a preview router. ADDITIVE: never
+	// drops a requested port (multi-port API unchanged); only adds web_port when
+	// the sandbox already has port(s). A no-port sandbox stays preview-less.
+	previewPorts := req.Ports
+	if len(previewPorts) > 0 {
+		previewPorts = ensurePort(previewPorts, webPort)
+	}
+	labels := traefik.Labels(req.ID, previewPorts, s.PreviewDomain, visibility, s.PreviewEntrypoint, s.PreviewTLS)
+	// Phase 10B — bind-mount EVERY connected provider's auth dir at
+	// /run/agent-auth/<provider> (outside the workspace). runtimed selects the
+	// right one per task by the requested agent, so an explicit agent:"claude-code"
+	// task works regardless of the default. No credential is ever in env.
+	volumes := append([]string{mntPath + ":/home/sandbox"}, s.agentAuthMounts()...)
 	startRun := time.Now()
 	var runErr error
 	containerID, runErr := s.Docker.Run(r.Context(), docker.RunSpec{
@@ -538,7 +754,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Ulimits:     []string{"nofile=65536:65536"},
 		Tmpfs:       []string{"/tmp:size=512m", "/var/tmp:size=128m"},
 		Env:         envFlags,
-		Volumes:     []string{mntPath + ":/home/sandbox"},
+		Volumes:     volumes,
 		Labels:      labels,
 		Image:       s.Image,
 	})
@@ -627,6 +843,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ExternalUserID: req.External.UserID,
 		Detail:         createDetail,
 	})
+	s.recordEvent(r, events.Event{Type: events.SandboxStarted, Severity: events.SeverityInfo,
+		Message: "Sandbox started", AppID: req.AppID, SandboxID: req.ID})
 	writeJSON(w, http.StatusCreated, toRespRow(fresh))
 }
 
@@ -758,6 +976,8 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		Target:         id,
 		ExternalUserID: extUID,
 	})
+	s.recordEvent(r, events.Event{Type: events.SandboxDeleted, Severity: events.SeverityInfo,
+		Message: "Sandbox deleted", AppID: sb.AppID.String, SandboxID: id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -855,7 +1075,7 @@ func (s *Server) handleKeepalive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	max := s.KeepaliveMax
+	max := s.keepaliveMax() // Phase 8B — live, runtime-editable
 	if max <= 0 {
 		max = 24 * time.Hour
 	}

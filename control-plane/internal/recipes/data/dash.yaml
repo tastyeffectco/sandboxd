@@ -1,0 +1,16 @@
+id: dash
+display_name: Dash (Plotly, Flask-based)
+detect:
+  requirements_contains: [dash]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install dash 'plotly[express]' pandas)); exec .venv/bin/python app.py"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Call app.run(host='0.0.0.0', port=3000) in app.py. Flask-based — no allowedHosts needed. plotly.express pulls in numpy/pandas."
+tags: [heavy_install]
+verified:
+  starter: authored-in-sandbox
+  version: v0.4.9

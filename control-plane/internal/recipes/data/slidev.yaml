@@ -1,0 +1,19 @@
+id: slidev
+display_name: Slidev (Vite presentations)
+detect:
+  deps: ["@slidev/cli"]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/slidev ] || pnpm install; exec pnpm exec slidev slides.md --port 3000 --remote"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: "vite.config.ts"
+    note: "Add a STANDALONE vite.config.ts with: export default { server: { allowedHosts: true } } — do NOT `import ... from 'vite'` (transitive-dep resolution fails), and the deck headmatter `vite:` block is ignored by Slidev."
+notes:
+  - "`--remote` ALONE binds externally (0.0.0.0). Do NOT write `--remote 0.0.0.0` — the positional arg to --remote is the presenter password, not a host."
+tags: [presentation, vite, needs_config_snippet]
+verified:
+  starter: "@slidev/cli"
+  version: v0.4.9

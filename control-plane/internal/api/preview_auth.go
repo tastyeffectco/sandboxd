@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
 )
 
 // handlePreviewAuth is the landing endpoint for a freshly minted

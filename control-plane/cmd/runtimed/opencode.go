@@ -7,21 +7,32 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 // agentSpec is the input to an agent adapter run.
 type agentSpec struct {
 	workDir string
 	prompt  string
+	model   string // per-task model (agent CLI --model); empty = agent default
 	env     map[string]string
 	rawLog  io.Writer // the agent's own diagnostics (stderr)
+	// systemPrompt is the rendered platform briefing (agentprompt.Render). Each
+	// adapter delivers it in its own supported way (claude: --append-system-prompt;
+	// opencode/codex: a preamble on the user prompt). Empty = inject nothing.
+	systemPrompt string
+	// cont continues the sandbox's most recent agent session instead of starting
+	// fresh (claude --continue, opencode --continue, codex `exec resume --last`).
+	// Each sandbox is one workspace, so "most recent" is naturally per-sandbox.
+	cont bool
 }
 
 // agent is the coding-agent adapter boundary. This slice implements
@@ -178,17 +189,18 @@ func toolTarget(raw json.RawMessage) string {
 		return ""
 	}
 	var in struct {
-		FilePath string `json:"filePath"`
-		Path     string `json:"path"`
-		File     string `json:"file"`
-		Pattern  string `json:"pattern"`
-		Command  string `json:"command"`
+		FilePath  string `json:"filePath"`
+		FilePathS string `json:"file_path"` // claude tools use snake_case
+		Path      string `json:"path"`
+		File      string `json:"file"`
+		Pattern   string `json:"pattern"`
+		Command   string `json:"command"`
 	}
 	if json.Unmarshal(raw, &in) != nil {
 		return ""
 	}
 	t := in.FilePath
-	for _, c := range []string{in.Path, in.File, in.Pattern, in.Command} {
+	for _, c := range []string{in.FilePathS, in.Path, in.File, in.Pattern, in.Command} {
 		if t == "" {
 			t = c
 		}
@@ -199,14 +211,136 @@ func toolTarget(raw json.RawMessage) string {
 	return t
 }
 
+// defaultProxyModel is used only when the proxy is on but no model was picked;
+// glm-5 is present in both the "zen" (pay-as-you-go) and "zengo" (subscription)
+// catalogs, so it routes on either path.
+const defaultProxyModel = "glm-5"
+
+// zenUpstream is the proxy <upstream> segment opencode's Zen gateway routes
+// through: "zen" (pay-as-you-go, full model catalog) or "zengo" (the Zen "go"
+// subscription's included models). Set SANDBOXD_OPENCODE_ZEN_PATH to choose;
+// defaults to "zen".
+func zenUpstream() string {
+	if p := os.Getenv("SANDBOXD_OPENCODE_ZEN_PATH"); p == "zengo" || p == "zen" {
+		return p
+	}
+	return "zen"
+}
+
+// ipBaseURL rewrites a base URL's host to its resolved IP. opencode's Bun
+// runtime rejects a bare single-label hostname (e.g. "sandboxd") in a provider
+// baseURL with "fetch() URL is invalid", so we hand it an IP literal instead.
+func ipBaseURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if host := u.Hostname(); net.ParseIP(host) == nil {
+		if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
+			if port := u.Port(); port != "" {
+				u.Host = net.JoinHostPort(ips[0], port)
+			} else {
+				u.Host = ips[0]
+			}
+		}
+	}
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+// writeOpencodeProxyConfig writes an OPENCODE_CONFIG that routes opencode through
+// the credential-injecting proxy, and returns (config path, model id to pass to
+// --model). It defines ONE custom openai-compatible provider ("proxy") pointing
+// at the proxy's `opencode/<zen-path>` endpoint with a DUMMY key; the proxy holds
+// the real credential and injects it on the wire, so nothing secret lands in the
+// sandbox. The requested model is exposed as `proxy/<id>`.
+//
+// Returns ("","",nil) when no proxy is configured — the caller then falls back to
+// opencode's own auth/model handling.
+func writeOpencodeProxyConfig(model string) (string, string, error) {
+	proxy := strings.TrimRight(os.Getenv("RUNTIMED_ANTHROPIC_PROXY"), "/")
+	if proxy == "" {
+		return "", "", nil
+	}
+	base, err := ipBaseURL(proxy)
+	if err != nil {
+		return "", "", err
+	}
+	// Bare model id — strip any "provider/" prefix the caller passed.
+	id := model
+	if i := strings.LastIndex(id, "/"); i >= 0 {
+		id = id[i+1:]
+	}
+	if id == "" {
+		id = defaultProxyModel
+	}
+	cfg := map[string]any{
+		"provider": map[string]any{
+			"proxy": map[string]any{
+				"npm":  "@ai-sdk/openai-compatible",
+				"name": "proxy",
+				"options": map[string]any{
+					"baseURL": base + "/opencode/" + zenUpstream(),
+					"apiKey":  dummyKey,
+				},
+				"models": map[string]any{id: map[string]any{"name": id}},
+			},
+		},
+	}
+	f, err := os.CreateTemp("", "opencode-cfg-*.json")
+	if err != nil {
+		return "", "", err
+	}
+	defer f.Close()
+	if err := json.NewEncoder(f).Encode(cfg); err != nil {
+		os.Remove(f.Name())
+		return "", "", err
+	}
+	return f.Name(), "proxy/" + id, nil
+}
+
 func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (string, runtime.TokenUsage, error) {
 	var usage runtime.TokenUsage
-	cmd := exec.Command("opencode", "run",
-		"--format", "json", "--dangerously-skip-permissions", spec.prompt)
+	// Model precedence: per-task (spec.model) > global default (RUNTIMED_OPENCODE_MODEL)
+	// > opencode's own configured default. Model is "provider/model" for opencode.
+	model := spec.model
+	if model == "" {
+		model = os.Getenv("RUNTIMED_OPENCODE_MODEL")
+	}
+	// Route opencode through the credential-injecting proxy via an OPENCODE_CONFIG
+	// file: a custom openai-compatible "proxy" provider carrying a dummy key (the
+	// proxy injects the real one). When it applies, the model is rewritten to
+	// `proxy/<id>` so the run uses that provider. No credential enters the sandbox.
+	cfgPath, proxyModel, cfgErr := writeOpencodeProxyConfig(model)
+	if cfgErr != nil {
+		return "", usage, fmt.Errorf("configure opencode proxy: %w", cfgErr)
+	}
+	if cfgPath != "" {
+		defer os.Remove(cfgPath)
+		model = proxyModel
+	}
+	args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if spec.cont {
+		args = append(args, "--continue") // continue the last session
+	}
+	// opencode `run` has no system-prompt flag, so deliver the platform briefing
+	// as a clearly-delimited preamble on the prompt — on a FRESH run only (on
+	// --continue it's already in the session).
+	prompt := spec.prompt
+	if spec.systemPrompt != "" && !spec.cont {
+		prompt = spec.systemPrompt + "\n\n---\n\n# Your task\n\n" + spec.prompt
+	}
+	args = append(args, prompt)
+	cmd := exec.Command("opencode", args...)
 	cmd.Dir = spec.workDir
-	cmd.Env = os.Environ()
-	for k, v := range spec.env {
-		cmd.Env = append(cmd.Env, k+"="+v)
+	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's
+	// mounted auth dir (/run/agent-auth/opencode), if any. Credentials come from
+	// files under HOME, never from inherited container env.
+	cmd.Env = agentEnv(o.name(), spec.env)
+	if cfgPath != "" {
+		cmd.Env = append(cmd.Env, "OPENCODE_CONFIG="+cfgPath)
 	}
 	// Own process group so cancel/timeout kills the whole agent tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
