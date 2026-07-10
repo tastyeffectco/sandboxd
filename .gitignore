@@ -25,3 +25,6 @@
 docker-compose.override.yml
 /abs-manifest.yaml
 /gitea.yaml
+
+# generated console login (plaintext, local only)
+.console-login
