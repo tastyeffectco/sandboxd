@@ -57,7 +57,8 @@ It builds the images, starts the stack **with the web console**, and prints your
 **console URL + a generated login** — no password step. Open it, connect an agent
 under **Settings**, create an app, and build. No code needed.
 
-- **Console:** `http://console.localhost` (login printed by the installer)
+- **Console:** `http://console.localhost` — the installer prints your login; lost
+  it? run **`./console-login.sh`** to see it again anytime
 - **API:** `http://127.0.0.1:9090` (`curl http://127.0.0.1:9090/healthz` → `ok`)
 - **Headless (no console):** run with `SANDBOXD_CONSOLE=0` (or `--no-console`)
 
