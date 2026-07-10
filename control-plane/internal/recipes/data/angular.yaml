@@ -1,0 +1,20 @@
+id: angular
+display_name: Angular (CLI)
+detect:
+  deps: ["@angular/core"]
+  config_files: [angular.json]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/ng ] || npm ci; exec node_modules/.bin/ng serve --host 0.0.0.0 --port 3000 --disable-host-check"
+    port: 3000
+    health_path: "/"
+config_snippets:
+  - file: "angular.json"
+    note: "Angular's dev server blocks unknown hosts. `--disable-host-check` (used here) or set serve options allowedHosts: all."
+notes:
+  - "Use `npm ci` (not pnpm) for repos with a package-lock.json so pinned versions aren't re-resolved (can break TS)."
+tags: [needs_config_snippet]
+verified:
+  starter: sinedied/ng-lite-starter
+  version: v0.4.9

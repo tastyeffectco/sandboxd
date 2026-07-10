@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sandboxd/control-plane/internal/logging"
-	"github.com/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/logging"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // runBackfillLegacy implements the one-shot subcommand

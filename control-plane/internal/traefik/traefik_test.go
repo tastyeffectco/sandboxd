@@ -24,6 +24,8 @@ func TestLabels_SinglePort_HTTP(t *testing.T) {
 		"traefik.http.routers.s-nx-3000.entrypoints=web",
 		"traefik.http.routers.s-nx-3000.priority=100",
 		"traefik.http.services.s-nx-3000.loadbalancer.server.port=3000",
+		"traefik.http.services.s-nx-3000.loadbalancer.passHostHeader=false",
+		"traefik.http.routers.s-nx-3000.middlewares=sandbox-preview-embed@file",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected label set\ngot:  %#v\nwant: %#v", got, want)
@@ -40,7 +42,9 @@ func TestLabels_SinglePort_TLS(t *testing.T) {
 		"traefik.http.routers.s-nx-3000.entrypoints=websecure",
 		"traefik.http.routers.s-nx-3000.priority=100",
 		"traefik.http.services.s-nx-3000.loadbalancer.server.port=3000",
+		"traefik.http.services.s-nx-3000.loadbalancer.passHostHeader=false",
 		"traefik.http.routers.s-nx-3000.tls=true",
+		"traefik.http.routers.s-nx-3000.middlewares=sandbox-preview-embed@file",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected label set\ngot:  %#v\nwant: %#v", got, want)
@@ -52,10 +56,11 @@ func TestLabels_MultiPort(t *testing.T) {
 	if got[0] != "traefik.enable=true" {
 		t.Fatalf("first label must be enable; got %q", got[0])
 	}
-	// Two fixed lines (enable + managed), then 4 lines per port (rule,
-	// entrypoints, priority, service) when TLS is off.
-	if len(got) != 2+4*2 {
-		t.Fatalf("want 10 labels for 2 ports (no TLS); got %d (%v)", len(got), got)
+	// Two fixed lines (enable + managed), then 6 lines per port (rule,
+	// entrypoints, priority, service port, passHostHeader, middlewares) when
+	// TLS is off.
+	if len(got) != 2+6*2 {
+		t.Fatalf("want 14 labels for 2 ports (no TLS); got %d (%v)", len(got), got)
 	}
 	gotMap := map[string]bool{}
 	for _, l := range got {
@@ -73,11 +78,12 @@ func TestLabels_MultiPort(t *testing.T) {
 	}
 }
 
-// A private sandbox additionally references the sandbox-preview-auth@file
-// forward-auth middleware on every router; a public sandbox must NOT.
+// Every router strips X-Frame-Options via sandbox-preview-embed@file. A private
+// sandbox ADDITIONALLY runs forward-auth (auth first, then embed); a public one
+// carries embed only.
 func TestLabels_Private(t *testing.T) {
 	priv := Labels("nx", []int{3000}, "localhost", "private", "web", false)
-	wantMW := "traefik.http.routers.s-nx-3000.middlewares=sandbox-preview-auth@file"
+	wantMW := "traefik.http.routers.s-nx-3000.middlewares=sandbox-preview-auth@file,sandbox-preview-embed@file"
 	found := false
 	for _, l := range priv {
 		if l == wantMW {
@@ -85,13 +91,21 @@ func TestLabels_Private(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("private sandbox must carry the forward-auth middleware label; got %#v", priv)
+		t.Fatalf("private sandbox must carry auth+embed middlewares; got %#v", priv)
 	}
 
 	pub := Labels("nx", []int{3000}, "localhost", "public", "web", false)
+	wantPubMW := "traefik.http.routers.s-nx-3000.middlewares=sandbox-preview-embed@file"
+	foundPub := false
 	for _, l := range pub {
 		if l == wantMW {
-			t.Fatalf("public sandbox must NOT carry the forward-auth middleware label; got %#v", pub)
+			t.Fatalf("public sandbox must NOT carry the forward-auth middleware; got %#v", pub)
 		}
+		if l == wantPubMW {
+			foundPub = true
+		}
+	}
+	if !foundPub {
+		t.Fatalf("public sandbox must carry the embed middleware; got %#v", pub)
 	}
 }

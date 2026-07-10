@@ -1,0 +1,16 @@
+id: bun
+display_name: Bun (Elysia/Hono)
+detect:
+  config_files: [bun.lockb]
+  deps: [elysia]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d node_modules ] || bun install; exec env PORT=3000 bun run src/index.ts"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Bun.serve binds 0.0.0.0 by default — no --host or allowedHosts needed. Adjust the entry (src/index.ts) to your app."
+verified:
+  starter: render-examples/elysiajs-hello-world
+  version: v0.4.9

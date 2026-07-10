@@ -20,8 +20,15 @@ type App struct {
 	Description       string
 	Tags              []string
 	LatestSnapshotID  sql.NullString
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	RuntimePreset     sql.NullString // runtime preset id (0017); "" = none
+	// Git import metadata (0020); empty for a blank-from-preset app. The repo
+	// URL is tokenless — no token is ever stored on the app.
+	GitRepoURL      sql.NullString
+	GitBranch       sql.NullString
+	GitCredentialID sql.NullString
+	LastImportAt    sql.NullInt64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // AppPatch carries the fields a PATCH may change; nil means "leave as-is".
@@ -47,7 +54,8 @@ func scanApp(sc scanner) (*App, error) {
 	var tags string
 	var created, updated int64
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
-		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated)
+		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset,
+		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -64,7 +72,16 @@ func scanApp(sc scanner) (*App, error) {
 }
 
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
-	       name, description, tags, latest_snapshot_id, created_at, updated_at`
+	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset,
+	       git_repo_url, git_branch, git_credential_id, last_import_at`
+
+// SetAppImported stamps last_import_at after a successful Git clone.
+func (s *Store) SetAppImported(ctx context.Context, id string, at int64) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE app SET last_import_at = ? WHERE id = ?`, at, id)
+		return err
+	})
+}
 
 // CreateApp inserts a new app. The caller sets ID (ULID) and OwnerToken.
 func (s *Store) CreateApp(ctx context.Context, a *App) error {
@@ -73,10 +90,12 @@ func (s *Store) CreateApp(ctx context.Context, a *App) error {
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO app (id, owner_token, external_user_id, external_project_id,
 			                 name, description, tags, latest_snapshot_id,
-			                 created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			                 created_at, updated_at, runtime_preset,
+			                 git_repo_url, git_branch, git_credential_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			a.ID, a.OwnerToken, a.ExternalUserID, a.ExternalProjectID,
-			a.Name, a.Description, marshalTags(a.Tags), a.LatestSnapshotID, now, now)
+			a.Name, a.Description, marshalTags(a.Tags), a.LatestSnapshotID, now, now, a.RuntimePreset,
+			a.GitRepoURL, a.GitBranch, a.GitCredentialID)
 		if err != nil {
 			if isUniqueViolation(err) {
 				return ErrConflict
@@ -94,6 +113,15 @@ func (s *Store) CreateApp(ctx context.Context, a *App) error {
 func (s *Store) GetAppForOwner(ctx context.Context, id, ownerToken string) (*App, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+appSelectCols+` FROM app WHERE id = ? AND owner_token = ?`, id, ownerToken)
+	return scanApp(row)
+}
+
+// GetApp returns an app by id without an owner filter. Owner-agnostic on
+// purpose: used by background paths (e.g. the task watcher) that resolve an
+// app's owner_token for event recording and have no tenant in scope. NOT for
+// tenant-facing reads — those must use GetAppForOwner.
+func (s *Store) GetApp(ctx context.Context, id string) (*App, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+appSelectCols+` FROM app WHERE id = ?`, id)
 	return scanApp(row)
 }
 
@@ -169,6 +197,73 @@ func (s *Store) CurrentSandboxForApp(ctx context.Context, appID string) (*Sandbo
 	}
 	sb.Ports, _ = s.portsFor(ctx, sb.ID)
 	return sb, nil
+}
+
+// SandboxIDsForApp returns every sandbox id linked to the app (current +
+// historical), newest first. Used by the full app-delete cascade to purge each.
+func (s *Store) SandboxIDsForApp(ctx context.Context, appID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM sandbox WHERE app_id = ? ORDER BY created_at DESC`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SnapshotImagePathsForApp returns the on-disk image_path of every snapshot
+// captured from the app (source_app_id). The caller removes the files; the rows
+// themselves are dropped by DeleteApp.
+func (s *Store) SnapshotImagePathsForApp(ctx context.Context, appID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT image_path FROM snapshot WHERE source_app_id = ? AND image_path <> ''`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, rows.Err()
+}
+
+// DeleteApp removes the app row and every app-scoped DB row (config, events, and
+// snapshot records captured from it) in one transaction. Sandbox rows and files
+// are torn down separately by the purge path before this is called; this is the
+// final metadata cleanup so nothing dangling references the app. Idempotent:
+// deleting an already-absent app affects zero rows and returns nil.
+func (s *Store) DeleteApp(ctx context.Context, appID string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, stmt := range []string{
+			`DELETE FROM app_config WHERE app_id = ?`,
+			`DELETE FROM app_events WHERE app_id = ?`,
+			`DELETE FROM snapshot   WHERE source_app_id = ?`,
+			`DELETE FROM app        WHERE id = ?`,
+		} {
+			if _, err := tx.ExecContext(ctx, stmt, appID); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
 }
 
 func joinComma(parts []string) string {

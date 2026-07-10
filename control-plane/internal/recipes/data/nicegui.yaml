@@ -1,0 +1,16 @@
+id: nicegui
+display_name: NiceGUI (Python UI, socket.io)
+detect:
+  requirements_contains: [nicegui]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && (uv pip install -r requirements.txt 2>/dev/null || uv pip install nicegui)); exec .venv/bin/python app.py"
+    port: 3000
+    health_path: "/"
+notes:
+  - "Call ui.run(host='0.0.0.0', port=3000) in app.py. The WebSocket (/_nicegui_ws/socket.io/) upgrades through the preview with no host config."
+tags: [python, websocket]
+verified:
+  starter: "NiceGUI (socket.io 101 + namespace connect verified)"
+  version: v0.4.9

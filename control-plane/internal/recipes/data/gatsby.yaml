@@ -1,0 +1,16 @@
+id: gatsby
+display_name: Gatsby
+detect:
+  deps: [gatsby]
+  config_files: [gatsby-config.js, gatsby-config.ts]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/gatsby ] || pnpm install; pnpm exec gatsby develop -H 0.0.0.0 -p 3000"
+    port: 3000
+    health_path: "/"
+notes:
+  - "First build is slow (~90s); the preview shows the warming page until it serves."
+verified:
+  starter: gatsbyjs/gatsby-starter-blog
+  version: v0.4.9

@@ -1,0 +1,18 @@
+id: strapi
+display_name: Strapi v5 + SQLite (headless CMS)
+detect:
+  deps: ["@strapi/strapi"]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/strapi ] || npm install; export HOST=0.0.0.0 PORT=3000; exec npm run develop"
+    port: 3000
+    health_path: "/admin"
+notes:
+  - "Strapi defaults to 1337; HOST/PORT pin it to 0.0.0.0:3000. `/` 302-redirects, so health checks /admin."
+  - "SQLite via better-sqlite3 (arm64 prebuilt — no compile). The DB lives at .tmp/data.db; the first admin registration (POST /admin/register-admin) writes it."
+  - "Dev/sandbox recipe — not production hosting."
+tags: [service, cms, sqlite_app, heavy_install, first_boot_slow]
+verified:
+  starter: "create-strapi-app --quickstart (Strapi v5)"
+  version: v0.4.9

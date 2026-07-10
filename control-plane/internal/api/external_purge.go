@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 )
 
 // purgeOne is the irreversible per-sandbox teardown shared by all
@@ -27,6 +27,13 @@ func (s *Server) purgeOne(ctx context.Context, id string) (freedBytes int64, ext
 	if s.Locks != nil {
 		s.Locks.Lock(id)
 		defer s.Locks.Unlock(id)
+		// Also exclude an in-flight git commit/push on this workspace before we
+		// delete the workspace dir below — those hold git:<id> (a different key),
+		// so the bare-id lock alone wouldn't serialize against them. Fixed order
+		// (id -> git:<id>); git mutations only ever hold git:<id>, never the bare
+		// id, so there is no lock-ordering cycle / deadlock.
+		s.Locks.Lock(gitLockKey(id))
+		defer s.Locks.Unlock(gitLockKey(id))
 	}
 
 	// Resolve the owner first — the workspace_owner row is about to be

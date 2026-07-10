@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
 )
 
 // PUT /v1/sandboxes/{id}/files?path=<rel> — atomic generic file write.
@@ -18,6 +18,12 @@ import (
 // the upstream backend uses this to prepare AGENTS.md / CLAUDE.md / opencode.json /
 // any other file the chosen agent expects. The platform does NOT
 // inspect the body — the file is opaque bytes.
+//
+// IMPORTANT for callers: the root is the MOUNT, not the app dir. The app (and the
+// sandbox.yaml runtimed reads) lives at `workspace/app/`, so to write the manifest
+// the caller MUST use `path=workspace/app/sandbox.yaml` — a bare `path=sandbox.yaml`
+// writes to `/home/sandbox/sandbox.yaml`, which returns 200 but runtimed never sees
+// it (the console "Apply sandbox.yaml" CTA depends on this; don't "simplify" it).
 //
 // Security model (paying-tenant threat model from CLAUDE.md):
 //   - The caller holds a service token; the upstream backend bugs are the

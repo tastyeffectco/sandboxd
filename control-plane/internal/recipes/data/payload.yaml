@@ -1,0 +1,18 @@
+id: payload
+display_name: Payload v3 + SQLite (Next-based CMS)
+detect:
+  deps: [payload]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -x node_modules/.bin/next ] || pnpm install; exec pnpm exec next dev -H 0.0.0.0 -p 3000"
+    port: 3000
+    health_path: "/admin"
+notes:
+  - "Payload v3 is a Next app — bare `next dev` binds localhost, so the manifest pins `-H 0.0.0.0 -p 3000`."
+  - "SQLite via @libsql (arm64 prebuilt — no compile). Set the SQLite/libsql connection through the DATABASE_URL env var. First admin (POST /api/users/first-register) writes the DB; REST + GraphQL are both live."
+  - "Recipe targets an already-generated/imported project — create-payload-app is interactive (needs a pty), so it is NOT a scaffolding step."
+tags: [service, cms, sqlite_app, heavy_install, first_boot_slow]
+verified:
+  starter: "create-payload-app -t blank --db sqlite (Payload v3 / Next 16)"
+  version: v0.4.9

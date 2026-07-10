@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 #
-# sandbox-base:0.4.0 — durable base image (Phase 2 lineage).
+# sandboxd-base:0.3.0 — durable base image (Phase 2 lineage).
 #
 # 0.3.0 adds the in-sandbox supervisor `runtimed` as the container's
 # main process (CMD) — see control-plane/cmd/runtimed.
@@ -27,10 +27,10 @@
 #     image's runtime PATH omits /usr/sbin since the container runs as
 #     the unprivileged sandbox user, so admin tools don't belong on
 #     PATH at runtime).
-#   - `npm install -g pnpm@${PNPM_VERSION}` instead of corepack — Node
-#     20's bundled corepack auto-resolves to pnpm 11.x even with
-#     `corepack prepare --activate`, and pnpm 11 needs Node 22+ so the
-#     runtime crashes on `node:sqlite` import.
+#   - `npm install -g pnpm@${PNPM_VERSION}` instead of corepack — corepack
+#     auto-resolves to a floating pnpm; we pin an explicit version. (On the
+#     Node 22 base, pnpm 10/11 are fine; the image pins pnpm 10.x for catalog
+#     workspace support — see the PNPM_VERSION arg.)
 #   - `env UV_INSTALL_DIR=/usr/local sh` instead of mv-after-install —
 #     the uv 0.4 installer moved its default target from ~/.local/bin
 #     to ~/.cargo/bin, and treats `UV_INSTALL_DIR` as a prefix that
@@ -60,8 +60,12 @@ RUN cd control-plane && CGO_ENABLED=0 go build -trimpath -o /runtimed ./cmd/runt
 # --- Stage 2: the sandbox base image ---------------------------------
 FROM debian:stable-slim
 
-ARG NODE_VERSION=20.x
-ARG PNPM_VERSION=9.12.0
+ARG NODE_VERSION=22.x
+# pnpm 10.x: supports catalog-only `pnpm-workspace.yaml` (no `packages:` key) used by
+# modern release tarballs (e.g. Ghost 6 + `packageManager: pnpm@11`). pnpm 9 rejects
+# those with "packages field missing or empty". Still installed explicitly (not via
+# corepack) for a deterministic version; Node 22 supports pnpm 10/11.
+ARG PNPM_VERSION=10.34.4
 ARG BUN_VERSION=1.1.30
 ARG UV_VERSION=0.4.20
 
@@ -75,10 +79,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*\n' \
       > /etc/dpkg/dpkg.cfg.d/01-nodoc
 
+# python3-setuptools provides the vendored `distutils` shim (via the
+# `distutils-precedence.pth` hook) so node-gyp builds of native modules
+# (better-sqlite3, sqlite3, sharp, …) work on Python 3.12+ where the
+# stdlib distutils was removed. Without it, node-gyp ≤9 fails with
+# `ModuleNotFoundError: No module named 'distutils'`. (Node 22's bundled
+# node-gyp 10 no longer needs it, but project-pinned/older node-gyp and
+# non-npm package managers still do — so we provide it unconditionally.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg git ripgrep fd-find jq unzip \
       passwd \
-      build-essential python3 python3-venv \
+      build-essential python3 python3-venv python3-setuptools \
       tini \
  && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt /var/log/apt
 
@@ -101,8 +112,8 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
  && mv /root/.bun/bin/bun /usr/local/bin/bun \
  && rm -rf /root/.bun
 
-# OpenCode (npm global) + Claude Code (official native installer).
-RUN npm install -g opencode-ai \
+# OpenCode (npm global) + Claude Code (official native installer) + Codex CLI.
+RUN npm install -g opencode-ai @openai/codex@0.142.5 \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && cp /root/.local/bin/claude /usr/local/bin/claude \
  && chmod 755 /usr/local/bin/claude
@@ -125,6 +136,10 @@ COPY image/skel/ /opt/sandbox-skel/
 # default react-standard) into an empty workspace/app on first boot.
 # Add a template = drop a new dir here; the registry is additive.
 COPY image/templates/ /opt/templates/
+
+# Base-image self-check (Node 22, npm/pnpm/bun, python3/uv/setuptools, build
+# tools). Run: `docker run --rm <image> bash /opt/verify-base.sh`.
+COPY image/verify-base.sh /opt/verify-base.sh
 
 # Sandbox user (uid/gid 1000 inside the container; userns-remap offsets
 # it on the host so a running sandbox's processes appear as host-uid

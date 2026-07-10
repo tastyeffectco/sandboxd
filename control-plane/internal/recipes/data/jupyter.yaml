@@ -1,0 +1,16 @@
+id: jupyter
+display_name: JupyterLab (notebook UI)
+detect:
+  requirements_contains: [jupyterlab, notebook]
+suggested_manifest: |
+  version: 1
+  web:
+    command: "[ -d .venv ] || (uv venv && uv pip install jupyterlab); exec .venv/bin/jupyter lab --ip=0.0.0.0 --port=3000 --no-browser --IdentityProvider.token='' --ServerApp.password='' --ServerApp.allow_origin='*' --ServerApp.disable_check_xsrf=True --ServerApp.allow_remote_access=True"
+    port: 3000
+    health_path: "/lab"
+notes:
+  - "Live kernels over WebSocket need the token/password empty + allow_origin/xsrf/remote_access relaxed. This disables auth — for a single-user sandbox only."
+tags: [websocket, heavy_install]
+verified:
+  starter: authored-in-sandbox
+  version: v0.4.9

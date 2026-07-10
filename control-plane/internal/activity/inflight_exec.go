@@ -17,7 +17,7 @@ package activity
 import (
 	"sync"
 
-	"github.com/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 )
 
 // InflightExec is a tiny thread-safe counter map: how many exec calls

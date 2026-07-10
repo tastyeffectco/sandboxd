@@ -6,21 +6,26 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/sandboxd/control-plane/internal/activity"
-	"github.com/sandboxd/control-plane/internal/audit"
-	"github.com/sandboxd/control-plane/internal/auth"
-	"github.com/sandboxd/control-plane/internal/docker"
-	"github.com/sandboxd/control-plane/internal/egress"
-	"github.com/sandboxd/control-plane/internal/idlock"
-	"github.com/sandboxd/control-plane/internal/loopback"
-	"github.com/sandboxd/control-plane/internal/metrics"
-	"github.com/sandboxd/control-plane/internal/snapshot"
-	"github.com/sandboxd/control-plane/internal/store"
-	"github.com/sandboxd/control-plane/internal/wake"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/activity"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/egress"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/instancecfg"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
 )
 
 // Server bundles the collaborators the handlers need.
@@ -46,7 +51,21 @@ type Server struct {
 	Userns            string
 	PreviewEntrypoint string
 	PreviewTLS        bool
-	SetMemoryHigh     bool
+	// PublicHTTPPort is the HOST-facing port that preview/console URLs are
+	// reached on (the host side of Traefik's published port). previewURL
+	// appends it unless it's the default for the scheme (80 for http, 443
+	// for https), so on a shared host with HTTP_PORT=18080 the API returns
+	// a reachable ":18080" URL instead of a bare :80 one. Empty = default.
+	PublicHTTPPort string
+	SetMemoryHigh  bool
+
+	// GitPush runs the host-side git read+push ops (B2). Nil in production →
+	// the handler uses the real gitimport.Runner; tests inject a fake.
+	GitPush pushRunner
+
+	// GitExec runs in-sandbox git (status/diff/commit) via docker exec. Nil in
+	// production → the handler uses s.Docker; tests inject a fake execer.
+	GitExec sandboxExecer
 
 	// AgentCfg is the in-memory cache of the platform's agent
 	// configuration (model + AGENTS.md) — the source of truth for
@@ -73,6 +92,11 @@ type Server struct {
 	// GET /llm.txt (the API contract for integrators). Empty → 404.
 	LLMTxtPath string
 
+	// Secrets encrypts sensitive app_config values at rest (Slice 1 of
+	// app config/secrets). nil-safe: sensitive config writes return 503
+	// when unset, but main.go always configures it.
+	Secrets *secrets.Cipher
+
 	// Phase 5 additions — nil-safe so existing tests that build a
 	// Server without these still work.
 	Inflight     *activity.InflightExec
@@ -94,8 +118,80 @@ type Server struct {
 	// main.go around this mux).
 	Auth                *auth.Middleware
 	Audit               *audit.Logger
-	SnapshotsRoot       string // per-sandbox purge of _snapshots/<id>/
-	ForwardAuthDenyMode string // "redirect" (default) | "meta-refresh"
+	Events              *events.Recorder // Phase 5 — durable app_events timeline
+	SnapshotsRoot       string           // per-sandbox purge of _snapshots/<id>/
+	ForwardAuthDenyMode string           // "redirect" (default) | "meta-refresh"
+
+	// Phase 8A — static, safe instance metadata for GET /v1/settings.
+	// Populated in main; contains no secrets.
+	Instance InstanceInfo
+
+	// Phase 8B — live, runtime-editable lifecycle tunables (idle/keepalive),
+	// shared with the reaper. nil-safe: PATCH /v1/settings returns 503 when
+	// unset, and the static KeepaliveMax is used as a fallback.
+	Live *instancecfg.Live
+
+	// Phase 10B A0 — host-side agent auth store (read-only here) + a lazy,
+	// cached, best-effort "installed" probe. nil-safe.
+	AgentAuth      *agentauth.Store
+	agentProbeOnce sync.Once
+	agentProbe     map[string]string                    // binary -> installed|not_installed (nil => unknown)
+	agentProbeFn   func(image string) map[string]string // test override
+
+	// Phase 10B — default agent for tasks that don't specify one. Does NOT
+	// control credential mounting (every connected provider is mounted); an
+	// explicit agent:"claude-code" task works regardless of this. Empty → opencode.
+	DefaultAgent string
+
+	// AgentOAuth drives the guided claude-code subscription login (authorize link
+	// → paste code → tokens) and token refresh. nil disables the OAuth endpoints.
+	AgentOAuth *agentauth.OAuth
+
+	// OpencodeModel, when set, is passed to opencode tasks as --model (e.g. an
+	// OpenCode Zen model "opencode/claude-sonnet-4-5"). Empty → opencode's default.
+	OpencodeModel string
+
+	// OpencodeZenPath selects which OpenCode Zen endpoint opencode routes through
+	// the proxy: "zen" (pay-as-you-go, full catalog) or "zengo" (the Zen "go"
+	// subscription's models). Empty → runtimed's default ("zen").
+	OpencodeZenPath string
+
+	// AgentProxyURL is the in-network URL of the credential-injecting auth proxy
+	// (see internal/authproxy). When set, claude-code runs proxy-side: the real
+	// subscription credential is NOT mounted into the sandbox; instead the sandbox
+	// gets this base URL + a dummy key, and the proxy injects the real bearer.
+	// Empty → legacy behaviour (credential mounted into the sandbox).
+	AgentProxyURL string
+}
+
+// agentAuthBaseMount is the in-container parent dir under which each connected
+// provider's auth dir is bind-mounted, as /run/agent-auth/<provider>.
+// Deliberately NOT under /home/sandbox (the workspace), so credentials never
+// land in a workspace or a snapshot. runtimed picks the right one per task by
+// the selected agent's name.
+const agentAuthBaseMount = "/run/agent-auth"
+
+// agentAuthMounts returns one -v spec per CONNECTED provider, mounting its auth
+// dir at /run/agent-auth/<provider>. Empty when nothing is connected.
+func (s *Server) agentAuthMounts() []string {
+	if s.AgentAuth == nil {
+		return nil
+	}
+	// When the auth proxy is enabled, NO agent credential is mounted into the
+	// sandbox: every agent reaches its provider through the control-plane proxy,
+	// which holds and injects the credential. The workspace can never read,
+	// exfiltrate, or clobber any credential.
+	if s.AgentProxyURL != "" {
+		return nil
+	}
+	// Proxy disabled (fallback): mount each connected provider's auth dir.
+	var vols []string
+	for _, p := range agentauth.Providers() {
+		if s.AgentAuth.Connected(p.ID) {
+			vols = append(vols, s.AgentAuth.Dir(p.ID)+":"+agentAuthBaseMount+"/"+p.ID)
+		}
+	}
+	return vols
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -131,22 +227,56 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes", s.observe("POST /v1/sandboxes", s.v1CreateSandbox))
 	mux.HandleFunc("GET /v1/sandboxes/{id}", s.observe("GET /v1/sandboxes/{id}", s.v1GetSandbox))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/stop", s.observe("POST /v1/sandboxes/{id}/stop", s.v1StopSandbox))
+	mux.HandleFunc("POST /v1/sandboxes/{id}/start", s.observe("POST /v1/sandboxes/{id}/start", s.v1StartSandbox))
 	mux.HandleFunc("DELETE /v1/sandboxes/{id}", s.observe("DELETE /v1/sandboxes/{id}", s.v1DeleteSandbox))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/tasks", s.observe("POST /v1/sandboxes/{id}/tasks", s.v1SubmitTask))
+	mux.HandleFunc("GET /v1/sandboxes/{id}/tasks", s.observe("GET /v1/sandboxes/{id}/tasks", s.v1ListTasks))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/tasks/{taskId}", s.observe("GET /v1/sandboxes/{id}/tasks/{taskId}", s.v1GetTask))
+	mux.HandleFunc("POST /v1/sandboxes/{id}/tasks/{taskId}/revert", s.observe("POST /v1/sandboxes/{id}/tasks/{taskId}/revert", s.v1RevertTask))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/tasks/{taskId}/events", s.observe("GET /v1/sandboxes/{id}/tasks/{taskId}/events", s.v1TaskEvents))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/tasks/{taskId}/cancel", s.observe("POST /v1/sandboxes/{id}/tasks/{taskId}/cancel", s.v1CancelTask))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/files", s.observe("GET /v1/sandboxes/{id}/files", s.v1ListFiles))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/files/content", s.observe("GET /v1/sandboxes/{id}/files/content", s.v1FileContent))
 	mux.HandleFunc("PUT /v1/sandboxes/{id}/files", s.observe("PUT /v1/sandboxes/{id}/files", s.v1PutFile))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/export", s.observe("GET /v1/sandboxes/{id}/export", s.v1Export))
+	mux.HandleFunc("GET /v1/sandboxes/{id}/processes/{name}/logs", s.observe("GET /v1/sandboxes/{id}/processes/{name}/logs", s.v1ProcessLogs))
 
 	// Durable apps above sandboxes (Phase 1).
+	mux.HandleFunc("GET /v1/settings", s.observe("GET /v1/settings", s.v1GetSettings))
+	mux.HandleFunc("PATCH /v1/settings", s.observe("PATCH /v1/settings", s.v1PatchSettings))
+	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
+	mux.HandleFunc("POST /v1/agents/claude-code/oauth/start", s.observe("POST /v1/agents/claude-code/oauth/start", s.v1AgentOAuthStart))
+	mux.HandleFunc("POST /v1/agents/claude-code/oauth/finish", s.observe("POST /v1/agents/claude-code/oauth/finish", s.v1AgentOAuthFinish))
+	mux.HandleFunc("POST /v1/agents/{provider}/import", s.observe("POST /v1/agents/{provider}/import", s.v1AgentImport))
+	mux.HandleFunc("POST /v1/agents/{provider}/api-key", s.observe("POST /v1/agents/{provider}/api-key", s.v1AgentAPIKey))
+	mux.HandleFunc("POST /v1/agents/{provider}/disconnect", s.observe("POST /v1/agents/{provider}/disconnect", s.v1AgentDisconnect))
+	mux.HandleFunc("GET /v1/presets", s.observe("GET /v1/presets", s.v1ListPresets))
+	mux.HandleFunc("POST /v1/git-credentials", s.observe("POST /v1/git-credentials", s.v1CreateGitCredential))
+	mux.HandleFunc("GET /v1/git-credentials", s.observe("GET /v1/git-credentials", s.v1ListGitCredentials))
+	mux.HandleFunc("DELETE /v1/git-credentials/{id}", s.observe("DELETE /v1/git-credentials/{id}", s.v1DeleteGitCredential))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
+	mux.HandleFunc("DELETE /v1/apps/{id}", s.observe("DELETE /v1/apps/{id}", s.v1DeleteApp))
 	mux.HandleFunc("POST /v1/apps/{id}/sandbox", s.observe("POST /v1/apps/{id}/sandbox", s.v1CreateAppSandbox))
+	mux.HandleFunc("GET /v1/apps/{id}/snapshots", s.observe("GET /v1/apps/{id}/snapshots", s.v1ListAppSnapshots))
+	mux.HandleFunc("POST /v1/apps/{id}/restore", s.observe("POST /v1/apps/{id}/restore", s.v1RestoreApp))
+	mux.HandleFunc("POST /v1/apps/{id}/fork", s.observe("POST /v1/apps/{id}/fork", s.v1ForkApp))
+	mux.HandleFunc("GET /v1/apps/{id}/events", s.observe("GET /v1/apps/{id}/events", s.v1ListAppEvents))
+	mux.HandleFunc("GET /v1/tasks/{id}/events", s.observe("GET /v1/tasks/{id}/events", s.v1ListTaskEvents))
+	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
+	mux.HandleFunc("GET /v1/apps/{id}/runtime-inspect", s.observe("GET /v1/apps/{id}/runtime-inspect", s.v1RuntimeInspect))
+	mux.HandleFunc("POST /v1/runtime/manifest/validate", s.observe("POST /v1/runtime/manifest/validate", s.v1ValidateManifest))
+	mux.HandleFunc("GET /v1/runtime/recipes", s.observe("GET /v1/runtime/recipes", s.v1RuntimeRecipes))
+	mux.HandleFunc("GET /v1/apps/{id}/runtime/manifest", s.observe("GET /v1/apps/{id}/runtime/manifest", s.v1AppManifest))
+	mux.HandleFunc("GET /v1/apps/{id}/git/status", s.observe("GET /v1/apps/{id}/git/status", s.v1GitStatus))
+	mux.HandleFunc("GET /v1/apps/{id}/git/diff", s.observe("GET /v1/apps/{id}/git/diff", s.v1GitDiff))
+	mux.HandleFunc("POST /v1/apps/{id}/git/commit", s.observe("POST /v1/apps/{id}/git/commit", s.v1GitCommit))
+	mux.HandleFunc("POST /v1/apps/{id}/git/push", s.observe("POST /v1/apps/{id}/git/push", s.v1GitPush))
+	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
+	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
+	mux.HandleFunc("DELETE /v1/apps/{id}/config/{key}", s.observe("DELETE /v1/apps/{id}/config/{key}", s.v1DeleteAppConfig))
 
 	// Snapshots-as-templates (ops/design/snapshots-as-templates.md).
 	mux.HandleFunc("POST /v1/snapshots", s.observe("POST /v1/snapshots", s.v1CreateSnapshot))

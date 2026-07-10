@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in sandboxd is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For **security vulnerabilities**, do not file here —
+        see [SECURITY.md](../SECURITY.md).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part is affected?
+      options:
+        - sandboxd core (control plane / runtimed / Traefik)
+        - console (web client)
+        - App Store recipe / runtime detection
+        - docs
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The `/v1` calls or console actions that trigger it.
+      placeholder: |
+        1. POST /v1/apps ...
+        2. POST /v1/apps/{id}/sandbox
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / events
+      description: Relevant control-plane logs, `runtimed` process logs, or the app's activity events. Redact secrets.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: v0.4.x or a commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Deployment
+      description: Host OS, Docker version, and the relevant `.env` knobs (PREVIEW_DOMAIN, TLS, auth). Redact secrets.
