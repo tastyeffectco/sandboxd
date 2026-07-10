@@ -140,6 +140,9 @@ if [ "$CONSOLE" = "1" ]; then
       ESCAPED="$(openssl passwd -apr1 "$CONSOLE_PASS" | sed 's/\$/\$\$/g')"
       tmp="$(mktemp)"; grep -vE '^CONSOLE_BASIC_AUTH=' .env > "$tmp" 2>/dev/null || true; mv "$tmp" .env
       printf 'CONSOLE_BASIC_AUTH=%s:%s\n' "$CONSOLE_USER" "$ESCAPED" >> .env
+      # Stash the plaintext login (gitignored, 0600) so ./console-login.sh can
+      # show it again anytime — the apr1 hash in .env can't be reversed.
+      printf '%s\n%s\n' "$CONSOLE_USER" "$CONSOLE_PASS" > .console-login && chmod 600 .console-login
       CONSOLE_LOGIN="$CONSOLE_USER / $CONSOLE_PASS"
       ok "console login generated (shown at the end)"
     fi
@@ -155,6 +158,7 @@ bold "Building the control plane${CONSOLE:+ + console} and starting the stack…
 $COMPOSE $PROFILE_ARGS build
 $COMPOSE $PROFILE_ARGS up -d
 ok "stack is up"
+chmod +x console-login.sh 2>/dev/null || true   # so `./console-login.sh` always runs
 
 # ── summary ──────────────────────────────────────────────────────────
 API_BIND="${SANDBOXD_API_BIND:-127.0.0.1:9090}"
@@ -184,14 +188,14 @@ EOF
 if [ "$CONSOLE" = "1" ]; then
   echo
   bold "Web console — open this first 👇"
-  printf '\n  Console : http://console.%s%s\n' "$PREVIEW_DOMAIN" "$PORTSUFFIX"
+  printf '\n  Open    : http://console.%s%s\n' "$PREVIEW_DOMAIN" "$PORTSUFFIX"
   if [ -n "$CONSOLE_LOGIN" ]; then
     printf '  Login   : %s\n' "$CONSOLE_LOGIN"
-    printf '            (change it anytime in .env → CONSOLE_BASIC_AUTH)\n'
   else
     printf '  Login   : as set in .env (CONSOLE_BASIC_AUTH)\n'
   fi
-  printf '  Connect an agent in Settings, then create an app and build.\n'
+  printf '\n  Lost the login later?  run:  ./console-login.sh\n'
+  printf '  Then connect an agent in Settings, create an app, and build.\n'
 fi
 
 # A single, plain (no-color) nudge — suppress with SANDBOXD_NO_SPONSOR=1.
