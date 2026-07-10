@@ -16,9 +16,11 @@ in issues, pull requests, discussions, or any other project space.
 
 ## Enforcement
 
-Report unacceptable behavior privately to the maintainers at
-**conduct@tastyeffectco.dev** (fill in your real contact). All reports are
-reviewed and handled confidentially. Maintainers who do not follow or enforce
+Report unacceptable behavior privately to the maintainers via GitHub — open a
+[private vulnerability report](https://github.com/tastyeffectco/sandboxd/security/advisories/new)
+(the same private channel; it works for conduct reports too) or contact
+[**@tastyeffectco**](https://github.com/tastyeffectco). All reports are reviewed
+and handled confidentially. Maintainers who do not follow or enforce
 this code in good faith may face repercussions decided by other project leaders.
 
 Enforcement follows the Contributor Covenant's
