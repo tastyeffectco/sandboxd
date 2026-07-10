@@ -319,7 +319,7 @@ func (s *Server) v1CreateSandbox(w http.ResponseWriter, r *http.Request) {
 func (s *Server) v1GetSandbox(w http.ResponseWriter, r *http.Request) {
 	sb, err := s.Store.Get(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
-		writeV1Err(w, http.StatusNotFound, "not_found", "no such sandbox")
+		writeV1Err(w, http.StatusNotFound, "not_found", "The specified sandbox ID does not exist.")
 		return
 	}
 	if err != nil {
