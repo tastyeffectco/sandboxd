@@ -99,9 +99,18 @@ The console isn't only for coders. Open it and, in **one click or one prompt**, 
 </p>
 
 <p align="center">
-  <i>…and 80+ more, one click each — Developer · Productivity · Data · Media · AI &amp; Automation.<br/>
-  <a href="https://sandboxd.io/guides/apps-in-the-console">See all the ways to run an app →</a></i>
+  <i><b>This is just a taste — if it's open-source, you can almost certainly run it.</b><br/>
+  Any Node, Python, or static-binary app boots as-is; anything else, bring your own base image or preset.</i>
 </p>
+
+<p align="center">
+  <a href="https://sandboxd.io/guides/apps-in-the-console"><b>Ways to run an app →</b></a> &nbsp;·&nbsp;
+  <a href="https://sandboxd.io/guides/images-stacks-presets">Base image, stacks &amp; presets</a> &nbsp;·&nbsp;
+  <a href="https://sandboxd.io/reference/architecture">Architecture</a>
+</p>
+
+> **Dev → prod, never shorter:** prompt an app into a sandbox, iterate on a live
+> preview, then self-host it on your own server in [one command](#-deploy-to-a-vps-in-one-click).
 
 ## Quick start
 
