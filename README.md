@@ -6,7 +6,17 @@
   and it's live at a preview URL. Self-hosted, one command, MIT.
 </p>
 
-<a href="https://trendshift.io/repositories/45741?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-45741" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/45741/daily?language=Go" alt="tastyeffectco%2Fsandboxd | Trendshift" width="250" height="55"/></a>
+<h3 align="center">🔥 Trend of the Day on Trendshift</h3>
+
+<p align="center">
+  <a href="https://trendshift.io/repositories/45741?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-45741" target="_blank" rel="noopener noreferrer">
+    <img
+      src="https://trendshift.io/api/badge/trendshift/repositories/45741/daily?language=Go"
+      alt="sandboxd • Trend of the Day on Trendshift"
+      width="320"
+    />
+  </a>
+</p>
 
 
 <p align="center">
