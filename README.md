@@ -54,6 +54,55 @@ database, no queue.
 
 > **New here? Start with the console. Building a product? Drive the API.**
 
+## What can you run? (a lot — from one console, no code)
+
+The console isn't only for coders. Open it and, in **one click or one prompt**, you can:
+
+- **🚀 Run a ready-made open-source app** — a **Ghost** blog, **n8n** automations, a **Gitea** git host, **Grafana** / **Metabase** dashboards, **Uptime Kuma**, **Jupyter**, **Keycloak**… **80+ curated apps**, installed and live at their own URL.
+- **🧩 Start from a starter** — a React/Vite, Next.js, or FastAPI scaffold that boots to a live preview; then just *chat* to shape it.
+- **📥 Bring your own repo** — import any **public** Git repo (no credential needed) and let a coding agent work on it.
+- **✨ Build from scratch** — describe an app and watch the agent build it in the live preview, then commit &amp; push.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/ghost.webp" height="38" alt="Ghost" title="Ghost" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/n8n.svg" height="38" alt="n8n" title="n8n" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/directus.svg" height="38" alt="Directus" title="Directus" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/gitea.svg" height="38" alt="Gitea" title="Gitea" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/forgejo.svg" height="38" alt="Forgejo" title="Forgejo" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/grafana.svg" height="38" alt="Grafana" title="Grafana" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/metabase.svg" height="38" alt="Metabase" title="Metabase" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/code-server.webp" height="38" alt="code-server" title="code-server" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/jupyter.svg" height="38" alt="Jupyter" title="Jupyter" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/keycloak.svg" height="38" alt="Keycloak" title="Keycloak" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/pocketbase.svg" height="38" alt="PocketBase" title="PocketBase" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/uptime-kuma.svg" height="38" alt="Uptime Kuma" title="Uptime Kuma" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/vikunja.svg" height="38" alt="Vikunja" title="Vikunja" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/wikijs.svg" height="38" alt="Wiki.js" title="Wiki.js" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/triliumnext.svg" height="38" alt="Trilium" title="Trilium" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/memos.webp" height="38" alt="Memos" title="Memos" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/meilisearch.svg" height="38" alt="Meilisearch" title="Meilisearch" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/qdrant.svg" height="38" alt="Qdrant" title="Qdrant" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/chroma.svg" height="38" alt="Chroma" title="Chroma" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/open-webui.svg" height="38" alt="Open WebUI" title="Open WebUI" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/navidrome.svg" height="38" alt="Navidrome" title="Navidrome" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/audiobookshelf.svg" height="38" alt="Audiobookshelf" title="Audiobookshelf" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/calibre-web.svg" height="38" alt="Calibre-Web" title="Calibre-Web" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/actualbudget.svg" height="38" alt="Actual Budget" title="Actual Budget" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/syncthing.svg" height="38" alt="Syncthing" title="Syncthing" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/prefect.svg" height="38" alt="Prefect" title="Prefect" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/marimo.svg" height="38" alt="marimo" title="marimo" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/homepage.webp" height="38" alt="Homepage" title="Homepage" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/ntfy.svg" height="38" alt="ntfy" title="ntfy" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/gotify.svg" height="38" alt="Gotify" title="Gotify" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/linkding.svg" height="38" alt="linkding" title="linkding" hspace="7" />
+  <img src="https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/console/public/app-icons/superset.svg" height="38" alt="Superset" title="Superset" hspace="7" />
+</p>
+
+<p align="center">
+  <i>…and 80+ more, one click each — Developer · Productivity · Data · Media · AI &amp; Automation.<br/>
+  <a href="https://sandboxd.io/guides/apps-in-the-console">See all the ways to run an app →</a></i>
+</p>
+
 ## Quick start
 
 Needs **Docker + the Compose plugin** and **git** on Linux (macOS via Docker
