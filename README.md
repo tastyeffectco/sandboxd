@@ -107,6 +107,12 @@ environments, or team multi-app hosting.
 script or `docker run` is simpler.
 ([Why not just a script?](https://sandboxd.io/what-is-sandboxd))
 
+## Managed — we run it for you
+
+Don't want to run the server yourself? We'll **install, configure, and manage
+sandboxd on your own box** — BYOC (your compute, your data, no lock-in). One-time
+setup + optional monthly management. **[See Managed →](https://sandboxd.io/managed)**
+
 ## Documentation
 
 Full docs live at **[sandboxd.io](https://sandboxd.io)**:
