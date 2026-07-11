@@ -1,0 +1,20 @@
+#cloud-config
+# sandboxd — paste this into your provider's "user data" / "cloud-init" field when
+# creating the server. On first boot it installs Docker + sandboxd. See
+# deploy/DEPLOY.md for where to paste it per provider.
+#
+# Set PREVIEW_DOMAIN below to your domain to serve previews at *.preview.<domain>
+# (point a wildcard A record *.preview.<domain> at this server's IP). Leave it
+# blank to use the server IP / localhost.
+package_update: true
+packages:
+  - git
+  - curl
+  - openssl
+
+# One runcmd entry = one shell, so the exports below reach the bootstrap script.
+runcmd:
+  - |
+    export PREVIEW_DOMAIN=""
+    export SANDBOXD_BRANCH="main"
+    curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/deploy/bootstrap.sh | bash
