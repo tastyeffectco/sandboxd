@@ -6,6 +6,9 @@
   and it's live at a preview URL. Self-hosted, one command, MIT.
 </p>
 
+<a href="https://trendshift.io/repositories/45741?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-45741" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/45741/daily?language=Go" alt="tastyeffectco%2Fsandboxd | Trendshift" width="250" height="55"/></a>
+
+
 <p align="center">
   <a href="https://sandboxd.io/demo/"><img alt="Live demo" src="https://img.shields.io/badge/%E2%96%B6%20Live%20demo-try%20it%20in%20your%20browser-ff6b00?style=for-the-badge"></a>
   &nbsp;
