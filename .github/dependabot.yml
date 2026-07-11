@@ -1,25 +1,45 @@
 version: 2
 updates:
+  # Go modules — one grouped PR/week for minor+patch; majors come separately.
   - package-ecosystem: gomod
     directory: /control-plane
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels: ["dependencies", "go"]
+    groups:
+      go:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
+  # npm (console) — one grouped PR/week for minor+patch. TypeScript major is
+  # ignored (7.x is the new, breaking Go-based compiler — adopt deliberately).
   - package-ecosystem: npm
     directory: /console
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels: ["dependencies", "console"]
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
+  # GitHub Actions — group everything (action major bumps are low-risk).
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     labels: ["dependencies", "ci"]
+    groups:
+      actions:
+        patterns: ["*"]
 
+  # Docker base images — group minor+patch. Node major is ignored (the console
+  # image doesn't build on Node 26 yet; bump deliberately when it does).
   - package-ecosystem: docker
     directories:
       - /control-plane
@@ -28,3 +48,10 @@ updates:
     schedule:
       interval: weekly
     labels: ["dependencies", "docker"]
+    groups:
+      docker:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
