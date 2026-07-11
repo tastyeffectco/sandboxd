@@ -154,6 +154,12 @@ if [ "$CONSOLE" = "1" ]; then
 fi
 
 # ── build + start the stack ──────────────────────────────────────────
+# Compose reads CONSOLE_BASIC_AUTH straight from .env, where its own
+# interpolation un-escapes $$ -> $ correctly. A value inherited into this shell
+# from the earlier `. ./.env` is unusable — bash expands the $$ in the apr1 hash
+# to its PID — and, since shell env outranks .env, it would silently shadow the
+# real credential and fall back to the locked default. Drop it before compose.
+[ "$CONSOLE" = "1" ] && unset CONSOLE_BASIC_AUTH
 bold "Building the control plane${CONSOLE:+ + console} and starting the stack…"
 $COMPOSE $PROFILE_ARGS build
 $COMPOSE $PROFILE_ARGS up -d
