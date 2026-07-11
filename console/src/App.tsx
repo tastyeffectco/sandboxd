@@ -143,7 +143,6 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
 
   const create = async () => {
     if (mode === 'git' && !repo.trim()) { onError('Enter a repo URL'); return }
-    if (mode === 'git' && !credId) { onError('Pick a Git credential (add one in Settings → Git credentials)'); return }
     if (mode === 'starter' && !starter) { onError('Pick a starter'); return }
     const pick = STARTERS.find((s) => s.id === starter)
     // No forced naming: derive a sensible default (from the repo/starter, else a
@@ -157,10 +156,13 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
       const a = await api.createApp({
         name: finalName,
         runtime_preset: mode === 'template' && preset ? preset : undefined,
-        git: mode === 'git' ? { repo_url: repo.trim(), branch: branch.trim() || 'main', credential_id: credId }
+        git: mode === 'git' ? { repo_url: repo.trim(), branch: branch.trim() || 'main', ...(credId ? { credential_id: credId } : {}) } // no credId → public tokenless clone
           : mode === 'starter' && pick ? { repo_url: `https://github.com/${pick.repo}`, branch: pick.branch } // public → tokenless
           : undefined,
       })
+      // Zero-friction: boot the sandbox right away so the app is ready to use.
+      // If it fails, the app view still offers a Create-sandbox retry.
+      try { await api.createAppSandbox(a.id, {}) } catch { /* app exists; retry from the app view */ }
       setName(''); setRepo(''); reload(); onOpen(a.id)
     } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
   }
@@ -230,13 +232,13 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
             <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ flex: 1, minWidth: 220, fontSize: 12.5 }} data-testid="git-repo-url" />
             <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch" style={{ width: 120, fontSize: 12.5 }} data-testid="git-branch" />
             <select value={credId} onChange={(e) => setCredId(e.target.value)} data-testid="git-cred" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
-              <option value="">Credential…</option>
+              <option value="">Public repo — no credential</option>
               {creds.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </div>
         )}
         {mode === 'git' && creds.length === 0 && (
-          <div style={{ marginTop: 8, fontSize: 12, color: c.warn }} data-testid="git-no-creds">No Git credentials yet — add a personal access token in <b>Settings → Git credentials</b> first. Cloning runs control-plane-side, so a credential is required even for public repos.</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: c.muted }} data-testid="git-no-creds"><b>Public repos import with no credential.</b> For a <b>private</b> repo, add a personal access token in <b>Settings → Git credentials</b>.</div>
         )}
       </Card>
 
