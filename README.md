@@ -83,6 +83,32 @@ curl -s -XPOST $API/v1/sandboxes/$ID/tasks -d '{"prompt":"build a todo app on po
 
 **Full walkthrough → [sandboxd.io/quickstart](https://sandboxd.io/quickstart).**
 
+## 🚀 Deploy to a VPS in one click
+
+sandboxd needs one Linux server with Docker — nothing else. Grab a server
+below (2 vCPU / 4 GB is plenty to start), paste our
+[cloud-init file](deploy/cloud-init.yaml) at creation, and it installs itself.
+
+[![Deploy on Vultr](https://img.shields.io/badge/Deploy%20on-Vultr-007BFC?logo=vultr&logoColor=white&style=for-the-badge)](https://www.vultr.com/?ref=9912150)
+
+<!-- ENABLE THESE AS EACH AFFILIATE LINK ARRIVES (uncomment + replace placeholder):
+[![Deploy on DigitalOcean](https://img.shields.io/badge/Deploy%20on-DigitalOcean-0080FF?logo=digitalocean&logoColor=white&style=for-the-badge)](YOUR_DO_AWIN_LINK)
+[![Deploy on Kamatera](https://img.shields.io/badge/Deploy%20on-Kamatera-FF6A00?style=for-the-badge)](YOUR_KAMATERA_AFF_LINK)
+[![Deploy on Hostinger](https://img.shields.io/badge/Deploy%20on-Hostinger-673DE6?logo=hostinger&logoColor=white&style=for-the-badge)](YOUR_HOSTINGER_AFF_LINK)
+Linode removed — cash affiliate program discontinued (credits only as of Jul 2026).
+-->
+
+Then on the new server (or paste [`deploy/cloud-init.yaml`](deploy/cloud-init.yaml) as user-data and skip this):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/deploy/bootstrap.sh | sudo bash
+```
+
+Full per-provider walkthrough: [deploy/DEPLOY.md](deploy/DEPLOY.md).
+
+> *Some links above are referral links — they cost you nothing and support
+> sandboxd's development.*
+
 ## What you get
 
 - **Isolated sandboxes** — a hardened container per app with a workspace + live
