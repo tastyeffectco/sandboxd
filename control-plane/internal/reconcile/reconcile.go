@@ -1,8 +1,8 @@
 // Package reconcile contains the boot-time reconciler. It runs once
 // at startup, BEFORE the HTTP server begins accepting requests.
 //
-// CLAUDE.md non-negotiable #6: "SQLite is source of truth. The
-// reconciler converges Docker to SQLite, never the other way."
+// SQLite is the source of truth: the reconciler converges Docker to
+// SQLite, never the other way.
 // Phase 4 takes this literally: orphan containers and orphan mounts
 // are LOGGED, not destroyed. A developer mid-debug who runs
 // `docker run --name s-test ...` by hand loses nothing to this
@@ -145,7 +145,7 @@ func Once(ctx context.Context, d Deps) (Result, error) {
 	}
 
 	// Phase 8 — workspace_owner rows whose .img is gone are LOGGED,
-	// never deleted (roadmap §13: "manual disposition").
+	// never deleted (manual disposition).
 	res.Orphans["workspace_owner"] = CheckWorkspaceOwnerOrphans(ctx, d.Store, d.Loopback, d.Log)
 
 	res.Duration = time.Since(start)
@@ -154,7 +154,7 @@ func Once(ctx context.Context, d Deps) (Result, error) {
 
 // CheckWorkspaceOwnerOrphans logs every workspace_owner row whose
 // backing `.img` is no longer on disk and returns the count. It never
-// deletes — disposition is the operator's (roadmap §13). Called once
+// deletes — disposition is the operator's. Called once
 // at boot from Once and on a 6 h ticker from main.
 func CheckWorkspaceOwnerOrphans(ctx context.Context, st *store.Store, lb *loopback.Manager, log *slog.Logger) int {
 	owners, err := st.ListAllWorkspaceOwners(ctx)
@@ -245,8 +245,7 @@ func (d *Deps) reconcileRow(ctx context.Context, sb *store.Sandbox, res *Result)
 	// Phase 8 §13 — a running sandbox should carry an external_user_id.
 	// A missing one is impossible for a Phase-8-or-later create but
 	// possible for a half-migrated legacy row. Log; never auto-destroy
-	// (CLAUDE.md non-negotiable #6 — the reconciler does not adopt or
-	// cull on its own).
+	// — the reconciler does not adopt or cull on its own.
 	if !sb.ExternalUserID.Valid {
 		log.Warn("reconcile: running sandbox has no external_user_id — run `sandboxd backfill-legacy`")
 	}
@@ -256,9 +255,9 @@ func (d *Deps) reconcileRow(ctx context.Context, sb *store.Sandbox, res *Result)
 	// so the stored container_ip on the row may be stale; the live
 	// inspect IS the source of truth.
 	//
-	// roadmap §"Risks": "If sandboxd starts but the reconciler bails
-	// before re-adding IPs, every running sandbox becomes unpoliced
-	// until the reconciler completes." main.go enforces "reconciler
+	// If sandboxd starts but the reconciler bails before re-adding
+	// IPs, every running sandbox becomes unpoliced until the
+	// reconciler completes. main.go enforces "reconciler
 	// returns BEFORE HTTP listener accepts requests", so a partial
 	// reconcile here just delays the listener — it never publishes a
 	// half-populated set to clients.
@@ -300,8 +299,8 @@ func (d *Deps) reconcileRow(ctx context.Context, sb *store.Sandbox, res *Result)
 }
 
 // clearStoppedContainerIP NULLs container_ip on a row the reconciler
-// just marked stopped. roadmap §1 DoD: "every stopped sandbox has it
-// NULL". The idle / pressure reapers already ClearContainerIP on
+// just marked stopped, so every stopped sandbox has it NULL. The
+// idle / pressure reapers already ClearContainerIP on
 // their stop path; the reconciler's mark-stopped path (containers
 // gone after a host reboot) needs the same so a stale bridge IP
 // doesn't linger on a stopped row. No-op when the column is already

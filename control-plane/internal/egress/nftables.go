@@ -1,15 +1,14 @@
 // Package egress owns the Phase 6 nftables integration: the dynamic
 // `sandbox_sources_v4` set membership and the kernel-log → structured-
-// log collector. CLAUDE.md "Egress policy (v1)" describes the
-// surrounding model; roadmap/phase-6-hardening-and-egress.md §3 / §4
-// / §7 specify the exact wiring.
+// log collector. roadmap/phase-6-hardening-and-egress.md §3 / §4 / §7
+// specify the exact wiring.
 //
-// **Hard rule from roadmap §4**: if any nft call fails, the sandbox
+// **Hard rule**: if any nft call fails, the sandbox
 // must not be left running with no egress rules attached. The caller
 // (handleCreate / wake handler) checks the AddSource error and aborts
 // the row to status='error' rather than continuing.
 //
-// **Hard rule from roadmap §"Risks" (boot-time reconciler)**: the
+// **Hard rule (boot-time reconciler)**: the
 // sandbox_sources_v4 set is in-memory only. After a reboot, the
 // reconciler MUST re-populate it from container_ip rows BEFORE
 // sandboxd opens its HTTP listener. main.go enforces this ordering;
@@ -46,7 +45,7 @@ func New() *Nft {
 }
 
 // ErrInvalidIP is returned when the caller passes a non-IPv4 string.
-// IPv6 is deliberately out of scope (roadmap §"Out of scope").
+// IPv6 is deliberately out of scope.
 var ErrInvalidIP = errors.New("egress: not an IPv4 address")
 
 // AddSource adds an IP to sandbox_sources_v4. Idempotent — re-adding

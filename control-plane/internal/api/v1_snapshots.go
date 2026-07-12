@@ -1,5 +1,4 @@
-// v1_snapshots.go — snapshots-as-templates
-// (ops/design/snapshots-as-templates.md). A snapshot is a reusable,
+// v1_snapshots.go — snapshots-as-templates. A snapshot is a reusable,
 // frozen copy of a sandbox's workspace directory, stored under
 // LibraryRoot and cloned into new sandboxes via the existing
 // ProvisionFromTemplate path. Scoped to the API tenant (auth.Actor.Name).

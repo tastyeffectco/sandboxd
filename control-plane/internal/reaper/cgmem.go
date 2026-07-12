@@ -11,8 +11,8 @@ import (
 // relative path (`/system.slice/docker-<id>.scope` or
 // `/docker/<id>` depending on the cgroup driver). Returns bytes.
 //
-// CLAUDE.md "Host memory pressure reaper" emergency band: "stop
-// heaviest-RSS sandbox even if active". `memory.current` is the
+// Host memory pressure reaper, emergency band: stop the heaviest-RSS
+// sandbox even if active. `memory.current` is the
 // closest single number to RSS — it's the sum of every memory page
 // charged to the cgroup, anon + file. We don't try to split it into
 // anon-only via `memory.stat`; the ordering between candidate

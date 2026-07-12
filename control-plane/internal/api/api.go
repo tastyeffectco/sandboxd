@@ -1,6 +1,5 @@
-// Package api wires the HTTP handlers. CLAUDE.md control-plane scope:
-// "Binds to 127.0.0.1 only. No auth in v1 (introduced in Phase 8)."
-// The phase-4 listener default is 127.0.0.1:8080.
+// Package api wires the HTTP handlers. Auth is enforced by the
+// internal/auth middleware, applied around this mux in main.go.
 package api
 
 import (
@@ -75,13 +74,12 @@ type Server struct {
 	// sandbox's on-workspace files exactly once after a change.
 
 	// TemplatesDir is the host directory holding prebuilt golden
-	// template .img files for the fast-cold-start path
-	// (ops/design/fast-coldstart-react-vite-snapshot.md). Empty
+	// template .img files for the fast-cold-start path. Empty
 	// disables the optional `template` field on POST /sandbox.
 	TemplatesDir string
 
 	// LibraryRoot is the host directory holding user-created snapshot
-	// images (ops/design/snapshots-as-templates.md) —
+	// images —
 	// /var/lib/sandboxed/library/<snapshot_id>.img. Independent of
 	// _snapshots/ (the Phase 7 auto-snapshot tree) so the retention
 	// pruner and per-sandbox purge never touch templates. Empty disables
@@ -222,7 +220,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /preview-auth", s.observe("GET /preview-auth", s.handlePreviewAuth))
 	mux.HandleFunc("GET /forward-auth", s.observe("GET /forward-auth", s.handleForwardAuth))
 
-	// Public v1 API (ops/design/v1-external-api.md) — a narrow
+	// Public v1 API — a narrow
 	// translation layer over the internal machinery + runtimed.
 	mux.HandleFunc("POST /v1/sandboxes", s.observe("POST /v1/sandboxes", s.v1CreateSandbox))
 	mux.HandleFunc("GET /v1/sandboxes/{id}", s.observe("GET /v1/sandboxes/{id}", s.v1GetSandbox))
@@ -254,6 +252,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/git-credentials", s.observe("POST /v1/git-credentials", s.v1CreateGitCredential))
 	mux.HandleFunc("GET /v1/git-credentials", s.observe("GET /v1/git-credentials", s.v1ListGitCredentials))
 	mux.HandleFunc("DELETE /v1/git-credentials/{id}", s.observe("DELETE /v1/git-credentials/{id}", s.v1DeleteGitCredential))
+
+	// Console auth — the control plane is the login authority. status/login/setup
+	// are exempt from the auth middleware (see internal/auth/middleware.go).
+	mux.HandleFunc("GET /v1/auth/status", s.observe("GET /v1/auth/status", s.v1AuthStatus))
+	mux.HandleFunc("POST /v1/auth/setup", s.observe("POST /v1/auth/setup", s.v1AuthSetup))
+	mux.HandleFunc("POST /v1/auth/login", s.observe("POST /v1/auth/login", s.v1AuthLogin))
+	mux.HandleFunc("POST /v1/auth/logout", s.observe("POST /v1/auth/logout", s.v1AuthLogout))
+	mux.HandleFunc("POST /v1/auth/password", s.observe("POST /v1/auth/password", s.v1AuthPassword))
+	mux.HandleFunc("GET /v1/api-keys", s.observe("GET /v1/api-keys", s.v1ListAPIKeys))
+	mux.HandleFunc("POST /v1/api-keys", s.observe("POST /v1/api-keys", s.v1CreateAPIKey))
+	mux.HandleFunc("DELETE /v1/api-keys/{id}", s.observe("DELETE /v1/api-keys/{id}", s.v1DeleteAPIKey))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
@@ -278,7 +287,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))
 	mux.HandleFunc("DELETE /v1/apps/{id}/config/{key}", s.observe("DELETE /v1/apps/{id}/config/{key}", s.v1DeleteAppConfig))
 
-	// Snapshots-as-templates (ops/design/snapshots-as-templates.md).
+	// Snapshots-as-templates.
 	mux.HandleFunc("POST /v1/snapshots", s.observe("POST /v1/snapshots", s.v1CreateSnapshot))
 	mux.HandleFunc("GET /v1/snapshots", s.observe("GET /v1/snapshots", s.v1ListSnapshots))
 	mux.HandleFunc("GET /v1/snapshots/{id}", s.observe("GET /v1/snapshots/{id}", s.v1GetSnapshot))

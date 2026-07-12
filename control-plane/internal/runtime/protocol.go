@@ -1,7 +1,6 @@
 // Package runtime defines the internal control protocol between
 // sandboxd (the host control plane) and runtimed (the in-sandbox
-// supervisor). See ops/design/v1-external-api.md §4 and the runtimed
-// contract.
+// supervisor). See the runtimed contract.
 //
 // Transport is HTTP/1.1 over a Unix domain socket on the workspace
 // loopback (DefaultSocketPath): the socket inode is reachable both
@@ -21,7 +20,7 @@ import "time"
 const DefaultSocketPath = "/home/sandbox/.runtimed/sock"
 
 // PreviewStatus is the dev-server / app runtime state. It is reported,
-// never commanded (ops/design/v1-external-api.md §4.3).
+// never commanded.
 type PreviewStatus string
 
 const (

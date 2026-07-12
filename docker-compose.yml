@@ -90,7 +90,11 @@ services:
       # --- portability toggles ---
       SANDBOXD_SET_MEMORY_HIGH: ${SANDBOXD_SET_MEMORY_HIGH:-false}
       # --- auth (open by default for local use; set tokens for prod) ---
-      SANDBOXD_API_AUTH_DISABLED: ${SANDBOXD_API_AUTH_DISABLED:-true}
+      # Auth is ON by default — every /v1 request needs a console session or an
+      # API key (no loopback bypass). The installer seeds a bootstrap key in
+      # SANDBOXD_API_TOKENS. Set SANDBOXD_API_AUTH_DISABLED=true only as an
+      # explicit rollback (it trips the "your API is open" warning).
+      SANDBOXD_API_AUTH_DISABLED: ${SANDBOXD_API_AUTH_DISABLED:-false}
       SANDBOXD_API_TOKENS: ${SANDBOXD_API_TOKENS:-}
       # --- idle lifecycle (override if you like) ---
       SANDBOXD_IDLE_THRESHOLD_SECONDS: ${SANDBOXD_IDLE_THRESHOLD_SECONDS:-2100}
@@ -107,15 +111,11 @@ services:
   # one entrypoint (:${HTTP_PORT}), Traefik picks by the router rule.
   # Reachable at http://console.${PREVIEW_DOMAIN:-localhost}:${HTTP_PORT}.
   #
-  # AUTH (important): the console is gated by Traefik HTTP basic auth and ships
-  # FAIL-CLOSED — the default `CONSOLE_BASIC_AUTH` is a locked htpasswd entry
-  # whose password is unknown, so the console returns 401 until you set your own:
-  #   CONSOLE_BASIC_AUTH='user:HASH'   # HASH from: htpasswd -nbB user 'pass'
-  #                                    #   (or: openssl passwd -apr1 'pass')
-  # In a .env file every literal `$` in the hash must be doubled (`$$`).
-  # The installer (scripts/dev/install-v04-ubuntu.sh) generates + prints these
-  # for you. Console basic auth is SEPARATE from the sandboxd API auth
-  # (SANDBOXD_API_TOKENS); see README → Configuration.
+  # AUTH: the control plane is the login authority. The console serves a login /
+  # first-run "create password" screen and authenticates every /v1 call with an
+  # HttpOnly session cookie — no Traefik basic-auth, no htpasswd, no `$$` in
+  # .env. Programmatic access uses API keys (Settings → Security) or the
+  # bootstrap key the installer prints (SANDBOXD_API_TOKENS).
   console:
     profiles: [console]
     build:
@@ -130,11 +130,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.console.rule=Host(`console.${PREVIEW_DOMAIN:-localhost}`)"
       - "traefik.http.routers.console.entrypoints=web"
-      - "traefik.http.routers.console.middlewares=console-auth"
-      # Fail-closed default: a valid htpasswd entry for a random, discarded
-      # password, so an un-configured console is LOCKED (401), never open.
-      # Override with CONSOLE_BASIC_AUTH to set your own login.
-      - "traefik.http.middlewares.console-auth.basicauth.users=${CONSOLE_BASIC_AUTH:-locked:$$apr1$$2EfB2Fre$$nvNSji.PWUqGtooUqhspd.}"
+      # No Traefik gate — the control plane authenticates the console (login /
+      # first-run password → session cookie). The SPA + its /v1 proxy sit behind
+      # that app-level login.
       - "traefik.http.services.console.loadbalancer.server.port=80"
     networks:
       - sandboxd_net

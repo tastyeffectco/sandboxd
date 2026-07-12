@@ -15,7 +15,7 @@ import (
 )
 
 // purgeOne is the irreversible per-sandbox teardown shared by all
-// three purge endpoints (roadmap §6): stop + remove the container,
+// three purge endpoints: stop + remove the container,
 // unmount the loopback, delete the `.img`, delete the snapshots
 // directory, and delete the `sandbox` + `workspace_owner` rows. It
 // returns the bytes freed on disk and the external_user_id recorded
@@ -149,7 +149,7 @@ func (s *Server) handlePurgeExternalProject(w http.ResponseWriter, r *http.Reque
 
 // purgeScope purges every sandbox owned by an external user or
 // external project. Each per-sandbox purge is audit-logged
-// individually, plus one summary row (roadmap §6).
+// individually, plus one summary row.
 func (s *Server) purgeScope(w http.ResponseWriter, r *http.Request, scope, value string) {
 	if value == "" {
 		writeErr(w, http.StatusBadRequest, "missing external "+scope+" id")

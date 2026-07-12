@@ -1,14 +1,14 @@
 // Package cgroup writes memory.high for running containers by
-// discovering the cgroup v2 path via /proc/<pid>/cgroup. CLAUDE.md
-// "Known foot-guns" entry: "Hardcoded systemd cgroup paths. Don't.
-// Discover via /proc/<pid>/cgroup." This package is the only place
-// in sandboxd that reads /proc and writes /sys/fs/cgroup.
+// discovering the cgroup v2 path via /proc/<pid>/cgroup. Never
+// hardcode systemd cgroup paths; always discover via
+// /proc/<pid>/cgroup. This package is the only place in sandboxd that
+// reads /proc and writes /sys/fs/cgroup.
 //
-// CLAUDE.md "How `memory.high` is set" entry: "discovers the cgroup
-// v2 path via /proc/<container-pid>/cgroup, parsing the line that
-// starts with `0::`. It then writes `4G` to
-// /sys/fs/cgroup<path>/memory.high. This is driver-agnostic — works
-// under both `systemd` and `cgroupfs` Docker cgroup drivers."
+// How memory.high is set: it discovers the cgroup v2 path via
+// /proc/<container-pid>/cgroup, parsing the line that starts with
+// `0::`. It then writes `4G` to /sys/fs/cgroup<path>/memory.high.
+// This is driver-agnostic — works under both `systemd` and
+// `cgroupfs` Docker cgroup drivers.
 package cgroup
 
 import (

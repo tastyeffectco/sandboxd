@@ -45,7 +45,7 @@ type Collector struct {
 }
 
 // kernelMsgRE pulls the fields we care about out of the iptables /
-// nftables kernel log line. Reference shape from the roadmap §7:
+// nftables kernel log line. Reference shape:
 //
 //	sandbox-egress IN=docker0 OUT=ens3 MAC=... SRC=172.17.0.5
 //	DST=140.82.121.4 LEN=60 ... PROTO=TCP SPT=44782 DPT=443 ... SYN
@@ -115,7 +115,7 @@ type journalEntry struct {
 	RealtimeTimestamp string `json:"__REALTIME_TIMESTAMP"`
 }
 
-// egressLine is the JSON shape we write to disk. roadmap §7 Stage B.
+// egressLine is the JSON shape we write to disk.
 type egressLine struct {
 	TS        int64  `json:"ts"`
 	SandboxID string `json:"sandbox_id"`
@@ -190,7 +190,6 @@ func matchOne(re *regexp.Regexp, s string) string {
 
 // portBucket folds the destination port into one of four reporting
 // buckets so the Prometheus cardinality stays bounded.
-// roadmap §9 prescribes these four.
 func portBucket(p int) string {
 	switch p {
 	case 80:
@@ -240,9 +239,9 @@ func (c *Collector) updateLag(realtimeMicros string) {
 
 // DropPoller is the small goroutine that polls `nft -j list table`
 // every 30 s, diffs the per-rule counters, and feeds the deltas into
-// `sandboxd_egress_drops_total`. roadmap §9: "derived by tailing
-// nftables counters every 30 s and reporting deltas. Cheap,
-// accurate, no extra log volume."
+// `sandboxd_egress_drops_total` — derived by tailing nftables
+// counters every 30 s and reporting deltas. Cheap, accurate, no
+// extra log volume.
 type DropPoller struct {
 	Nft      *Nft
 	Interval time.Duration

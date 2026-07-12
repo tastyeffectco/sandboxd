@@ -8,7 +8,7 @@ import (
 // Prune enforces snapshot retention for one id. It acquires the per-id
 // lock; takeLocked calls pruneLocked directly (it already holds it).
 //
-// roadmap §9 "Pruning" + the keep-one invariant:
+// Pruning + the keep-one invariant:
 //   - delete snapshots older than RetentionDays,
 //   - BUT never delete the last surviving snapshot for an id, even if
 //     it is past the window. Purge of long-archived workspaces is a

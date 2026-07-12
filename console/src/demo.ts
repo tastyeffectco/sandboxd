@@ -109,6 +109,8 @@ function route(method: string, url: string): { status: number; body?: unknown; t
   }
   if (isWrite) return { status: 403, body: READ_ONLY }
 
+  // Auth is disabled in the demo, but report authenticated so the gate passes.
+  if (match(u, /\/v1\/auth\/status$/)) return { status: 200, body: { enabled: false, authenticated: true, password_set: true } }
   if (match(u, /\/v1\/apps$/)) return { status: 200, body: { apps: [app] } }
   if (match(u, /\/v1\/presets$/)) return { status: 200, body: { presets } }
   if (match(u, /\/v1\/settings$/)) return { status: 200, body: settings }
