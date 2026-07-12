@@ -1,9 +1,9 @@
 <h1 align="center">sandboxd</h1>
 
 <p align="center">
-  <b>The open-source backend behind AI app-builders.</b><br/>
-  Type a prompt → an isolated sandbox spins up, a coding agent builds the app,
-  and it's live at a preview URL. Self-hosted, one command, MIT.
+  <b>Open-source, self-hosted AI app builder.</b><br/>
+  Prompt it and a coding agent builds real apps in isolated sandboxes on <b>your</b>
+  server — each live at a preview URL. You own the infra, code, and data. MIT.
 </p>
 
 <h3 align="center">🔥 Trend of the Day on Trendshift</h3>
