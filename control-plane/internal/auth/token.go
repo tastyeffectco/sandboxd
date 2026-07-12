@@ -22,8 +22,8 @@ type NamedToken struct {
 }
 
 // MatchToken constant-time compares the presented token against every
-// configured token (roadmap §1: "Constant-time compare ... using
-// subtle.ConstantTimeCompare"). It does NOT break early on a match so
+// configured token using subtle.ConstantTimeCompare. It does NOT
+// break early on a match so
 // the loop's timing does not leak the matched position. Returns the
 // matching token's audit name and true, or "" and false.
 func MatchToken(presented string, tokens []NamedToken) (string, bool) {

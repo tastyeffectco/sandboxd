@@ -219,4 +219,4 @@ When Phase 4's control plane lands, it will:
 - Never seed automatically — operators or users who want a reset
   copy from `/opt/sandbox-skel/` themselves.
 
-Changes to this contract require a CLAUDE.md amendment.
+This layout is a stable contract; changing it requires updating every consumer that depends on it.

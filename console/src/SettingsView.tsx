@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, ReactNode } from 'react'
-import { api, Settings as TSettings, Agent, GitCredential } from './api'
+import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
 
 // --- source badges: every value on this page is one of these ----------------
@@ -45,13 +45,19 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   const [keepSec, setKeepSec] = useState(0)
   const [gc, setGc] = useState({ name: '', host: '', username: '', token: '' })
   const [showPrompt, setShowPrompt] = useState(false)
+  const [curPw, setCurPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [keys, setKeys] = useState<ApiKey[]>([])
+  const [keyName, setKeyName] = useState('')
+  const [newKey, setNewKey] = useState('')
 
   const loadAgents = useCallback(() => api.getAgents().then(setAgents).catch(() => {}), [])
   const loadCreds = useCallback(() => api.listGitCredentials().then(setCreds).catch(() => {}), [])
+  const loadKeys = useCallback(() => api.listApiKeys().then(setKeys).catch(() => {}), [])
   useEffect(() => {
     api.getSettings().then((d) => { setS(d); setIdle(d.lifecycle.idle_reap_enabled); setIdleSec(d.lifecycle.idle_threshold_seconds); setKeepSec(d.lifecycle.keepalive_max_seconds) }).catch((e) => onError((e as Error).message))
-    loadAgents(); loadCreds()
-  }, [onError, loadAgents, loadCreds])
+    loadAgents(); loadCreds(); loadKeys()
+  }, [onError, loadAgents, loadCreds, loadKeys])
 
   if (!s) return <div style={{ padding: 40, color: c.muted2 }}>Loading…</div>
   const lifecycleEditable = (s.editable || []).some((p) => p.startsWith('lifecycle.'))
@@ -63,6 +69,10 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   const importCred = async (id: string) => { const v = window.prompt(`Paste the credential (from your ${id} login):`); if (v) try { await api.importAgentCredential(id, v); toast('Connected'); loadAgents() } catch (e) { onError((e as Error).message) } }
   const saveLifecycle = async () => { try { await api.patchSettings({ lifecycle: { idle_reap_enabled: idle, idle_threshold_seconds: idleSec, keepalive_max_seconds: keepSec } }); toast('Lifecycle saved') } catch (e) { onError((e as Error).message) } }
   const addCred = async () => { if (!gc.name || !gc.host || !gc.token) return; try { await api.createGitCredential(gc); setGc({ name: '', host: '', username: '', token: '' }); toast('Credential added'); loadCreds() } catch (e) { onError((e as Error).message) } }
+  const changePw = async () => { if (!curPw || !newPw) return; try { await api.changePassword({ current_password: curPw, new_password: newPw }); setCurPw(''); setNewPw(''); toast('Password changed') } catch (e) { onError((e as Error).message) } }
+  const signOutEverywhere = async () => { try { await api.logoutEverywhere(); location.reload() } catch (e) { onError((e as Error).message) } }
+  const createKey = async () => { if (!keyName.trim()) return; try { const k = await api.createApiKey(keyName.trim()); setNewKey(k.key); setKeyName(''); loadKeys() } catch (e) { onError((e as Error).message) } }
+  const copyKey = () => { navigator.clipboard?.writeText(newKey).then(() => toast('Copied')).catch(() => {}) }
 
   const legendItem = (badge: ReactNode, text: string) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>{badge}<span style={{ fontSize: 11.5, color: c.muted }}>{text}</span></div>
@@ -152,6 +162,45 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
           <Input value={gc.host} onChange={(e) => setGc({ ...gc, host: e.target.value })} placeholder="host (github.com)" style={{ width: 170, fontFamily: font.sans }} />
           <Input value={gc.token} onChange={(e) => setGc({ ...gc, token: e.target.value })} placeholder="access token (write-only)" type="password" style={{ flex: 1, fontFamily: font.sans }} />
           <Btn variant="primary" onClick={addCred}>Add</Btn>
+        </div>
+      </Card>
+
+      <Card style={{ padding: 16, marginTop: 12 }} data-testid="settings-security">
+        <H style={{ marginBottom: 6 }}>Security</H>
+        <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 12 }}>Change the console password, or sign out every session (clears the cookie everywhere).</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Input value={curPw} onChange={(e) => setCurPw(e.target.value)} placeholder="current password" type="password" style={{ width: 200, fontFamily: font.sans }} data-testid="security-current" />
+          <Input value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="new password (min 8)" type="password" style={{ width: 200, fontFamily: font.sans }} data-testid="security-new" />
+          <Btn variant="primary" onClick={changePw} data-testid="security-change">Change password</Btn>
+          <Btn variant="danger" onClick={signOutEverywhere} style={{ marginLeft: 'auto' }} data-testid="security-signout">Sign out everywhere</Btn>
+        </div>
+      </Card>
+
+      <Card style={{ padding: 16, marginTop: 12 }} data-testid="settings-api-keys">
+        <H style={{ marginBottom: 6 }}>API keys</H>
+        <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 12 }}>Programmatic access to the <span style={{ ...mono, fontSize: 11.5 }}>/v1</span> API. The full key is shown once at creation — store it somewhere safe.</div>
+        {keys.length === 0 && <div style={{ color: c.muted2, fontSize: 12, marginBottom: 8 }}>No API keys yet.</div>}
+        {keys.map((k) => (
+          <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', border: `1px solid ${c.border}`, borderRadius: 7, background: c.panel2, marginBottom: 6, fontSize: 12.5 }} data-testid={`api-key-${k.id}`}>
+            <span style={{ fontWeight: 500 }}>{k.name}</span>
+            <span style={{ ...mono, fontSize: 11.5, color: c.muted }}>{k.prefix}…</span>
+            <span style={{ fontSize: 11.5, color: c.muted2 }}>{k.last_used_at || 'never used'}</span>
+            <a onClick={() => api.revokeApiKey(k.id).then(loadKeys)} className="dc-hoverink" style={{ marginLeft: 'auto', color: c.muted2, fontSize: 12, cursor: 'pointer' }} data-testid="api-key-revoke">Revoke</a>
+          </div>
+        ))}
+        {newKey && (
+          <div style={{ marginTop: 10, padding: '12px 14px', border: `1px solid ${c.good}40`, background: `${c.good}14`, borderRadius: 8 }} data-testid="api-key-new">
+            <div style={{ fontSize: 12, color: c.good, fontWeight: 600, marginBottom: 6 }}>Copy it now — it won't be shown again.</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Input mono readOnly value={newKey} onFocus={(e) => e.target.select()} style={{ flex: 1, fontSize: 11.5 }} data-testid="api-key-new-value" />
+              <Btn onClick={copyKey}>Copy</Btn>
+              <Btn variant="ghost" onClick={() => setNewKey('')}>Done</Btn>
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          <Input value={keyName} onChange={(e) => setKeyName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createKey()} placeholder="key name (ci, laptop…)" style={{ flex: 1, fontFamily: font.sans }} data-testid="api-key-name" />
+          <Btn variant="primary" onClick={createKey} data-testid="api-key-create">Create key</Btn>
         </div>
       </Card>
 

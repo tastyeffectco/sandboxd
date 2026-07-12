@@ -10,10 +10,10 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 )
 
-// Snapshotter is the hourly auto-snapshot goroutine. roadmap §9:
-// "For each sandbox with status='stopped' AND last_active_at + 24h <
-// now: if a snapshot already exists for today, skip; otherwise take
-// one." It is row-driven — orphan workspaces (`.img` with no row) are
+// Snapshotter is the hourly auto-snapshot goroutine. For each
+// sandbox with status='stopped' AND last_active_at + 24h < now: if
+// a snapshot already exists for today, skip; otherwise take one.
+// It is row-driven — orphan workspaces (`.img` with no row) are
 // captured only via the manual API, never here.
 type Snapshotter struct {
 	Mgr      *Manager
@@ -21,7 +21,7 @@ type Snapshotter struct {
 }
 
 // Run blocks until ctx is cancelled. Interval<=0 disables the loop
-// (the rollback lever from roadmap §"Risks").
+// (the rollback lever).
 func (s *Snapshotter) Run(ctx context.Context) error {
 	if s.Interval <= 0 {
 		s.Mgr.Log.Info("snapshotter: disabled (interval <= 0)")
@@ -89,8 +89,8 @@ func (s *Snapshotter) tick(ctx context.Context) {
 // SweepStale removes crash debris under the snapshot tree and the
 // workspace tree: half-written `*.img.zst.tmp` snapshots and
 // `*.img.bak-*` files left by an interrupted restore. Called by the
-// boot reconciler. roadmap §9 "Crash safety" + §10 (the restore
-// `.bak` is cleaned on next boot if a restore died mid-flight).
+// boot reconciler for crash safety — the restore `.bak` is cleaned
+// on next boot if a restore died mid-flight.
 //
 // A `.bak` is only swept when the corresponding live `.img` exists —
 // otherwise the `.bak` IS the only surviving copy (restore died after

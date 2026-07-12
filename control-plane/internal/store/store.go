@@ -1,8 +1,8 @@
 // Package store is the SQLite-backed source of truth for the sandbox
-// lifecycle. CLAUDE.md non-negotiable #6: "SQLite is source of truth.
-// The reconciler converges Docker to SQLite, never the other way."
+// lifecycle. SQLite is the source of truth: the reconciler converges
+// Docker to SQLite, never the other way.
 //
-// Concurrency model (CLAUDE.md control-plane scope): a single writer
+// Concurrency model: a single writer
 // goroutine reads from a buffered channel of write ops; readers use
 // `db.QueryRow` / `db.Query` directly. This avoids "database is locked"
 // without scattering mutexes across the code.
@@ -126,6 +126,13 @@ func (s *Store) Close() error {
 // Writes MUST go through the write methods below so they're serialised
 // by the single writer goroutine.
 func (s *Store) DB() *sql.DB { return s.db }
+
+// DefaultTenant is the single shared tenant every credential resolves to in the
+// default (single-tenant) deployment: the console session, env-configured API
+// keys, DB-stored API keys, and auth-disabled rollback all use it, so toggling
+// auth on/off never changes which apps an owner sees. Per-key isolation (owner
+// == key name) is a later opt-in.
+const DefaultTenant = "default"
 
 // ErrNotFound is returned when a row lookup yields zero rows.
 var ErrNotFound = errors.New("not found")

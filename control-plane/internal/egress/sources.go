@@ -8,7 +8,7 @@ import (
 
 // SourceMap is the in-memory ip → sandbox_id table the egress
 // collector uses to join kernel `SRC=...` lines back to a sandbox.
-// SQLite is still source of truth (CLAUDE.md non-negotiable #6); this
+// SQLite is still the source of truth; this
 // map is a hot-path lookup cache that the create / wake / stop flows
 // keep coherent. Read at ~5000 lookups/sec on the journal tailer
 // without doing a SQL query per lookup.

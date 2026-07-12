@@ -4,9 +4,10 @@
 // single-writer channel from Phase 4, and both log every stop with a
 // `reason` field.
 //
-// CLAUDE.md "Idle lifecycle" + "Host memory pressure reaper" specify
+// The idle-lifecycle and host-memory-pressure-reaper policies specify
 // the exact thresholds and bands. The idle reaper's *skip* rules
-// come from CLAUDE.md "Activity definition" + roadmap §4 step 4.
+// follow the activity definition (an open WS/SSE connection, an open
+// exec session, a recent HTTP request, or a keepalive_until flag).
 //
 // **OB9 carry-forward from Phase 1**: with memory.high=4G and
 // memory.swap.max=0 the kernel can stall cooperative allocators in
@@ -31,8 +32,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
-// IdleConfig captures the env-tunable knobs from roadmap §12. Defaults
-// come from CLAUDE.md "Idle lifecycle".
+// IdleConfig captures the env-tunable knobs.
 type IdleConfig struct {
 	Threshold time.Duration // SANDBOXD_IDLE_THRESHOLD_SECONDS (600s)
 	Interval  time.Duration // SANDBOXD_IDLE_REAP_INTERVAL_SECONDS (30s)
@@ -66,7 +66,7 @@ func (i *Idle) threshold() time.Duration {
 }
 
 // Run blocks until ctx is cancelled. A zero or negative Interval
-// disables the loop (rollback path from roadmap §"Risks").
+// disables the loop (the rollback path).
 func (i *Idle) Run(ctx context.Context) error {
 	if i.Cfg.Interval <= 0 {
 		i.Log.Info("idle reaper: disabled (interval <= 0)")

@@ -22,8 +22,8 @@ const (
 )
 
 // Task event types. status/build/done are runtimed-generated and
-// reliable; message/tool are provider-derived and best-effort
-// (ops/design/v1-external-api.md §4.4). `done` is the single terminal
+// reliable; message/tool are provider-derived and best-effort.
+// `done` is the single terminal
 // event and carries the TaskResult.
 const (
 	EventStatus  = "status"

@@ -1,8 +1,9 @@
 // sandboxd — control plane for the sandboxd.
 //
-// CLAUDE.md control-plane scope: "Single Go binary, ~500–800 LOC
-// target. Binds to 127.0.0.1 only. No auth in v1 (introduced in
-// Phase 8). Shells out to `docker` CLI via os/exec."
+// A single Go binary. It listens on the internal network (default
+// 0.0.0.0:9000, see defaultListenAddr), with auth enforced by the
+// internal/auth middleware, and shells out to the `docker` CLI via
+// os/exec.
 //
 // Phase 4 added: SQLite migrations + open, boot-time reconciler,
 // HTTP API on 127.0.0.1, signal handling, graceful shutdown.
@@ -184,7 +185,9 @@ func main() {
 	eventRec := events.New(st, log.With("component", "events"))
 	envFile := envDefault("SANDBOXD_ENV_FILE", "/etc/sandboxed/sandboxd.env")
 	authCfg := auth.ParseConfig(os.Getenv)
-	authMw := auth.NewMiddleware(authCfg, auditLog, log.With("component", "auth"))
+	// The credential resolver validates DB-backed console sessions and API keys;
+	// env-configured SANDBOXD_API_TOKENS remain a fallback for the bootstrap key.
+	authMw := auth.NewMiddleware(authCfg, api.NewStoreResolver(st), auditLog, log.With("component", "auth"))
 	denyMode := envDefault("SANDBOXD_FORWARD_AUTH_DENY_MODE", "redirect")
 	{
 		ac := authMw.Snapshot()
@@ -451,7 +454,7 @@ func main() {
 	// run before the idle reaper (which trusts the task table) starts.
 	server.ReconcileTasks(ctx)
 
-	// Phase 5 — roadmap §10: after reconcile, if MemAvailable is
+	// Phase 5 — after reconcile, if MemAvailable is
 	// already below the healthy floor, run one synchronous pressure
 	// tick before opening the listener. Keeps the host from
 	// accepting requests while it's already saturated.
@@ -592,7 +595,7 @@ func main() {
 	_ = snapshotMgr // constructed for the reconciler debris sweep + API
 
 	// --- Phase 8 workspace_owner orphan check -------------------------
-	// roadmap §13 — every 6 h, log workspace_owner rows whose .img is
+	// Every 6 h, log workspace_owner rows whose .img is
 	// gone. Never deletes; disposition is the operator's.
 	go func() {
 		ownerLog := log.With("component", "owner-orphan-check")

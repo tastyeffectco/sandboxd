@@ -1,4 +1,4 @@
-// v1.go — the narrow public /v1 API (ops/design/v1-external-api.md).
+// v1.go — the narrow public /v1 API.
 // It is a thin translation layer over the proven internal machinery:
 // sandbox create/delete delegate to the existing internal handlers;
 // runtime/task state is read via runtime.Client over the workspace
@@ -208,7 +208,7 @@ type v1CreateReq struct {
 	Visibility string `json:"visibility,omitempty"`
 	Template   string `json:"template,omitempty"`
 	// FromSnapshot, when set, clones the new sandbox's workspace from a
-	// snapshot the caller's tenant owns (ops/design/snapshots-as-templates.md)
+	// snapshot the caller's tenant owns
 	// instead of the default template. Mutually exclusive with Template.
 	FromSnapshot string `json:"from_snapshot,omitempty"`
 	// RuntimePreset selects a runtime preset (react-vite, nextjs, …). Applied

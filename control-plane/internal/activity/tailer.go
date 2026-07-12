@@ -24,7 +24,7 @@ import (
 // RequestHost matches the preview-URL shape, bumps last_active_at
 // on the matching sandbox row.
 //
-// Robustness rules per roadmap §3:
+// Robustness rules:
 //   - Survive file rotation: detect via inode change + EOF; reopen
 //     the file at offset 0.
 //   - Survive truncation: detect via current-size < last-read-offset;

@@ -9,7 +9,7 @@ import (
 )
 
 // handlePreviewAuth is the landing endpoint for a freshly minted
-// upstream preview token (roadmap §8). It validates the HS256 JWS,
+// upstream preview token. It validates the HS256 JWS,
 // sets the `sandbox_preview` cookie on `.preview.<domain>`, and 302s
 // to the allowlisted `return` URL. Reachable externally without the
 // service token (the auth middleware exempts it) — it validates its

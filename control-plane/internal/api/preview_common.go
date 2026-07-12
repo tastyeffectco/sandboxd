@@ -52,9 +52,9 @@ func returnSandboxRE(domain string) *regexp.Regexp {
 		`^https://s-([0-9A-Za-z]+)-[0-9]+\.preview\.`+regexp.QuoteMeta(domain)+`(/.*)?$`)
 }
 
-// validateReturnURL enforces roadmap §8 step 2 (no open redirects: the
-// URL must be a preview host or the api.preview host) and step 3 (an
-// `s-<id>` return host must carry the same sandbox_id as the JWT).
+// validateReturnURL enforces two rules: no open redirects (the
+// URL must be a preview host or the api.preview host), and an
+// `s-<id>` return host must carry the same sandbox_id as the JWT.
 func validateReturnURL(returnURL, jwtSandboxID, domain string) bool {
 	if m := returnSandboxRE(domain).FindStringSubmatch(returnURL); m != nil {
 		return m[1] == jwtSandboxID

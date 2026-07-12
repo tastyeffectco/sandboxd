@@ -25,7 +25,7 @@ import (
 // writes to `/home/sandbox/sandbox.yaml`, which returns 200 but runtimed never sees
 // it (the console "Apply sandbox.yaml" CTA depends on this; don't "simplify" it).
 //
-// Security model (paying-tenant threat model from CLAUDE.md):
+// Security model (paying-tenant threat model):
 //   - The caller holds a service token; the upstream backend bugs are the
 //     primary concern, not malicious traffic.
 //   - Path is `filepath.Clean`-normalised, absolute paths and `..` are

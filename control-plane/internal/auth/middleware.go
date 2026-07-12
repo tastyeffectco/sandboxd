@@ -41,18 +41,21 @@ type AuditWriter interface {
 	TokenInvalid(ctx context.Context, ip string)
 }
 
-// Middleware is the service-token gate for the external (Traefik-
-// routed) API path. The loopback path bypasses it (roadmap §11: shell
-// access to the host is the operator gate).
+// Middleware is the uniform auth gate. Every request (regardless of origin —
+// on-host, console-proxied, or Traefik-routed) must carry a valid credential: a
+// console session cookie, or a bearer API key (DB-stored or env-configured).
+// There is no locality bypass — "if auth is required, it is required."
 type Middleware struct {
-	cfg   atomic.Pointer[Config]
-	audit AuditWriter
-	log   *slog.Logger
+	cfg      atomic.Pointer[Config]
+	resolver CredentialResolver
+	audit    AuditWriter
+	log      *slog.Logger
 }
 
-// NewMiddleware constructs the middleware around an initial config.
-func NewMiddleware(initial *Config, audit AuditWriter, log *slog.Logger) *Middleware {
-	m := &Middleware{audit: audit, log: log}
+// NewMiddleware constructs the middleware around an initial config. resolver may
+// be nil (env-token-only mode).
+func NewMiddleware(initial *Config, resolver CredentialResolver, audit AuditWriter, log *slog.Logger) *Middleware {
+	m := &Middleware{resolver: resolver, audit: audit, log: log}
 	m.cfg.Store(initial)
 	return m
 }
@@ -64,51 +67,53 @@ func (m *Middleware) Reload(c *Config) { m.cfg.Store(c) }
 func (m *Middleware) Snapshot() *Config { return m.cfg.Load() }
 
 // exemptPaths are reachable on the external path without a bearer
-// token (roadmap §1). /preview-auth and /forward-auth validate their
+// token. /preview-auth and /forward-auth validate their
 // own JWTs; /healthz and /readyz carry nothing sensitive.
 var exemptPaths = map[string]bool{
-	"/healthz":      true,
-	"/readyz":       true,
-	"/preview-auth": true,
-	"/forward-auth": true,
-	"/llm.txt":      true, // public API contract for integrators (no token)
+	"/healthz":        true,
+	"/readyz":         true,
+	"/preview-auth":   true,
+	"/forward-auth":   true,
+	"/llm.txt":        true, // public API contract for integrators (no token)
+	"/v1/auth/status": true, // console asks "is auth on / am I logged in / is a password set" pre-login
+	"/v1/auth/login":  true, // you cannot be authenticated in order to authenticate
+	"/v1/auth/setup":  true, // first-run "create password" (self-guards: 409 once set)
 }
 
-// Wrap returns next gated by the service-token check.
+// Wrap returns next gated by the uniform credential check.
 func (m *Middleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := m.cfg.Load()
 		ip := ClientIP(r)
 
-		// Loopback / operator path — no token. The host's SSH lockdown
-		// (Phase 0) is the gate. Traefik always sets X-Forwarded-For,
-		// so a forwarded request can never look loopback here.
-		if isLoopbackReq(r) {
-			next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
-				Actor{Kind: "operator", Name: "loopback", IP: ip})))
-			return
-		}
-
-		// External (Traefik-routed) path.
-		// /metrics is loopback-only — never exposed externally.
-		if r.URL.Path == "/metrics" {
+		// /metrics is loopback-only — never exposed externally. (This is the
+		// only remaining use of loopback detection: it does NOT bypass auth.)
+		if r.URL.Path == "/metrics" && !isLoopbackReq(r) {
 			http.NotFound(w, r)
 			return
 		}
+
+		// Resolve a credential, in order: console session cookie, then a bearer
+		// API key (DB-stored via the resolver, else env-configured tokens).
+		actor, authed := m.resolve(r, cfg, ip)
+
+		// Exempt paths serve regardless of whether a credential was present
+		// (they carry nothing sensitive, or self-guard). Attach whatever actor
+		// resolved so handlers like /v1/auth/status can report authenticated.
 		if exemptPaths[r.URL.Path] {
-			next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
-				Actor{Kind: "system", IP: ip})))
+			next.ServeHTTP(w, r.WithContext(WithActor(r.Context(), actor)))
 			return
 		}
+
+		// SANDBOXD_API_AUTH_DISABLED rollback — every request runs as the shared
+		// tenant, unauthenticated. Explicit opt-out; trips the warning banner.
 		if cfg.Disabled {
-			// SANDBOXD_API_AUTH_DISABLED rollback path — every external
-			// request runs unauthenticated. Emergency use only.
 			next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
-				Actor{Kind: "service", Name: "auth-disabled", IP: ip})))
+				Actor{Kind: "service", Name: "default", IP: ip})))
 			return
 		}
-		name, ok := MatchToken(bearerToken(r), cfg.APITokens)
-		if !ok {
+
+		if !authed {
 			if m.audit != nil {
 				m.audit.TokenInvalid(r.Context(), ip)
 			}
@@ -117,9 +122,33 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(`{"error":"unauthorized"}` + "\n"))
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithActor(r.Context(),
-			Actor{Kind: "service", Name: name, IP: ip})))
+		next.ServeHTTP(w, r.WithContext(WithActor(r.Context(), actor)))
 	})
+}
+
+// resolve returns the authenticated actor (and true) for a request, or a
+// zero-value actor (and false) when no valid credential is present.
+func (m *Middleware) resolve(r *http.Request, cfg *Config, ip string) (Actor, bool) {
+	// 1. console session cookie.
+	if m.resolver != nil {
+		if ck, err := r.Cookie(SessionCookie); err == nil && ck.Value != "" {
+			if owner, ok := m.resolver.ResolveSession(r.Context(), ck.Value); ok {
+				return Actor{Kind: "user", Name: owner, IP: ip}, true
+			}
+		}
+	}
+	// 2. bearer API key — DB-stored, then env-configured.
+	if tok := bearerToken(r); tok != "" {
+		if m.resolver != nil {
+			if owner, ok := m.resolver.ResolveAPIKey(r.Context(), tok); ok {
+				return Actor{Kind: "service", Name: owner, IP: ip}, true
+			}
+		}
+		if name, ok := MatchToken(tok, cfg.APITokens); ok {
+			return Actor{Kind: "service", Name: name, IP: ip}, true
+		}
+	}
+	return Actor{Kind: "unknown", IP: ip}, false
 }
 
 // bearerToken extracts the token from an `Authorization: Bearer <t>`
@@ -151,7 +180,7 @@ func ClientIP(r *http.Request) string {
 
 // isLoopbackReq reports whether the request arrived directly over the
 // loopback socket with no X-Forwarded-For — i.e. an on-host operator
-// call, not a Traefik-forwarded one (roadmap §11).
+// call, not a Traefik-forwarded one.
 func isLoopbackReq(r *http.Request) bool {
 	if r.Header.Get("X-Forwarded-For") != "" {
 		return false

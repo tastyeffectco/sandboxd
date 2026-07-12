@@ -19,7 +19,7 @@ import (
 // last_active_at for any service whose currently-open-connections
 // value is non-zero.
 //
-// **HOST-VERIFICATION GATE** (roadmap §3): the exact metric name and
+// **HOST-VERIFICATION GATE**: the exact metric name and
 // label shape used to track currently-open connections per service
 // differs between Traefik versions and the `addServicesLabels`
 // configuration setting. Phase 5 does NOT commit a poller that

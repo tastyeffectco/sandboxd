@@ -52,7 +52,7 @@ image/
 > scripts under `scripts/dev/` do NOT update the SQLite source of
 > truth — anything created with them is an orphan as far as `sandboxd`
 > is concerned (the reconciler will log it and walk away; auto-adoption
-> is intentionally absent in v1, per CLAUDE.md non-negotiable #6).
+> is intentionally absent in v1, since SQLite is the source of truth).
 
 ---
 
