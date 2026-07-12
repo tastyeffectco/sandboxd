@@ -47,12 +47,16 @@ docker run --rm "$IMG" bash -lc '
 ' || fail "image smoke (missing binary or template)"
 
 # Start sandboxd. Idle reaper pushed out so it cannot interfere mid-test.
+# API auth is on by default and there is no loopback bypass, so this lifecycle
+# test (which drives the API over 127.0.0.1 without a credential) runs with auth
+# explicitly disabled — the auth behaviour itself is covered by Go unit tests.
 mkdir -p "$DD/log" "$DD/library"
 docker network create "$NET" >/dev/null
 SANDBOXD_ADDR=127.0.0.1:9191 SANDBOXD_IMAGE="$IMG" SANDBOXD_DATA_DIR="$DD" \
   SANDBOXD_LOG_DIR="$DD/log" SANDBOXD_NETWORK="$NET" SANDBOXD_USERNS=host \
   SANDBOXD_LIBRARY_DIR="$DD/library" SANDBOXD_MIGRATIONS="$HERE/control-plane/migrations" \
   SANDBOXD_DB="$DD/sandboxd.db" SANDBOXD_IDLE_THRESHOLD_SECONDS=3600 \
+  SANDBOXD_API_AUTH_DISABLED=true \
   "$BIN" >"$DD/sandboxd.log" 2>&1 &
 SBX_PID=$!
 for i in $(seq 1 60); do curl -s -m2 "$API/healthz" 2>/dev/null | grep -q ok && break; sleep 0.5; done
