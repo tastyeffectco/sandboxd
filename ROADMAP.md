@@ -10,7 +10,7 @@ a contract — priorities shift with what self-hosters actually need.
 > [Sponsoring](https://github.com/sponsors/tastyeffectco) directly funds the
 > deploy roadmap and ongoing maintenance.
 
-## Shipped — 0.3.0 (first public release)
+## Shipped — 0.3.0 (current release)
 
 The full platform, self-hostable on one Docker host today:
 

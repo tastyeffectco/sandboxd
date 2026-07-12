@@ -5,12 +5,13 @@ All notable changes to sandboxd are documented here. The format is based on
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
 a patch is fixes only).
 
-## [0.3.0] — 2026-07-07 — first public release
+## [0.3.0] — 2026-07-07
 
-The first public open-source release of sandboxd. It bundles the full feature set
-built pre-launch with one headline change: **every coding agent now reaches its
-model provider through a credential-injecting proxy, so no API key or OAuth token
-ever enters a sandbox.**
+The major platform release: a **web console**, one-step **runtime presets**, live
+preview URLs, agent tasks, app config &amp; secrets, snapshots / fork / restore,
+and git import / commit / push — with one headline change: **every coding agent
+now reaches its model provider through a credential-injecting proxy, so no API key
+or OAuth token ever enters a sandbox.**
 
 ### Added
 - **Credential-injecting auth proxy for all agents.** claude-code and opencode
@@ -24,8 +25,8 @@ ever enters a sandbox.**
   exists, gated so the first task in a sandbox starts fresh; `true`/`false` force
   it).
 
-### Included from pre-launch development
-The full platform built before launch ships in this release: a **web console**;
+### Platform
+This release adds the full self-hosted platform: a **web console**;
 one-step **runtime presets** (React/Vite, Next.js, Node/Express, FastAPI,
 Worker); **live preview URLs**; **agent tasks**; **app config &amp; secrets**
 (write-only secrets); **snapshots / fork / restore**; managed **agent auth**
