@@ -19,7 +19,7 @@ No preset, no per-app Go code, no new endpoints, no image awareness in core. Del
 doesn't notice.
 
 **2. v1 launch scope = Node + Python + static-binary apps only (one base image).**
-Ship the 77 apps that run on the stock `sandboxd-base:0.4.0` with **no foreign runtime dropped**:
+Ship the 77 apps that run on the stock `sandboxd-base:0.3.0` with **no foreign runtime dropped**:
 - `binary` (41): download one pinned static Go/Rust binary, `chmod`, run. Simplest + most reliable.
 - `node` (17): `npm/pnpm/bun install` on base Node 22.
 - `python` (19): `uv venv` + `uv pip install` on base Python 3.13.
