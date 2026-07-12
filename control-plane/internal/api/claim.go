@@ -17,7 +17,7 @@ type claimReq struct {
 }
 
 // handleClaim moves a (typically legacy / back-filled) sandbox to a
-// real upstream identity. roadmap §3: it updates external identity on
+// real upstream identity. It updates external identity on
 // both `sandbox` and the durable `workspace_owner` row and audit-logs
 // the transition. Service-token gated by the auth middleware.
 func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {

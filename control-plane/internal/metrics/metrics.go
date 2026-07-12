@@ -1,5 +1,5 @@
 // Package metrics owns the Prometheus collectors for sandboxd. The
-// exposed set is exactly what the Phase 4 roadmap §12 lists; Phase 5
+// exposed set is exactly the Phase 4 metric set; Phase 5
 // will add reaper / wake-path metrics, Phase 7 wires the scrape
 // destination.
 package metrics

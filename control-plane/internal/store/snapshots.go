@@ -8,7 +8,7 @@ import (
 
 // Snapshot is the in-memory mirror of a `snapshot` table row
 // (migrations/0009). A snapshot is a reusable, frozen copy of a
-// sandbox's workspace .img — see ops/design/snapshots-as-templates.md.
+// sandbox's workspace .img.
 type Snapshot struct {
 	ID              string
 	Name            string

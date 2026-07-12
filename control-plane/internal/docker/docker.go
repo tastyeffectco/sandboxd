@@ -1,13 +1,12 @@
 // Package docker is a thin, typed wrapper around the `docker` CLI.
 //
-// CLAUDE.md control-plane scope: "Shells out to `docker` CLI via
-// os/exec. Replace with the Docker SDK only when shell-out is a
-// measured bottleneck." Phase 4 keeps this rule.
+// Shells out to the `docker` CLI via os/exec. Replace with the Docker
+// SDK only when shell-out is a measured bottleneck.
 //
 // Design rule: NO MAGIC DEFAULTS inside this package. Callers pass
 // the full RunSpec so a change to the locked flag set is obvious in
 // code review. The package only encodes the CLI invocation, not the
-// policy choices documented in CLAUDE.md.
+// policy choices.
 package docker
 
 import (

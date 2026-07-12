@@ -3,9 +3,9 @@
 // poller (WebSocket / SSE lifetime, when a Traefik metric for it
 // exists), and the in-flight `docker exec` counter.
 //
-// CLAUDE.md "Activity definition" lists four ways a sandbox is active:
-// an open WS/SSE connection, an open exec session, a recent HTTP
-// request, or an explicit keepalive_until flag. Phase 5 maps those to:
+// A sandbox is active in one of four ways: an open WS/SSE connection,
+// an open exec session, a recent HTTP request, or an explicit
+// keepalive_until flag. Phase 5 maps those to:
 //   - WS/SSE          → open-connection poller (or wider grace window
 //     if no Traefik metric is verifiable; see
 //     poller.go).
@@ -24,7 +24,7 @@ import (
 // are currently mid-flight per sandbox id. The idle reaper treats any
 // non-zero entry here as "active" regardless of timestamps. The
 // pressure reaper does NOT consult this in the < 5% emergency branch
-// (per CLAUDE.md: "stop heaviest-RSS sandbox even if active").
+// (it stops the heaviest-RSS sandbox even if active).
 type InflightExec struct {
 	mu sync.Mutex
 	n  map[string]int

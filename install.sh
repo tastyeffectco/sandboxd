@@ -118,48 +118,52 @@ bold "Building the sandbox base image (one-time, a few minutes)…"
 DOCKER="$DOCKER" SANDBOXD_IMAGE="$BASE_IMAGE" bash image/build.sh "${BASE_IMAGE##*:}"
 ok "base image: $BASE_IMAGE"
 
+# ── API auth bootstrap key ───────────────────────────────────────────
+# Auth is ON by default: every /v1 call needs a console session or an API key.
+# Seed ONE printed bootstrap key so scripts (and the engine) work with zero
+# config. The console itself does NOT use this key — it uses a login/session.
+# Rotate the key by editing .env (SIGHUP reloads) or minting one in the console.
+API_KEY=""
+CUR_TOKENS="$(grep -E '^SANDBOXD_API_TOKENS=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+if [ -z "$CUR_TOKENS" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    RAND="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+  else
+    RAND="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
+  fi
+  API_KEY="sk_${RAND}"
+  tmp="$(mktemp)"; grep -vE '^SANDBOXD_API_TOKENS=' .env > "$tmp" 2>/dev/null || true; mv "$tmp" .env
+  printf 'SANDBOXD_API_TOKENS=default=%s\n' "$API_KEY" >> .env
+  ok "API bootstrap key generated (shown at the end)"
+else
+  # Already configured — surface the existing `default=` key if there is one.
+  API_KEY="$(printf '%s' "$CUR_TOKENS" | tr ',' '\n' | sed -n 's/^default=//p' | head -1)"
+  info "auth: using the SANDBOXD_API_TOKENS already in .env"
+fi
+
 # ── optional web console (ON by default) ─────────────────────────────
-# The console is the fastest way to *see* sandboxd, so it's brought up by
-# default with a generated login — no manual password step. Go headless with
+# The console is the fastest way to *see* sandboxd. On first open it asks you to
+# create a password (control-plane login); no secret in .env. Headless with
 # SANDBOXD_CONSOLE=0  or  --no-console.
 CONSOLE=1
 case " $* " in *" --no-console "*) CONSOLE=0 ;; esac
 [ "${SANDBOXD_CONSOLE:-1}" = "0" ] && CONSOLE=0
 PROFILE_ARGS=""
-CONSOLE_LOGIN=""
-if [ "$CONSOLE" = "1" ]; then
-  if command -v openssl >/dev/null 2>&1; then
-    CUR="$(grep -E '^CONSOLE_BASIC_AUTH=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
-    if [ -n "$CUR" ] && [ "${CUR#locked:}" = "$CUR" ]; then
-      info "console: using the CONSOLE_BASIC_AUTH already in .env"
-    else
-      CONSOLE_USER="${CONSOLE_USER:-admin}"
-      CONSOLE_PASS="${CONSOLE_PASS:-$(openssl rand -hex 8)}"
-      # apr1 hash for Traefik basic-auth; escape $ -> $$ so compose doesn't
-      # interpolate it out of .env.
-      ESCAPED="$(openssl passwd -apr1 "$CONSOLE_PASS" | sed 's/\$/\$\$/g')"
-      tmp="$(mktemp)"; grep -vE '^CONSOLE_BASIC_AUTH=' .env > "$tmp" 2>/dev/null || true; mv "$tmp" .env
-      printf 'CONSOLE_BASIC_AUTH=%s:%s\n' "$CONSOLE_USER" "$ESCAPED" >> .env
-      # Stash the plaintext login (gitignored, 0600) so ./console-login.sh can
-      # show it again anytime — the apr1 hash in .env can't be reversed.
-      printf '%s\n%s\n' "$CONSOLE_USER" "$CONSOLE_PASS" > .console-login && chmod 600 .console-login
-      CONSOLE_LOGIN="$CONSOLE_USER / $CONSOLE_PASS"
-      ok "console login generated (shown at the end)"
-    fi
-    PROFILE_ARGS="--profile console"
-  else
-    warn "openssl not found — starting headless (add the console later: set CONSOLE_BASIC_AUTH + '$COMPOSE --profile console up -d')"
-    CONSOLE=0
-  fi
-fi
+[ "$CONSOLE" = "1" ] && PROFILE_ARGS="--profile console"
+
+# Stash the console URL + bootstrap key (gitignored, 0600) so ./console-login.sh
+# can show them again anytime.
+{
+  printf 'console_url=http://console.%s%s\n' "${PREVIEW_DOMAIN:-localhost}" "$([ "${HTTP_PORT:-80}" != "80" ] && printf ':%s' "${HTTP_PORT:-80}")"
+  printf 'api_key=%s\n' "$API_KEY"
+} > .console-login 2>/dev/null && chmod 600 .console-login
 
 # ── build + start the stack ──────────────────────────────────────────
-# Compose reads CONSOLE_BASIC_AUTH straight from .env, where its own
-# interpolation un-escapes $$ -> $ correctly. A value inherited into this shell
-# from the earlier `. ./.env` is unusable — bash expands the $$ in the apr1 hash
-# to its PID — and, since shell env outranks .env, it would silently shadow the
-# real credential and fall back to the locked default. Drop it before compose.
-[ "$CONSOLE" = "1" ] && unset CONSOLE_BASIC_AUTH
+# Compose must read SANDBOXD_API_TOKENS straight from .env. A stale empty value
+# inherited into this shell from the earlier `. ./.env` would outrank .env and
+# shadow the bootstrap key we just wrote (leaving auth on with no working key).
+# Drop it so compose picks up the .env value.
+unset SANDBOXD_API_TOKENS
 bold "Building the control plane${CONSOLE:+ + console} and starting the stack…"
 $COMPOSE $PROFILE_ARGS build
 $COMPOSE $PROFILE_ARGS up -d
@@ -176,12 +180,13 @@ echo
 bold "sandboxd is running 🎉"
 cat <<EOF
 
-  Control-plane API : http://${API_BIND}
+  Control-plane API : http://${API_BIND}   (auth required — use your API key)
   Preview URLs      : http://s-<id>-<port>.preview.${PREVIEW_DOMAIN}${PORTSUFFIX}
 
   Create your first sandbox (exposing a dev server on port 3000):
 
     curl -s -XPOST http://${API_BIND}/sandbox \\
+      -H "Authorization: Bearer ${API_KEY:-\$SANDBOXD_API_KEY}" \\
       -H 'content-type: application/json' \\
       -d '{"id":"demo01","ports":[3000]}' | tee /dev/stderr
 
@@ -195,14 +200,16 @@ if [ "$CONSOLE" = "1" ]; then
   echo
   bold "Web console — open this first 👇"
   printf '\n  Open    : http://console.%s%s\n' "$PREVIEW_DOMAIN" "$PORTSUFFIX"
-  if [ -n "$CONSOLE_LOGIN" ]; then
-    printf '  Login   : %s\n' "$CONSOLE_LOGIN"
-  else
-    printf '  Login   : as set in .env (CONSOLE_BASIC_AUTH)\n'
-  fi
-  printf '\n  Lost the login later?  run:  ./console-login.sh\n'
+  printf '  Login   : create your password on first visit (change it anytime in Settings)\n'
   printf '  Then connect an agent in Settings, create an app, and build.\n'
 fi
+if [ -n "$API_KEY" ]; then
+  echo
+  bold "API key (for scripts / the engine) 🔑"
+  printf '\n  %s\n' "$API_KEY"
+  printf '  Send it as:  Authorization: Bearer <key>   (rotate in .env or the console)\n'
+fi
+printf '\n  Lost these later?  run:  ./console-login.sh\n'
 
 # A single, plain (no-color) nudge — suppress with SANDBOXD_NO_SPONSOR=1.
 [ -z "${SANDBOXD_NO_SPONSOR:-}" ] && printf '\n  \342\230\205 sandboxd is free & MIT. If it saves you time: https://github.com/sponsors/tastyeffectco\n'

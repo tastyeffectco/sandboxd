@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Show the sandboxd web console URL + login. Run it anytime:
+# Show the sandboxd web console URL + the API bootstrap key. Run it anytime:
 #     ./console-login.sh
 set -eu
 cd "$(dirname "$0")"
@@ -16,24 +16,27 @@ PORT="${HTTP_PORT:-80}"
 SUFFIX=""; [ "$PORT" != "80" ] && SUFFIX=":$PORT"
 URL="http://console.${DOMAIN}${SUFFIX}"
 
-echo
-echo "  ┌─ sandboxd web console ─────────────────────────────"
-printf "  │  Open      %s\n" "$URL"
-
+# Prefer the stashed value; fall back to parsing SANDBOXD_API_TOKENS.
+API_KEY=""
 if [ -f .console-login ]; then
-  printf "  │  Username  %s\n" "$(sed -n '1p' .console-login)"
-  printf "  │  Password  %s\n" "$(sed -n '2p' .console-login)"
-else
-  CBA="${CONSOLE_BASIC_AUTH:-}"
-  if [ -z "$CBA" ] || [ "${CBA#locked:}" != "$CBA" ]; then
-    printf "  │  The console isn't set up yet. Run ./install.sh (it's on by default).\n"
-  else
-    printf "  │  Username  %s\n" "${CBA%%:*}"
-    printf "  │  Password  (you set this — see .env → CONSOLE_BASIC_AUTH)\n"
-  fi
+  API_KEY="$(sed -n 's/^api_key=//p' .console-login | head -1)"
+fi
+if [ -z "$API_KEY" ]; then
+  API_KEY="$(printf '%s' "${SANDBOXD_API_TOKENS:-}" | tr ',' '\n' | sed -n 's/^default=//p' | head -1)"
 fi
 
+echo
+echo "  ┌─ sandboxd web console ─────────────────────────────"
+printf "  │  Open       %s\n" "$URL"
+printf "  │  Login      create your password on first visit\n"
+printf "  │             (change it later in Settings → Security)\n"
+if [ -n "$API_KEY" ]; then
+  printf "  │\n"
+  printf "  │  API key    %s\n" "$API_KEY"
+  printf "  │             Authorization: Bearer <key>   (for scripts / the engine)\n"
+fi
 echo "  └────────────────────────────────────────────────────"
 echo
-echo "  Change it anytime:  set a new CONSOLE_PASS and re-run ./install.sh"
+echo "  Rotate the API key: edit SANDBOXD_API_TOKENS in .env (SIGHUP reloads),"
+echo "  or mint one in the console → Settings → Security."
 echo

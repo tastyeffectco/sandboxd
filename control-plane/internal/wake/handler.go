@@ -53,7 +53,7 @@ type Handler struct {
 	// Phase 8 — private-sandbox wake gating. A stopped private sandbox
 	// must not be woken anonymously: the catch-all wake runs the same
 	// preview-token check as /forward-auth before docker start
-	// (roadmap §10). All nil-safe — without Auth wired the wake path
+	// All nil-safe — without Auth wired the wake path
 	// behaves exactly as in Phase 7 (no gate).
 	Auth                *auth.Middleware
 	Audit               *audit.Logger
@@ -247,7 +247,7 @@ func (h *Handler) serve(r *http.Request, w http.ResponseWriter, id, port string,
 
 	// Phase 8 — a private sandbox must not be woken anonymously. Run
 	// the same preview-token check as /forward-auth against the
-	// request cookie BEFORE admission + docker start (roadmap §10).
+	// request cookie BEFORE admission + docker start.
 	// Only the browser (catch-all) path is gated — the programmatic
 	// JSON wake is a loopback/upstream call the upstream already
 	// authorized.

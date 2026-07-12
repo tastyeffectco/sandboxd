@@ -1,8 +1,8 @@
 # runtimed — in-sandbox supervisor
 
 `runtimed` runs **inside every sandbox container** as its main process.
-Its job (per `ops/design/v1-external-api.md` §4 and the runtimed
-contract) is to supervise the app's dev server and run coding tasks —
+Its job (per the runtimed contract) is to supervise the app's dev
+server and run coding tasks —
 so the preview survives idle→wake and task execution has a stable
 owner. The host control plane `sandboxd` talks to it over a Unix
 domain socket; `runtimed` itself is never publicly reachable.
@@ -74,7 +74,7 @@ implemented.
 
 ## Public API — slice 4 (the /v1 surface)
 
-The narrow public `/v1` API (`ops/design/v1-external-api.md`) is
+The narrow public `/v1` API is
 implemented in `control-plane/internal/api/v1*.go` — a thin
 translation layer over the proven internal machinery and `runtimed`:
 
@@ -187,7 +187,7 @@ An OpenCode task created `src/components/Greeting.tsx` and finalized
 - **Task event-log retention past destroy** — only the canonical
   *result* is retained (in SQLite); the full event *log* lives with
   runtimed in the workspace and is gone once the sandbox is destroyed.
-  By design (`ops/design/v1-external-api.md` §4.5).
+  By design.
 
 Other deferred items:
 

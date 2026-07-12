@@ -32,7 +32,7 @@ type jwtHeader struct {
 }
 
 // PreviewClaims is the validated payload of an upstream-signed preview
-// token (roadmap §7). sandboxd verifies the signature, exp and aud; it
+// token. sandboxd verifies the signature, exp and aud; it
 // does not check `sub` beyond presence — the upstream has already
 // decided this viewer may see this sandbox.
 type PreviewClaims struct {
@@ -105,7 +105,7 @@ func VerifyPreviewToken(token string, secrets map[string]string, now time.Time) 
 // GET /forward-auth and the private-sandbox wake path. It returns the
 // validated claims and "" when access is allowed, or nil and a
 // machine-readable denial reason (one of: no_cookie, bad_signature,
-// expired, wrong_sandbox, wrong_user — roadmap §8).
+// expired, wrong_sandbox, wrong_user).
 //
 // ownerExternalUserID is workspace_owner.external_user_id for the
 // sandbox; an empty string skips the owner check (used when the owner

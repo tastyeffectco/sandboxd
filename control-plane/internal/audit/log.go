@@ -76,8 +76,7 @@ func (l *Logger) Write(_ context.Context, e Entry) {
 
 // WriteSampled is Write rate-limited to at most one row per minute per
 // sampleKey. Used for `preview.access_allowed`, which would otherwise
-// be one row per request (roadmap §12: "sampled 1/min per (sub,
-// sandbox)").
+// be one row per request (sampled 1/min per (sub, sandbox)).
 func (l *Logger) WriteSampled(ctx context.Context, sampleKey string, e Entry) {
 	if l == nil || l.store == nil {
 		return
@@ -94,8 +93,8 @@ func (l *Logger) WriteSampled(ctx context.Context, sampleKey string, e Entry) {
 }
 
 // TokenInvalid satisfies auth.AuditWriter — the auth middleware calls
-// it on a failed bearer-token check (roadmap §12: the only token-
-// related action written is the failure).
+// it on a failed bearer-token check — the only token-related
+// action written is the failure.
 func (l *Logger) TokenInvalid(ctx context.Context, ip string) {
 	l.Write(ctx, Entry{ActorKind: "unknown", ActorIP: ip, Action: "auth.token_invalid"})
 }

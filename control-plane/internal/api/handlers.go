@@ -50,13 +50,12 @@ type createReq struct {
 	External   externalReq `json:"external"`
 	// Template, when set, is the name of a prebuilt golden template
 	// .img to reflink-clone the workspace from instead of an empty
-	// seeded provision (ops/design/fast-coldstart-react-vite-snapshot.md
-	// — the fast-cold-start path). Empty = the existing scaffold-at-
-	// runtime behaviour, unchanged.
+	// seeded provision (the fast-cold-start path). Empty = the existing
+	// scaffold-at-runtime behaviour, unchanged.
 	Template string `json:"template,omitempty"`
 	// TemplatePath is an INTERNAL, pre-resolved absolute path to a
 	// golden .img to clone from — set by the v1 snapshot spin-up path
-	// (ops/design/snapshots-as-templates.md) after it has resolved and
+	// after it has resolved and
 	// authorized the snapshot. It must live under TemplatesDir or
 	// LibraryRoot (validated below). Mutually exclusive with Template.
 	// Not part of the public /v1 contract; never set from an external
@@ -163,14 +162,14 @@ type sandboxResp struct {
 	Ports        []int  `json:"ports"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
-	// Phase 5 — surface the activity columns so the roadmap §Validation
-	// V2/V3 expressions (`jq .row.last_active_at`, `jq .row.status`)
+	// Phase 5 — surface the activity columns so the V2/V3 validation
+	// expressions (`jq .row.last_active_at`, `jq .row.status`)
 	// work directly. last_active_at and stopped_at are unix seconds;
 	// keepalive_until is unix seconds or 0 when unset.
 	LastActiveAt   int64 `json:"last_active_at"`
 	StoppedAt      int64 `json:"stopped_at,omitempty"`
 	KeepaliveUntil int64 `json:"keepalive_until,omitempty"`
-	// Phase 6 — container bridge IP, so roadmap §Validation V2
+	// Phase 6 — container bridge IP, so the V2 validation
 	// (`jq .row.container_ip`) works directly. Empty string while
 	// the sandbox is stopped.
 	ContainerIP string `json:"container_ip"`
@@ -294,7 +293,7 @@ func (s *Server) recordEvent(r *http.Request, e events.Event) {
 	s.Events.Record(r.Context(), e)
 }
 
-// validExternalID enforces the roadmap §4 constraint on the opaque
+// validExternalID enforces the constraint on the opaque
 // upstream identifier strings: len ≤ 256, no control codes, no commas
 // (we use these values in unstructured / comma-joined contexts). An
 // empty string is valid — only external.user_id is required, and that
@@ -319,8 +318,7 @@ func nullStr(s string) sql.NullString {
 // validTemplateName guards the optional `template` field on
 // POST /sandbox. A template name is resolved to a host-local file
 // <TemplatesDir>/<name>.img, so it must be a plain identifier — no
-// path separators, no traversal, no dots. New variants
-// (ops/design/fast-coldstart-react-vite-snapshot.md §4) are added as
+// path separators, no traversal, no dots. New variants are added as
 // new .img files, so no allowlist is hardcoded here — a new variant
 // needs no code change, only the golden .img on the host.
 func validTemplateName(s string) bool {
@@ -476,8 +474,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Phase 5 — wake admission check applies to brand-new creates too
-	// (CLAUDE.md "Wake admission" floor is uniform across wake and
-	// create). Only enforced when Admit has been initialised in main;
+	// (the wake-admission floor is uniform across wake and create).
+	// Only enforced when Admit has been initialised in main;
 	// nil Tick is fine — Admit handles a missing tick gracefully.
 	if s.Admit.FloorPct > 0 {
 		out, aerr := wake.Admit(r.Context(), s.Admit)
@@ -798,7 +796,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// 4b. Phase 6 — record the container's bridge IP and add it to
 	// the sandbox_sources_v4 nftables set BEFORE returning success.
-	// roadmap §4 / §"Risks" hard rule: a sandbox running with no
+	// Hard rule: a sandbox running with no
 	// egress rules attached is the foot-gun this section exists to
 	// prevent. If nft fails, abort the row to status='error'.
 	if s.Egress != nil {
@@ -995,7 +993,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Phase 8 — audit the exec recording ONLY the first argument
-	// (roadmap §12: never log full command lines).
+	// (never log full command lines).
 	s.auditAction(r, audit.Entry{
 		Action: "sandbox.exec",
 		Target: id,
@@ -1110,7 +1108,7 @@ func (s *Server) handleWakeJSON(w http.ResponseWriter, r *http.Request) {
 
 // --- POST /sandbox/{id}/snapshots -----------------------------------
 
-// handleSnapshotTake takes a manual snapshot. roadmap §9: allowed
+// handleSnapshotTake takes a manual snapshot. Allowed
 // whenever the on-disk .img exists, regardless of whether a DB row
 // exists; the only rejection is a row with status='running' (409).
 func (s *Server) handleSnapshotTake(w http.ResponseWriter, r *http.Request) {
@@ -1145,7 +1143,7 @@ func (s *Server) handleSnapshotTake(w http.ResponseWriter, r *http.Request) {
 
 // --- GET /sandbox/{id}/snapshots ------------------------------------
 
-// handleSnapshotList lists snapshots on disk. roadmap §9: operates
+// handleSnapshotList lists snapshots on disk. Operates
 // against the snapshot directory directly, does NOT require a row,
 // returns an empty array if the directory is absent or empty.
 func (s *Server) handleSnapshotList(w http.ResponseWriter, r *http.Request) {
@@ -1214,8 +1212,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // --- GET /readyz ----------------------------------------------------
 
 // readyz checks (a) SQLite is open and (b) `docker info` succeeded
-// recently. CLAUDE.md control-plane scope explicitly: "/readyz: 200
-// only if SQLite is open and `docker info` succeeded recently."
+// recently. /readyz returns 200 only if SQLite is open and
+// `docker info` succeeded recently.
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.DB().PingContext(r.Context()); err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "sqlite ping: "+err.Error())

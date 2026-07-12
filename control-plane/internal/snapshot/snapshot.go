@@ -1,7 +1,7 @@
 // Package snapshot implements the Phase 7 workspace snapshot / restore
 // subsystem: zstd-compressed point-in-time copies of a sandbox's
 // loopback `.img`, an hourly auto-snapshotter for sandboxes idle ≥
-// 24 h (the "Snapshotted" row from CLAUDE.md's idle-lifecycle table),
+// 24 h (the "Snapshotted" state in the idle-lifecycle model),
 // a retention pruner, and a restore path.
 //
 // roadmap/phase-7-monitoring-snapshots-and-ops.md §9–§10.
@@ -97,8 +97,8 @@ func (m *Manager) imgExists(id string) bool {
 }
 
 // List returns the snapshots on disk for id, newest first. It does
-// NOT consult the DB — roadmap §9: "Operates against
-// _snapshots/<id>/ directly ... Does not require a sandbox row."
+// NOT consult the DB — it operates against _snapshots/<id>/
+// directly and does not require a sandbox row.
 // Returns an empty slice if the directory is absent or empty.
 func (m *Manager) List(id string) ([]Entry, error) {
 	entries, err := os.ReadDir(m.dir(id))

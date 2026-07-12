@@ -4,7 +4,7 @@
 // start and supervise the Vite dev server, and expose GET /status
 // over a Unix domain socket on the workspace loopback. The
 // coding-task subsystem (POST /tasks, events, cancel) is a later
-// slice — see cmd/runtimed/README.md and ops/design/v1-external-api.md.
+// slice — see cmd/runtimed/README.md.
 package main
 
 import (

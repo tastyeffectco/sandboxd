@@ -13,8 +13,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
-// PressureConfig captures the env-tunable knobs from roadmap §12.
-// Defaults come from CLAUDE.md "Host memory pressure reaper".
+// PressureConfig captures the env-tunable knobs.
 type PressureConfig struct {
 	Interval       time.Duration // SANDBOXD_PRESSURE_INTERVAL_SECONDS (10s)
 	HeadroomPct    float64       // SANDBOXD_MEM_HEADROOM_PCT          (15)
@@ -34,7 +33,7 @@ type Pressure struct {
 }
 
 // Run blocks until ctx is cancelled. Cfg.Interval<=0 disables the loop
-// (rollback path from roadmap §"Risks").
+// (the rollback path).
 func (p *Pressure) Run(ctx context.Context) error {
 	if p.Cfg.Interval <= 0 {
 		p.Log.Info("pressure reaper: disabled (interval <= 0)")
@@ -67,7 +66,7 @@ func (p *Pressure) applyDefaults() {
 }
 
 // Tick runs a single pressure-reaper iteration. Exported so the wake
-// admission code can invoke it synchronously (roadmap §6).
+// admission code can invoke it synchronously.
 func (p *Pressure) Tick(ctx context.Context) { p.tick(ctx) }
 
 func (p *Pressure) tick(ctx context.Context) {
@@ -122,9 +121,8 @@ func (p *Pressure) tick(ctx context.Context) {
 // stopOldestIdle picks the oldest idle-running sandbox (by
 // last_active_at, ascending), applying the same skip rules as the
 // idle reaper. If no candidate exists, the reaper takes no action
-// this tick — we don't kill active work to defend an advisory
-// threshold (CLAUDE.md "we don't kill active work to stay above an
-// advisory threshold; that's reserved for <5%").
+// this tick — we don't kill active work to stay above an advisory
+// threshold; that's reserved for the <5% emergency band.
 func (p *Pressure) stopOldestIdle(ctx context.Context, band string, availPct float64) {
 	now := time.Now().UTC()
 	// cutoff=now means "any row not currently being marked active";
@@ -182,9 +180,9 @@ func (p *Pressure) stopOldestIdle(ctx context.Context, band string, availPct flo
 }
 
 // stopHeaviestRSS picks the sandbox with the largest
-// cgroup.memory.current and stops it regardless of activity.
-// CLAUDE.md: "stop heaviest-RSS sandbox even if active". Logs a
-// critical event with the full row identity.
+// cgroup.memory.current and stops it regardless of activity — it
+// stops the heaviest-RSS sandbox even if active. Logs a critical
+// event with the full row identity.
 func (p *Pressure) stopHeaviestRSS(ctx context.Context, band string, availPct float64) {
 	now := time.Now().UTC()
 	runs, err := p.Store.ListByStatuses(ctx, "running")

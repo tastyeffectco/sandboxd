@@ -12,7 +12,7 @@ import (
 )
 
 // File reads are served by sandboxd directly from the host-side
-// workspace loopback mount (ops/design/v1-external-api.md §2) — so
+// workspace loopback mount — so
 // they work whether or not the sandbox is running, and runtimed is
 // not on the path.
 
@@ -32,13 +32,38 @@ func (s *Server) appDirFor(id string) string {
 }
 
 // safeJoin resolves a caller-supplied path under root, rejecting any
-// escape (`..`, absolute paths).
+// escape (`..`, absolute paths) LEXICALLY. Callers that then open the
+// path must also pass it through realpathWithin — a lexical check alone
+// follows symlinks planted in the workspace (CWE-59).
 func safeJoin(root, p string) (string, bool) {
 	full := filepath.Join(root, filepath.Clean("/"+p))
 	if full != root && !strings.HasPrefix(full, root+string(os.PathSeparator)) {
 		return "", false
 	}
 	return full, true
+}
+
+// realpathWithin canonicalizes full (resolving every symlink component —
+// leaf AND intermediate) and confirms the result is still inside root. It
+// closes the symlink-following read hole: the in-sandbox tenant owns the
+// workspace and can plant `ln -s /proc/self/environ leak`; a lexical guard
+// passes it and os.Stat/ReadFile then follow the link into the root-owned
+// control-plane filesystem. ok=false on any escape, nonexistent path, or
+// broken link. The returned path is symlink-free and provably under root,
+// so a subsequent os.Open/Stat cannot be redirected out of the workspace.
+func realpathWithin(full, root string) (string, bool) {
+	real, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return "", false
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
+	if real != realRoot && !strings.HasPrefix(real, realRoot+string(os.PathSeparator)) {
+		return "", false
+	}
+	return real, true
 }
 
 type fileEntry struct {
@@ -50,12 +75,24 @@ type fileEntry struct {
 // --- GET /v1/sandboxes/{id}/files -----------------------------------
 
 func (s *Server) v1ListFiles(w http.ResponseWriter, r *http.Request) {
-	root := s.appDirFor(r.PathValue("id"))
+	id := r.PathValue("id")
+	if !isULID(id) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such directory")
+		return
+	}
+	root := s.appDirFor(id)
 	p := r.URL.Query().Get("path")
 	recursive := r.URL.Query().Get("recursive") == "true"
 	dir, ok := safeJoin(root, p)
 	if !ok {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid path")
+		return
+	}
+	// Resolve symlinks and re-check containment so a symlinked `path` dir
+	// can't redirect the listing outside the workspace (CWE-59).
+	dir, ok = realpathWithin(dir, root)
+	if !ok {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such directory")
 		return
 	}
 	info, err := os.Stat(dir)
@@ -80,6 +117,9 @@ func (s *Server) v1ListFiles(w http.ResponseWriter, r *http.Request) {
 			if err != nil || path == dir {
 				return nil
 			}
+			if d.Type()&fs.ModeSymlink != 0 {
+				return nil // never expose or follow a symlink
+			}
 			if excludedFromFiles[d.Name()] {
 				if d.IsDir() {
 					return fs.SkipDir
@@ -92,7 +132,7 @@ func (s *Server) v1ListFiles(w http.ResponseWriter, r *http.Request) {
 	} else {
 		ents, _ := os.ReadDir(dir)
 		for _, d := range ents {
-			if excludedFromFiles[d.Name()] {
+			if d.Type()&fs.ModeSymlink != 0 || excludedFromFiles[d.Name()] {
 				continue
 			}
 			add(filepath.Join(dir, d.Name()), d)
@@ -107,10 +147,23 @@ func (s *Server) v1ListFiles(w http.ResponseWriter, r *http.Request) {
 // --- GET /v1/sandboxes/{id}/files/content ---------------------------
 
 func (s *Server) v1FileContent(w http.ResponseWriter, r *http.Request) {
-	root := s.appDirFor(r.PathValue("id"))
+	id := r.PathValue("id")
+	if !isULID(id) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such file")
+		return
+	}
+	root := s.appDirFor(id)
 	full, ok := safeJoin(root, r.URL.Query().Get("path"))
 	if !ok || full == root {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "invalid path")
+		return
+	}
+	// Resolve symlinks and re-check containment BEFORE stat/read, so a
+	// symlink (leaf or intermediate) can't redirect the read out of the
+	// workspace into root-owned control-plane files (CWE-59).
+	full, ok = realpathWithin(full, root)
+	if !ok {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no such file")
 		return
 	}
 	info, err := os.Stat(full)
@@ -135,6 +188,10 @@ func (s *Server) v1FileContent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) v1Export(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !isULID(id) {
+		writeV1Err(w, http.StatusNotFound, "not_found", "no workspace for that sandbox")
+		return
+	}
 	root := s.appDirFor(id)
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no workspace for that sandbox")
@@ -147,6 +204,9 @@ func (s *Server) v1Export(w http.ResponseWriter, r *http.Request) {
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || path == root {
 			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // never follow/export a symlink (CWE-59)
 		}
 		if excludedFromFiles[d.Name()] {
 			if d.IsDir() {

@@ -1,6 +1,6 @@
 // Package wake owns the wake admission check and the /wake/{id}
-// handler. CLAUDE.md "Wake admission" gives the exact formula; this
-// package implements it once and is called by both POST /wake/{id}
+// handler. It implements the wake-admission formula once and is
+// called by both POST /wake/{id}
 // and POST /sandbox (create) so the floor is uniform.
 package wake
 
@@ -11,8 +11,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/reaper"
 )
 
-// AdmitConfig parametrises the admission function. Defaults mirror
-// CLAUDE.md ("Wake admission" + "Resource policy"):
+// AdmitConfig parametrises the admission function. Default values:
 //
 //	WakeCostMB     = 800   // estimated incremental RAM for one wake
 //	FloorPct       = 10    // refuse below this (10% headroom)
@@ -41,7 +40,7 @@ type Outcome struct {
 	Reason     string // populated when Admit==false
 }
 
-// Admit performs the CLAUDE.md "Wake admission" calculation:
+// Admit performs the wake-admission calculation:
 //
 //  1. read /proc/meminfo
 //  2. cost_pct = WakeCostMB / total_mb * 100

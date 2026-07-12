@@ -192,6 +192,16 @@ export interface GitCredential {
   created_at: string
 }
 
+// API key metadata (GET /v1/api-keys). The plaintext `key` is returned only once
+// at creation (POST /v1/api-keys) and never again.
+export interface ApiKey {
+  id: string
+  name: string
+  prefix: string
+  created_at: string
+  last_used_at: string | null
+}
+
 export interface Preview {
   url: string
   status: string
@@ -261,6 +271,13 @@ export interface TaskResult {
   preview_status_after?: string
 }
 
+// 401 hook — App registers this to flip auth state back to "logged out" when any
+// request comes back Unauthorized (e.g. the session cookie expired).
+let onUnauthorized: (() => void) | null = null
+export function setOnUnauthorized(fn: () => void) {
+  onUnauthorized = fn
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -268,6 +285,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
+    if (res.status === 401 && onUnauthorized) onUnauthorized()
     let message = `${res.status} ${res.statusText}`
     try {
       const e = await res.json()
@@ -312,6 +330,22 @@ export const api = {
     }),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
 
+  // Auth — session lifecycle. The session cookie is HttpOnly, so state is read
+  // only via authStatus; the cookie rides same-origin /v1 calls automatically.
+  authStatus: () =>
+    req<{ enabled: boolean; authenticated: boolean; password_set: boolean }>('GET', '/v1/auth/status'),
+  setupPassword: (password: string) => req<void>('POST', '/v1/auth/setup', { password }),
+  login: (password: string) => req<void>('POST', '/v1/auth/login', { password }),
+  logout: () => req<void>('POST', '/v1/auth/logout'),
+  logoutEverywhere: () => req<void>('POST', '/v1/auth/logout?all=true'),
+  changePassword: (b: { current_password: string; new_password: string }) =>
+    req<void>('POST', '/v1/auth/password', b),
+
+  // API keys — session-only. The plaintext key is shown once on create.
+  listApiKeys: () => req<{ keys: ApiKey[] }>('GET', '/v1/api-keys').then((r) => r.keys || []),
+  createApiKey: (name: string) => req<ApiKey & { key: string }>('POST', '/v1/api-keys', { name }),
+  revokeApiKey: (id: string) => req<void>('DELETE', `/v1/api-keys/${id}`),
+
   // Git credentials (for importing private repos in a later v0.4.x release).
   // The token is write-only: sent on create, never returned.
   listGitCredentials: () =>
@@ -343,7 +377,10 @@ export const api = {
   getWorkspaceFile: async (sandboxId: string, appRelPath: string): Promise<string | null> => {
     const res = await fetch(`/v1/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(appRelPath)}`)
     if (res.status === 404) return null
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    if (!res.ok) {
+      if (res.status === 401 && onUnauthorized) onUnauthorized()
+      throw new Error(`${res.status} ${res.statusText}`)
+    }
     return res.text()
   },
   putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
@@ -353,6 +390,7 @@ export const api = {
       body: content,
     })
     if (!res.ok) {
+      if (res.status === 401 && onUnauthorized) onUnauthorized()
       let message = `${res.status} ${res.statusText}`
       try {
         const e = await res.json()

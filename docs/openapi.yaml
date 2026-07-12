@@ -123,6 +123,148 @@ paths:
         "204": { description: Deleted }
         "404": { description: No such credential }
 
+  /v1/auth/status:
+    get:
+      operationId: authStatus
+      tags: [apps]
+      summary: Console auth status — is auth enabled, is the caller authenticated, is a password set (pre-login probe, no credential required)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  authenticated: { type: boolean }
+                  password_set: { type: boolean }
+  /v1/auth/setup:
+    post:
+      operationId: authSetup
+      tags: [apps]
+      summary: First-run — set the console password and start a session. 409 once a password is already set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, description: min 8 chars }
+      responses:
+        "204": { description: Password set; session cookie issued }
+        "400": { description: Password too short / invalid body }
+        "409": { description: A password is already set }
+  /v1/auth/login:
+    post:
+      operationId: authLogin
+      tags: [apps]
+      summary: Verify the console password and issue an HttpOnly session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        "204": { description: Authenticated; session cookie issued }
+        "401": { description: Invalid password }
+  /v1/auth/logout:
+    post:
+      operationId: authLogout
+      tags: [apps]
+      summary: Revoke the current session and clear the cookie
+      responses:
+        "204": { description: Logged out }
+  /v1/auth/password:
+    post:
+      operationId: authChangePassword
+      tags: [apps]
+      summary: Change the console password (requires a logged-in session); revokes all sessions and re-issues one
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, description: min 8 chars }
+      responses:
+        "204": { description: Password changed }
+        "400": { description: New password too short / invalid body }
+        "401": { description: Current password incorrect }
+        "403": { description: Not logged in as a console user }
+  /v1/api-keys:
+    post:
+      operationId: createApiKey
+      tags: [apps]
+      summary: Mint an API key (each = the shared tenant). The plaintext key is returned exactly once. Session-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, description: 1-64 printable chars }
+      responses:
+        "201":
+          description: Created — plaintext key returned once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  prefix: { type: string }
+                  key: { type: string, description: plaintext — shown only here }
+        "400": { description: Invalid name }
+        "403": { description: Requires a console login }
+        "409": { description: A key with that name already exists }
+    get:
+      operationId: listApiKeys
+      tags: [apps]
+      summary: List API keys (metadata only — never the key or its hash). Session-only.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        prefix: { type: string }
+                        created_at: { type: string }
+                        last_used_at: { type: string }
+        "403": { description: Requires a console login }
+  /v1/api-keys/{id}:
+    delete:
+      operationId: revokeApiKey
+      tags: [apps]
+      summary: Revoke an API key. Session-only.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked }
+        "403": { description: Requires a console login }
+        "404": { description: No such key }
+
   /v1/agents:
     get:
       operationId: listAgents

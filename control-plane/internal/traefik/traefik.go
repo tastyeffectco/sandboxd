@@ -32,7 +32,7 @@ import (
 // same string `s-<id>-<port>`. The Host() rule covers the literal
 // preview URL `s-<id>-<port>.preview.<domain>`.
 //
-// Phase 8 extension (roadmap §10): when visibility == "private", each
+// Phase 8 extension: when visibility == "private", each
 // router additionally references the `sandbox-preview-auth@file`
 // forward-auth middleware (defined in ops/traefik/dynamic/auth.yml)
 // so Traefik gates every request through sandboxd's /forward-auth.

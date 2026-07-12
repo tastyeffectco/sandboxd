@@ -15,7 +15,7 @@ import (
 
 // Take produces one snapshot of sandbox id's loopback `.img`.
 //
-// Preconditions (roadmap §9 manual-snapshot table):
+// Preconditions:
 //   - the on-disk `.img` must exist            → else ErrNoImg
 //   - if a DB row exists, it must NOT be running → else ErrRunning
 //   - no row at all is fine (orphan workspace)  → proceeds
@@ -53,7 +53,7 @@ func (m *Manager) takeLocked(ctx context.Context, id string, auto bool) (Meta, e
 	// Flush host pagecache so the loopback file on disk reflects every
 	// write. The container is stopped (precondition), so nothing is
 	// actively writing — sync + no-writers gives a crash-consistent
-	// image. roadmap §"Risks": nothing writes a stopped sandbox's
+	// image. Nothing writes a stopped sandbox's
 	// loopback except sandboxd, and sandboxd doesn't snapshot while
 	// it writes (this lock guarantees it).
 	_ = exec.CommandContext(ctx, "sync").Run()

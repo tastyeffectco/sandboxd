@@ -21,7 +21,7 @@ type RestoreResult struct {
 
 // Restore puts a snapshot back as the live `.img` for sandbox id.
 //
-// roadmap §10. Preconditions:
+// Preconditions:
 //   - the snapshot `<ts>.img.zst` must exist → else ErrNotFound
 //   - if a DB row exists it must be stopped/error → running ⇒ ErrRunning
 //   - no row at all is fine — restore works on the on-disk `.img`.
@@ -85,7 +85,7 @@ func (m *Manager) Restore(ctx context.Context, id, ts string) (RestoreResult, er
 	}
 
 	// 4. Dry-run fsck. We do NOT auto-repair (-y) — a silent repair is
-	// worse than a loud failure (roadmap §"Risks").
+	// worse than a loud failure.
 	fsckOut, fsckErr := exec.CommandContext(ctx, "fsck.ext4", "-n", img).CombinedOutput()
 	if fsckErr != nil {
 		// fsck.ext4 exit codes: 0 clean, 1 errors corrected (n/a in -n),

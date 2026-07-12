@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, App as TApp, Preset, GitCredential } from './api'
+import { api, setOnUnauthorized, App as TApp, Preset, GitCredential } from './api'
 import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
 import { STARTERS, STARTER_ICONS } from './design/starters'
 import { AppView } from './AppView'
 import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
+import { Login, CreatePassword } from './AuthGate'
 
 type Route = { name: 'apps' } | { name: 'store' } | { name: 'settings' } | { name: 'app'; id: string; tab?: string; task?: string }
 
@@ -14,6 +15,7 @@ export default function App() {
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [apps, setApps] = useState<TApp[]>([])
+  const [auth, setAuth] = useState<{ enabled: boolean; authenticated: boolean; password_set: boolean } | null>(null)
 
   const toast = useCallback((msg: string) => {
     const id = Date.now() + Math.floor(performance.now())
@@ -23,7 +25,23 @@ export default function App() {
   const onError = useCallback((m: string) => toast(m), [toast])
 
   const loadApps = useCallback(() => api.listApps().then(setApps).catch(() => {}), [])
-  useEffect(() => { loadApps() }, [loadApps])
+  const refreshAuth = useCallback(
+    () => api.authStatus().then(setAuth).catch(() => setAuth({ enabled: true, authenticated: false, password_set: false })),
+    [],
+  )
+
+  // On mount: resolve auth state, and register the 401 hook so an expired session
+  // bounces back to the gate. Only load apps once we know we're allowed through.
+  useEffect(() => {
+    refreshAuth()
+    setOnUnauthorized(() => setAuth((a) => (a ? { ...a, authenticated: false } : a)))
+  }, [refreshAuth])
+  useEffect(() => {
+    if (auth && (auth.authenticated || auth.enabled === false)) loadApps()
+  }, [auth, loadApps])
+
+  const onAuthed = useCallback(() => { refreshAuth().then(loadApps) }, [refreshAuth, loadApps])
+  const logout = useCallback(() => { api.logout().finally(() => setAuth((a) => (a ? { ...a, authenticated: false } : a))) }, [])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -42,6 +60,18 @@ export default function App() {
     { key: 'store', label: 'App Store' },
     { key: 'settings', label: 'Settings' },
   ]
+
+  // Auth gate — render before the app chrome. null = still resolving status.
+  if (auth === null) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: c.bg, color: c.muted2, fontFamily: font.sans }}>
+        Loading…
+      </div>
+    )
+  }
+  if (auth.enabled && !auth.authenticated) {
+    return auth.password_set ? <Login onDone={onAuthed} /> : <CreatePassword onDone={onAuthed} />
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: c.bg, color: c.fg, fontFamily: font.sans, overflow: 'hidden' }}>
@@ -69,9 +99,12 @@ export default function App() {
           <span style={{ color: c.muted2, fontSize: 12, flex: 1 }}>Search…</span>
           <span style={{ ...mono, fontSize: 10, color: c.muted2, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 5px' }}>⌘K</span>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <a href="https://sandboxd.io" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Docs</a>
           <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>GitHub</a>
+          {auth?.enabled && (
+            <span data-testid="nav-logout" className="dc-hoverink" onClick={logout} style={{ color: c.muted, fontSize: 12, cursor: 'pointer' }}>Log out</span>
+          )}
         </div>
       </div>
 

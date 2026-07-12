@@ -9,8 +9,8 @@ import (
 )
 
 // MemInfo holds the slim subset of /proc/meminfo Phase 5 cares about.
-// CLAUDE.md "Host memory pressure reaper" specifies the trigger as
-// `MemAvailable` (not `MemFree`).
+// The host memory pressure reaper triggers on `MemAvailable` (not
+// `MemFree`).
 type MemInfo struct {
 	Total     uint64 // KB
 	Available uint64 // KB
