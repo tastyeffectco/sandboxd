@@ -39,14 +39,14 @@ build the PaaS experience (dev/prod, deploy, domains, teams) on top.
 | Item | Notes |
 |---|---|
 | **Ship 0.3.0** | merge dev line → `main`, tag `v0.3.0` (first public release) |
-| **Upgrade/migration hardening** | audit done → add install.sh DB backup, downgrade guard, v(N-1)→vN smoke lane · [spec](superpowers/specs/2026-07-09-upgrade-and-migration-audit.md) |
+| **Upgrade/migration hardening** | audit done → add install.sh DB backup, downgrade guard, v(N-1)→vN smoke lane |
 
 ## 📋 Planned
 
 | Item | Area | Notes |
 |---|---|---|
-| **Environment variables — core primitive** | core | L0: `env` on sandbox-create → inject as process env; L1: durable named env sets (`app_config.environment`) · [spec](superpowers/specs/2026-07-09-env-variables-materialization-design.md) |
-| **Deploy · Path A — prod-as-sandbox** | console | fork → always-on sandbox + prod env; **zero core**; dev+prod on one server · [analysis](superpowers/specs/2026-07-09-deploy-as-docker-analysis.md) |
+| **Environment variables — core primitive** | core | L0: `env` on sandbox-create → inject as process env; L1: durable named env sets (`app_config.environment`) |
+| **Deploy · Path A — prod-as-sandbox** | console | fork → always-on sandbox + prod env; **zero core**; dev+prod on one server |
 | **Deploy · Path B — prod-as-image ("one-click deploy")** | core | build image → lean `docker run --env-file` container → route → `deployments` table |
 | **Custom domains** | core | Traefik route-registration seam over the file provider + per-domain TLS |
 | **Multi-server (beyond one host)** | core | scheduling / add worker nodes; run prod off the dev box |
