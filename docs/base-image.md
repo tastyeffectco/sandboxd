@@ -7,7 +7,7 @@ In sandboxd three concerns are deliberately separate:
 - **runtime preset** — *how* to run the app (`sandbox.yaml`: web/workers/build).
 - **starter / import** — the app *source* in the workspace.
 
-The default base image is **`sandboxd-base`** (built from `image/Dockerfile`). v0.4
+The default base image is **`sandboxd-base`** (built from `image/Dockerfile`). v0.3
 uses **one base image instance-wide**; you can swap it for your own as long as it
 meets the contract below.
 
@@ -16,7 +16,7 @@ meets the contract below.
 Set **`SANDBOXD_IMAGE`** to any compatible image; every sandbox on the instance
 uses it (it's also the seed image). The current value is shown read-only in the
 console **Settings → Runtime** (`base_image`). There is no per-app image selection
-in v0.4 (see Roadmap) — **`SANDBOXD_IMAGE` is read once at startup**, so after
+in v0.3 (see Roadmap) — **`SANDBOXD_IMAGE` is read once at startup**, so after
 changing it you must **recreate the control-plane stack** for it to take effect
 (it also becomes the snapshot seed image). A stray `image` field in a create body
 is **rejected with a 400** ("per-app image selection is not supported; set
@@ -91,7 +91,7 @@ roadmap, not current behaviour.
 - **Requires Docker / privileged / extra caps** → **not supported.** sandboxd runs
   every sandbox hardened and with no Docker access by design.
 
-## Roadmap (not in v0.4)
+## Roadmap (not in v0.3)
 
 Deferred to later phases — intentionally not built now:
 
