@@ -28,3 +28,6 @@ docker-compose.override.yml
 
 # generated console login (plaintext, local only)
 .console-login
+
+# internal maintainer docs — kept locally, never published
+docs/internal/
