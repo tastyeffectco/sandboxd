@@ -41,8 +41,17 @@ jobs:
   # create -> seed -> install -> serve -> wake lifecycle on Docker. Also
   # smoke-tests the image (agent CLIs + default template on PATH), so a
   # change that drops OpenCode or the react-standard template fails here.
+  #
+  # Matrixed across amd64 and arm64 hosted runners — sandboxd's images are
+  # built natively (no cross-compilation), so arm64 (Apple Silicon, Graviton,
+  # etc.) only stays working if it's actually built and driven end-to-end
+  # here, not just assumed from multi-arch base images.
   e2e:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
