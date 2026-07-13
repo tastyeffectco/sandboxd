@@ -128,7 +128,9 @@ The console isn't only for coders. Open it and, in **one click or one prompt**, 
 ## Quick start
 
 Needs **Docker + the Compose plugin** and **git** on Linux (macOS via Docker
-Desktop is best-effort). Install in one line:
+Desktop is best-effort). Runs natively on **amd64 and arm64** — including
+Apple Silicon Macs and arm64 Linux hosts (e.g. AWS Graviton) — every image
+builds from multi-arch bases with no cross-compilation. Install in one line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash
