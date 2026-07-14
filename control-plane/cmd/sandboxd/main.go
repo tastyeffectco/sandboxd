@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -51,6 +52,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/telemetry"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
 )
 
@@ -402,9 +404,15 @@ func main() {
 		agentProxyURL = ""
 	}
 
+	// Update checker (best-effort): fetches the latest GitHub release, cached
+	// ~6h, and surfaces update_available in GET /v1/settings. nil-safe in the
+	// handler; a background goroutine below keeps its cache warm.
+	updateChecker := &telemetry.Checker{}
+
 	server := &api.Server{
 		Store:               st,
 		Secrets:             secretsCipher,
+		Update:              updateChecker,
 		AgentAuth:           agentAuth,
 		AgentOAuth:          agentOAuth,
 		OpencodeModel:       envDefault("SANDBOXD_OPENCODE_MODEL", ""),
@@ -490,6 +498,62 @@ func main() {
 	// --- Phase 5 background goroutines ---------------------------------
 	gctx, gcancel := context.WithCancel(context.Background())
 	defer gcancel()
+
+	// --- Anonymous telemetry + update check (internal/telemetry) -------
+	// Keep the release-checker cache warm regardless of the telemetry opt-out:
+	// GET /v1/settings surfaces update_available from it, and no data leaves the
+	// host until a client asks. A single fetch every 6h; best-effort.
+	go func() {
+		t := time.NewTicker(6 * time.Hour)
+		defer t.Stop()
+		for {
+			if _, _, err := updateChecker.Latest(gctx); err != nil {
+				log.Debug("update check failed (ignored)", "err", err.Error())
+			}
+			select {
+			case <-gctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+
+	// Anonymous usage heartbeat. ON by default; disabled via SANDBOXD_TELEMETRY=off
+	// or DO_NOT_TRACK=1. The reporter only ever sends a random instance UUID, the
+	// version, GOOS/GOARCH, a coarse sandbox-count bucket, and two feature flags —
+	// no hostnames, IPs, paths, or user content (see docs/telemetry.md).
+	if telemetry.EnabledFromEnv(os.Getenv) {
+		instanceID, isNew, idErr := telemetry.InstanceID(filepath.Join(stateDir, "instance-id"))
+		if idErr != nil {
+			log.Warn("telemetry: could not establish instance id — telemetry disabled", "err", idErr.Error())
+		} else {
+			log.Info("telemetry: anonymous version + daily heartbeat enabled (no code/PII); disable with SANDBOXD_TELEMETRY=off")
+			reporter := &telemetry.Reporter{
+				InstanceID: instanceID,
+				Version:    version,
+				Arch:       runtime.GOARCH,
+				OS:         runtime.GOOS,
+				NewInstall: isNew,
+				Send: telemetry.PostHogSend(
+					envDefault("SANDBOXD_POSTHOG_HOST", telemetry.DefaultPostHogHost),
+					envDefault("SANDBOXD_POSTHOG_KEY", telemetry.DefaultPostHogKey),
+				),
+				Snapshot: func() (int, bool, bool) {
+					count := 0
+					if list, err := st.List(gctx); err == nil {
+						count = len(list)
+					}
+					consoleEnabled := false
+					if h, err := st.GetPasswordHash(gctx); err == nil && h != "" {
+						consoleEnabled = true
+					}
+					return count, !authCfg.Disabled, consoleEnabled
+				},
+				Log: log.With("component", "telemetry"),
+			}
+			go reporter.Run(gctx)
+		}
+	}
 
 	// Idle reaper.
 	idle := &reaper.Idle{

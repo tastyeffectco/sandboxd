@@ -24,6 +24,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/telemetry"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
 )
 
@@ -123,6 +124,10 @@ type Server struct {
 	// Phase 8A — static, safe instance metadata for GET /v1/settings.
 	// Populated in main; contains no secrets.
 	Instance InstanceInfo
+
+	// Update is the best-effort release checker (internal/telemetry). nil-safe:
+	// when unset, GET /v1/settings simply reports update_available=false.
+	Update *telemetry.Checker
 
 	// Phase 8B — live, runtime-editable lifecycle tunables (idle/keepalive),
 	// shared with the reaper. nil-safe: PATCH /v1/settings returns 503 when
