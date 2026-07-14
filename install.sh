@@ -194,6 +194,8 @@ cat <<EOF
 
   Logs:   $COMPOSE logs -f sandboxd
   Stop:   $COMPOSE down
+
+  Telemetry : anonymous version + daily heartbeat (no code/PII). Opt out: SANDBOXD_TELEMETRY=off
 EOF
 
 if [ "$CONSOLE" = "1" ]; then

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/telemetry"
 )
 
 // GET /v1/settings returns a stable, safe shape and never leaks the encryption
@@ -83,5 +85,49 @@ func TestV1SettingsShapeAndNoSecretLeak(t *testing.T) {
 		if !ids[want] {
 			t.Errorf("settings presets missing %q", want)
 		}
+	}
+
+	// No update checker wired → update_available is present and false.
+	if m["update_available"] != false {
+		t.Errorf("update_available should default to false, got %v", m["update_available"])
+	}
+}
+
+// With an update checker whose cache holds a newer release, GET /v1/settings
+// surfaces update_available + latest_version + changelog_url.
+func TestV1SettingsUpdateAvailable(t *testing.T) {
+	chk := &telemetry.Checker{
+		Fetch: func(context.Context) (string, string, error) {
+			return "v0.5.0", "https://github.com/tastyeffectco/sandboxd/releases/tag/v0.5.0", nil
+		},
+	}
+	if _, _, err := chk.Latest(context.Background()); err != nil {
+		t.Fatalf("warm checker cache: %v", err)
+	}
+
+	s := &Server{
+		PreviewDomain: "ex.sslip.io",
+		Image:         "sandboxd-base:test",
+		Update:        chk,
+		Instance:      InstanceInfo{Version: "v0.4.0", AgentProviders: []string{"opencode"}},
+	}
+
+	w := httptest.NewRecorder()
+	s.v1GetSettings(w, httptest.NewRequest("GET", "/v1/settings", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", w.Code, w.Body)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if m["update_available"] != true {
+		t.Errorf("update_available should be true (v0.5.0 > v0.4.0), got %v", m["update_available"])
+	}
+	if m["latest_version"] != "v0.5.0" {
+		t.Errorf("latest_version = %v", m["latest_version"])
+	}
+	if m["changelog_url"] == "" || m["changelog_url"] == nil {
+		t.Errorf("changelog_url should be populated, got %v", m["changelog_url"])
 	}
 }
