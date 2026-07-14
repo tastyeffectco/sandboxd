@@ -72,6 +72,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agent, up := segs[0], segs[1]
+	// OpenCode free tier: an unconnected opencode is served by Zen's keyless free
+	// models, which live ONLY on the `zen` endpoint. Force `zen` even if the
+	// operator pinned `zengo` (the go-subscription endpoint carries no free models,
+	// so a free-tier request there fails as "Model … is not supported").
+	if agent == "opencode" && p.store.Method("opencode") == "" {
+		up = "zen"
+	}
 	rest := "/"
 	if len(segs) == 3 {
 		rest = "/" + segs[2]

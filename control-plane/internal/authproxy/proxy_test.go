@@ -154,21 +154,24 @@ func TestInjectsAnthropicAPIKeyHeader(t *testing.T) {
 // when unconnected (see TestServeNoCredential).
 func TestOpencodeFreeTierKeyless(t *testing.T) {
 	var gotAuth, gotKey, gotPath string
-	forwarded := false
+	zenHit, zengoHit := false, false
 	stubUpstream(t, "zen", func(w http.ResponseWriter, r *http.Request) {
-		forwarded = true
+		zenHit = true
 		gotAuth, gotKey, gotPath = r.Header.Get("Authorization"), r.Header.Get("X-Api-Key"), r.URL.Path
 		w.WriteHeader(200)
 	})
+	stubUpstream(t, "zengo", func(w http.ResponseWriter, _ *http.Request) { zengoHit = true; w.WriteHeader(200) })
 	p := New(agentauth.NewStore(t.TempDir()), nil) // nothing connected
 
-	req := httptest.NewRequest("POST", "/opencode/zen/v1/chat/completions", nil)
+	// The sandbox requests the `zengo` path (operator pinned it), but the free
+	// models live on `zen` — the proxy must override the upstream to `zen`.
+	req := httptest.NewRequest("POST", "/opencode/zengo/v1/chat/completions", nil)
 	req.Header.Set("Authorization", "Bearer sandboxd-proxy-injected") // the dummy the sandbox sends
 	w := httptest.NewRecorder()
 	p.ServeHTTP(w, req)
 
-	if !forwarded {
-		t.Fatalf("expected keyless forward to zen; got status %d (want 200 forward)", w.Code)
+	if !zenHit || zengoHit {
+		t.Fatalf("free tier must route to zen, not zengo (zenHit=%v zengoHit=%v, status %d)", zenHit, zengoHit, w.Code)
 	}
 	if gotAuth != "" {
 		t.Errorf("Authorization leaked to upstream: %q (free tier must send none)", gotAuth)
@@ -178,6 +181,33 @@ func TestOpencodeFreeTierKeyless(t *testing.T) {
 	}
 	if gotPath != "/v1/chat/completions" {
 		t.Errorf("forwarded path = %q; want /v1/chat/completions", gotPath)
+	}
+}
+
+// A CONNECTED opencode key is NOT rerouted — it keeps the operator's chosen
+// upstream (here zengo) and gets the real key injected.
+func TestConnectedOpencodeKeepsZengo(t *testing.T) {
+	var gotAuth string
+	zengoHit := false
+	stubUpstream(t, "zengo", func(w http.ResponseWriter, r *http.Request) {
+		zengoHit = true
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	})
+	st := agentauth.NewStore(t.TempDir())
+	writeAPIKey(t, st, "opencode", "zen-REAL-KEY")
+	p := New(st, nil)
+
+	req := httptest.NewRequest("POST", "/opencode/zengo/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer sandboxd-proxy-injected")
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if !zengoHit {
+		t.Fatalf("connected opencode should keep zengo; status %d", w.Code)
+	}
+	if gotAuth != "Bearer zen-REAL-KEY" {
+		t.Errorf("Authorization = %q; want the injected real key", gotAuth)
 	}
 }
 
