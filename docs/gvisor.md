@@ -67,6 +67,14 @@ to its data dir and bind-mounts it into each sandbox at `/etc/resolv.conf`, so
 DNS resolves. Package installs already go through the registry proxy by IP and
 are unaffected.
 
+Because those sandboxes use public DNS, an **internal** Docker service name (like
+`sandboxd`, where the credential proxy listens) won't resolve inside them. So when
+`runsc` is on, sandboxd resolves the agent-proxy host to an **IP** at startup — the
+control plane can, since it isn't under gVisor — and hands each sandbox the
+IP-based proxy URL. Without this, every agent task would fail to reach the proxy.
+Verified: create → agent task (opencode free tier) → file written → preview serves
+→ stop/wake → 2nd task, all under `runsc`.
+
 ## Trade-offs (measured on an ARM64 host with no KVM → gVisor software platform)
 
 - **Near-parity**: dev-server serving, HTTP latency (+~1 ms/req), HMR for
