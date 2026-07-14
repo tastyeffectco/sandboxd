@@ -31,16 +31,22 @@ type InstanceInfo struct {
 }
 
 type v1Settings struct {
-	Version      string            `json:"version"`
-	GitCommit    string            `json:"git_commit,omitempty"`
-	Networking   v1SettingsNet     `json:"networking"`
-	Auth         v1SettingsAuth    `json:"auth"`
-	Runtime      v1SettingsRuntime `json:"runtime"`
-	Lifecycle    v1SettingsLife    `json:"lifecycle"`
-	Egress       v1SettingsEgress  `json:"egress"`
-	Agents       v1SettingsAgents  `json:"agents"`
-	Presets      []v1Preset        `json:"presets"`
-	Capabilities map[string]bool   `json:"capabilities"`
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit,omitempty"`
+	// Update info from the release checker (best-effort). update_available is
+	// always present; latest_version/changelog_url are omitted until a release
+	// has been fetched.
+	UpdateAvailable bool              `json:"update_available"`
+	LatestVersion   string            `json:"latest_version,omitempty"`
+	ChangelogURL    string            `json:"changelog_url,omitempty"`
+	Networking      v1SettingsNet     `json:"networking"`
+	Auth            v1SettingsAuth    `json:"auth"`
+	Runtime         v1SettingsRuntime `json:"runtime"`
+	Lifecycle       v1SettingsLife    `json:"lifecycle"`
+	Egress          v1SettingsEgress  `json:"egress"`
+	Agents          v1SettingsAgents  `json:"agents"`
+	Presets         []v1Preset        `json:"presets"`
+	Capabilities    map[string]bool   `json:"capabilities"`
 	// Editable lists the field paths a client may change via PATCH /v1/settings.
 	// Everything else is read-only (env/file-managed or restart-required).
 	Editable []string `json:"editable"`
@@ -123,6 +129,9 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 			"lifecycle.idle_threshold_seconds",
 			"lifecycle.keepalive_max_seconds",
 		}
+	}
+	if s.Update != nil {
+		out.UpdateAvailable, out.LatestVersion, out.ChangelogURL = s.Update.UpdateAvailable(s.Instance.Version)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
