@@ -144,6 +144,9 @@ under **Settings**, create an app, and build. No code needed.
   it? run **`./console-login.sh`** to see it again anytime
 - **API:** `http://127.0.0.1:9090` (`curl http://127.0.0.1:9090/healthz` → `ok`)
 - **Headless (no console):** run with `SANDBOXD_CONSOLE=0` (or `--no-console`)
+- **Upgrade later:** run **`./upgrade.sh`** — it backs up your database first,
+  health-checks the new version, and rolls back automatically if it fails
+  ([Upgrading](docs/upgrading.md)). `./upgrade.sh --check` shows your version.
 
 Prefer the API? Connect an agent once, create a sandbox, hand it a prompt:
 ```bash

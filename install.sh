@@ -212,6 +212,8 @@ if [ -n "$API_KEY" ]; then
   printf '  Send it as:  Authorization: Bearer <key>   (rotate in .env or the console)\n'
 fi
 printf '\n  Lost these later?  run:  ./console-login.sh\n'
+printf '  Update later:      run:  ./upgrade.sh   (backs up first, auto-rollback)\n'
+chmod +x upgrade.sh 2>/dev/null || true
 
 # A single, plain (no-color) nudge — suppress with SANDBOXD_NO_SPONSOR=1.
 [ -z "${SANDBOXD_NO_SPONSOR:-}" ] && printf '\n  \342\230\205 sandboxd is free & MIT. If it saves you time: https://github.com/sponsors/tastyeffectco\n'
