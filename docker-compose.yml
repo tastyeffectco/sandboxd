@@ -50,6 +50,11 @@ services:
   sandboxd:
     build:
       context: ./control-plane
+      args:
+        # Stamped into the binary (sandboxd version / telemetry / settings).
+        # upgrade.sh & install.sh export these from `git describe`; default dev.
+        VERSION: ${SANDBOXD_VERSION:-dev}
+        GIT_COMMIT: ${SANDBOXD_GIT_COMMIT:-unknown}
     image: sandboxd-control-plane:0.3.0
     restart: unless-stopped
     userns_mode: "host"  # see traefik above

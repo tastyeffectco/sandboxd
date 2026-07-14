@@ -893,21 +893,44 @@ func egressModeLabel(m *egress.Manager) string {
 	return "enabled"
 }
 
+// buildVersion and buildCommit are stamped at build time via
+//
+//	-ldflags "-X main.buildVersion=… -X main.buildCommit=…"
+//
+// (see control-plane/Dockerfile + docker-compose build args, fed by
+// upgrade.sh/install.sh from `git describe`). When unset — e.g. a bare
+// `go build` — buildIdent falls back to the module's VCS build info, then to
+// dev/unknown. This is what `sandboxd version`, /v1/settings, and the telemetry
+// heartbeat report, so the version-distribution insight is only meaningful once
+// these are stamped.
+var (
+	buildVersion string
+	buildCommit  string
+)
+
 func buildIdent() (version, gitCommit string) {
-	version = "dev"
-	gitCommit = "unknown"
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, s := range info.Settings {
-			if s.Key == "vcs.revision" && s.Value != "" {
-				gitCommit = s.Value
-				if len(gitCommit) > 12 {
-					gitCommit = gitCommit[:12]
+	version = buildVersion
+	gitCommit = buildCommit
+	if version == "" || gitCommit == "" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, s := range info.Settings {
+				if s.Key == "vcs.revision" && s.Value != "" && gitCommit == "" {
+					gitCommit = s.Value
 				}
 			}
+			if info.Main.Version != "" && info.Main.Version != "(devel)" && version == "" {
+				version = info.Main.Version
+			}
 		}
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
-			version = info.Main.Version
-		}
+	}
+	if version == "" {
+		version = "dev"
+	}
+	if gitCommit == "" {
+		gitCommit = "unknown"
+	}
+	if len(gitCommit) > 12 {
+		gitCommit = gitCommit[:12]
 	}
 	return version, gitCommit
 }
