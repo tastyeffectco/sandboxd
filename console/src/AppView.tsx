@@ -399,10 +399,15 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
   const scrollRef = useRef<HTMLDivElement>(null)
   const sandboxRunning = sb?.status === 'running'
   const [agentConnected, setAgentConnected] = useState<boolean | null>(null)
+  // Block input only when the selected agent needs a credential and has none.
+  // opencode is exempt: it runs on a keyless free tier out of the box, so an
+  // un-connected opencode is still usable (we just show a free-tier note).
+  const inputBlocked = agentConnected === false && agent !== 'opencode'
 
-  // Is the selected agent actually connected? A task with no connected agent
-  // fails immediately with an auth error — gate the input so users connect one
-  // in Settings first instead of hitting a confusing failed run.
+  // Is the selected agent actually connected? For non-opencode agents a task with
+  // no connected agent fails immediately with an auth error — gate the input so
+  // users connect one in Settings first instead of hitting a confusing failed run.
+  // opencode always runs (free tier), so it's never blocked (see inputBlocked).
   useEffect(() => {
     let alive = true
     api.getAgents()
@@ -531,14 +536,19 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
         {resolved && <div style={{ ...mono, fontSize: 10.5, color: c.muted2 }}>▸ {resolved}</div>}
         {running && <div style={{ ...mono, fontSize: 11.5, color: c.muted2, animation: 'pulse 1.4s ease-in-out infinite' }}>▍ working…</div>}
       </div>
-      {agentConnected === false && (
+      {inputBlocked && (
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${c.border}`, background: c.panel2, fontSize: 12, color: c.fg }} data-testid="agent-not-connected">
-          ⚠ No <b>{agent === 'claude-code' ? 'Claude Code' : agent === 'opencode' ? 'OpenCode' : agent}</b> agent connected — connect one in <b>Settings → AI Agents</b> to start building.
+          ⚠ No <b>{agent === 'claude-code' ? 'Claude Code' : agent}</b> agent connected — connect one in <b>Settings → AI Agents</b> to start building.
+        </div>
+      )}
+      {agent === 'opencode' && agentConnected === false && (
+        <div style={{ padding: '8px 12px', borderTop: `1px solid ${c.border}`, background: c.panel2, fontSize: 12, color: c.muted2 }} data-testid="opencode-free-tier">
+          Using the <b>OpenCode free tier</b> — no setup needed. Connect an API key in <b>Settings → AI Agents</b> for the full model catalog.
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: `1px solid ${c.border}`, background: c.panel3 }}>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={agentConnected === false ? 'Connect an agent in Settings first' : sandboxRunning ? 'Message the agent…' : 'Start the sandbox to run tasks'} data-testid="task-prompt" rows={1} style={{ flex: 1, background: '#fff', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px', color: c.fg, fontSize: 12.5, fontFamily: font.sans, resize: 'none' }} />
-        <Btn variant="primary" onClick={send} disabled={!sb || !sandboxRunning || running || agentConnected === false} data-testid="run-task">Send</Btn>
+        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={inputBlocked ? 'Connect an agent in Settings first' : sandboxRunning ? 'Message the agent…' : 'Start the sandbox to run tasks'} data-testid="task-prompt" rows={1} style={{ flex: 1, background: '#fff', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px', color: c.fg, fontSize: 12.5, fontFamily: font.sans, resize: 'none' }} />
+        <Btn variant="primary" onClick={send} disabled={!sb || !sandboxRunning || running || inputBlocked} data-testid="run-task">Send</Btn>
       </div>
     </Card>
   )

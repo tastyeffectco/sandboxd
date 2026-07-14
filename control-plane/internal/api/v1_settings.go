@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentprompt"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
@@ -80,6 +82,9 @@ type v1SettingsAgents struct {
 	// only). Rendered with default port/health for display; runtimed renders it
 	// with each sandbox's real values at task time. Single source: internal/agentprompt.
 	SystemPrompt string `json:"system_prompt,omitempty"`
+	// DefaultModels maps an agent id to its operator-set default model id, used
+	// when a task doesn't specify one. Editable via PATCH. Empty map when unset.
+	DefaultModels map[string]string `json:"default_models"`
 }
 
 // v1GetSettings — GET /v1/settings. Read-only, tokenless-safe instance summary.
@@ -114,7 +119,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 		Runtime:   v1SettingsRuntime{StorageMode: storageMode, BaseImage: s.Image},
 		Lifecycle: s.lifecycleView(),
 		Egress:    v1SettingsEgress{Mode: egressMode},
-		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{})},
+		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{}), DefaultModels: s.agentDefaultModels()},
 		Presets:   presets,
 		Capabilities: map[string]bool{
 			"snapshots":      s.Snapshot != nil,
@@ -128,6 +133,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 			"lifecycle.idle_reap_enabled",
 			"lifecycle.idle_threshold_seconds",
 			"lifecycle.keepalive_max_seconds",
+			"agents.default_models",
 		}
 	}
 	if s.Update != nil {
@@ -179,7 +185,15 @@ type v1SettingsPatch struct {
 		IdleThresholdSeconds *int  `json:"idle_threshold_seconds"`
 		KeepaliveMaxSeconds  *int  `json:"keepalive_max_seconds"`
 	} `json:"lifecycle"`
+	Agents *struct {
+		// DefaultModels merges into the stored map: a non-empty value sets that
+		// agent's default model, an empty value clears it. Other agents untouched.
+		DefaultModels map[string]string `json:"default_models"`
+	} `json:"agents"`
 }
+
+// maxAgentDefaultModels bounds how many per-agent defaults can be stored.
+const maxAgentDefaultModels = 32
 
 // v1PatchSettings — PATCH /v1/settings. Edits ONLY the lifecycle tunables; it
 // persists them, hot-applies via the shared Live config, and audits the change.
@@ -194,46 +208,90 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 	var req v1SettingsPatch
 	if err := dec.Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			"only lifecycle tunables are editable (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds): "+err.Error())
+			"editable: lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models: "+err.Error())
 		return
 	}
-	if req.Lifecycle == nil {
+	if req.Lifecycle == nil && req.Agents == nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "no editable fields provided")
 		return
 	}
 
 	next := s.Live.Snapshot()
-	if v := req.Lifecycle.IdleReapEnabled; v != nil {
-		next.IdleEnabled = *v
+	target := "settings"
+	if req.Lifecycle != nil {
+		target = "lifecycle"
+		if v := req.Lifecycle.IdleReapEnabled; v != nil {
+			next.IdleEnabled = *v
+		}
+		if v := req.Lifecycle.IdleThresholdSeconds; v != nil {
+			next.IdleThresholdSeconds = *v
+		}
+		if v := req.Lifecycle.KeepaliveMaxSeconds; v != nil {
+			next.KeepaliveMaxSeconds = *v
+		}
+		if next.IdleThresholdSeconds < minIdleThresholdSec || next.IdleThresholdSeconds > maxIdleThresholdSec {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("idle_threshold_seconds must be %d..%d", minIdleThresholdSec, maxIdleThresholdSec))
+			return
+		}
+		if next.KeepaliveMaxSeconds < 0 || next.KeepaliveMaxSeconds > maxKeepaliveSec {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("keepalive_max_seconds must be 0..%d", maxKeepaliveSec))
+			return
+		}
 	}
-	if v := req.Lifecycle.IdleThresholdSeconds; v != nil {
-		next.IdleThresholdSeconds = *v
-	}
-	if v := req.Lifecycle.KeepaliveMaxSeconds; v != nil {
-		next.KeepaliveMaxSeconds = *v
-	}
-	if next.IdleThresholdSeconds < minIdleThresholdSec || next.IdleThresholdSeconds > maxIdleThresholdSec {
-		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			fmt.Sprintf("idle_threshold_seconds must be %d..%d", minIdleThresholdSec, maxIdleThresholdSec))
-		return
-	}
-	if next.KeepaliveMaxSeconds < 0 || next.KeepaliveMaxSeconds > maxKeepaliveSec {
-		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			fmt.Sprintf("keepalive_max_seconds must be 0..%d", maxKeepaliveSec))
-		return
+	if req.Agents != nil && req.Agents.DefaultModels != nil {
+		target = "agents.default_models"
+		merged := map[string]string{}
+		for k, v := range next.DefaultModels {
+			merged[k] = v
+		}
+		for agent, model := range req.Agents.DefaultModels {
+			if !agentauth.Runnable(agent) {
+				writeV1Err(w, http.StatusBadRequest, "invalid_request",
+					"unknown agent in default_models: "+agent)
+				return
+			}
+			if len(model) > 200 {
+				writeV1Err(w, http.StatusBadRequest, "invalid_request", "model too long for agent "+agent)
+				return
+			}
+			if strings.TrimSpace(model) == "" {
+				delete(merged, agent) // empty clears the default
+			} else {
+				merged[agent] = strings.TrimSpace(model)
+			}
+		}
+		if len(merged) > maxAgentDefaultModels {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("too many agent default models (max %d)", maxAgentDefaultModels))
+			return
+		}
+		next.DefaultModels = merged
 	}
 
 	if err := s.Store.SaveInstanceSettings(r.Context(), store.InstanceSettings{
 		IdleReapEnabled:      next.IdleEnabled,
 		IdleThresholdSeconds: next.IdleThresholdSeconds,
 		KeepaliveMaxSeconds:  next.KeepaliveMaxSeconds,
+		AgentDefaultModels:   next.DefaultModels,
 	}); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	s.Live.Set(next) // hot-apply (reaper + keepalive read this live)
-	s.auditAction(r, audit.Entry{Action: "settings.update", Target: "lifecycle"})
+	s.Live.Set(next) // hot-apply (reaper + keepalive + task-submit read this live)
+	s.auditAction(r, audit.Entry{Action: "settings.update", Target: target})
 	s.v1GetSettings(w, r) // echo the updated settings
+}
+
+// agentDefaultModels returns the live per-agent default model map (never nil).
+func (s *Server) agentDefaultModels() map[string]string {
+	if s.Live != nil {
+		if m := s.Live.Snapshot().DefaultModels; m != nil {
+			return m
+		}
+	}
+	return map[string]string{}
 }
 
 // previewBase is the scheme://host[:port] previews are reached under, with the

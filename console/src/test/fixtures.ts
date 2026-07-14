@@ -81,10 +81,10 @@ export const settingsFixture: Settings = {
   runtime: { storage_mode: 'directory', base_image: 'sandboxd-base:1.0.0' },
   lifecycle: { idle_reap_enabled: true, idle_threshold_seconds: 2100, keepalive_max_seconds: 86400 },
   egress: { mode: 'disabled' },
-  agents: { providers: ['opencode'] },
+  agents: { providers: ['opencode'], default_models: {} },
   presets: presetsFixture,
   capabilities: { snapshots: true, config_secrets: true, templates: false, forward_auth: true },
-  editable: ['lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds'],
+  editable: ['lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds', 'agents.default_models'],
 }
 
 // --- fetch mock ------------------------------------------------------

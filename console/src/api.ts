@@ -38,7 +38,7 @@ export interface Settings {
   runtime: { storage_mode: string; base_image: string }
   lifecycle: { idle_reap_enabled: boolean; idle_threshold_seconds: number; keepalive_max_seconds: number }
   egress: { mode: string }
-  agents: { providers: string[]; system_prompt?: string }
+  agents: { providers: string[]; system_prompt?: string; default_models: Record<string, string> }
   presets: Preset[]
   capabilities: Record<string, boolean>
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
@@ -65,6 +65,8 @@ export interface SettingsPatch {
     idle_threshold_seconds?: number
     keepalive_max_seconds?: number
   }
+  // Per-agent default model id (merges; empty value clears one).
+  agents?: { default_models?: Record<string, string> }
 }
 
 // Advisory runtime detection (GET /v1/apps/{id}/runtime-inspect). Suggestions
