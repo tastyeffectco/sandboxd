@@ -94,8 +94,14 @@ set — go-subscription models (GLM/Kimi/…) for `zengo`.
 free models (ids ending `-free`, e.g. `big-pickle`, `deepseek-v4-flash-free`,
 `mimo-v2.5-free`) that need **no API key**. When opencode has no connected
 credential, the proxy forwards its requests to Zen **keyless** — it drops the
-sandbox's dummy key and injects nothing — and the control plane defaults the
+sandbox's dummy key and injects nothing — and always to the **`zen`** endpoint
+where the free models live (even if the deployment pins `zengo`, whose
+go-subscription catalog has no free models). The control plane defaults the
 task's model to a free one so a fresh install can build immediately.
+
+> Zen's API **requires a named model** — there is no keyless "auto" model, and
+> only the `-free` models work without a key. That's why a free model must be
+> named; it's not something opencode can pick on its own through the proxy.
 
 - **No key** → free tier. The default free model is `big-pickle`; override with
   `SANDBOXD_OPENCODE_FREE_MODEL`.
