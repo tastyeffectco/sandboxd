@@ -102,6 +102,7 @@ export default function App() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <a href="https://sandboxd.io" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Docs</a>
           <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>GitHub</a>
+          <a href="https://github.com/tastyeffectco/sandboxd/discussions" target="_blank" rel="noreferrer" className="dc-hoverink" data-testid="nav-feedback" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Feedback</a>
           {auth?.enabled && (
             <span data-testid="nav-logout" className="dc-hoverink" onClick={logout} style={{ color: c.muted, fontSize: 12, cursor: 'pointer' }}>Log out</span>
           )}

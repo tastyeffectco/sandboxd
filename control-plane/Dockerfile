@@ -11,11 +11,17 @@
 
 # --- Stage 1: build sandboxd (CGO) -----------------------------------
 FROM golang:1.22-bookworm AS builder
+# Version stamping — fed by docker-compose build args (see upgrade.sh/install.sh,
+# which derive them from `git describe`). Default to dev/unknown for a bare build.
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=1 go build -trimpath -o /sandboxd ./cmd/sandboxd
+RUN CGO_ENABLED=1 go build -trimpath \
+      -ldflags "-X main.buildVersion=${VERSION} -X main.buildCommit=${GIT_COMMIT}" \
+      -o /sandboxd ./cmd/sandboxd
 
 # --- Stage 2: runtime ------------------------------------------------
 FROM debian:stable-slim

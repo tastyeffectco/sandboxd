@@ -84,6 +84,10 @@ ok "updated source to $(git describe --tags --always 2>/dev/null || echo "$NEW_S
 
 # ── 3. rebuild + restart (migrations apply on control-plane boot) ────
 bold "3/4 · Building + restarting the stack"
+# Stamp the build (sandboxd version / telemetry / settings) from git.
+export SANDBOXD_VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+export SANDBOXD_GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+info "building $SANDBOXD_VERSION ($SANDBOXD_GIT_COMMIT)"
 $COMPOSE $PROFILE build
 $COMPOSE $PROFILE up -d
 
