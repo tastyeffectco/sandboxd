@@ -395,10 +395,28 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
   const [resolved, setResolved] = useState('')
   const [reverting, setReverting] = useState<string | null>(null)
   const esRef = useRef<EventSource | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const sandboxRunning = sb?.status === 'running'
+  const [agentConnected, setAgentConnected] = useState<boolean | null>(null)
+  // Block input only when the selected agent needs a credential and has none.
+  // opencode is exempt: it runs on a keyless free tier out of the box, so an
+  // un-connected opencode is still usable (we just show a free-tier note).
+  const inputBlocked = agentConnected === false && agent !== 'opencode'
 
-  useEffect(() => () => esRef.current?.close(), [])
+  // Is the selected agent actually connected? For non-opencode agents a task with
+  // no connected agent fails immediately with an auth error — gate the input so
+  // users connect one in Settings first instead of hitting a confusing failed run.
+  // opencode always runs (free tier), so it's never blocked (see inputBlocked).
+  useEffect(() => {
+    let alive = true
+    api.getAgents()
+      .then((list) => { if (alive) setAgentConnected(list.some((p) => p.id === agent && p.status === 'connected')) })
+      .catch(() => { if (alive) setAgentConnected(null) })
+    return () => { alive = false }
+  }, [agent, history.length])
+
+  useEffect(() => () => { esRef.current?.close(); if (pollRef.current) clearInterval(pollRef.current) }, [])
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [history, live, running])
 
   const loadHistory = useCallback(async () => {
@@ -423,14 +441,34 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
     try {
       const t = await api.submitTask(sb.id, prompt, agent, model || undefined, cont)
       let agentText = ''
+      let settled = false
+      const finish = async () => {
+        if (settled) return
+        settled = true
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+        try { esRef.current?.close() } catch { /* */ }
+        setRunning(false); refresh(); await reloadUntil(t.id); setLive(null)
+      }
       const es = new EventSource(api.taskEventsURL(sb.id, t.id))
       esRef.current = es
       es.addEventListener('status', (m) => { try { const j = JSON.parse((m as MessageEvent).data); if (j.model) setResolved(j.model) } catch { /* */ } })
       es.addEventListener('message', (m) => {
         try { const j = JSON.parse((m as MessageEvent).data); if (j.role === 'agent' && j.text) { agentText += j.text; setLive((l) => (l ? { ...l, text: agentText } : l)) } } catch { /* */ }
       })
-      es.addEventListener('done', async () => { es.close(); setRunning(false); refresh(); await reloadUntil(t.id); setLive(null) })
-      es.onerror = () => { es.close(); setRunning(false); setLive(null); loadHistory() }
+      es.addEventListener('done', () => { finish() })
+      es.onerror = () => { try { es.close() } catch { /* */ } } // stream hiccup — the poll below still resolves it
+      // Reliability: never trust the SSE stream alone. A dropped or raced event
+      // stream must not leave the chat spinning — poll the task status until it
+      // reports terminal, with a watchdog cap so nothing can hang indefinitely.
+      let ticks = 0
+      pollRef.current = setInterval(async () => {
+        ticks++
+        try {
+          const cur = (await api.listTasks(sb.id)).find((x) => x.id === t.id)
+          if (cur && ['succeeded', 'failed', 'cancelled', 'error'].includes(cur.status)) { finish(); return }
+        } catch { /* */ }
+        if (ticks >= 360) finish() // ~15 min hard cap
+      }, 2500)
     } catch (e) { setRunning(false); setLive(null); onError((e as Error).message) }
   }
 
@@ -478,7 +516,7 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
           return (
             <Fragment key={t.id}>
               {t.prompt && bubble('user', t.prompt)}
-              {bubble('agent', t.agent_message || `(${t.status})`)}
+              {bubble('agent', t.agent_message || t.error_message || `(${t.status})`)}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2, fontSize: 11, color: c.muted2 }}>
                 <span style={{ ...mono, fontWeight: 700, color: tone(t.status), textTransform: 'uppercase' }}>{t.status}</span>
                 {files.length > 0 && <span title={files.join('\n')}>{files.length} file{files.length === 1 ? '' : 's'} changed</span>}
@@ -498,9 +536,19 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
         {resolved && <div style={{ ...mono, fontSize: 10.5, color: c.muted2 }}>▸ {resolved}</div>}
         {running && <div style={{ ...mono, fontSize: 11.5, color: c.muted2, animation: 'pulse 1.4s ease-in-out infinite' }}>▍ working…</div>}
       </div>
+      {inputBlocked && (
+        <div style={{ padding: '8px 12px', borderTop: `1px solid ${c.border}`, background: c.panel2, fontSize: 12, color: c.fg }} data-testid="agent-not-connected">
+          ⚠ No <b>{agent === 'claude-code' ? 'Claude Code' : agent}</b> agent connected — connect one in <b>Settings → AI Agents</b> to start building.
+        </div>
+      )}
+      {agent === 'opencode' && agentConnected === false && (
+        <div style={{ padding: '8px 12px', borderTop: `1px solid ${c.border}`, background: c.panel2, fontSize: 12, color: c.muted2 }} data-testid="opencode-free-tier">
+          Using the <b>OpenCode free tier</b> — no setup needed. Connect an API key in <b>Settings → AI Agents</b> for the full model catalog.
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: `1px solid ${c.border}`, background: c.panel3 }}>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={sandboxRunning ? 'Message the agent…' : 'Start the sandbox to run tasks'} data-testid="task-prompt" rows={1} style={{ flex: 1, background: '#fff', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px', color: c.fg, fontSize: 12.5, fontFamily: font.sans, resize: 'none' }} />
-        <Btn variant="primary" onClick={send} disabled={!sb || !sandboxRunning || running} data-testid="run-task">Send</Btn>
+        <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={inputBlocked ? 'Connect an agent in Settings first' : sandboxRunning ? 'Message the agent…' : 'Start the sandbox to run tasks'} data-testid="task-prompt" rows={1} style={{ flex: 1, background: '#fff', border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px', color: c.fg, fontSize: 12.5, fontFamily: font.sans, resize: 'none' }} />
+        <Btn variant="primary" onClick={send} disabled={!sb || !sandboxRunning || running || inputBlocked} data-testid="run-task">Send</Btn>
       </div>
     </Card>
   )

@@ -50,17 +50,19 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [keyName, setKeyName] = useState('')
   const [newKey, setNewKey] = useState('')
+  const [models, setModels] = useState<Record<string, string>>({})
 
   const loadAgents = useCallback(() => api.getAgents().then(setAgents).catch(() => {}), [])
   const loadCreds = useCallback(() => api.listGitCredentials().then(setCreds).catch(() => {}), [])
   const loadKeys = useCallback(() => api.listApiKeys().then(setKeys).catch(() => {}), [])
   useEffect(() => {
-    api.getSettings().then((d) => { setS(d); setIdle(d.lifecycle.idle_reap_enabled); setIdleSec(d.lifecycle.idle_threshold_seconds); setKeepSec(d.lifecycle.keepalive_max_seconds) }).catch((e) => onError((e as Error).message))
+    api.getSettings().then((d) => { setS(d); setIdle(d.lifecycle.idle_reap_enabled); setIdleSec(d.lifecycle.idle_threshold_seconds); setKeepSec(d.lifecycle.keepalive_max_seconds); setModels(d.agents.default_models || {}) }).catch((e) => onError((e as Error).message))
     loadAgents(); loadCreds(); loadKeys()
   }, [onError, loadAgents, loadCreds, loadKeys])
 
   if (!s) return <div style={{ padding: 40, color: c.muted2 }}>Loading…</div>
   const lifecycleEditable = (s.editable || []).some((p) => p.startsWith('lifecycle.'))
+  const modelsEditable = (s.editable || []).some((p) => p === 'agents.default_models')
 
   const connectClaude = async () => {
     try { const r = await api.oauthStart('claude-code'); window.open(r.authorize_url, '_blank'); const code = window.prompt('Approve in the opened tab, then paste the code here:'); if (code) { await api.oauthFinish('claude-code', code.trim()); toast('Claude connected'); loadAgents() } } catch (e) { onError((e as Error).message) }
@@ -68,6 +70,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   const apiKey = async (id: string) => { const key = window.prompt(`Paste the ${id} API key:`); if (key) try { await api.setAgentApiKey(id, key.trim()); toast('Connected'); loadAgents() } catch (e) { onError((e as Error).message) } }
   const importCred = async (id: string) => { const v = window.prompt(`Paste the credential (from your ${id} login):`); if (v) try { await api.importAgentCredential(id, v); toast('Connected'); loadAgents() } catch (e) { onError((e as Error).message) } }
   const saveLifecycle = async () => { try { await api.patchSettings({ lifecycle: { idle_reap_enabled: idle, idle_threshold_seconds: idleSec, keepalive_max_seconds: keepSec } }); toast('Lifecycle saved') } catch (e) { onError((e as Error).message) } }
+  const saveModels = async () => { try { const d = await api.patchSettings({ agents: { default_models: models } }); setModels(d.agents.default_models || {}); toast('Default models saved') } catch (e) { onError((e as Error).message) } }
   const addCred = async () => { if (!gc.name || !gc.host || !gc.token) return; try { await api.createGitCredential(gc); setGc({ name: '', host: '', username: '', token: '' }); toast('Credential added'); loadCreds() } catch (e) { onError((e as Error).message) } }
   const changePw = async () => { if (!curPw || !newPw) return; try { await api.changePassword({ current_password: curPw, new_password: newPw }); setCurPw(''); setNewPw(''); toast('Password changed') } catch (e) { onError((e as Error).message) } }
   const signOutEverywhere = async () => { try { await api.logoutEverywhere(); location.reload() } catch (e) { onError((e as Error).message) } }
@@ -122,7 +125,28 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
             </div>
           )})}
         </div>
-        <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5 }}>Each agent runs on your own account; credentials are stored opaquely server-side, never shown in the browser, and kept out of snapshots. <b style={{ color: c.fg2 }}>Claude Code</b> subscriptions run through a credential-injecting proxy — the token never enters the sandbox. <b style={{ color: c.fg2 }}>Codex is disabled for now</b>: its ChatGPT-subscription auth uses a WebSocket backend that can't yet be put behind that proxy, and we won't mount a raw token into the sandbox.</div>
+
+        {/* Optional per-agent default model. The user supplies the real provider
+            model id; it's used when a task doesn't pick one. */}
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${c.border}` }} data-testid="settings-agent-models">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <H style={{ fontSize: 13 }}>Default model</H>
+            <Src kind={modelsEditable ? 'editable' : undefined} env={modelsEditable ? undefined : 'SANDBOXD_OPENCODE_MODEL'} />
+            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>optional — used when a task doesn't pick a model</span>
+          </div>
+          <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>Paste each agent's own model id (e.g. OpenCode <span style={{ ...mono, fontSize: 11 }}>glm-5</span>, Claude <span style={{ ...mono, fontSize: 11 }}>sonnet</span>). Leave blank for the agent's default — OpenCode with no API key falls back to its free tier (<span style={{ ...mono, fontSize: 11 }}>big-pickle</span>).</div>
+          {agents.filter((a) => a.id !== 'codex').map((a) => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <span style={{ width: 130, fontSize: 12.5, color: c.muted }}>{a.label}</span>
+              <Input mono value={models[a.id] || ''} onChange={(e) => setModels({ ...models, [a.id]: e.target.value })} disabled={!modelsEditable} placeholder={a.id === 'opencode' ? 'big-pickle (free tier)' : 'agent default'} style={{ width: 260 }} data-testid={`agent-model-${a.id}`} />
+            </div>
+          ))}
+          {modelsEditable
+            ? <Btn onClick={saveModels} style={{ marginTop: 8 }} data-testid="save-agent-models">Save default models</Btn>
+            : <div style={{ marginTop: 8, fontSize: 12, color: c.muted2 }}>Read-only on this instance — set <span style={{ ...mono, fontSize: 11 }}>SANDBOXD_OPENCODE_MODEL</span> (opencode) or per-task model.</div>}
+        </div>
+
+        <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5, marginTop: 14 }}>Each agent runs on your own account; credentials are stored opaquely server-side, never shown in the browser, and kept out of snapshots. <b style={{ color: c.fg2 }}>OpenCode</b> works out of the box with <b style={{ color: c.fg2 }}>no key</b> on its free tier — add an API key for the full model catalog. <b style={{ color: c.fg2 }}>Claude Code</b> subscriptions run through a credential-injecting proxy — the token never enters the sandbox. <b style={{ color: c.fg2 }}>Codex is disabled for now</b>: its ChatGPT-subscription auth uses a WebSocket backend that can't yet be put behind that proxy, and we won't mount a raw token into the sandbox.</div>
       </Card>
 
       <Card style={{ padding: 16, marginBottom: 12 }} data-testid="settings-lifecycle">
