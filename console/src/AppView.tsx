@@ -405,7 +405,7 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
   // in Settings first instead of hitting a confusing failed run.
   useEffect(() => {
     let alive = true
-    api.listAgents()
+    api.getAgents()
       .then((list) => { if (alive) setAgentConnected(list.some((p) => p.id === agent && p.status === 'connected')) })
       .catch(() => { if (alive) setAgentConnected(null) })
     return () => { alive = false }
