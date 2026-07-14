@@ -99,6 +99,10 @@ func main() {
 		switch os.Args[1] {
 		case "backfill-legacy":
 			os.Exit(runBackfillLegacy(os.Args[2:]))
+		case "version", "--version", "-v":
+			v, c := buildIdent()
+			fmt.Printf("sandboxd %s (%s)\n", v, c)
+			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "sandboxd: unknown subcommand %q\n", os.Args[1])
 			os.Exit(2)
