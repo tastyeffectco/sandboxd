@@ -144,6 +144,19 @@ func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
 			}, true
 		}
 	}
+	// OpenCode zero-friction free tier: with no connected credential, opencode
+	// still works out of the box on Zen's keyless free models. We forward with NO
+	// auth (dropping the sandbox's dummy key) — the free models need none. This is
+	// opencode-only; every other agent still requires a connected credential, so
+	// they keep returning ok=false (a clear "connect it" 401). A connected key or
+	// subscription is handled by the api_key/oauth cases above and takes over the
+	// full paid catalog — this branch is reached only when nothing is connected.
+	if agent == "opencode" {
+		return func(h http.Header) {
+			h.Del("Authorization")
+			h.Del("X-Api-Key")
+		}, true
+	}
 	return nil, false
 }
 

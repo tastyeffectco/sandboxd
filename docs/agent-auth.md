@@ -88,6 +88,37 @@ picked model isn't in that path's catalog (e.g. a `claude-*` model on `zengo`).
 The console's opencode model dropdown should list models from whichever path you
 set — go-subscription models (GLM/Kimi/…) for `zengo`.
 
+### OpenCode free tier — works with no key (zero friction)
+
+**opencode is usable out of the box with nothing connected.** Zen serves a set of
+free models (ids ending `-free`, e.g. `big-pickle`, `deepseek-v4-flash-free`,
+`mimo-v2.5-free`) that need **no API key**. When opencode has no connected
+credential, the proxy forwards its requests to Zen **keyless** — it drops the
+sandbox's dummy key and injects nothing — and the control plane defaults the
+task's model to a free one so a fresh install can build immediately.
+
+- **No key** → free tier. The default free model is `big-pickle`; override with
+  `SANDBOXD_OPENCODE_FREE_MODEL`.
+- **Key connected** (Settings → AI Agents) → the proxy injects it and opencode
+  gets the full paid catalog, exactly as before. A connected key always wins.
+
+This is **opencode-only** — it's the one provider with a keyless free tier. Every
+other agent (claude-code, codex) still returns a clear "connect it" error when
+unconnected. See `internal/authproxy/proxy.go` (`credFor`) and
+`internal/api/v1_tasks.go` (model precedence).
+
+### Per-agent default model (optional)
+
+Set a default model per agent in **Settings → AI Agents → Default model** (or via
+`PATCH /v1/settings` `agents.default_models`). You supply the agent's real model
+id (e.g. opencode `glm-5`, claude `sonnet`); it's used when a task doesn't specify
+one. Stored durably, applied live. Model precedence for a task:
+
+1. the task's own `model` (per request), then
+2. the per-agent default (this setting), then
+3. opencode's free-tier default (only when opencode has no key), then
+4. runtimed's env/agent default (`SANDBOXD_OPENCODE_MODEL` / the CLI's own).
+
 ### Fallback: no proxy → mounted auth dir
 
 If the proxy is disabled, the connected provider's opaque auth dir

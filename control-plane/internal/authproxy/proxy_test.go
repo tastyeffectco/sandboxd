@@ -146,3 +146,47 @@ func TestInjectsAnthropicAPIKeyHeader(t *testing.T) {
 		t.Errorf("X-Api-Key = %q; want the injected key", gotKey)
 	}
 }
+
+// opencode with NO connected credential falls back to Zen's keyless free tier:
+// the proxy forwards to the zen upstream with NO auth (the sandbox's dummy key
+// stripped), rather than returning 401. This is what makes opencode work out of
+// the box with zero setup. It is opencode-only — every other agent still 401s
+// when unconnected (see TestServeNoCredential).
+func TestOpencodeFreeTierKeyless(t *testing.T) {
+	var gotAuth, gotKey, gotPath string
+	forwarded := false
+	stubUpstream(t, "zen", func(w http.ResponseWriter, r *http.Request) {
+		forwarded = true
+		gotAuth, gotKey, gotPath = r.Header.Get("Authorization"), r.Header.Get("X-Api-Key"), r.URL.Path
+		w.WriteHeader(200)
+	})
+	p := New(agentauth.NewStore(t.TempDir()), nil) // nothing connected
+
+	req := httptest.NewRequest("POST", "/opencode/zen/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer sandboxd-proxy-injected") // the dummy the sandbox sends
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if !forwarded {
+		t.Fatalf("expected keyless forward to zen; got status %d (want 200 forward)", w.Code)
+	}
+	if gotAuth != "" {
+		t.Errorf("Authorization leaked to upstream: %q (free tier must send none)", gotAuth)
+	}
+	if gotKey != "" {
+		t.Errorf("X-Api-Key leaked to upstream: %q (dummy must be stripped)", gotKey)
+	}
+	if gotPath != "/v1/chat/completions" {
+		t.Errorf("forwarded path = %q; want /v1/chat/completions", gotPath)
+	}
+}
+
+// A NON-opencode agent with no credential still returns 401 (no keyless tier).
+func TestCodexNoCredentialStill401(t *testing.T) {
+	p := New(agentauth.NewStore(t.TempDir()), nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, httptest.NewRequest("POST", "/codex/openai/v1/chat/completions", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("codex unconnected = %d; want 401 (only opencode has a free tier)", w.Code)
+	}
+}

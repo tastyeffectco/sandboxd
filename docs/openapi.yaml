@@ -36,10 +36,11 @@ paths:
     patch:
       operationId: updateSettings
       tags: [apps]
-      summary: Edit the runtime-editable lifecycle tunables only (allowlisted)
+      summary: Edit the runtime-editable settings (allowlisted)
       description: >
-        Accepts ONLY lifecycle tunables. Any other key (auth, egress, networking,
-        secrets, version, …) is rejected with 400. Persisted and hot-applied.
+        Accepts ONLY the allowlisted editable fields: lifecycle tunables and
+        agents.default_models. Any other key (auth, egress, networking, secrets,
+        version, …) is rejected with 400. Persisted and hot-applied.
       requestBody:
         required: true
         content:
@@ -53,6 +54,16 @@ paths:
                     idle_reap_enabled: { type: boolean }
                     idle_threshold_seconds: { type: integer }
                     keepalive_max_seconds: { type: integer }
+                agents:
+                  type: object
+                  properties:
+                    default_models:
+                      type: object
+                      additionalProperties: { type: string }
+                      description: >
+                        Per-agent default model id (agent -> model). Merges into the
+                        stored map; an empty value clears that agent's default. Only
+                        runnable agents are accepted.
       responses:
         "200":
           description: Updated settings.
@@ -1461,6 +1472,10 @@ components:
           properties:
             providers: { type: array, items: { type: string } }
             system_prompt: { type: string, description: "Read-only platform system prompt appended to every agent run." }
+            default_models:
+              type: object
+              additionalProperties: { type: string }
+              description: "Per-agent default model id (agent -> model), used when a task doesn't specify one. Editable via PATCH agents.default_models."
         presets:
           type: array
           items: { $ref: "#/components/schemas/Preset" }

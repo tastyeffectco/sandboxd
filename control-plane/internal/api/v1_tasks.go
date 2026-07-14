@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -20,6 +21,20 @@ import (
 func (s *Server) runtimeClientFor(id string) *runtime.Client {
 	_, mnt := s.Loopback.Paths(id)
 	return runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock"))
+}
+
+// defaultOpencodeFreeModel is the keyless Zen model an un-connected opencode
+// task falls back to. It must be one of Zen's free (no-auth) models — "big-pickle"
+// is opencode's featured free model. Override with SANDBOXD_OPENCODE_FREE_MODEL.
+const defaultOpencodeFreeModel = "big-pickle"
+
+// opencodeFreeModel is the model used when opencode runs with no connected
+// credential (its zero-friction free tier). Operator-overridable.
+func opencodeFreeModel() string {
+	if m := os.Getenv("SANDBOXD_OPENCODE_FREE_MODEL"); m != "" {
+		return m
+	}
+	return defaultOpencodeFreeModel
 }
 
 // --- POST /v1/sandboxes/{id}/tasks ----------------------------------
@@ -118,6 +133,24 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Model precedence when the caller didn't pick one (req.Model == ""):
+	//   1. the operator's per-agent default model (Settings → AI Agents), then
+	//   2. opencode's zero-friction free tier (only when nothing is connected).
+	// An explicit per-task model always wins over both. Downstream, runtimed adds
+	// its own env/agent-default fallback (RUNTIMED_OPENCODE_MODEL). See docs/agent-auth.md.
+	if req.Model == "" && s.Live != nil {
+		req.Model = s.Live.DefaultModel(agent) // "" when unset
+	}
+	// OpenCode zero-friction free tier: when opencode has no connected credential
+	// and still no model, default to a keyless free Zen model so a fresh install
+	// can build with no setup at all. A connected key/subscription (handled in the
+	// proxy) or any chosen model takes precedence and uses the full catalog. Only
+	// opencode has a free tier — other agents still need to be connected first.
+	if agent == "opencode" && req.Model == "" &&
+		(s.AgentAuth == nil || !s.AgentAuth.Connected("opencode")) {
+		req.Model = opencodeFreeModel()
+	}
+
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
 		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, TimeoutS: req.TimeoutS, Continue: req.Continue,
@@ -211,6 +244,7 @@ type v1TaskSummary struct {
 	Agent        string   `json:"agent,omitempty"`
 	Status       string   `json:"status"`
 	AgentMessage string   `json:"agent_message,omitempty"` // the agent's final reply, for the chat history
+	ErrorMessage string   `json:"error_message,omitempty"` // why a task failed (e.g. agent not connected) — surfaced to the user
 	FilesChanged []string `json:"files_changed,omitempty"`
 	CheckpointID string   `json:"checkpoint_id,omitempty"`
 	CanRevert    bool     `json:"can_revert"` // a checkpoint exists to go back to
@@ -234,6 +268,12 @@ func (s *Server) v1ListTasks(w http.ResponseWriter, r *http.Request) {
 			var tr runtime.TaskResult
 			if json.Unmarshal([]byte(t.ResultJSON.String), &tr) == nil {
 				sum.AgentMessage = tr.AgentMessageFinal
+				sum.ErrorMessage = tr.ErrorMessage
+				// A failed task (esp. opencode) can finish with no agent reply —
+				// fall back to the error so the chat never shows a blank "(failed)".
+				if sum.AgentMessage == "" {
+					sum.AgentMessage = tr.ErrorMessage
+				}
 				sum.FilesChanged = tr.FilesChanged
 				sum.CheckpointID = tr.CheckpointID
 				sum.CanRevert = tr.CheckpointID != ""
