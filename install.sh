@@ -164,6 +164,9 @@ PROFILE_ARGS=""
 # shadow the bootstrap key we just wrote (leaving auth on with no working key).
 # Drop it so compose picks up the .env value.
 unset SANDBOXD_API_TOKENS
+# Stamp the build (sandboxd version / telemetry / settings) from git when present.
+export SANDBOXD_VERSION="$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)"
+export SANDBOXD_GIT_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
 bold "Building the control plane${CONSOLE:+ + console} and starting the stack…"
 $COMPOSE $PROFILE_ARGS build
 $COMPOSE $PROFILE_ARGS up -d
