@@ -127,6 +127,7 @@ export interface TaskSummary {
   agent?: string
   status: string
   agent_message?: string
+  error_message?: string
   files_changed?: string[]
   checkpoint_id?: string
   can_revert: boolean

@@ -211,6 +211,7 @@ type v1TaskSummary struct {
 	Agent        string   `json:"agent,omitempty"`
 	Status       string   `json:"status"`
 	AgentMessage string   `json:"agent_message,omitempty"` // the agent's final reply, for the chat history
+	ErrorMessage string   `json:"error_message,omitempty"` // why a task failed (e.g. agent not connected) — surfaced to the user
 	FilesChanged []string `json:"files_changed,omitempty"`
 	CheckpointID string   `json:"checkpoint_id,omitempty"`
 	CanRevert    bool     `json:"can_revert"` // a checkpoint exists to go back to
@@ -234,6 +235,12 @@ func (s *Server) v1ListTasks(w http.ResponseWriter, r *http.Request) {
 			var tr runtime.TaskResult
 			if json.Unmarshal([]byte(t.ResultJSON.String), &tr) == nil {
 				sum.AgentMessage = tr.AgentMessageFinal
+				sum.ErrorMessage = tr.ErrorMessage
+				// A failed task (esp. opencode) can finish with no agent reply —
+				// fall back to the error so the chat never shows a blank "(failed)".
+				if sum.AgentMessage == "" {
+					sum.AgentMessage = tr.ErrorMessage
+				}
 				sum.FilesChanged = tr.FilesChanged
 				sum.CheckpointID = tr.CheckpointID
 				sum.CanRevert = tr.CheckpointID != ""
