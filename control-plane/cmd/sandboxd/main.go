@@ -19,7 +19,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -441,6 +443,24 @@ func main() {
 			dnsResolvConf = ""
 		} else {
 			log.Info("gvisor runtime enabled", "runtime", sbxRuntime, "dns", ns)
+		}
+		// gVisor sandboxes use public DNS (above) and can't reach Docker's
+		// embedded resolver, so an internal service name like "sandboxd" won't
+		// resolve inside them. Pin the agent proxy URL to its IP — the control
+		// plane (not under gVisor) can resolve it — so sandboxes reach the proxy
+		// by address. Without this, every agent task hangs/fails on DNS.
+		if u, perr := url.Parse(agentProxyURL); perr == nil && u.Hostname() != "" && net.ParseIP(u.Hostname()) == nil {
+			if ips, lerr := net.LookupHost(u.Hostname()); lerr == nil && len(ips) > 0 {
+				if p := u.Port(); p != "" {
+					u.Host = net.JoinHostPort(ips[0], p)
+				} else {
+					u.Host = ips[0]
+				}
+				log.Info("gvisor: pinned agent proxy to IP", "from", agentProxyURL, "to", u.String())
+				agentProxyURL = u.String()
+			} else {
+				log.Warn("gvisor: could not resolve agent proxy host to IP; sandboxes may fail to reach it", "host", u.Hostname())
+			}
 		}
 	}
 
