@@ -1354,6 +1354,24 @@ paths:
             application/zip:
               schema: { type: string, format: binary }
 
+  /v1/sandboxes/{id}/terminal:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: sandboxTerminal
+      tags: [sandboxes]
+      summary: Interactive terminal (WebSocket)
+      description: >
+        Upgrades to a WebSocket and bridges an interactive shell running INSIDE
+        the sandbox (uid 1000, the app workspace) to a browser terminal. It runs
+        in the same container the coding agent executes in, so it adds no new
+        trust boundary. Frames: BINARY = keystrokes (client→server) and shell
+        output (server→client); a TEXT frame `{"resize":{"cols","rows"}}` sets the
+        size. Requires the sandbox to be running.
+      responses:
+        "101": { description: Switching Protocols (WebSocket) }
+        "409": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/snapshots:
     get:
       operationId: listSnapshots
