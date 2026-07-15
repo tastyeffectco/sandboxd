@@ -3,6 +3,8 @@ module github.com/tastyeffectco/sandboxd/control-plane
 go 1.22
 
 require (
+	github.com/creack/pty v1.1.24
+	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/prometheus/client_golang v1.20.5

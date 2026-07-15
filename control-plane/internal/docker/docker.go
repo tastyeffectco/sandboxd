@@ -15,8 +15,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/creack/pty"
 )
 
 // ErrNotFound is returned when `docker inspect` reports the target
@@ -288,6 +291,30 @@ func (c *Client) Exec(ctx context.Context, name string, cmd []string) (ExecResul
 		return res, nil
 	}
 	return res, err
+}
+
+// ExecTTY starts an INTERACTIVE command in the named container over a PTY and
+// returns the PTY master + the running *exec.Cmd. `-i -t` gives the in-container
+// process a real terminal; user/workdir scope it (e.g. uid-1000 "sandbox" in the
+// app workspace). The caller streams the PTY to a client, resizes it with
+// pty.Setsize, and MUST Close the PTY and Kill the process when the session ends.
+// This is the interactive counterpart to Exec (which is deliberately one-shot).
+func (c *Client) ExecTTY(name, user, workdir string, argv []string) (*os.File, *exec.Cmd, error) {
+	args := []string{"exec", "-i", "-t"}
+	if user != "" {
+		args = append(args, "-u", user)
+	}
+	if workdir != "" {
+		args = append(args, "-w", workdir)
+	}
+	args = append(args, name)
+	args = append(args, argv...)
+	cmd := exec.Command(c.Bin, args...)
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ptmx, cmd, nil
 }
 
 // ListByNamePrefix returns the names of all containers (any state)

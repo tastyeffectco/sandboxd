@@ -7,9 +7,12 @@
 package logging
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -93,4 +96,13 @@ func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards to the wrapped writer so a WebSocket upgrade (the in-sandbox
+// terminal) can take over the connection through this logging middleware.
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("ResponseWriter does not support hijacking")
 }
