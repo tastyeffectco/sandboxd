@@ -153,6 +153,10 @@ deleting the workspace dir, so it can't race an in-flight commit/push.
 - **Token at rest** — encrypted (AES-GCM), owner-scoped, **write-only** through the
   API (`token_set` is the only field ever returned). Decrypted **only**
   control-plane-side, in the clone and push paths.
+- **Rotating a token** — the token is write-only, so there's **no in-place edit**.
+  To rotate, **delete the credential and add it again** with the new token
+  (`DELETE /v1/git-credentials/{id}` then `POST /v1/git-credentials`, or **Settings →
+  Git credentials** in the console).
 - **Token in motion** — reaches git solely via `GIT_ASKPASS` reading a `0600`
   temp file (removed after the op). It is **never** present in: argv (URLs are
   tokenless), the git process environment (only the file *path*), `.git/config`,
