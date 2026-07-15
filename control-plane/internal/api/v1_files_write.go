@@ -136,7 +136,12 @@ func (s *Server) v1PutFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	full, rel, err := resolveWritePath(mnt, r.URL.Query().Get("path"))
+	// Paths are relative to the APP dir (workspace/app), matching GET /files and
+	// /files/content. Writing relative to the workspace root instead left console
+	// editor saves invisible to reads (they landed a directory above the app), so
+	// the editor looked read-only. appDirFor is under mnt, so the chown-up loop
+	// below (bounded by mnt) still fixes ownership of any dirs it creates.
+	full, rel, err := resolveWritePath(s.appDirFor(id), r.URL.Query().Get("path"))
 	if err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
