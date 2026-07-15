@@ -6,9 +6,10 @@ import { DeployModal } from './DeployModal'
 // Code-split the CodeMirror editor: it's the app's heaviest dependency and only
 // needed on the Files tab, so it loads on demand rather than in the main bundle.
 const CodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })))
+const SandboxTerminal = lazy(() => import('./Terminal').then((m) => ({ default: m.SandboxTerminal })))
 
 type Msg = { role: 'user' | 'agent'; text: string; taskId?: string; done?: boolean }
-const TABS = ['overview', 'files', 'git', 'config', 'snapshots', 'activity'] as const
+const TABS = ['overview', 'files', 'git', 'config', 'terminal', 'snapshots', 'activity'] as const
 type Tab = (typeof TABS)[number]
 
 // Per-app agent context (Layer 2). Platform/sandbox conventions come from the
@@ -132,7 +133,7 @@ export function AppView({
     catch (e) { onError((e as Error).message) }
   }
 
-  const tabBadge: Record<Tab, string> = { overview: '', files: '', git: '', config: '', snapshots: '', activity: '' }
+  const tabBadge: Record<Tab, string> = { overview: '', files: '', git: '', config: '', terminal: '', snapshots: '', activity: '' }
 
   return (
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 40px 80px' }}>
@@ -196,6 +197,11 @@ export function AppView({
       {tabName === 'files' && <FilesTab appId={appId} sb={sb} onError={onError} toast={toast} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
+      {tabName === 'terminal' && (
+        sb && status === 'running'
+          ? <Suspense fallback={<div style={{ padding: 30, color: c.muted2, fontSize: 13 }}>Loading terminal…</div>}><SandboxTerminal key={sb.id} sandboxId={sb.id} /></Suspense>
+          : <div style={{ padding: 44, textAlign: 'center', color: c.muted2, fontSize: 13 }}>Start the sandbox to open a terminal.</div>
+      )}
       {tabName === 'snapshots' && <SnapshotsTab appId={appId} appName={app.name} onError={onError} toast={toast} refresh={refresh} sb={sb} />}
       {tabName === 'activity' && <ActivityTab appId={appId} onError={onError} />}
       {deployOpen && <DeployModal appName={app.name} close={() => setDeployOpen(false)} />}
