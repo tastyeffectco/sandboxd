@@ -18,14 +18,6 @@
   </a>
 </p>
 
-<img width="960" height="540" alt="sandboxd-demo3-api" src="https://github.com/user-attachments/assets/0854fbd6-6801-42e3-bb42-55f8a4f9ead7" />
-
-<img width="960" height="540" alt="sandboxd-demo1-create-app" src="https://github.com/user-attachments/assets/582f5c46-af57-41c1-b9ed-4081d1075c51" />
-
-<img width="960" height="540" alt="sandboxd-demo2-n8n-workflow" src="https://github.com/user-attachments/assets/a89b03c9-0f4d-4b19-b190-ecd27dd10d10" />
-
-
-
 <p align="center">
   <a href="https://sandboxd.io/demo/"><img alt="Live demo" src="https://img.shields.io/badge/%E2%96%B6%20Live%20demo-try%20it%20in%20your%20browser-ff6b00?style=for-the-badge"></a>
   &nbsp;
@@ -44,9 +36,29 @@
 
 ---
 
-<img width="1100" height="816" alt="sandboxd-demo" src="https://github.com/user-attachments/assets/f794ff9b-8ffe-47e8-bd30-22541f870f09" />
+<p align="center"><b>Prompt → a real, running app on <i>your</i> server, at its own URL.</b><br/>See it in action 👇</p>
 
-> **▶ [Try the live demo](https://sandboxd.io/demo/)** — click around the console with sample data, no install (read-only).
+<h3 align="center">1&nbsp;·&nbsp;Build an app from a prompt — in the console</h3>
+<p align="center"><i>Describe what you want; a coding agent builds it inside an isolated sandbox and it appears at a live preview URL.</i></p>
+<p align="center">
+  <img width="900" alt="Create a blog from a prompt in the sandboxd console" src="https://github.com/user-attachments/assets/582f5c46-af57-41c1-b9ed-4081d1075c51" />
+</p>
+
+<h3 align="center">2&nbsp;·&nbsp;Or launch an existing open-source app — one click</h3>
+<p align="center"><i>n8n, Ghost, Grafana, Gitea… 80+ curated apps, installed and live at their own URL.</i></p>
+<p align="center">
+  <img width="900" alt="Run an existing open-source app (n8n) in sandboxd" src="https://github.com/user-attachments/assets/a89b03c9-0f4d-4b19-b190-ecd27dd10d10" />
+</p>
+
+<h3 align="center">3&nbsp;·&nbsp;Prefer code? Drive it all from the API / CLI</h3>
+<p align="center"><i>Every action is a <code>/v1</code> call — headless, scriptable, and easy to build into your own product.</i></p>
+<p align="center">
+  <img width="900" alt="Drive sandboxd from the API / CLI" src="https://github.com/user-attachments/assets/0854fbd6-6801-42e3-bb42-55f8a4f9ead7" />
+</p>
+
+<p align="center"><b>▶ <a href="https://sandboxd.io/demo/">Try the live demo</a></b> — click around a real console with sample data, no install.</p>
+
+---
 
 ## What is sandboxd?
 
