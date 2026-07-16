@@ -20,6 +20,7 @@ import (
 
 	"github.com/sandboxd/control-plane/internal/audit"
 	"github.com/sandboxd/control-plane/internal/auth"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/store"
 )
 
@@ -29,6 +30,7 @@ type v1Snapshot struct {
 	Name            string `json:"name"`
 	Status          string `json:"status"`
 	SourceSandboxID string `json:"source_sandbox_id,omitempty"`
+	SourceAppID     string `json:"source_app_id,omitempty"`
 	BaseImage       string `json:"base_image"`
 	Visibility      string `json:"visibility"`
 	SizeBytes       int64  `json:"size_bytes,omitempty"`
@@ -46,6 +48,9 @@ func v1SnapshotFromRow(s *store.Snapshot) v1Snapshot {
 	}
 	if s.SourceSandboxID.Valid {
 		out.SourceSandboxID = s.SourceSandboxID.String
+	}
+	if s.SourceAppID.Valid {
+		out.SourceAppID = s.SourceAppID.String
 	}
 	if s.SizeBytes.Valid {
 		out.SizeBytes = s.SizeBytes.Int64
@@ -125,6 +130,9 @@ func (s *Server) v1CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	size, capErr := captureImage(r.Context(), srcImg, imgPath, s.LibraryRoot)
 	if capErr != nil {
 		s.loggerFor(r, src.ID).Error("snapshot capture failed", "snapshot", snapID, "err", capErr.Error())
+		s.recordEvent(r, events.Event{Type: events.SnapshotCaptureFailed, Severity: events.SeverityError,
+			Message: "Snapshot capture failed: " + req.Name, AppID: src.AppID.String, SandboxID: src.ID,
+			Payload: map[string]any{"name": req.Name, "reason": "capture_failed"}})
 		writeV1Err(w, http.StatusInternalServerError, "internal", "capture: "+capErr.Error())
 		return
 	}
@@ -134,6 +142,7 @@ func (s *Server) v1CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		Name:            req.Name,
 		OwnerToken:      tenantToken(r),
 		SourceSandboxID: sql.NullString{String: src.ID, Valid: true},
+		SourceAppID:     src.AppID,          // per-app history survives the sandbox (0015)
 		CreatedByUserID: src.ExternalUserID, // provenance only
 		BaseImage:       src.Image,
 		Visibility:      "private",
@@ -151,6 +160,9 @@ func (s *Server) v1CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		Action: "snapshot.create", Target: snapID,
 		Detail: map[string]any{"source_sandbox_id": src.ID, "name": req.Name},
 	})
+	s.recordEvent(r, events.Event{Type: events.SnapshotCaptured, Severity: events.SeverityInfo,
+		Message: "Snapshot captured: " + req.Name, AppID: src.AppID.String, SandboxID: src.ID,
+		SnapshotID: snapID, Payload: map[string]any{"name": req.Name}})
 	writeJSON(w, http.StatusCreated, v1SnapshotFromRow(snap))
 }
 

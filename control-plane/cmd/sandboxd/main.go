@@ -36,6 +36,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
 	"github.com/sandboxd/control-plane/internal/egress"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/logging"
 	"github.com/sandboxd/control-plane/internal/loopback"
@@ -129,6 +130,9 @@ func main() {
 	userns := envDefault("SANDBOXD_USERNS", "host") // sandbox + seed --userns; "host" is deterministic on any daemon
 	previewEntrypoint := envDefault("PREVIEW_ENTRYPOINT", "web")
 	previewTLS := boolFromEnv("PREVIEW_TLS", false)
+	// Host-facing port the preview/console URLs are reached on (compose passes
+	// the published HTTP_PORT here). Default "80": bare URLs on a dedicated host.
+	publicHTTPPort := envDefault("SANDBOXD_PUBLIC_HTTP_PORT", "80")
 	setMemoryHigh := boolFromEnv("SANDBOXD_SET_MEMORY_HIGH", false)
 
 	migrations := envDefault("SANDBOXD_MIGRATIONS", migrationsDir)
@@ -174,6 +178,7 @@ func main() {
 	// initial config is read from the process environment (systemd has
 	// already loaded the EnvironmentFile); SIGHUP re-reads the file.
 	auditLog := audit.New(st, log.With("component", "audit"))
+	eventRec := events.New(st, log.With("component", "events"))
 	envFile := envDefault("SANDBOXD_ENV_FILE", "/etc/sandboxed/sandboxd.env")
 	authMw := auth.NewMiddleware(auth.ParseConfig(os.Getenv), auditLog, log.With("component", "auth"))
 	denyMode := envDefault("SANDBOXD_FORWARD_AUTH_DENY_MODE", "redirect")
@@ -343,6 +348,7 @@ func main() {
 		Userns:              userns,
 		PreviewEntrypoint:   previewEntrypoint,
 		PreviewTLS:          previewTLS,
+		PublicHTTPPort:      publicHTTPPort,
 		SetMemoryHigh:       setMemoryHigh,
 		Inflight:            inflight,
 		Wake:                wakeHandler,
@@ -353,6 +359,7 @@ func main() {
 		Locks:               idLocks,
 		Auth:                authMw,
 		Audit:               auditLog,
+		Events:              eventRec,
 		SnapshotsRoot:       snapshotsRoot,
 		ForwardAuthDenyMode: denyMode,
 		TemplatesDir:        envDefault("SANDBOXD_TEMPLATES_DIR", templatesRoot),

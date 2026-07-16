@@ -15,6 +15,7 @@ import (
 	"github.com/sandboxd/control-plane/internal/auth"
 	"github.com/sandboxd/control-plane/internal/docker"
 	"github.com/sandboxd/control-plane/internal/egress"
+	"github.com/sandboxd/control-plane/internal/events"
 	"github.com/sandboxd/control-plane/internal/idlock"
 	"github.com/sandboxd/control-plane/internal/loopback"
 	"github.com/sandboxd/control-plane/internal/metrics"
@@ -47,7 +48,13 @@ type Server struct {
 	Userns            string
 	PreviewEntrypoint string
 	PreviewTLS        bool
-	SetMemoryHigh     bool
+	// PublicHTTPPort is the HOST-facing port that preview/console URLs are
+	// reached on (the host side of Traefik's published port). previewURL
+	// appends it unless it's the default for the scheme (80 for http, 443
+	// for https), so on a shared host with HTTP_PORT=18080 the API returns
+	// a reachable ":18080" URL instead of a bare :80 one. Empty = default.
+	PublicHTTPPort string
+	SetMemoryHigh  bool
 
 	// AgentCfg is the in-memory cache of the platform's agent
 	// configuration (model + AGENTS.md) — the source of truth for
@@ -100,8 +107,9 @@ type Server struct {
 	// main.go around this mux).
 	Auth                *auth.Middleware
 	Audit               *audit.Logger
-	SnapshotsRoot       string // per-sandbox purge of _snapshots/<id>/
-	ForwardAuthDenyMode string // "redirect" (default) | "meta-refresh"
+	Events              *events.Recorder // Phase 5 — durable app_events timeline
+	SnapshotsRoot       string           // per-sandbox purge of _snapshots/<id>/
+	ForwardAuthDenyMode string           // "redirect" (default) | "meta-refresh"
 }
 
 // Handler returns the http.Handler ready for ListenAndServe.
@@ -154,6 +162,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
 	mux.HandleFunc("POST /v1/apps/{id}/sandbox", s.observe("POST /v1/apps/{id}/sandbox", s.v1CreateAppSandbox))
+	mux.HandleFunc("GET /v1/apps/{id}/snapshots", s.observe("GET /v1/apps/{id}/snapshots", s.v1ListAppSnapshots))
+	mux.HandleFunc("POST /v1/apps/{id}/restore", s.observe("POST /v1/apps/{id}/restore", s.v1RestoreApp))
+	mux.HandleFunc("POST /v1/apps/{id}/fork", s.observe("POST /v1/apps/{id}/fork", s.v1ForkApp))
+	mux.HandleFunc("GET /v1/apps/{id}/events", s.observe("GET /v1/apps/{id}/events", s.v1ListAppEvents))
+	mux.HandleFunc("GET /v1/tasks/{id}/events", s.observe("GET /v1/tasks/{id}/events", s.v1ListTaskEvents))
 	mux.HandleFunc("POST /v1/apps/{id}/config", s.observe("POST /v1/apps/{id}/config", s.v1CreateAppConfig))
 	mux.HandleFunc("GET /v1/apps/{id}/config", s.observe("GET /v1/apps/{id}/config", s.v1ListAppConfig))
 	mux.HandleFunc("PATCH /v1/apps/{id}/config/{key}", s.observe("PATCH /v1/apps/{id}/config/{key}", s.v1PatchAppConfig))

@@ -23,11 +23,12 @@ type Snapshot struct {
 	SizeBytes       sql.NullInt64
 	ErrorMessage    sql.NullString
 	CreatedAt       time.Time
+	SourceAppID     sql.NullString // app the snapshot was captured from (0015)
 }
 
 const snapshotCols = `id, name, owner_token, source_sandbox_id, created_by_user_id,
 	base_image, visibility, format, status, image_path, size_bytes,
-	error_message, created_at`
+	error_message, created_at, source_app_id`
 
 func scanSnapshot(sc interface {
 	Scan(dest ...any) error
@@ -37,7 +38,7 @@ func scanSnapshot(sc interface {
 	if err := sc.Scan(
 		&s.ID, &s.Name, &s.OwnerToken, &s.SourceSandboxID, &s.CreatedByUserID,
 		&s.BaseImage, &s.Visibility, &s.Format, &s.Status, &s.ImagePath,
-		&s.SizeBytes, &s.ErrorMessage, &createdAt,
+		&s.SizeBytes, &s.ErrorMessage, &createdAt, &s.SourceAppID,
 	); err != nil {
 		return nil, err
 	}
@@ -78,6 +79,29 @@ func (s *Store) ListSnapshotsByOwner(ctx context.Context, ownerToken string) ([]
 	return out, rows.Err()
 }
 
+// ListSnapshotsByApp returns a tenant's snapshots captured from one app,
+// newest first. Scoped by both owner_token (tenant) and source_app_id so a
+// tenant only ever sees its own app's history.
+func (s *Store) ListSnapshotsByApp(ctx context.Context, ownerToken, appID string) ([]*Snapshot, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+snapshotCols+` FROM snapshot
+		 WHERE owner_token = ? AND source_app_id = ? ORDER BY created_at DESC`,
+		ownerToken, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*Snapshot{}
+	for rows.Next() {
+		snap, err := scanSnapshot(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, snap)
+	}
+	return out, rows.Err()
+}
+
 // --- Writes (single-writer goroutine) --------------------------------
 
 // CreateSnapshot inserts a snapshot row. Returns ErrConflict on id
@@ -89,11 +113,11 @@ func (s *Store) CreateSnapshot(ctx context.Context, snap *Snapshot) error {
 	return s.submit(ctx, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO snapshot (`+snapshotCols+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			snap.ID, snap.Name, snap.OwnerToken, snap.SourceSandboxID,
 			snap.CreatedByUserID, snap.BaseImage, snap.Visibility, snap.Format,
 			snap.Status, snap.ImagePath, snap.SizeBytes, snap.ErrorMessage,
-			snap.CreatedAt.Unix())
+			snap.CreatedAt.Unix(), snap.SourceAppID)
 		if err != nil && isUniqueViolation(err) {
 			return ErrConflict
 		}
