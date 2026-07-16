@@ -31,3 +31,6 @@ docker-compose.override.yml
 
 # internal maintainer docs — kept locally, never published
 docs/internal/
+.env.bak*
+*.env.bak*
+.env.*.bak
