@@ -5,8 +5,7 @@
 speaks only the public `/v1` API. Core stays a generic "run a manifest in a hardened sandbox behind a
 preview" engine; the open-source-apps catalog is one use case among many.
 
-Validated at scale first: ~150 catalog apps were live-verified through this exact surface
-(`qa-reports/selfhosted/WHAT-WORKS.md`, `CHUNK-01..25.md`).
+Roughly 150 open-source catalog apps run through this exact surface.
 
 > **Two products.** The **console UI** (which hosts the catalog) and **sandboxd core** are separate
 > products, expected to live in separate repos. This contract is the seam between them: the catalog is
@@ -169,7 +168,7 @@ These are two different things and must not be conflated:
 | | **Core runtime preset** | **Catalog recipe** |
 |---|---|---|
 | What | A Go/runtime template bundle — template files + a generated `sandbox.yaml` + capabilities. | Console/client **data** (a `CatalogRecipe` object: `catalog-run.sh` + a standard `sandbox.yaml`). |
-| Lives in | **sandboxd core** (`internal/preset`), compiled into the binary; surfaced by `GET /v1/presets` and the `runtime_preset` create field. See [`base-image.md`](base-image.md) and [`sandbox-manifest.md`](sandbox-manifest.md) §7C-1. | The **console** (`console/src/catalog*.ts`), shipped with the UI. |
+| Lives in | **sandboxd core** (`internal/preset`), compiled into the binary; surfaced by `GET /v1/presets` and the `runtime_preset` create field. See [`base-image.md`](base-image.md) and [`sandbox-manifest.md`](sandbox-manifest.md). | The **console** (`console/src/catalog*.ts`), shipped with the UI. |
 | Added by | Changing **core** (recompile). | Adding a data object — **no core change**. |
 | Applied via | Create-time preset selection. | `PUT /v1/sandboxes/{id}/files` writing `sandbox.yaml` + `catalog-run.sh`, then restart (contract §4). |
 
