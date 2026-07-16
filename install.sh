@@ -132,7 +132,8 @@ if [ -z "$CUR_TOKENS" ]; then
     RAND="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
   fi
   API_KEY="sk_${RAND}"
-  tmp="$(mktemp)"; grep -vE '^SANDBOXD_API_TOKENS=' .env > "$tmp" 2>/dev/null || true; mv "$tmp" .env
+  # BSD/macOS mktemp needs an explicit template (GNU works without one).
+  tmp="$(mktemp "${TMPDIR:-/tmp}/sandboxd-env.XXXXXX")"; grep -vE '^SANDBOXD_API_TOKENS=' .env > "$tmp" 2>/dev/null || true; mv "$tmp" .env
   printf 'SANDBOXD_API_TOKENS=default=%s\n' "$API_KEY" >> .env
   ok "API bootstrap key generated (shown at the end)"
 else
