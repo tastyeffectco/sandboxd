@@ -82,6 +82,11 @@ services:
       # Which OpenCode Zen endpoint opencode routes through the auth proxy:
       # "zen" (pay-as-you-go, full catalog) or "zengo" (Zen "go" subscription).
       SANDBOXD_OPENCODE_ZEN_PATH: ${SANDBOXD_OPENCODE_ZEN_PATH:-zen}
+      # Sandbox container runtime: empty = docker default (runc); "runsc" = gVisor
+      # (stronger per-sandbox kernel isolation). SANDBOXD_DNS overrides resolv.conf
+      # for gVisor sandboxes (netstack can't reach Docker's embedded DNS).
+      SANDBOXD_RUNTIME: ${SANDBOXD_RUNTIME:-}
+      SANDBOXD_DNS: ${SANDBOXD_DNS:-}
       SANDBOXD_DATA_DIR: ${SANDBOXD_DATA_DIR:-/var/lib/sandboxed}
       SANDBOXD_LOG_DIR: ${SANDBOXD_LOG_DIR:-/var/lib/sandboxed/log}
       SANDBOXD_ACCESS_LOG: ${SANDBOXD_LOG_DIR:-/var/lib/sandboxed/log}/traefik-access.log

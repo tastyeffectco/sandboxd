@@ -735,6 +735,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// right one per task by the requested agent, so an explicit agent:"claude-code"
 	// task works regardless of the default. No credential is ever in env.
 	volumes := append([]string{mntPath + ":/home/sandbox"}, s.agentAuthMounts()...)
+	if s.DNSResolvConf != "" {
+		// gVisor: override the unreachable embedded DNS (127.0.0.11).
+		volumes = append(volumes, s.DNSResolvConf+":/etc/resolv.conf:ro")
+	}
 	startRun := time.Now()
 	var runErr error
 	containerID, runErr := s.Docker.Run(r.Context(), docker.RunSpec{
@@ -742,6 +746,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Hostname:    "s-" + req.ID,
 		Network:     s.Network,
 		Userns:      s.Userns,
+		Runtime:     s.Runtime,
 		ReadOnly:    true,
 		CapDrop:     []string{"ALL"},
 		SecurityOpt: []string{"no-new-privileges"},

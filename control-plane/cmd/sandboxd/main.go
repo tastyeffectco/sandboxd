@@ -19,7 +19,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -414,6 +416,54 @@ func main() {
 	// handler; a background goroutine below keeps its cache warm.
 	updateChecker := &telemetry.Checker{}
 
+	// gVisor (opt-in): SANDBOXD_RUNTIME=runsc runs sandboxes under runsc.
+	// gVisor's netstack can't reach Docker's embedded DNS (127.0.0.11) on a
+	// user-defined network, so we write a resolv.conf with real nameservers
+	// (SANDBOXD_DNS, default public resolvers) and bind-mount it into each
+	// sandbox. Requires runsc registered with `--host-uds=create` (docs/gvisor.md).
+	sbxRuntime := envDefault("SANDBOXD_RUNTIME", "")
+	var dnsResolvConf string
+	if sbxRuntime == "runsc" {
+		var ns []string
+		for _, d := range strings.Split(os.Getenv("SANDBOXD_DNS"), ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				ns = append(ns, d)
+			}
+		}
+		if len(ns) == 0 {
+			ns = []string{"1.1.1.1", "8.8.8.8"}
+		}
+		var b strings.Builder
+		for _, n := range ns {
+			fmt.Fprintf(&b, "nameserver %s\n", n)
+		}
+		dnsResolvConf = filepath.Join(dataDir, "gvisor-resolv.conf")
+		if err := os.WriteFile(dnsResolvConf, []byte(b.String()), 0o644); err != nil {
+			log.Error("gvisor: write resolv.conf failed; sandbox DNS may not resolve", "err", err.Error())
+			dnsResolvConf = ""
+		} else {
+			log.Info("gvisor runtime enabled", "runtime", sbxRuntime, "dns", ns)
+		}
+		// gVisor sandboxes use public DNS (above) and can't reach Docker's
+		// embedded resolver, so an internal service name like "sandboxd" won't
+		// resolve inside them. Pin the agent proxy URL to its IP — the control
+		// plane (not under gVisor) can resolve it — so sandboxes reach the proxy
+		// by address. Without this, every agent task hangs/fails on DNS.
+		if u, perr := url.Parse(agentProxyURL); perr == nil && u.Hostname() != "" && net.ParseIP(u.Hostname()) == nil {
+			if ips, lerr := net.LookupHost(u.Hostname()); lerr == nil && len(ips) > 0 {
+				if p := u.Port(); p != "" {
+					u.Host = net.JoinHostPort(ips[0], p)
+				} else {
+					u.Host = ips[0]
+				}
+				log.Info("gvisor: pinned agent proxy to IP", "from", agentProxyURL, "to", u.String())
+				agentProxyURL = u.String()
+			} else {
+				log.Warn("gvisor: could not resolve agent proxy host to IP; sandboxes may fail to reach it", "host", u.Hostname())
+			}
+		}
+	}
+
 	server := &api.Server{
 		Store:               st,
 		Secrets:             secretsCipher,
@@ -431,6 +481,8 @@ func main() {
 		Image:               image,
 		Network:             network,
 		Userns:              userns,
+		Runtime:             sbxRuntime,
+		DNSResolvConf:       dnsResolvConf,
 		PreviewEntrypoint:   previewEntrypoint,
 		PreviewTLS:          previewTLS,
 		PublicHTTPPort:      publicHTTPPort,
