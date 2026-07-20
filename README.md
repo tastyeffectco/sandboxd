@@ -60,6 +60,23 @@
 
 ---
 
+<h3 align="center">📣 Stay in the loop</h3>
+
+<p align="center">
+  Self-hosting is <b>MIT and free, forever</b> — <code>git clone</code> and you're done.<br/>
+  Want the <b>1.0 release + occasional product updates</b>, or a <b>managed cloud</b> so you don't run the box yourself? Two links:
+</p>
+
+<p align="center">
+  <a href="https://sandboxd.io/?news=1"><img alt="Get 1.0 + release news" src="https://img.shields.io/badge/%F0%9F%93%AC%20Get%201.0%20%2B%20release%20news-subscribe-0a0a0a?style=for-the-badge"></a>
+  &nbsp;
+  <a href="https://sandboxd.io/?waitlist=cloud"><img alt="sandboxd Cloud waitlist" src="https://img.shields.io/badge/%E2%98%81%EF%B8%8F%20sandboxd%20Cloud-join%20the%20waitlist-ff6b00?style=for-the-badge"></a>
+</p>
+
+<p align="center"><sub>No spam, one-click unsubscribe, and the cloud is <b>optional</b> — the self-hosted engine is always the full product.</sub></p>
+
+---
+
 ## What is sandboxd?
 
 The apps where you type *"build me a todo app"* and a working site appears at its
