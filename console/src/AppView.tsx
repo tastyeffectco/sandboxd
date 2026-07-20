@@ -2,6 +2,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } fr
 import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, TaskSummary, RuntimeSuggestion } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 import { DeployModal } from './DeployModal'
+import { IS_DEMO } from './demo'
 
 // Code-split the CodeMirror editor: it's the app's heaviest dependency and only
 // needed on the Files tab, so it loads on demand rather than in the main bundle.
@@ -259,7 +260,7 @@ function Overview({ app, sb, previewURL, onError, toast, refresh, onApplyRuntime
             {ready && <a onClick={() => setNonce((n) => n + 1)} title="Reload preview" className="dc-hoverink" data-testid="preview-reload" style={{ color: c.muted, fontSize: 13, cursor: 'pointer' }}>↻</a>}
             {previewURL && running && <a onClick={() => window.open(previewURL, '_blank')} style={{ color: c.link, fontSize: 12, cursor: 'pointer' }}>Open ↗</a>}
           </div>
-          <div style={{ height: 420, position: 'relative', background: ready && reach !== 'blocked' ? '#fff' : 'repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5 12px,#eeeef0 12px,#eeeef0 24px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ height: IS_DEMO ? 480 : 420, position: 'relative', background: ready && reach !== 'blocked' ? '#fff' : 'repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5 12px,#eeeef0 12px,#eeeef0 24px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {ready && reach === 'blocked' ? (
               <div data-testid="preview-blocked" style={{ maxWidth: 340, textAlign: 'center', background: '#ffffffcc', border: `1px solid ${c.border2}`, borderRadius: 9, padding: '18px 20px' }}>
                 <div style={{ fontFamily: font.display, fontWeight: 600, fontSize: 14, marginBottom: 6 }}>App is running ✓</div>
@@ -277,6 +278,18 @@ function Overview({ app, sb, previewURL, onError, toast, refresh, onApplyRuntime
             ) : (
               <div style={{ ...mono, fontSize: 11.5, color: c.muted2, background: '#ffffffcc', border: `1px dashed ${c.border2}`, borderRadius: 7, padding: '8px 14px' }} data-testid="preview-empty">
                 {!sb ? 'No sandbox yet — create one from the header' : sb.preview?.status === 'none' ? 'No public endpoint — worker running' : 'Sandbox not running'}
+              </div>
+            )}
+
+            {/* Demo-only: many visitors read the live preview as a screenshot and
+                never touch it. A bouncing label makes it obvious this is a real,
+                interactive app running inside the sandbox. pointerEvents:none so
+                it never blocks clicks into the app. */}
+            {IS_DEMO && ready && reach !== 'blocked' && (
+              <div style={{ position: 'absolute', top: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 2 }}>
+                <div style={{ ...mono, fontSize: 12, fontWeight: 700, color: '#0a0a0a', background: '#ff6b00', padding: '6px 14px', borderRadius: 999, whiteSpace: 'nowrap', boxShadow: '0 2px 8px #0a0a0a26', animation: 'sbxNudge 1.6s ease-in-out infinite, sbxHalo 1.8s ease-out infinite' }}>
+                  👇 A real app running inside the sandbox — click &amp; type in it
+                </div>
               </div>
             )}
           </div>
