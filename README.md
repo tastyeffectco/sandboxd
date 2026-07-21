@@ -38,25 +38,18 @@
 
 <p align="center"><b>Prompt → a real, running app on <i>your</i> server, at its own URL.</b><br/>See it in action 👇</p>
 
-<h3 align="center">1&nbsp;·&nbsp;Build an app from a prompt — in the console</h3>
-<p align="center"><i>Describe what you want; a coding agent builds it inside an isolated sandbox and it appears at a live preview URL.</i></p>
-<p align="center">
-  <img width="900" alt="Create a blog from a prompt in the sandboxd console" src="https://github.com/user-attachments/assets/582f5c46-af57-41c1-b9ed-4081d1075c51" />
-</p>
-
-<h3 align="center">2&nbsp;·&nbsp;Or launch an existing open-source app — one click</h3>
-<p align="center"><i>n8n, Ghost, Grafana, Gitea… 80+ curated apps, installed and live at their own URL.</i></p>
-<p align="center">
-  <img width="900" alt="Run an existing open-source app (n8n) in sandboxd" src="https://github.com/user-attachments/assets/a89b03c9-0f4d-4b19-b190-ecd27dd10d10" />
-</p>
-
-<h3 align="center">3&nbsp;·&nbsp;Prefer code? Drive it all from the API / CLI</h3>
-<p align="center"><i>Every action is a <code>/v1</code> call — headless, scriptable, and easy to build into your own product.</i></p>
-<p align="center">
-  <img width="900" alt="Drive sandboxd from the API / CLI" src="https://github.com/user-attachments/assets/0854fbd6-6801-42e3-bb42-55f8a4f9ead7" />
-</p>
-
-<p align="center"><b>▶ <a href="https://sandboxd.io/demo/">Try the live demo</a></b> — click around a real console with sample data, no install.</p>
+<div align="center">
+<table>
+  <tr>
+    <td width="50%"><img alt="Build an app from a prompt in the sandboxd console" src="https://github.com/user-attachments/assets/582f5c46-af57-41c1-b9ed-4081d1075c51"><br><sub><b>1 · Build from a prompt</b> — an agent builds it in an isolated sandbox, live at a preview URL.</sub></td>
+    <td width="50%"><img alt="Run an existing open-source app (n8n) in sandboxd" src="https://github.com/user-attachments/assets/a89b03c9-0f4d-4b19-b190-ecd27dd10d10"><br><sub><b>2 · Or run an existing app</b> — n8n, Ghost, Grafana… 80+ curated apps, one click.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img alt="Drive sandboxd from the API / CLI" src="https://github.com/user-attachments/assets/0854fbd6-6801-42e3-bb42-55f8a4f9ead7"><br><sub><b>3 · Or drive the API</b> — every action is a <code>/v1</code> call, headless &amp; scriptable.</sub></td>
+    <td width="50%" align="center"><br><b>▶ <a href="https://sandboxd.io/demo/">Try the live demo</a></b><br><br><sub>Click around a real console with sample data — no install.</sub></td>
+  </tr>
+</table>
+</div>
 
 ---
 
