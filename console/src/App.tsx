@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, setOnUnauthorized, App as TApp, Preset, GitCredential } from './api'
+import { api, setOnUnauthorized, App as TApp, Preset, GitCredential, Agent } from './api'
 import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
 import { STARTERS, STARTER_ICONS } from './design/starters'
@@ -164,10 +164,12 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
   const [creds, setCreds] = useState<GitCredential[]>([])
   const [busy, setBusy] = useState(false)
   const [sbStatus, setSbStatus] = useState<Record<string, string>>({})
+  const [agents, setAgents] = useState<Agent[]>([])
 
   useEffect(() => {
     api.listPresets().then(setPresets).catch(() => {})
     api.listGitCredentials().then(setCreds).catch(() => {})
+    api.getAgents().then(setAgents).catch(() => {})
   }, [])
   useEffect(() => {
     Promise.all(apps.filter((a) => a.current_sandbox_id).map(async (a) => {
@@ -205,10 +207,34 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
     <div onClick={() => setMode(m)} className="dc-hoverborder" data-testid={`mode-${m}`} style={{ padding: '6px 12px', fontSize: 12.5, borderRadius: 7, cursor: 'pointer', border: `1px solid ${mode === m ? c.faint : c.border}`, color: mode === m ? c.fg : c.muted, background: mode === m ? c.panel2 : 'transparent' }}>{label}</div>
   )
 
+  // Live overview — all real (no fabricated time-series/graphs). "asleep" = apps
+  // not currently serving (stopped/sleeping/no sandbox yet); they wake on request.
+  const live = apps.filter((a) => sbStatus[a.id] === 'running').length
+  const connected = agents.filter((a) => a.status === 'connected').length
+  const tiles: { n: string | number; label: string; tone: string; dot?: string }[] = [
+    { n: apps.length, label: 'apps', tone: c.fg },
+    { n: live, label: 'live', tone: c.good, dot: live ? c.good : undefined },
+    { n: Math.max(0, apps.length - live), label: 'asleep', tone: c.muted },
+    { n: `${connected}/${agents.length}`, label: 'agents', tone: connected ? c.fg : c.warn },
+  ]
+
   return (
     <div style={{ maxWidth: 920, margin: '0 auto', padding: '36px 40px 80px' }}>
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Apps</h1>
-      <p style={{ color: c.muted, margin: '0 0 24px' }}>Each app runs isolated in its own sandbox with a live preview URL.</p>
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Apps</h1>
+      <p style={{ color: c.muted, margin: '0 0 18px', maxWidth: 580 }}>Each app runs isolated in its own sandbox with a live preview URL — an AI agent builds it, you own it. Idle apps sleep and wake on request.</p>
+
+      {/* At-a-glance overview: real, live counts pulled from the API. */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 26 }} data-testid="overview-stats">
+        {tiles.map((t) => (
+          <Card key={t.label} style={{ padding: '12px 16px', minWidth: 92, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ fontFamily: font.display, fontSize: 26, fontWeight: 700, lineHeight: 1, color: t.tone }}>{t.n}</span>
+            <span style={{ ...mono, fontSize: 11, letterSpacing: '.04em', color: c.muted, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+              {t.dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.dot }} />}
+              {t.label}
+            </span>
+          </Card>
+        ))}
+      </div>
 
       <Card style={{ padding: 16, marginBottom: 28 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
@@ -277,7 +303,14 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
       </Card>
 
       {apps.length === 0 ? (
-        <p style={{ color: c.muted2 }}>No apps yet — create one above to get started.</p>
+        <Card style={{ padding: '22px 20px', textAlign: 'center' }} data-testid="apps-empty">
+          <div style={{ fontFamily: font.display, fontWeight: 600, fontSize: 15, marginBottom: 6 }}>No apps yet</div>
+          <div style={{ color: c.muted, fontSize: 13, lineHeight: 1.55, maxWidth: 440, margin: '0 auto' }}>
+            Create one above from a blank template, a starter, or a Git repo — or browse the{' '}
+            <a onClick={goStore} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }}>App Store</a>{' '}
+            to launch a ready-made app in one click. Whatever you make gets its own isolated sandbox and a live preview URL.
+          </div>
+        </Card>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(270px,1fr))', gap: 14 }} data-testid="app-list">
           {apps.map((a) => (
