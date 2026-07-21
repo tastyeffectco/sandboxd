@@ -201,6 +201,10 @@ sandboxd needs one Linux server with Docker — nothing else. Grab a server
 below (2 vCPU / 4 GB is plenty to start), paste our
 [cloud-init file](deploy/cloud-init.yaml) at creation, and it installs itself.
 
+> **Disclosure:** we earn a referral commission when you sign up through the
+> provider links below, at no additional cost to you. It helps fund sandboxd's
+> development.
+
 [![Deploy on Vultr](https://img.shields.io/badge/Deploy%20on-Vultr-007BFC?logo=vultr&logoColor=white&style=for-the-badge)](https://www.vultr.com/?ref=9912150)
 
 <!-- ENABLE THESE AS EACH AFFILIATE LINK ARRIVES (uncomment + replace placeholder):
@@ -217,9 +221,6 @@ curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/deploy/
 ```
 
 Full per-provider walkthrough: [deploy/DEPLOY.md](deploy/DEPLOY.md).
-
-> *Some links above are referral links — they cost you nothing and support
-> sandboxd's development.*
 
 ## What you get
 
