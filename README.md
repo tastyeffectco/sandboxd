@@ -172,10 +172,16 @@ builds from multi-arch bases with no cross-compilation. Install in one line:
 curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash
 ```
 
-It builds the images, starts the stack **with the web console**, and prints your
+It pulls the prebuilt images (or builds from source if none are published for
+your version), starts the stack **with the web console**, and prints your
 **console URL + a generated login** — no password step. Open it, connect an agent
 under **Settings**, create an app, and build. No code needed.
 
+- **Build from source instead:** run **`./install.sh --build`** — a first-class,
+  fully-supported path. Compiles every image locally so you audit exactly what
+  runs. Prebuilt images are multi-arch, **cosign-signed with SLSA provenance**
+  (built only by [CI](.github/workflows/release-images.yml) from the tagged
+  commit) — so pulling is verifiable, and building yourself is always an option.
 - **Console:** `http://console.localhost` — the installer prints your login; lost
   it? run **`./console-login.sh`** to see it again anytime
 - **API:** `http://127.0.0.1:9090` (`curl http://127.0.0.1:9090/healthz` → `ok`)

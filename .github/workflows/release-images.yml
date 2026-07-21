@@ -1,0 +1,97 @@
+# Publish the three sandboxd images to GHCR, multi-arch, on a version tag.
+#
+# Trigger: pushing a tag like `v0.4.0` (or a manual run with an explicit
+# version). Each image is built for linux/amd64 + linux/arm64, pushed to
+# ghcr.io/<owner>/<image>:<version>, given a SLSA build-provenance attestation
+# and an SBOM, and signed keylessly with cosign (Sigstore OIDC — no stored
+# keys). Consumers can verify: image == this tag == this workflow.
+#
+# The installer prefers these images (fast path) and falls back to building
+# from source when they're absent — so `--build` stays a first-class path for
+# self-hosters who compile everything themselves.
+name: release-images
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.4.0)'
+        required: true
+
+permissions:
+  contents: read
+  packages: write      # push to GHCR
+  id-token: write      # cosign keyless (Sigstore OIDC)
+  attestations: write  # SLSA provenance attestation
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Base image: context is the repo root so the runtimed build stage
+          # can see control-plane/ (see image/Dockerfile, multi-stage).
+          - name: sandboxd-base
+            context: .
+            dockerfile: image/Dockerfile
+          - name: sandboxd-control-plane
+            context: ./control-plane
+            dockerfile: ./control-plane/Dockerfile
+          - name: sandboxd-console
+            context: ./console
+            dockerfile: ./console/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"   # tag v0.4.0 -> 0.4.0
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3        # arm64 emulation on amd64 runners
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (multi-arch, provenance + SBOM)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ steps.ver.outputs.version }}
+          provenance: mode=max   # SLSA build provenance
+          sbom: true
+          # buildvcs off — the base image's runtimed stage builds from a bind
+          # context without .git; mirrors image/build.sh + local builds.
+          build-args: GOFLAGS=-buildvcs=false
+
+      - name: Sign the pushed image (cosign keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+        run: |
+          cosign version >/dev/null 2>&1 || curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign && chmod +x /usr/local/bin/cosign
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Summary
+        run: |
+          echo "Published **${{ matrix.name }}:${{ steps.ver.outputs.version }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- digest: \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- signed (cosign keyless) + SLSA provenance + SBOM" >> "$GITHUB_STEP_SUMMARY"
