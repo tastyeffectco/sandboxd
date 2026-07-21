@@ -17,6 +17,9 @@ body{color:var(--fg);font-family:var(--sans);font-size:13.5px;line-height:1.5;-w
 input::placeholder,textarea::placeholder{color:var(--muted-2)}
 input:focus,textarea:focus,select:focus{outline:1px solid #18181b26;border-color:#52525b}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+/* demo-only attention nudge on the live preview (see AppView Overview) */
+@keyframes sbxNudge{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes sbxHalo{0%{box-shadow:0 0 0 0 #ff6b0066}70%{box-shadow:0 0 0 10px #ff6b0000}100%{box-shadow:0 0 0 0 #ff6b0000}}
 button,a,input,select,textarea{transition:background .15s ease,border-color .15s ease,color .15s ease,filter .15s ease,transform .1s ease,box-shadow .2s ease}
 button{cursor:pointer;font-family:var(--sans)}
 button:hover{filter:brightness(.97)}
