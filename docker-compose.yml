@@ -55,7 +55,10 @@ services:
         # upgrade.sh & install.sh export these from `git describe`; default dev.
         VERSION: ${SANDBOXD_VERSION:-dev}
         GIT_COMMIT: ${SANDBOXD_GIT_COMMIT:-unknown}
-    image: sandboxd-control-plane:0.3.0
+    # Registry ref so `docker compose pull` fetches the prebuilt image; the
+    # build: block above still lets `docker compose build` (install.sh --build)
+    # compile it locally under the same name. Same image either way.
+    image: ghcr.io/tastyeffectco/sandboxd-control-plane:${SANDBOXD_IMAGE_TAG:-0.3.0}
     restart: unless-stopped
     userns_mode: "host"  # see traefik above
     # Reachable on the internal network as http://sandboxd:9000. The API
@@ -73,7 +76,7 @@ services:
     environment:
       # --- core ---
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-localhost}
-      SANDBOXD_IMAGE: ${SANDBOXD_IMAGE:-sandboxd-base:0.3.0}
+      SANDBOXD_IMAGE: ${SANDBOXD_IMAGE:-ghcr.io/tastyeffectco/sandboxd-base:0.3.0}
       SANDBOXD_NETWORK: ${SANDBOXD_NETWORK:-sandboxd_net}
       SANDBOXD_USERNS: ${SANDBOXD_USERNS:-host}
       # Default coding agent for tasks that don't specify one. Explicit
@@ -130,7 +133,7 @@ services:
     profiles: [console]
     build:
       context: ./console
-    image: sandboxd-console:0.3.0
+    image: ghcr.io/tastyeffectco/sandboxd-console:${SANDBOXD_IMAGE_TAG:-0.3.0}
     restart: unless-stopped
     depends_on:
       - sandboxd
