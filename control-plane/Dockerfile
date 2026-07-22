@@ -10,7 +10,7 @@
 # Build context is the control-plane/ directory.
 
 # --- Stage 1: build sandboxd (CGO) -----------------------------------
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 # Version stamping — fed by docker-compose build args (see upgrade.sh/install.sh,
 # which derive them from `git describe`). Default to dev/unknown for a bare build.
 ARG VERSION=dev
