@@ -8,7 +8,7 @@ import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
 import { Login, CreatePassword } from './AuthGate'
 
-type Route = { name: 'apps' } | { name: 'store' } | { name: 'settings' } | { name: 'app'; id: string; tab?: string; task?: string }
+type Route = { name: 'apps' } | { name: 'brain' } | { name: 'store' } | { name: 'settings' } | { name: 'app'; id: string; tab?: string; task?: string }
 
 export default function App() {
   const [route, setRoute] = useState<Route>({ name: 'apps' })
@@ -69,6 +69,7 @@ export default function App() {
 
   const nav = [
     { key: 'apps', label: 'Apps' },
+    { key: 'brain', label: 'Brain' },
     { key: 'store', label: 'App Store' },
     { key: 'settings', label: 'Settings' },
   ]
@@ -141,6 +142,7 @@ export default function App() {
       {/* MAIN */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
         {route.name === 'apps' && <AppsScreen apps={apps} reload={loadApps} onOpen={(id) => goApp(id)} onError={onError} goStore={() => setRoute({ name: 'store' })} />}
+        {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}
         {route.name === 'store' && <StoreView onError={onError} toast={toast} onOpen={(id) => goApp(id)} reloadApps={loadApps} />}
         {route.name === 'settings' && <SettingsView onError={onError} toast={toast} />}
         {route.name === 'app' && (
@@ -416,6 +418,86 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
               ))}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- BRAIN OVERVIEW (every project's memory at a glance) ----------
+
+// Lenient "Current state" excerpt: the section under `## Current state` if
+// present (whatever the user renamed it to stays their business — we fall back
+// to the first non-heading lines). Nothing parses BRAIN.md beyond this.
+function brainExcerpt(md: string): string {
+  const lines = md.split('\n')
+  const start = lines.findIndex((l) => /^##\s+current state/i.test(l))
+  const body: string[] = []
+  const from = start >= 0 ? start + 1 : 1
+  for (let i = from; i < lines.length && body.length < 5; i++) {
+    const l = lines[i]
+    if (start >= 0 && /^##\s/.test(l)) break
+    const t = l.trim()
+    if (t === '' || t.startsWith('<!--') || t.startsWith('#')) continue
+    body.push(t)
+  }
+  return body.join(' · ')
+}
+
+function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) => void }) {
+  // null = no BRAIN.md (or no sandbox); undefined = still loading.
+  const [brains, setBrains] = useState<Record<string, string | null | undefined>>({})
+
+  useEffect(() => {
+    apps.forEach((a) => {
+      if (!a.current_sandbox_id) { setBrains((b) => ({ ...b, [a.id]: null })); return }
+      api.getWorkspaceFile(a.current_sandbox_id, 'BRAIN.md')
+        .then((c) => setBrains((b) => ({ ...b, [a.id]: c })))
+        .catch(() => setBrains((b) => ({ ...b, [a.id]: null })))
+    })
+  }, [apps])
+
+  const withBrain = apps.filter((a) => typeof brains[a.id] === 'string')
+  const without = apps.filter((a) => brains[a.id] === null)
+
+  return (
+    <div style={{ maxWidth: 920, margin: '0 auto', padding: '36px 40px 80px' }}>
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Brain</h1>
+      <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 600 }}>
+        Every project's memory in one place — state, decisions, gotchas. Each app's <span style={{ ...mono, fontSize: 12 }}>BRAIN.md</span> is read by the agent before every task and updated as it learns.
+      </p>
+
+      {apps.length === 0 && <p style={{ color: c.muted2 }}>No apps yet — the brain fills in as you build.</p>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }} data-testid="brain-list">
+        {withBrain.map((a) => {
+          const md = brains[a.id] as string
+          const excerpt = brainExcerpt(md)
+          return (
+            <Card key={a.id} style={{ padding: 16, cursor: 'pointer' }}>
+              <div className="dc-hoverborder" onClick={() => onOpen(a.id)} data-testid="brain-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ ...mono, fontWeight: 500, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                  <span style={{ ...mono, fontSize: 10, color: c.muted2 }}>{md.split('\n').length} lines</span>
+                </div>
+                <div style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.5, minHeight: 38 }}>
+                  {excerpt || <i style={{ color: c.muted2 }}>No current state written yet.</i>}
+                </div>
+                <div style={{ marginTop: 10, color: c.link, fontSize: 12 }}>Open brain →</div>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+
+      {without.length > 0 && (
+        <div style={{ marginTop: 26 }}>
+          <div style={{ fontFamily: font.display, fontWeight: 700, fontSize: 13, color: c.muted, marginBottom: 10 }}>No brain yet</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {without.map((a) => (
+              <span key={a.id} onClick={() => onOpen(a.id)} className="dc-hoverborder" style={{ ...mono, fontSize: 12, color: c.muted, border: `1px solid ${c.border}`, borderRadius: 7, padding: '5px 11px', cursor: 'pointer' }}>{a.name} +</span>
+            ))}
+          </div>
         </div>
       )}
     </div>

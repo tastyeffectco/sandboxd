@@ -36,5 +36,23 @@ expected — this sandbox exists for you to modify the app.
 - Prefer small, reviewable changes. Verify the app still responds on
   `{{LOCAL_URL}}{{HEALTH_PATH}}` before you finish.
 
+## Project brain
+
+Before starting, read `{{APP_DIR}}/BRAIN.md` if it exists — it holds this
+project's state, decisions, and known gotchas. Trust its verification commands
+over its claims: if a note matters to your task, run its check first; if a note
+turns out to be wrong, correct it immediately.
+
+Before finishing, if this session produced something durable — a decision and
+its why, a gotcha, an environment fact, a dead end — append it to
+`{{APP_DIR}}/BRAIN.md` under the matching section (create the file with
+sections `What this is / Current state / Stack & key choices / Decisions /
+Gotchas & environment facts / Dead ends` if missing) and refresh
+`## Current state`. Keep notes under 30 lines; give factual claims a
+verification command; never write secrets; never narrate work that simply went
+fine. If nothing durable was learned, write nothing. BRAIN.md is project
+memory, not code: never commit it (it is kept out of git via
+`.git/info/exclude`).
+
 Framework, source layout, and how-to-run details for THIS app are in
 `{{APP_DIR}}/AGENTS.md` when present — read it first.
