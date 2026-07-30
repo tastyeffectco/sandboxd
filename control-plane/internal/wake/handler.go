@@ -21,6 +21,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/egress"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/idlock"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/sandboxspec"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -64,11 +65,27 @@ type Handler struct {
 	// --memory ceiling on the container still applies.
 	SetMemoryHigh bool
 
+	// Recreate rebuilds a sandbox container from its stored row when the
+	// container is missing, or was created from an older base image than the
+	// instance now runs (an upgrade rebuilt the image, and with it runtimed —
+	// the in-sandbox supervisor). Without this, long-lived sandboxes keep an
+	// old runtimed forever and miss new agent/model support. nil-safe: when
+	// unset the wake path behaves exactly as before.
+	Recreate RecreateFunc
+
+	// Image is the base image the instance currently runs; a container built
+	// from a different one is stale (see Recreate).
+	Image string
+
 	hostRE *regexp.Regexp
 
 	mu       sync.Mutex
 	inflight map[string]*inflightWake
 }
+
+// RecreateFunc rebuilds the container for a sandbox row (workspace preserved)
+// and returns nil when the container is ready to start.
+type RecreateFunc func(ctx context.Context, sb *store.Sandbox) error
 
 // Config holds the env-tunable knobs the handler needs.
 type Config struct {
@@ -276,6 +293,39 @@ func (h *Handler) serve(r *http.Request, w http.ResponseWriter, id, port string,
 		h.respondAdmissionDenied(w, id, outcome, isHTML)
 		metrics.Wakes.WithLabelValues("admission_denied").Inc()
 		return
+	}
+
+	// 2b. Self-heal the container before starting it. Two cases, both fixed by
+	// rebuilding from the stored row (all durable state is in the workspace
+	// bind mount, so this is lossless):
+	//   - the container is gone (pruned, or removed by hand)
+	//   - it was created from an older base image than we run now, i.e. an
+	//     upgrade rebuilt the image and its runtimed. Starting it as-is would
+	//     silently keep the OLD in-sandbox supervisor and miss new agent/model
+	//     support ("Model X is not supported" on an up-to-date install).
+	if h.Recreate != nil {
+		stale := false
+		cur, ierr := h.Docker.Inspect(ctx, "s-"+id)
+		switch {
+		case ierr == docker.ErrNotFound:
+			stale = true
+			log.Info("wake: container missing — recreating from the stored row")
+		case ierr != nil:
+			log.Warn("wake: pre-start inspect failed (continuing)", "err", ierr.Error())
+		case sandboxspec.NeedsRecreate(cur.Config.Image, h.Image):
+			stale = true
+			log.Info("wake: container built from an older image — recreating",
+				"container_image", cur.Config.Image, "current_image", h.Image)
+		}
+		if stale {
+			if err := h.Recreate(ctx, sb); err != nil {
+				wf.err = err
+				log.Warn("wake: recreate failed", "err", err.Error())
+				h.respondError(w, id, "recreate_failed", isHTML)
+				metrics.Wakes.WithLabelValues("recreate_failed").Inc()
+				return
+			}
+		}
 	}
 
 	// 3. docker start (idempotent).

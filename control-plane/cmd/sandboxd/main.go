@@ -51,6 +51,7 @@ import (
 	nginxwatch "github.com/tastyeffectco/sandboxd/control-plane/internal/nginx"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/reaper"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/reconcile"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/sandboxspec"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
@@ -462,6 +463,37 @@ func main() {
 				log.Warn("gvisor: could not resolve agent proxy host to IP; sandboxes may fail to reach it", "host", u.Hostname())
 			}
 		}
+	}
+
+	// Self-healing start: rebuild a container that is missing, or that was
+	// created from an older base image than we now run. The base image carries
+	// runtimed (the in-sandbox supervisor), so without this an upgrade never
+	// reaches long-lived sandboxes and they keep the old supervisor — and miss
+	// new agent/model support. Lossless: everything durable is in the workspace
+	// bind mount, and the container rootfs is read-only by construction.
+	wakeHandler.Image = image
+	wakeHandler.Recreate = func(ctx context.Context, sb *store.Sandbox) error {
+		spec := sandboxspec.Build(sb, sandboxspec.Env{
+			Image:             image,
+			Network:           network,
+			Userns:            userns,
+			Runtime:           sbxRuntime,
+			DNSResolvConf:     dnsResolvConf,
+			PreviewDomain:     domain,
+			PreviewEntrypoint: previewEntrypoint,
+			PreviewTLS:        previewTLS,
+			AgentProxyURL:     agentProxyURL,
+			OpencodeModel:     envDefault("SANDBOXD_OPENCODE_MODEL", ""),
+			OpencodeZenPath:   envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
+			RuntimePreset:     runtimePresetForSandbox(ctx, st, sb),
+		})
+		// Remove any existing container first so the name is free; ignore a
+		// not-found (the common case) and let Run surface a real failure.
+		if err := dockerClient.Remove(ctx, spec.Name); err != nil && err != docker.ErrNotFound {
+			log.Warn("recreate: remove existing container failed (continuing)", "err", err.Error())
+		}
+		_, err := dockerClient.Run(ctx, spec)
+		return err
 	}
 
 	server := &api.Server{
@@ -985,4 +1017,18 @@ func buildIdent() (version, gitCommit string) {
 		gitCommit = gitCommit[:12]
 	}
 	return version, gitCommit
+}
+
+// runtimePresetForSandbox returns the owning app's runtime preset, so a
+// recreated container gets the same RUNTIMED_RUNTIME_PRESET it was created
+// with. Best-effort: an unknown app just means runtimed uses its default.
+func runtimePresetForSandbox(ctx context.Context, st *store.Store, sb *store.Sandbox) string {
+	if sb == nil || !sb.AppID.Valid || sb.AppID.String == "" {
+		return ""
+	}
+	app, err := st.GetApp(ctx, sb.AppID.String)
+	if err != nil || app == nil || !app.RuntimePreset.Valid {
+		return ""
+	}
+	return app.RuntimePreset.String
 }
