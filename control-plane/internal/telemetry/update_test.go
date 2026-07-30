@@ -80,3 +80,36 @@ func TestCheckerUpdateAvailableEmptyCacheIsSafe(t *testing.T) {
 		t.Error("empty/failed cache must yield update_available=false")
 	}
 }
+
+func TestCheckerUpdateAvailableNonSemverCurrent(t *testing.T) {
+	c := &Checker{
+		Fetch: func(context.Context) (string, string, error) {
+			return "v0.3.0", "https://github.com/tastyeffectco/sandboxd/releases/tag/v0.3.0", nil
+		},
+	}
+	if _, _, err := c.Latest(context.Background()); err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+
+	// A bare commit hash or "dev" (a build tracking main) parses as 0.0.0 and
+	// must NOT make the latest release look like an update — but the latest
+	// release info is still surfaced for display.
+	for _, cur := range []string{"e2ca6f6", "dev", "unknown"} {
+		avail, latest, url := c.UpdateAvailable(cur)
+		if avail {
+			t.Errorf("current=%q: no update should be reported for a non-semver build", cur)
+		}
+		if latest != "v0.3.0" || url == "" {
+			t.Errorf("current=%q: latest info should still be surfaced, got %q %q", cur, latest, url)
+		}
+	}
+
+	// Tag-anchored describe (ahead of the release) compares by its tag: no update.
+	if avail, _, _ := c.UpdateAvailable("v0.3.0-54-g83f2f7"); avail {
+		t.Error("v0.3.0-54-g… (ahead of v0.3.0) should not report an update")
+	}
+	// And a genuinely older tagged build still does.
+	if avail, _, _ := c.UpdateAvailable("v0.2.9"); !avail {
+		t.Error("v0.2.9 should report an update vs v0.3.0")
+	}
+}

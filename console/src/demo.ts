@@ -37,7 +37,7 @@ const agents = [
 ]
 
 const settings = {
-  version: 'v0.3.0', git_commit: 'demo',
+  version: 'v0.3.0', git_commit: 'demo', update_available: false,
   networking: { preview_domain: 'localhost', public_http_port: '80', preview_base: 'http://*.preview.localhost', preview_tls: false, preview_entrypoint: 'web' },
   auth: { enabled: false },
   runtime: { storage_mode: 'directory', base_image: 'sandboxd-base:0.3.0' },

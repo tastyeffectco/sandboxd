@@ -120,6 +120,12 @@ func (c *Checker) Latest(ctx context.Context) (version, url string, err error) {
 // whether the latest release is newer than current. It is best-effort: with no
 // cached result yet it returns (false, "", ""). When a result is cached it always
 // returns the latest version + changelog URL so callers can surface them.
+//
+// A current version that is not semver-like — a bare commit hash ("e2ca6f6") or
+// "dev", i.e. a build tracking main — would parse as 0.0.0 and make EVERY
+// release look newer, so those never report an update (the latest release info
+// is still returned for display). Tag-anchored describe forms ("v0.3.0-54-g…")
+// compare by their tag, so a build ahead of the latest release reports false.
 func (c *Checker) UpdateAvailable(current string) (available bool, latest, changelogURL string) {
 	c.mu.Lock()
 	have, tag, url := c.haveData, c.tag, c.url
@@ -127,7 +133,25 @@ func (c *Checker) UpdateAvailable(current string) (available bool, latest, chang
 	if !have || tag == "" {
 		return false, "", ""
 	}
+	if !semverLike(current) {
+		return false, tag, url
+	}
 	return CompareSemver(tag, current) > 0, tag, url
+}
+
+// semverLike reports whether v starts with a numeric (optionally "v"-prefixed)
+// version component — "v0.3.0", "0.4.1", "v0.3.0-54-g83f2f7" — as opposed to a
+// bare commit hash or "dev", which carry no comparable version at all.
+func semverLike(v string) bool {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "v")
+	v = strings.TrimPrefix(v, "V")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	first := strings.SplitN(v, ".", 2)[0]
+	_, err := strconv.Atoi(strings.TrimSpace(first))
+	return err == nil
 }
 
 func (c *Checker) githubFetch(ctx context.Context) (tag, url string, err error) {

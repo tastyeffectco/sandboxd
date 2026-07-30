@@ -16,6 +16,10 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [apps, setApps] = useState<TApp[]>([])
   const [auth, setAuth] = useState<{ enabled: boolean; authenticated: boolean; password_set: boolean } | null>(null)
+  // Update notification: the control plane checks GitHub releases (cached ~6h)
+  // and reports update_available in /v1/settings. Dismissal is remembered per
+  // version, so each new release notifies exactly once.
+  const [upd, setUpd] = useState<{ latest: string; url?: string } | null>(null)
 
   const toast = useCallback((msg: string) => {
     const id = Date.now() + Math.floor(performance.now())
@@ -39,6 +43,14 @@ export default function App() {
   useEffect(() => {
     if (auth && (auth.authenticated || auth.enabled === false)) loadApps()
   }, [auth, loadApps])
+  useEffect(() => {
+    if (!(auth && (auth.authenticated || auth.enabled === false))) return
+    api.getSettings().then((s) => {
+      if (s.update_available && s.latest_version && localStorage.getItem('sandboxd-update-dismissed') !== s.latest_version) {
+        setUpd({ latest: s.latest_version, url: s.changelog_url })
+      }
+    }).catch(() => {})
+  }, [auth])
 
   const onAuthed = useCallback(() => { refreshAuth().then(loadApps) }, [refreshAuth, loadApps])
   const logout = useCallback(() => { api.logout().finally(() => setAuth((a) => (a ? { ...a, authenticated: false } : a))) }, [])
@@ -75,6 +87,23 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: c.bg, color: c.fg, fontFamily: font.sans, overflow: 'hidden' }}>
+      {/* UPDATE NOTIFICATION — one slim, dismissible strip per new release. */}
+      {upd && (
+        <div data-testid="update-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexShrink: 0, padding: '6px 40px 6px 16px', fontSize: 12.5, background: c.panel2, borderBottom: `1px solid ${c.border}`, position: 'relative' }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.good, flexShrink: 0 }} />
+          <span>
+            <b>Update available: {upd.latest}</b> — run <span style={{ ...mono, fontSize: 11.5, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 6px' }}>./upgrade.sh</span> on your server.
+          </span>
+          {upd.url && <a href={upd.url} target="_blank" rel="noreferrer" style={{ color: c.link, textDecoration: 'none' }}>Release notes ↗</a>}
+          <span
+            data-testid="update-dismiss"
+            className="dc-hoverink"
+            onClick={() => { localStorage.setItem('sandboxd-update-dismissed', upd.latest); setUpd(null) }}
+            style={{ position: 'absolute', right: 14, color: c.muted, cursor: 'pointer', fontSize: 13 }}>
+            ✕
+          </span>
+        </div>
+      )}
       {/* TOP BAR */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: 52, flexShrink: 0, padding: '0 20px', borderBottom: `1px solid ${c.border}`, background: c.panel }}>
         <div onClick={() => setRoute({ name: 'apps' })} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>

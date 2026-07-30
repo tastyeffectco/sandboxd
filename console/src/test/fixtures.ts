@@ -70,6 +70,7 @@ export const configFixture: ConfigItem[] = [
 export const settingsFixture: Settings = {
   version: 'v0.4.0',
   git_commit: 'abc1234',
+  update_available: false,
   networking: {
     preview_domain: 'localhost',
     public_http_port: '18080',

@@ -27,6 +27,11 @@ export interface Preset {
 export interface Settings {
   version: string
   git_commit?: string
+  // Release-checker result (best-effort; cached server-side). update_available
+  // is false for main-tracking dev builds even when latest_version is set.
+  update_available: boolean
+  latest_version?: string
+  changelog_url?: string
   networking: {
     preview_domain: string
     public_http_port?: string
