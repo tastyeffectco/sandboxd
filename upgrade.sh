@@ -2,9 +2,11 @@
 #
 # sandboxd — safe, in-place upgrade.
 #
-#   ./upgrade.sh            upgrade to the latest version (backs up first)
-#   ./upgrade.sh --check    show current vs latest release; make NO changes
-#   ./upgrade.sh <ref>      upgrade to a specific tag or branch (e.g. v0.4.0)
+#   ./upgrade.sh                 upgrade to the latest version (backs up first)
+#   ./upgrade.sh --check         show current vs latest release; make NO changes
+#   ./upgrade.sh <ref>           upgrade to a specific tag or branch (e.g. v0.4.0)
+#   ./upgrade.sh --rebuild-base  also force-rebuild the sandbox base image
+#                                (runtimed); normally auto-detected from the diff
 #
 # It ALWAYS backs up the database + .env before touching anything, applies new
 # migrations (additive by design), health-checks the new stack, and rolls back
@@ -46,7 +48,10 @@ if [ "${1:-}" = "--check" ]; then
   exit 0
 fi
 
-REF="${1:-main}"   # default: track main (where releases land today); or pass a tag
+# First non-flag argument is the ref; default: track main (where releases land
+# today). Flags (--rebuild-base) are handled where they apply.
+REF="main"
+for _a in "$@"; do case "$_a" in --*) ;; *) REF="$_a"; break ;; esac; done
 
 # ── load .env + detect docker/compose (mirrors install.sh) ───────────
 # shellcheck disable=SC1091
@@ -84,6 +89,34 @@ ok "updated source to $(git describe --tags --always 2>/dev/null || echo "$NEW_S
 
 # ── 3. rebuild + restart (migrations apply on control-plane boot) ────
 bold "3/4 · Building + restarting the stack"
+
+# The sandbox BASE image carries runtimed (the in-sandbox supervisor), which
+# `compose build` does NOT rebuild — so a runtimed change would never reach
+# sandboxes on upgrade (they'd keep running the old supervisor and miss new
+# agent/model support). Rebuild the base image when anything that feeds it
+# changed between the two commits; if history is too shallow to tell, rebuild
+# to be safe. Force with:  ./upgrade.sh --rebuild-base
+BASE_IMAGE="${SANDBOXD_IMAGE:-sandboxd-base:0.3.0}"
+NEED_BASE=0
+case " $* " in *" --rebuild-base "*) NEED_BASE=1 ;; esac
+if [ "$NEED_BASE" = 0 ]; then
+  if git cat-file -e "$PREV_SHA" 2>/dev/null; then
+    git diff --quiet "$PREV_SHA" "$NEW_SHA" -- \
+      image/ control-plane/cmd/runtimed/ control-plane/internal/runtime/ 2>/dev/null \
+      || NEED_BASE=1
+  else
+    NEED_BASE=1   # shallow history — can't prove it's unchanged
+  fi
+fi
+if [ "$NEED_BASE" = 1 ]; then
+  info "sandbox base image sources changed — rebuilding $BASE_IMAGE (runtimed lives here)"
+  DOCKER="$DOCKER" SANDBOXD_IMAGE="$BASE_IMAGE" bash image/build.sh "${BASE_IMAGE##*:}"
+  ok "base image rebuilt: $BASE_IMAGE"
+  info "new sandboxes use it immediately; existing ones pick it up when recreated"
+else
+  info "base image unchanged — skipping its rebuild"
+fi
+
 # Stamp the build (sandboxd version / telemetry / settings) from git.
 export SANDBOXD_VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 export SANDBOXD_GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
