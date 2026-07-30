@@ -18,13 +18,16 @@
 package authproxy
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
@@ -133,6 +136,48 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			http.Error(w, "upstream error", http.StatusBadGateway)
 		},
+		// Fail fast on permanent provider errors. Agent CLIs retry 401/429
+		// for a long time, so an exhausted quota surfaced as a task that
+		// "did not finish within the timeout" minutes later — a misleading
+		// message for a problem the provider reported immediately. Rewriting
+		// these as a 400 (which no agent retries) makes the task fail in
+		// seconds with the provider's own words. Transient rate limits are
+		// passed through untouched so normal backoff still works.
+		ModifyResponse: func(resp *http.Response) error {
+			if resp.StatusCode < 400 {
+				return nil // success and streaming responses are never touched
+			}
+			raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+			_ = resp.Body.Close()
+			if err != nil {
+				resp.Body = io.NopCloser(bytes.NewReader(nil))
+				return nil
+			}
+			reason, terminal := terminalProviderError(resp.StatusCode, string(raw))
+			if !terminal {
+				resp.Body = io.NopCloser(bytes.NewReader(raw)) // unchanged
+				resp.ContentLength = int64(len(raw))
+				return nil
+			}
+			msg := up + ": " + reason
+			if detail := providerMessage(raw); detail != "" {
+				msg += " — " + detail
+			}
+			if p.log != nil {
+				p.log.Warn("authproxy: permanent provider error (failing the task fast)",
+					"upstream", up, "agent", agent, "status", resp.StatusCode, "detail", msg)
+			}
+			body := []byte(`{"error":{"type":"provider_error","message":` + strconv.Quote(msg) + `}}`)
+			resp.StatusCode = http.StatusBadRequest
+			resp.Status = "400 Bad Request"
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+			resp.ContentLength = int64(len(body))
+			resp.Header = resp.Header.Clone()
+			resp.Header.Set("Content-Type", "application/json")
+			resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+			resp.Header.Del("Retry-After") // nothing to wait for
+			return nil
+		},
 	}
 	rp.ServeHTTP(w, r)
 }
@@ -240,4 +285,54 @@ func mergeBeta(existing string) string {
 		}
 	}
 	return existing + "," + oauthBeta
+}
+
+// terminalProviderError classifies an upstream failure as permanent (the agent
+// must not retry) and returns a plain-language reason. Credential and billing
+// failures are always terminal. A 429 is terminal ONLY when the body says the
+// quota/plan/credits are exhausted — a plain rate limit stays retryable so
+// normal backoff keeps working.
+func terminalProviderError(status int, body string) (string, bool) {
+	switch status {
+	case http.StatusUnauthorized:
+		return "credentials rejected — reconnect this provider in Settings → AI Agents", true
+	case http.StatusPaymentRequired:
+		return "payment required — this provider account has no usable balance", true
+	case http.StatusForbidden:
+		return "access denied — the provider rejected this key (wrong plan, model, or region)", true
+	case http.StatusTooManyRequests:
+		low := strings.ToLower(body)
+		for _, k := range []string{"usage limit", "quota", "credit", "billing", "insufficient", "balance", "upgrade your"} {
+			if strings.Contains(low, k) {
+				return "usage limit reached — add credits or upgrade the plan for this provider", true
+			}
+		}
+		return "", false // transient rate limit: let the agent back off and retry
+	}
+	return "", false
+}
+
+// providerMessage digs the human-readable message out of a provider's error
+// body. Providers differ ({"error":{"message":…}}, {"message":…}, {"error":…}),
+// so try the common shapes and fall back to a trimmed snippet of the raw body.
+func providerMessage(raw []byte) string {
+	var envelope struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err == nil {
+		if m := strings.TrimSpace(envelope.Error.Message); m != "" {
+			return m
+		}
+		if m := strings.TrimSpace(envelope.Message); m != "" {
+			return m
+		}
+	}
+	s := strings.TrimSpace(string(raw))
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
 }

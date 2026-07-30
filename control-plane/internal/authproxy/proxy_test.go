@@ -328,3 +328,49 @@ func TestIsMiniMaxUpstream(t *testing.T) {
 		}
 	}
 }
+
+// A provider that says "quota exhausted" must fail the task immediately: agent
+// CLIs retry 401/429 for minutes, which surfaced as the misleading task error
+// "agent did not finish within the task timeout" long after the provider had
+// already given a precise answer.
+func TestTerminalProviderError(t *testing.T) {
+	cases := []struct {
+		name     string
+		status   int
+		body     string
+		terminal bool
+	}{
+		{"minimax quota exhausted", 429,
+			`{"error":{"message":"Token Plan usage limit reached: Upgrade your Token Plan or purchase Credits for more usage. (2056)"}}`, true},
+		{"openai insufficient quota", 429, `{"error":{"message":"You exceeded your current quota"}}`, true},
+		{"plain rate limit stays retryable", 429,
+			`{"error":{"message":"Rate limit reached for requests, please slow down"}}`, false},
+		{"bad credentials", 401, `{"error":{"message":"invalid api key"}}`, true},
+		{"payment required", 402, `{"error":{"message":"balance too low"}}`, true},
+		{"forbidden", 403, `{"error":{"message":"model not allowed for this key"}}`, true},
+		{"server error is retryable", 500, `oops`, false},
+		{"not found is not a credential problem", 404, `{"error":{"message":"no such model"}}`, false},
+	}
+	for _, tc := range cases {
+		reason, got := terminalProviderError(tc.status, tc.body)
+		if got != tc.terminal {
+			t.Errorf("%s: terminal = %v, want %v", tc.name, got, tc.terminal)
+		}
+		if got && reason == "" {
+			t.Errorf("%s: a terminal error must carry a plain-language reason", tc.name)
+		}
+	}
+}
+
+func TestProviderMessageExtractsTheProvidersOwnWords(t *testing.T) {
+	cases := []struct{ name, body, want string }{
+		{"error.message envelope", `{"error":{"message":"Token Plan usage limit reached"}}`, "Token Plan usage limit reached"},
+		{"top-level message", `{"message":"insufficient balance"}`, "insufficient balance"},
+		{"non-json falls back to the raw text", `upstream exploded`, "upstream exploded"},
+	}
+	for _, tc := range cases {
+		if got := providerMessage([]byte(tc.body)); got != tc.want {
+			t.Errorf("%s: providerMessage = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
