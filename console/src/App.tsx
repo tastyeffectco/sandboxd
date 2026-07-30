@@ -4,7 +4,7 @@ import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/k
 import { PRESET_ICONS } from './design/presetIcons'
 import { STARTERS, STARTER_ICONS } from './design/starters'
 import { AppView } from './AppView'
-import { brainExcerpt, buildBrainGraph } from './brain'
+import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { BrainGraph } from './BrainGraph'
 import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
@@ -432,20 +432,21 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
 // Excerpt/graph logic lives in brain.ts (pure + unit-tested); this renders it.
 
 function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) => void }) {
-  // null = no BRAIN.md (or no sandbox); undefined = still loading.
-  const [brains, setBrains] = useState<Record<string, string | null | undefined>>({})
+  // null = no sandbox; undefined = still loading; AppBrain = hub + spoke notes.
+  const [brains, setBrains] = useState<Record<string, AppBrain | null | undefined>>({})
 
   useEffect(() => {
     apps.forEach((a) => {
       if (!a.current_sandbox_id) { setBrains((b) => ({ ...b, [a.id]: null })); return }
-      api.getWorkspaceFile(a.current_sandbox_id, 'BRAIN.md')
-        .then((c) => setBrains((b) => ({ ...b, [a.id]: c })))
+      api.getAppBrain(a.current_sandbox_id)
+        .then((br) => setBrains((b) => ({ ...b, [a.id]: br })))
         .catch(() => setBrains((b) => ({ ...b, [a.id]: null })))
     })
   }, [apps])
 
-  const withBrain = apps.filter((a) => typeof brains[a.id] === 'string')
-  const without = apps.filter((a) => brains[a.id] === null)
+  const hasBrain = (id: string) => { const b = brains[id]; return !!b && (typeof b.hub === 'string' || Object.keys(b.spokes).length > 0) }
+  const withBrain = apps.filter((a) => hasBrain(a.id))
+  const without = apps.filter((a) => brains[a.id] !== undefined && !hasBrain(a.id))
 
   return (
     <div style={{ maxWidth: 920, margin: '0 auto', padding: '36px 40px 80px' }}>
@@ -462,27 +463,49 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
         const settled = apps.every((a) => brains[a.id] !== undefined)
         if (!settled || apps.length === 0) return null
         const g = buildBrainGraph(apps, brains)
-        if (g.edges.length === 0 && g.nodes.every((n) => n.ghost)) return null
+        if (g.edges.length === 0 && g.nodes.every((n) => n.empty)) return null
         return (
-          <Card style={{ padding: '8px 10px', marginBottom: 22 }}>
-            <BrainGraph nodes={g.nodes} edges={g.edges} onOpen={onOpen} />
-            <div style={{ ...mono, fontSize: 10.5, color: c.muted2, textAlign: 'center', paddingBottom: 6 }}>
-              Link projects from any brain with [[project-name]] — dashed nodes have no brain yet.
-            </div>
-          </Card>
+          <>
+            <Card style={{ padding: '8px 10px', marginBottom: 22 }}>
+              <BrainGraph nodes={g.nodes} edges={g.edges} onOpen={onOpen} />
+              <div style={{ ...mono, fontSize: 10.5, color: c.muted2, textAlign: 'center', paddingBottom: 6 }}>
+                Link projects &amp; concepts from any brain with [[name]] — dashed nodes have no note yet · err-* concepts flag repeat mistakes.
+              </div>
+            </Card>
+            {g.concepts.length > 0 && (
+              <Card style={{ padding: 16, marginBottom: 22 }} data-testid="brain-concepts">
+                <div style={{ fontFamily: font.display, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Concepts without a note yet</div>
+                <div style={{ color: c.muted2, fontSize: 12, marginBottom: 10 }}>
+                  Linked from your brains but written nowhere. A concept shared by several apps is knowledge worth a note — an <span style={{ ...mono, fontSize: 11 }}>err-*</span> concept shared by several apps is a <b style={{ color: c.fg2 }}>repeat mistake</b>.
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {g.concepts.slice(0, 12).map((cs) => (
+                    <span key={cs.slug} title={`${cs.mentions} mention${cs.mentions > 1 ? 's' : ''} across ${cs.apps} app${cs.apps > 1 ? 's' : ''}`}
+                      style={{ ...mono, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, border: `1px dashed ${cs.isError ? c.warn : c.border2}`, borderRadius: 7, padding: '5px 11px', color: cs.isError ? c.warn : c.muted }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: cs.isError && cs.apps > 1 ? c.warn : c.muted2 }} />
+                      [[{cs.label}]]
+                      <span style={{ color: c.muted2, fontSize: 10.5 }}>{cs.apps}×</span>
+                    </span>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </>
         )
       })()}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }} data-testid="brain-list">
         {withBrain.map((a) => {
-          const md = brains[a.id] as string
+          const b = brains[a.id] as AppBrain
+          const md = b.hub || ''
+          const spokeCount = Object.keys(b.spokes).length
           const excerpt = brainExcerpt(md)
           return (
             <Card key={a.id} style={{ padding: 16, cursor: 'pointer' }}>
               <div className="dc-hoverborder" onClick={() => onOpen(a.id)} data-testid="brain-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <span style={{ ...mono, fontWeight: 500, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                  <span style={{ ...mono, fontSize: 10, color: c.muted2 }}>{md.split('\n').length} lines</span>
+                  <span style={{ ...mono, fontSize: 10, color: c.muted2 }}>{md.split('\n').length} lines{spokeCount > 0 ? ` · ${spokeCount} note${spokeCount > 1 ? 's' : ''}` : ''}</span>
                 </div>
                 <div style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.5, minHeight: 38 }}>
                   {excerpt || <i style={{ color: c.muted2 }}>No current state written yet.</i>}

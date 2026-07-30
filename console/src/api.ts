@@ -391,6 +391,24 @@ export const api = {
     }
     return res.text()
   },
+  // Load an app's whole brain: the BRAIN.md hub plus any spoke notes under
+  // brain/ (topics that outgrew the hub). Missing dir/file = empty brain.
+  getAppBrain: async (sandboxId: string): Promise<{ hub: string | null; spokes: Record<string, string> }> => {
+    const hub = await api.getWorkspaceFile(sandboxId, 'BRAIN.md').catch(() => null)
+    const spokes: Record<string, string> = {}
+    try {
+      const l = await api.listFiles(sandboxId, { path: 'brain' })
+      const mds = (l.entries || []).filter((e) => e.type === 'file' && e.path.endsWith('.md'))
+      const contents = await Promise.all(mds.map((e) => api.getWorkspaceFile(sandboxId, e.path.startsWith('brain/') ? e.path : `brain/${e.path}`).catch(() => null)))
+      mds.forEach((e, i) => {
+        const c = contents[i]
+        if (typeof c !== 'string') return
+        const name = e.path.replace(/^brain\//, '').replace(/\.md$/, '')
+        spokes[name] = c
+      })
+    } catch { /* no brain/ directory yet */ }
+    return { hub, spokes }
+  },
   putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
     const res = await fetch(`/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`, {
       method: 'PUT',

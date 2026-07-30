@@ -77,22 +77,24 @@ export function BrainGraph({ nodes, edges, onOpen }: { nodes: BrainNode[]; edges
       })}
       {nodes.map((node) => {
         const p = pos.get(node.id)!
-        const r = node.ghost ? 6 : Math.min(13, 8 + node.lines / 40)
-        const clickable = !node.id.startsWith('ghost:')
+        const isErr = node.kind === 'concept' && node.id.startsWith('ghost:err-')
+        const r = node.kind === 'concept' ? 6 : node.kind === 'spoke' ? 6.5 : node.empty ? 7 : Math.min(13, 8 + node.lines / 40)
+        const clickable = node.kind !== 'concept' && !!node.appId
+        const stroke = isErr ? c.warn : node.empty ? c.muted2 : node.kind === 'spoke' ? c.muted : c.ink
         return (
           <g key={node.id}
             onMouseEnter={() => setHover(node.id)} onMouseLeave={() => setHover(null)}
-            onClick={() => clickable && onOpen(node.id)}
+            onClick={() => clickable && onOpen(node.appId!)}
             style={{ cursor: clickable ? 'pointer' : 'default' }}
             opacity={active(node.id) ? 1 : 0.3}>
             <circle cx={p.x} cy={p.y} r={r}
-              fill={node.ghost ? 'transparent' : c.ink}
-              stroke={node.ghost ? c.muted2 : c.ink}
-              strokeWidth={node.ghost ? 1.2 : 0}
-              strokeDasharray={node.ghost ? '3 3' : undefined}
+              fill={node.empty ? 'transparent' : node.kind === 'spoke' ? c.muted : c.ink}
+              stroke={stroke}
+              strokeWidth={node.empty ? 1.2 : node.kind === 'spoke' ? 0 : 0}
+              strokeDasharray={node.empty ? '3 3' : undefined}
               style={{ transition: 'opacity .15s ease' }} />
             <text x={p.x} y={p.y + r + 13} textAnchor="middle"
-              style={{ fontFamily: font.mono, fontSize: 10.5, fill: node.ghost ? c.muted2 : c.fg, userSelect: 'none' }}>
+              style={{ fontFamily: font.mono, fontSize: node.kind === 'app' ? 10.5 : 9.5, fill: node.empty ? (isErr ? c.warn : c.muted2) : node.kind === 'spoke' ? c.muted : c.fg, userSelect: 'none' }}>
               {node.label.length > 22 ? node.label.slice(0, 21) + '…' : node.label}
             </text>
           </g>

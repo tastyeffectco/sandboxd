@@ -65,7 +65,8 @@ const files = {
   ],
 }
 const fileContents: Record<string, string> = {
-  'BRAIN.md': `# Brain — Todo App\n\n## What this is\nPersonal todo list, single user, deployed as a sandboxd preview.\n\n## Current state\nAdd/remove works. Next: persistence — items reset on reload.\n\n## Stack & key choices\n- React + Vite, no backend — localStorage is enough for v1. (2026-07-09)\n- Reuses the shared [[Auth Brick]] pattern; images go through [[Image Resizer]].\n\n## Decisions\n- D1 (2026-07-09): No user accounts — single-user tool, auth is pure overhead.\n\n## Gotchas & environment facts\n- Vite dev server must bind **0.0.0.0** or the preview 404s.\n  Verify: \`grep -n "host" sandbox.yaml\`\n\n## Dead ends\n- Tried IndexedDB wrapper (idb) — overkill for a flat list, localStorage wins.\n`,
+  'BRAIN.md': `# Brain — Todo App\n\n## What this is\nPersonal todo list, single user, deployed as a sandboxd preview.\n\n## Current state\nAdd/remove works. Next: persistence — items reset on reload.\n\n## Stack & key choices\n- React + Vite, no backend — localStorage is enough for v1. (2026-07-09)\n- Reuses the shared [[Auth Brick]] pattern; images go through [[Image Resizer]].\n\n## Decisions\nFull log with reasoning: [[decisions]]\n\n## Gotchas & environment facts\n- Vite dev server must bind **0.0.0.0** or the preview 404s — see [[err-vite-host-binding]].\n  Verify: \`grep -n "host" sandbox.yaml\`\n\n## Dead ends\n- Tried IndexedDB wrapper (idb) — overkill for a flat list, localStorage wins.\n`,
+  'brain/decisions.md': `# decisions\n\n- D2 (2026-07-12): Ship without a service worker — offline mode can wait for real demand.\n- D1 (2026-07-09): No user accounts — single-user tool, auth is pure overhead.\n  Related: the shared [[Auth Brick]] exists if this ever changes.\n`,
   'src/App.tsx': `import { useState } from 'react'\n\nexport default function App() {\n  const [items, setItems] = useState<string[]>(['Try sandboxd'])\n  const [text, setText] = useState('')\n  return (\n    <main>\n      <h1>Todo</h1>\n      <input value={text} onChange={e => setText(e.target.value)} />\n      <button onClick={() => { setItems([...items, text]); setText('') }}>Add</button>\n      <ul>{items.map((t, i) => <li key={i} onClick={() => setItems(items.filter((_, j) => j !== i))}>{t}</li>)}</ul>\n    </main>\n  )\n}\n`,
   'sandbox.yaml': `version: 1\nweb:\n  command: "[ -x node_modules/.bin/vite ] || pnpm install; pnpm exec vite --host 0.0.0.0 --port 3000"\n  port: 3000\n  health_path: "/"\n`,
   'package.json': `{\n  "name": "todo-app",\n  "private": true,\n  "scripts": { "dev": "vite", "build": "vite build" }\n}\n`,
@@ -126,7 +127,13 @@ function route(method: string, url: string): { status: number; body?: unknown; t
   if (match(u, /\/v1\/apps\/[^/]+\/snapshots$/)) return { status: 200, body: { snapshots: [{ id: 'snap1', name: 'before-deploy', created_at: '2026-07-09T10:05:00Z' }] } }
   if (match(u, /\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+$/)) return { status: 200, body: tasks[0] }
   if (match(u, /\/v1\/sandboxes\/[^/]+\/tasks$/)) return { status: 200, body: { tasks } }
-  if (match(u, /\/v1\/sandboxes\/[^/]+\/files$/)) return { status: 200, body: files }
+  if (match(u, /\/v1\/sandboxes\/[^/]+\/files$/)) {
+    const p = decodeURIComponent((q.match(/path=([^&]*)/)?.[1] || ''))
+    if (p === 'brain') return { status: 200, body: { path: 'brain', recursive: false, entries: [
+      { name: 'decisions.md', path: 'brain/decisions.md', type: 'file', dir: false, size: 380 },
+    ] } }
+    return { status: 200, body: files }
+  }
   if (match(u, /\/v1\/sandboxes\/[^/]+\/processes\/[^/]+\/logs$/)) return { status: 200, body: { process: 'web', lines: ['VITE ready in 312 ms', '➜  Local:   http://localhost:3000/'] } }
   if (match(u, /\/v1\/sandboxes\/[^/]+$/)) return { status: 200, body: sandbox }
   if (match(u, /\/v1\/apps\/[^/]+$/)) return { status: 200, body: app }

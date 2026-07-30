@@ -1,15 +1,37 @@
 // Project Brain — pure logic (no React, no fetch) so it is unit-testable:
-// wikilink parsing, cross-brain graph building, the "Current state" excerpt,
-// and the inline splitter the Brain tab's view mode renders from.
+// wikilink parsing, the cross-brain knowledge graph (hub + spoke notes +
+// concept ghosts), shared-concept stats, the "Current state" excerpt, and the
+// inline splitter the Brain tab's view mode renders from.
+
+// An app's brain: the hub (BRAIN.md) plus optional spoke notes under brain/
+// ("decisions" -> content of brain/decisions.md). Spokes hold topics that
+// outgrew the hub; the hub links to them.
+export interface AppBrain {
+  hub: string | null
+  spokes: Record<string, string>
+}
 
 export interface BrainNode {
-  id: string      // app id, or "ghost:<slug>" for an unresolved link target
+  id: string        // app id | "<appId>:<spoke-slug>" | "ghost:<slug>"
   label: string
-  ghost: boolean  // true = mentioned in a brain but has no brain of its own
-  lines: number   // brain size (0 for ghosts)
+  kind: 'app' | 'spoke' | 'concept'
+  lines: number
+  appId?: string    // spokes: the owning app (click target)
+  empty: boolean    // dashed in the graph: app without a brain, or a concept
 }
 
 export interface BrainEdge { from: string; to: string }
+
+// A concept: a [[wikilink]] target that resolves to no app and no spoke.
+// Mentioned across >1 app it is shared knowledge — an err-* concept with
+// multiple apps is the repeat-mistake signal.
+export interface ConceptStat {
+  slug: string
+  label: string
+  mentions: number  // total inbound links
+  apps: number      // distinct apps linking it
+  isError: boolean  // err-* naming convention
+}
 
 // slugKey normalizes a name for matching: "[[API Gateway]]" links the app
 // named "api-gateway" (case/space/punctuation-insensitive).
@@ -30,55 +52,79 @@ export function parseWikiLinks(md: string): string[] {
   return out
 }
 
-// buildBrainGraph turns apps + their brain contents into nodes and edges.
-// Every app is a node (ghost when it has no brain yet); wikilinks that match
-// an app name (by slugKey) become edges; unmatched links become ghost concept
-// nodes. Self-links and duplicate edges are dropped.
+// buildBrainGraph turns apps + their brains into the knowledge graph.
+// Nodes: every app (dashed when brainless), every spoke note, every unresolved
+// concept. Edges: hub→spoke (details live there), plus each [[wikilink]] —
+// resolved own-spokes first, then app names, else a concept ghost. Ghost slugs
+// are GLOBAL, so two apps linking [[err-x]] converge on one shared node —
+// cross-project backlinks with no central vault. Self-links and duplicate
+// edges are dropped.
 export function buildBrainGraph(
   apps: { id: string; name: string }[],
-  brains: Record<string, string | null | undefined>,
-): { nodes: BrainNode[]; edges: BrainEdge[] } {
-  const bySlug = new Map<string, string>() // slug -> app id
-  for (const a of apps) bySlug.set(slugKey(a.name), a.id)
+  brains: Record<string, AppBrain | null | undefined>,
+): { nodes: BrainNode[]; edges: BrainEdge[]; concepts: ConceptStat[] } {
+  const appBySlug = new Map<string, string>()
+  for (const a of apps) appBySlug.set(slugKey(a.name), a.id)
 
-  const nodes: BrainNode[] = apps.map((a) => {
-    const md = brains[a.id]
-    return {
-      id: a.id,
-      label: a.name,
-      ghost: typeof md !== 'string',
-      lines: typeof md === 'string' ? md.split('\n').length : 0,
-    }
-  })
-
+  const nodes: BrainNode[] = []
   const edges: BrainEdge[] = []
   const seen = new Set<string>()
-  const ghosts = new Map<string, string>() // slug -> label as first written
+  const concepts = new Map<string, { label: string; mentions: number; apps: Set<string> }>()
+
+  const addEdge = (from: string, to: string) => {
+    const key = `${from}->${to}`
+    if (from === to || seen.has(key)) return
+    seen.add(key)
+    edges.push({ from, to })
+  }
 
   for (const a of apps) {
-    const md = brains[a.id]
-    if (typeof md !== 'string') continue
-    for (const target of parseWikiLinks(md)) {
-      const slug = slugKey(target)
-      if (!slug) continue
-      let to = bySlug.get(slug)
-      if (to === a.id) continue // self-link
-      if (!to) {
-        to = `ghost:${slug}`
-        if (!ghosts.has(slug)) ghosts.set(slug, target)
+    const b = brains[a.id]
+    const hub = b && typeof b.hub === 'string' ? b.hub : null
+    const spokes = (b && b.spokes) || {}
+    const spokeNames = Object.keys(spokes)
+
+    nodes.push({
+      id: a.id, label: a.name, kind: 'app', appId: a.id,
+      lines: hub ? hub.split('\n').length : 0,
+      empty: hub === null && spokeNames.length === 0,
+    })
+
+    const spokeIdBySlug = new Map<string, string>()
+    for (const name of spokeNames) {
+      const sid = `${a.id}:${slugKey(name)}`
+      spokeIdBySlug.set(slugKey(name), sid)
+      nodes.push({ id: sid, label: name, kind: 'spoke', appId: a.id, lines: spokes[name].split('\n').length, empty: false })
+      addEdge(a.id, sid) // the hub owns its spokes
+    }
+
+    const docs: { source: string; md: string }[] = []
+    if (hub) docs.push({ source: a.id, md: hub })
+    for (const name of spokeNames) docs.push({ source: spokeIdBySlug.get(slugKey(name))!, md: spokes[name] })
+
+    for (const doc of docs) {
+      for (const target of parseWikiLinks(doc.md)) {
+        const slug = slugKey(target)
+        if (!slug) continue
+        const to = spokeIdBySlug.get(slug) ?? appBySlug.get(slug)
+        if (to) { addEdge(doc.source, to); continue }
+        addEdge(doc.source, `ghost:${slug}`)
+        const cs = concepts.get(slug) || { label: target, mentions: 0, apps: new Set<string>() }
+        cs.mentions++; cs.apps.add(a.id)
+        concepts.set(slug, cs)
       }
-      const key = `${a.id}->${to}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      edges.push({ from: a.id, to })
     }
   }
 
-  for (const [slug, label] of ghosts) {
-    nodes.push({ id: `ghost:${slug}`, label, ghost: true, lines: 0 })
+  for (const [slug, cs] of concepts) {
+    nodes.push({ id: `ghost:${slug}`, label: cs.label, kind: 'concept', lines: 0, empty: true })
   }
 
-  return { nodes, edges }
+  const stats: ConceptStat[] = [...concepts.entries()]
+    .map(([slug, cs]) => ({ slug, label: cs.label, mentions: cs.mentions, apps: cs.apps.size, isError: slug.startsWith('err-') }))
+    .sort((x, y) => y.apps - x.apps || y.mentions - x.mentions || x.slug.localeCompare(y.slug))
+
+  return { nodes, edges, concepts: stats }
 }
 
 // brainExcerpt: the section under `## Current state` when present (lenient —

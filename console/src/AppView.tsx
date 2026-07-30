@@ -333,19 +333,24 @@ export function brainTemplate(appName: string): string {
     '## Dead ends',
     '<!-- What was tried and failed, and why — so nobody retries it. -->',
     '',
-    '<!-- Tip: link related projects with [[project-name]] — links appear in the Brain graph. -->',
+    '<!-- Tips: link projects & concepts with [[name]] — lowercase-slug concepts,',
+    '     err- prefix for error signatures, link before inventing a new name.',
+    '     When a topic outgrows ~30 lines, move it to brain/<topic>.md and link',
+    '     it from here — the agent reads this hub first and follows links. -->',
     '',
   ].join('\n')
 }
 
-// Keep BRAIN.md out of git the same way generated AGENTS.md is: a repo-local
-// `.git/info/exclude` entry (never committed, never pushed).
+// Keep the brain (hub + brain/ spoke notes) out of git the same way generated
+// AGENTS.md is: repo-local `.git/info/exclude` entries (never committed).
 async function ensureBrainExcluded(sandboxId: string): Promise<void> {
   try {
     const ex = (await api.getWorkspaceFile(sandboxId, '.git/info/exclude').catch(() => null)) || ''
-    if (!ex.split('\n').includes('BRAIN.md')) {
+    const lines = ex.split('\n')
+    const missing = ['BRAIN.md', 'brain/'].filter((l) => !lines.includes(l))
+    if (missing.length > 0) {
       const sep = ex === '' || ex.endsWith('\n') ? '' : '\n'
-      await api.putWorkspaceFile(sandboxId, 'workspace/app/.git/info/exclude', `${ex}${sep}BRAIN.md\n`)
+      await api.putWorkspaceFile(sandboxId, 'workspace/app/.git/info/exclude', `${ex}${sep}${missing.join('\n')}\n`)
     }
   } catch { /* advisory — a missing exclude never blocks saving the brain */ }
 }
@@ -353,19 +358,17 @@ async function ensureBrainExcluded(sandboxId: string): Promise<void> {
 // BrainView — lightweight read view of BRAIN.md: headings, lists, inline
 // code/bold, and clickable [[wikilinks]] (resolved against app names; dashed
 // when no such app exists yet). Deliberately not a full markdown renderer.
-function BrainView({ md, apps, onOpenApp }: { md: string; apps?: TApp[]; onOpenApp?: (id: string, tab?: string) => void }) {
-  const byName = new Map<string, string>()
-  for (const a of apps || []) byName.set(slugKey(a.name), a.id)
+function BrainView({ md, linkFor }: { md: string; linkFor: (target: string) => (() => void) | null }) {
   const inline = (line: string, key: number) => (
     <span key={key}>
       {splitInline(line).map((s, i) => {
         if (s.kind === 'code') return <code key={i} style={{ ...mono, fontSize: 12, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '0 5px' }}>{s.v}</code>
         if (s.kind === 'bold') return <b key={i}>{s.v}</b>
         if (s.kind === 'wiki') {
-          const id = byName.get(slugKey(s.v))
-          return id
-            ? <a key={i} onClick={() => onOpenApp?.(id, 'brain')} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }} data-testid="brain-wikilink">[[{s.v}]]</a>
-            : <span key={i} title="No app with this name yet" style={{ color: c.muted2, borderBottom: `1px dashed ${c.muted2}` }}>[[{s.v}]]</span>
+          const go = linkFor(s.v)
+          return go
+            ? <a key={i} onClick={go} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }} data-testid="brain-wikilink">[[{s.v}]]</a>
+            : <span key={i} title="No note or app with this name yet" style={{ color: c.muted2, borderBottom: `1px dashed ${c.muted2}` }}>[[{s.v}]]</span>
         }
         return <span key={i}>{s.v}</span>
       })}
@@ -387,34 +390,73 @@ function BrainView({ md, apps, onOpenApp }: { md: string; apps?: TApp[]; onOpenA
 }
 
 function BrainTab({ appName, sb, onError, toast, apps, onOpenApp }: { appName: string; sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void; apps?: TApp[]; onOpenApp?: (id: string, tab?: string) => void }) {
-  const [text, setText] = useState<string | null>(null)
-  const [exists, setExists] = useState(false)
+  // docs: path -> content. 'BRAIN.md' is the hub; 'brain/<name>.md' are spoke
+  // notes (topics that outgrew the hub). The agent reads the hub first and
+  // follows its [[wikilinks]] into spokes only when a task needs them.
+  const [docs, setDocs] = useState<Record<string, string> | null>(null)
+  const [hubExists, setHubExists] = useState(false)
+  const [sel, setSel] = useState('BRAIN.md')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (!sb) return
-    api.getWorkspaceFile(sb.id, 'BRAIN.md')
-      .then((c) => { setExists(c !== null); setText(c ?? '') })
+    api.getAppBrain(sb.id)
+      .then((b) => {
+        const d: Record<string, string> = {}
+        if (b.hub !== null) d['BRAIN.md'] = b.hub
+        for (const [name, content] of Object.entries(b.spokes)) d[`brain/${name}.md`] = content
+        setDocs(d); setHubExists(b.hub !== null); setSel('BRAIN.md')
+      })
       .catch((e) => onError((e as Error).message))
   }, [sb, onError])
 
-  const save = async (content: string) => {
+  const save = async (path: string, content: string) => {
     if (!sb) return
     setBusy(true)
     try {
-      await api.putWorkspaceFile(sb.id, 'workspace/app/BRAIN.md', content)
+      await api.putWorkspaceFile(sb.id, `workspace/app/${path}`, content)
       await ensureBrainExcluded(sb.id)
-      setText(content); setExists(true); setDirty(false)
+      setDocs((d) => ({ ...(d || {}), [path]: content }))
+      if (path === 'BRAIN.md') setHubExists(true)
+      setDirty(false)
       toast('Brain saved')
     } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
   }
 
-  if (!sb) return <p style={{ color: c.muted2 }}>No sandbox yet — create one to give this app a brain.</p>
-  if (text === null) return <p style={{ color: c.muted2 }}>Loading…</p>
+  const switchDoc = (path: string) => {
+    if (dirty && !window.confirm('Discard unsaved changes?')) return
+    setSel(path); setDirty(false); setEditing(false)
+  }
 
-  if (!exists) {
+  const newNote = async () => {
+    const name = window.prompt('Note name (topic that outgrew the hub, e.g. "decisions" or "err-pg-connect-hang")')?.trim()
+    if (!name) return
+    const slug = slugKey(name)
+    if (!slug) return
+    const path = `brain/${slug}.md`
+    await save(path, `# ${name}\n\n`)
+    setSel(path); setEditing(true)
+  }
+
+  const spokePaths = Object.keys(docs || {}).filter((p) => p !== 'BRAIN.md').sort()
+  const text = docs?.[sel] ?? ''
+
+  // Wikilink resolution inside the viewer: own spoke notes first, then apps.
+  const linkFor = (target: string): (() => void) | null => {
+    const s = slugKey(target)
+    const spoke = spokePaths.find((p) => slugKey(p.replace(/^brain\//, '').replace(/\.md$/, '')) === s)
+    if (spoke) return () => switchDoc(spoke)
+    const app = (apps || []).find((a) => slugKey(a.name) === s)
+    if (app && onOpenApp) return () => onOpenApp(app.id, 'brain')
+    return null
+  }
+
+  if (!sb) return <p style={{ color: c.muted2 }}>No sandbox yet — create one to give this app a brain.</p>
+  if (docs === null) return <p style={{ color: c.muted2 }}>Loading…</p>
+
+  if (!hubExists && spokePaths.length === 0) {
     return (
       <Card style={{ padding: '26px 22px', textAlign: 'center' }} data-testid="brain-empty">
         <div style={{ fontFamily: font.display, fontWeight: 600, fontSize: 15, marginBottom: 6 }}>No brain yet</div>
@@ -422,29 +464,47 @@ function BrainTab({ appName, sb, onError, toast, apps, onOpenApp }: { appName: s
           <span style={{ ...mono, fontSize: 12 }}>BRAIN.md</span> is this project's memory — state, decisions, gotchas, dead ends.
           The agent reads it before every task and appends what it learns. It lives in the workspace, is kept out of git, and travels with snapshots and forks.
         </div>
-        <Btn variant="primary" disabled={busy} onClick={() => save(brainTemplate(appName))} data-testid="brain-create">Create BRAIN.md</Btn>
+        <Btn variant="primary" disabled={busy} onClick={() => save('BRAIN.md', brainTemplate(appName))} data-testid="brain-create">Create BRAIN.md</Btn>
       </Card>
     )
   }
 
   return (
     <div data-testid="brain-tab">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <span style={{ ...mono, fontSize: 11.5, color: c.muted }}>BRAIN.md ({text.split('\n').length} lines) — read by the agent before every task · git-excluded · link projects with [[name]]</span>
+      {/* doc switcher: the hub + spoke notes + new-note */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span onClick={() => switchDoc('BRAIN.md')} className="dc-hoverborder" data-testid="brain-doc-hub"
+          style={{ ...mono, fontSize: 12, padding: '5px 11px', borderRadius: 7, cursor: 'pointer', border: `1px solid ${sel === 'BRAIN.md' ? c.faint : c.border}`, background: sel === 'BRAIN.md' ? c.panel2 : 'transparent', color: sel === 'BRAIN.md' ? c.fg : c.muted }}>
+          BRAIN.md
+        </span>
+        {spokePaths.map((p) => {
+          const name = p.replace(/^brain\//, '').replace(/\.md$/, '')
+          const active = sel === p
+          return (
+            <span key={p} onClick={() => switchDoc(p)} className="dc-hoverborder" data-testid={`brain-doc-${name}`}
+              style={{ ...mono, fontSize: 12, padding: '5px 11px', borderRadius: 7, cursor: 'pointer', border: `1px solid ${active ? c.faint : c.border}`, background: active ? c.panel2 : 'transparent', color: active ? c.fg : c.muted }}>
+              {name}
+            </span>
+          )
+        })}
+        <span onClick={newNote} className="dc-hoverink" data-testid="brain-new-note" style={{ ...mono, fontSize: 12, padding: '5px 9px', color: c.muted2, cursor: 'pointer' }}>+ note</span>
         <div style={{ flex: 1 }} />
-        {editing && dirty && <Btn variant="primary" disabled={busy} onClick={() => { save(text); setEditing(false) }} data-testid="brain-save">{busy ? 'Saving…' : 'Save'}</Btn>}
+        {editing && dirty && <Btn variant="primary" disabled={busy} onClick={() => { save(sel, text); setEditing(false) }} data-testid="brain-save">{busy ? 'Saving…' : 'Save'}</Btn>}
         <Btn onClick={() => setEditing((e) => !e)} data-testid="brain-edit-toggle">{editing ? 'View' : 'Edit'}</Btn>
+      </div>
+      <div style={{ ...mono, fontSize: 11, color: c.muted2, marginBottom: 8 }}>
+        {sel} ({text.split('\n').length} lines) — read by the agent · git-excluded · [[name]] links notes, apps &amp; concepts
       </div>
       {editing ? (
         <textarea
           value={text}
-          onChange={(e) => { setText(e.target.value); setDirty(true) }}
+          onChange={(e) => { setDocs((d) => ({ ...(d || {}), [sel]: e.target.value })); setDirty(true) }}
           spellCheck={false}
           data-testid="brain-editor"
           style={{ width: '100%', height: 520, resize: 'vertical', background: c.panel, color: c.fg, border: `1px solid ${c.border}`, borderRadius: 9, padding: '14px 16px', ...mono, fontSize: 12.5, lineHeight: 1.55 }}
         />
       ) : (
-        <BrainView md={text} apps={apps} onOpenApp={onOpenApp} />
+        <BrainView md={text} linkFor={linkFor} />
       )}
     </div>
   )
