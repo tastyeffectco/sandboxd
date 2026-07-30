@@ -522,7 +522,7 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
           <select value={model} onChange={(e) => setModel(e.target.value)} data-testid="task-model" style={selStyle}>
             <option value="">Default model</option>
             {agent === 'claude-code' && <><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></>}
-            {agent === 'opencode' && <><option value="opencode/glm-5">GLM-5</option><option value="opencode/kimi-k2.6">Kimi K2.6</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/minimax-m3">MiniMax M3</option></>}
+            {agent === 'opencode' && <><option value="opencode/glm-5">GLM-5</option><option value="opencode/kimi-k2.6">Kimi K2.6</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/MiniMax-M3">MiniMax M3</option><option value="opencode/MiniMax-M2.7">MiniMax M2.7</option></>}
           </select>
         </div>
       </div>

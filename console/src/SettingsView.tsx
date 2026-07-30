@@ -102,12 +102,15 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
           {agents.map((a) => {
             // Codex is disabled for now — its ChatGPT-subscription auth can't be
             // put behind the credential proxy yet (see the note below).
+            // MiniMax is a credential-only provider (no task-agent CLI); it's
+            // connectable here but never appears in the run picker.
             const disabled = a.id === 'codex'
+            const credentialOnly = !a.runnable && a.id !== 'codex'
             return (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', border: `1px solid ${c.border}`, borderRadius: 8, background: c.panel2, marginBottom: 8, opacity: disabled ? 0.6 : 1 }} data-testid={`agent-${a.id}`}>
               <div>
                 <div style={{ fontWeight: 500 }}>{a.label}</div>
-                <div style={{ ...mono, fontSize: 11, color: c.muted2 }}>{disabled ? 'temporarily unavailable' : `${a.installed_state === 'installed' ? 'installed' : 'not installed'}${a.status === 'connected' && a.method ? ` · via ${a.method === 'oauth' ? 'subscription' : 'API key'}` : ''}`}</div>
+                <div style={{ ...mono, fontSize: 11, color: c.muted2 }}>{disabled ? 'temporarily unavailable' : `${a.installed_state === 'installed' ? 'installed' : 'not installed'}${a.status === 'connected' && a.method ? ` · via ${a.method === 'oauth' ? 'subscription' : 'API key'}` : ''}${credentialOnly ? ' · model gateway' : ''}`}</div>
               </div>
               {disabled ? (
                 <span style={{ marginLeft: 'auto' }}><Pill tone="neutral">disabled</Pill></span>
@@ -135,7 +138,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
             <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>optional — used when a task doesn't pick a model</span>
           </div>
           <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>Paste each agent's own model id (e.g. OpenCode <span style={{ ...mono, fontSize: 11 }}>glm-5</span>, Claude <span style={{ ...mono, fontSize: 11 }}>sonnet</span>). Leave blank for the agent's default — OpenCode with no API key falls back to its free tier (<span style={{ ...mono, fontSize: 11 }}>big-pickle</span>).</div>
-          {agents.filter((a) => a.id !== 'codex').map((a) => (
+          {agents.filter((a) => a.id !== 'codex' && a.runnable).map((a) => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <span style={{ width: 130, fontSize: 12.5, color: c.muted }}>{a.label}</span>
               <Input mono value={models[a.id] || ''} onChange={(e) => setModels({ ...models, [a.id]: e.target.value })} disabled={!modelsEditable} placeholder={a.id === 'opencode' ? 'big-pickle (free tier)' : 'agent default'} style={{ width: 260 }} data-testid={`agent-model-${a.id}`} />

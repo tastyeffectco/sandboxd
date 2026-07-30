@@ -13,11 +13,19 @@ type Provider struct {
 	Binary string // the CLI binary name, probed for "installed"
 }
 
-// registry is the fixed set of supported providers (owner-operated mode).
+// registry is the fixed set of supported providers (owner-operated mode). It
+// holds the coding-agent CLIs runtimed can drive AND any credential-only
+// provider whose key the auth proxy injects on the wire (a model gateway that
+// is reached through an agent's proxy path, not run as its own task agent).
 var registry = []Provider{
 	{ID: "opencode", Label: "OpenCode", Binary: "opencode"},
 	{ID: "claude-code", Label: "Claude Code", Binary: "claude"},
 	{ID: "codex", Label: "Codex", Binary: "codex"},
+	// MiniMax is a credential-only provider: the owner connects a MiniMax API
+	// key here, and the auth proxy injects it for the minimax upstreams. It has
+	// no task-agent CLI and is never run by runtimed (Runnable=false), so the
+	// console shows it as a credential-only entry, not a run picker option.
+	{ID: "minimax", Label: "MiniMax", Binary: ""},
 }
 
 // Providers returns a copy of the registry in display order.
@@ -78,6 +86,11 @@ var apiKeyEnv = map[string]string{
 	"claude-code": "ANTHROPIC_API_KEY",
 	"codex":       "OPENAI_API_KEY",
 	"opencode":    "OPENCODE_API_KEY",
+	// MiniMax is a credential-only provider; its key is read from the stored
+	// key file and injected by the auth proxy for the minimax upstreams. No CLI
+	// reads this env var (MiniMax is never run as a task agent), so the name is
+	// advisory only.
+	"minimax": "MINIMAX_API_KEY",
 }
 
 // APIKeyEnv returns the env var name a provider's CLI reads its API key from.

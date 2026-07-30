@@ -42,6 +42,27 @@ var upstreams = map[string]string{
 	"openai":    "https://api.openai.com/v1",
 	"zen":       "https://opencode.ai/zen/v1",    // opencode's hosted gateway (pay-as-you-go)
 	"zengo":     "https://opencode.ai/zen/go/v1", // opencode Zen "go" subscription
+	// MiniMax direct endpoints — global (api.minimax.io) and China
+	// (api.minimaxi.com), each in an OpenAI-compatible (/v1) and an
+	// Anthropic-compatible (/anthropic) flavor. Their credential is the
+	// connected MiniMax API key (see credFor), not the carrying agent's own.
+	"minimax":              "https://api.minimax.io/v1",
+	"minimax-cn":           "https://api.minimaxi.com/v1",
+	"minimax-anthropic":    "https://api.minimax.io/anthropic",
+	"minimax-anthropic-cn": "https://api.minimaxi.com/anthropic",
+}
+
+// isMiniMaxUpstream reports whether <upstream> is one of the MiniMax direct
+// endpoints. MiniMax is a credential-only provider: whatever coding agent
+// carries the request, the proxy injects the connected MiniMax API key
+// (Bearer; MiniMax's OpenAI- and Anthropic-compatible endpoints both accept
+// Authorization: Bearer) rather than the agent's own credential.
+func isMiniMaxUpstream(up string) bool {
+	switch up {
+	case "minimax", "minimax-cn", "minimax-anthropic", "minimax-anthropic-cn":
+		return true
+	}
+	return false
 }
 
 // Proxy injects the real provider credential into forwarded requests.
@@ -72,11 +93,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agent, up := segs[0], segs[1]
-	// OpenCode free tier: an unconnected opencode is served by Zen's keyless free
-	// models, which live ONLY on the `zen` endpoint. Force `zen` even if the
-	// operator pinned `zengo` (the go-subscription endpoint carries no free models,
-	// so a free-tier request there fails as "Model … is not supported").
-	if agent == "opencode" && p.store.Method("opencode") == "" {
+	// MiniMax direct endpoints are credential-only — never rewrite them to the
+	// opencode free-tier path (a MiniMax request needs the connected MiniMax key,
+	// never Zen's keyless free models).
+	if !isMiniMaxUpstream(up) && agent == "opencode" && p.store.Method("opencode") == "" {
 		up = "zen"
 	}
 	rest := "/"
@@ -120,6 +140,21 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // credFor returns a header-injector for (agent, upstream) using the agent's
 // stored credential, or ok=false when there's no usable/proxyable credential.
 func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
+	// MiniMax direct endpoints are credential-only: regardless of which coding
+	// agent carries the request, the proxy injects the connected MiniMax API key
+	// (Bearer — MiniMax's OpenAI- and Anthropic-compatible endpoints both accept
+	// Authorization: Bearer). The carrying agent's own credential is irrelevant
+	// here; MiniMax has no task-agent CLI of its own.
+	if isMiniMaxUpstream(up) {
+		key := readTrim(filepath.Join(p.store.Dir("minimax"), agentauth.APIKeyFile))
+		if key == "" {
+			return nil, false
+		}
+		return func(h http.Header) {
+			h.Del("X-Api-Key")
+			h.Set("Authorization", "Bearer "+key)
+		}, true
+	}
 	switch p.store.Method(agent) {
 	case "api_key":
 		key := readTrim(filepath.Join(p.store.Dir(agent), agentauth.APIKeyFile))

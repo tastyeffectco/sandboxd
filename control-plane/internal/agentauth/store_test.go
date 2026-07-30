@@ -11,14 +11,19 @@ func TestRegistryHasExpectedProviders(t *testing.T) {
 	for _, p := range Providers() {
 		got[p.ID] = p
 	}
-	for _, want := range []string{"opencode", "claude-code", "codex"} {
+	for _, want := range []string{"opencode", "claude-code", "codex", "minimax"} {
 		p, ok := got[want]
 		if !ok {
 			t.Errorf("registry missing %q", want)
 			continue
 		}
-		if p.Binary == "" || p.Label == "" {
-			t.Errorf("provider %q missing binary/label: %+v", want, p)
+		if p.Label == "" {
+			t.Errorf("provider %q missing label: %+v", want, p)
+		}
+		// minimax is a credential-only provider (no task-agent CLI), so it has
+		// no binary; every runnable agent must carry one.
+		if want != "minimax" && p.Binary == "" {
+			t.Errorf("provider %q missing binary: %+v", want, p)
 		}
 	}
 	if _, ok := Get("opencode"); !ok {

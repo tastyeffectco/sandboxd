@@ -90,10 +90,21 @@ func TestListAgentsProbeUnknown(t *testing.T) {
 		Providers []map[string]any `json:"providers"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &d)
-	if len(d.Providers) != 3 {
-		t.Fatalf("want 3 providers, got %d", len(d.Providers))
+	if len(d.Providers) != 4 {
+		t.Fatalf("want 4 providers, got %d", len(d.Providers))
 	}
 	for _, p := range d.Providers {
+		// minimax is a credential-only provider with no CLI to probe, so its
+		// installed_state is "unknown" (like a failed probe) — never installed.
+		if p["id"] == "minimax" {
+			if p["installed_state"] != "unknown" {
+				t.Errorf("minimax: installed_state = %v; want unknown", p["installed_state"])
+			}
+			if p["runnable"] != false {
+				t.Errorf("minimax: runnable = %v; want false", p["runnable"])
+			}
+			continue
+		}
 		if p["installed_state"] != "unknown" {
 			t.Errorf("%v: installed_state = %v; want unknown", p["id"], p["installed_state"])
 		}

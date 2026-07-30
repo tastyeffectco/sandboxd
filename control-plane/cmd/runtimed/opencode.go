@@ -227,6 +227,39 @@ func zenUpstream() string {
 	return "zen"
 }
 
+// minimaxModels is the set of MiniMax text models routed to a direct MiniMax
+// OpenAI-compatible upstream instead of the OpenCode Zen path. These model ids
+// are passed verbatim to the proxy, which injects the connected MiniMax API
+// key and forwards to api.minimax.io/v1 (or api.minimaxi.com/v1 for the China
+// region). Context window, pricing, input modality, cache, and thinking
+// metadata for these models are documented in docs/agent-auth.md.
+var minimaxModels = map[string]bool{
+	"MiniMax-M3":   true,
+	"MiniMax-M2.7": true,
+}
+
+// minimaxUpstream returns the proxy <upstream> segment for a MiniMax model:
+// the global OpenAI-compatible endpoint by default, or the China endpoint when
+// SANDBOXD_MINIMAX_REGION=cn_zh. (The Anthropic-compatible MiniMax endpoints
+// are reachable when an agent sends Anthropic-shaped traffic to the matching
+// minimax-anthropic[|-cn] upstream; opencode uses the OpenAI-compatible one.)
+func minimaxUpstream() string {
+	if r := os.Getenv("SANDBOXD_MINIMAX_REGION"); r == "cn_zh" {
+		return "minimax-cn"
+	}
+	return "minimax"
+}
+
+// opencodeUpstream picks the proxy <upstream> segment for a given bare model id:
+// a MiniMax model routes to its direct MiniMax upstream; anything else keeps the
+// existing Zen path (zen | zengo via SANDBOXD_OPENCODE_ZEN_PATH).
+func opencodeUpstream(id string) string {
+	if minimaxModels[id] {
+		return minimaxUpstream()
+	}
+	return zenUpstream()
+}
+
 // ipBaseURL rewrites a base URL's host to its resolved IP. opencode's Bun
 // runtime rejects a bare single-label hostname (e.g. "sandboxd") in a provider
 // baseURL with "fetch() URL is invalid", so we hand it an IP literal instead.
@@ -250,9 +283,14 @@ func ipBaseURL(raw string) (string, error) {
 // writeOpencodeProxyConfig writes an OPENCODE_CONFIG that routes opencode through
 // the credential-injecting proxy, and returns (config path, model id to pass to
 // --model). It defines ONE custom openai-compatible provider ("proxy") pointing
-// at the proxy's `opencode/<zen-path>` endpoint with a DUMMY key; the proxy holds
+// at the proxy's `opencode/<upstream>` endpoint with a DUMMY key; the proxy holds
 // the real credential and injects it on the wire, so nothing secret lands in the
 // sandbox. The requested model is exposed as `proxy/<id>`.
+//
+// The <upstream> segment is chosen from the model id: MiniMax models
+// (MiniMax-M3 / MiniMax-M2.7) route to a direct MiniMax OpenAI-compatible
+// upstream (the China region is selected with SANDBOXD_MINIMAX_REGION=cn_zh);
+// every other model keeps the existing Zen path (zen | zengo).
 //
 // Returns ("","",nil) when no proxy is configured — the caller then falls back to
 // opencode's own auth/model handling.
@@ -279,7 +317,7 @@ func writeOpencodeProxyConfig(model string) (string, string, error) {
 				"npm":  "@ai-sdk/openai-compatible",
 				"name": "proxy",
 				"options": map[string]any{
-					"baseURL": base + "/opencode/" + zenUpstream(),
+					"baseURL": base + "/opencode/" + opencodeUpstream(id),
 					"apiKey":  dummyKey,
 				},
 				"models": map[string]any{id: map[string]any{"name": id}},
