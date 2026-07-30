@@ -2,8 +2,9 @@
 
 All notable changes to sandboxd are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
-[Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump adds features,
-a patch is fixes only).
+[Semantic Versioning](https://semver.org/) (pre-1.0: **rolling releases bump the
+patch** — each lands the meaningful changes merged since the last one — and a
+**minor bump marks a milestone** release).
 
 ## [0.3.0] — 2026-07-07
 
