@@ -4,6 +4,8 @@ import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/k
 import { PRESET_ICONS } from './design/presetIcons'
 import { STARTERS, STARTER_ICONS } from './design/starters'
 import { AppView } from './AppView'
+import { brainExcerpt, buildBrainGraph } from './brain'
+import { BrainGraph } from './BrainGraph'
 import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
 import { Login, CreatePassword } from './AuthGate'
@@ -153,6 +155,8 @@ export default function App() {
             toast={toast}
             goApps={() => { setRoute({ name: 'apps' }); loadApps() }}
             goSettings={() => setRoute({ name: 'settings' })}
+            apps={apps}
+            onOpenApp={(id, tab) => goApp(id, tab)}
           />
         )}
       </div>
@@ -425,24 +429,7 @@ function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; 
 }
 
 // ---------- BRAIN OVERVIEW (every project's memory at a glance) ----------
-
-// Lenient "Current state" excerpt: the section under `## Current state` if
-// present (whatever the user renamed it to stays their business — we fall back
-// to the first non-heading lines). Nothing parses BRAIN.md beyond this.
-function brainExcerpt(md: string): string {
-  const lines = md.split('\n')
-  const start = lines.findIndex((l) => /^##\s+current state/i.test(l))
-  const body: string[] = []
-  const from = start >= 0 ? start + 1 : 1
-  for (let i = from; i < lines.length && body.length < 5; i++) {
-    const l = lines[i]
-    if (start >= 0 && /^##\s/.test(l)) break
-    const t = l.trim()
-    if (t === '' || t.startsWith('<!--') || t.startsWith('#')) continue
-    body.push(t)
-  }
-  return body.join(' · ')
-}
+// Excerpt/graph logic lives in brain.ts (pure + unit-tested); this renders it.
 
 function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) => void }) {
   // null = no BRAIN.md (or no sandbox); undefined = still loading.
@@ -468,6 +455,23 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
       </p>
 
       {apps.length === 0 && <p style={{ color: c.muted2 }}>No apps yet — the brain fills in as you build.</p>}
+
+      {/* Knowledge graph: [[wikilinks]] between brains become edges; dashed
+          nodes are ghosts (no brain yet, or a linked concept with no app). */}
+      {(() => {
+        const settled = apps.every((a) => brains[a.id] !== undefined)
+        if (!settled || apps.length === 0) return null
+        const g = buildBrainGraph(apps, brains)
+        if (g.edges.length === 0 && g.nodes.every((n) => n.ghost)) return null
+        return (
+          <Card style={{ padding: '8px 10px', marginBottom: 22 }}>
+            <BrainGraph nodes={g.nodes} edges={g.edges} onOpen={onOpen} />
+            <div style={{ ...mono, fontSize: 10.5, color: c.muted2, textAlign: 'center', paddingBottom: 6 }}>
+              Link projects from any brain with [[project-name]] — dashed nodes have no brain yet.
+            </div>
+          </Card>
+        )
+      })()}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }} data-testid="brain-list">
         {withBrain.map((a) => {

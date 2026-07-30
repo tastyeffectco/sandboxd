@@ -3,6 +3,7 @@ import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, Git
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 import { DeployModal } from './DeployModal'
 import { IS_DEMO } from './demo'
+import { slugKey, splitInline } from './brain'
 
 // Code-split the CodeMirror editor: it's the app's heaviest dependency and only
 // needed on the Files tab, so it loads on demand rather than in the main bundle.
@@ -52,8 +53,8 @@ async function ensureAppAgentsMd(sandboxId: string, app: TApp | null, pick: Runt
 }
 
 export function AppView({
-  appId, initialTab, onError, toast, goApps, goSettings,
-}: { appId: string; initialTab?: string; onError: (m: string) => void; toast: (m: string) => void; goApps: () => void; goSettings: () => void }) {
+  appId, initialTab, onError, toast, goApps, goSettings, apps, onOpenApp,
+}: { appId: string; initialTab?: string; onError: (m: string) => void; toast: (m: string) => void; goApps: () => void; goSettings: () => void; apps?: TApp[]; onOpenApp?: (id: string, tab?: string) => void }) {
   const [app, setApp] = useState<TApp | null>(null)
   const [sb, setSb] = useState<Sandbox | null>(null)
   const [tabName, setTabName] = useState<Tab>((initialTab as Tab) || 'overview')
@@ -196,7 +197,7 @@ export function AppView({
       </div>
 
       {tabName === 'overview' && <Overview app={app} sb={sb} previewURL={previewURL} onError={onError} toast={toast} refresh={refresh} onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })} canApply={status === 'running'} />}
-      {tabName === 'brain' && <BrainTab appName={app.name} sb={sb} onError={onError} toast={toast} />}
+      {tabName === 'brain' && <BrainTab appName={app.name} sb={sb} onError={onError} toast={toast} apps={apps} onOpenApp={onOpenApp} />}
       {tabName === 'files' && <FilesTab appId={appId} sb={sb} onError={onError} toast={toast} />}
       {tabName === 'git' && <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />}
       {tabName === 'config' && <ConfigTab appId={appId} onError={onError} />}
@@ -332,6 +333,8 @@ export function brainTemplate(appName: string): string {
     '## Dead ends',
     '<!-- What was tried and failed, and why — so nobody retries it. -->',
     '',
+    '<!-- Tip: link related projects with [[project-name]] — links appear in the Brain graph. -->',
+    '',
   ].join('\n')
 }
 
@@ -347,11 +350,48 @@ async function ensureBrainExcluded(sandboxId: string): Promise<void> {
   } catch { /* advisory — a missing exclude never blocks saving the brain */ }
 }
 
-function BrainTab({ appName, sb, onError, toast }: { appName: string; sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void }) {
+// BrainView — lightweight read view of BRAIN.md: headings, lists, inline
+// code/bold, and clickable [[wikilinks]] (resolved against app names; dashed
+// when no such app exists yet). Deliberately not a full markdown renderer.
+function BrainView({ md, apps, onOpenApp }: { md: string; apps?: TApp[]; onOpenApp?: (id: string, tab?: string) => void }) {
+  const byName = new Map<string, string>()
+  for (const a of apps || []) byName.set(slugKey(a.name), a.id)
+  const inline = (line: string, key: number) => (
+    <span key={key}>
+      {splitInline(line).map((s, i) => {
+        if (s.kind === 'code') return <code key={i} style={{ ...mono, fontSize: 12, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '0 5px' }}>{s.v}</code>
+        if (s.kind === 'bold') return <b key={i}>{s.v}</b>
+        if (s.kind === 'wiki') {
+          const id = byName.get(slugKey(s.v))
+          return id
+            ? <a key={i} onClick={() => onOpenApp?.(id, 'brain')} style={{ color: c.link, cursor: 'pointer', textDecoration: 'none' }} data-testid="brain-wikilink">[[{s.v}]]</a>
+            : <span key={i} title="No app with this name yet" style={{ color: c.muted2, borderBottom: `1px dashed ${c.muted2}` }}>[[{s.v}]]</span>
+        }
+        return <span key={i}>{s.v}</span>
+      })}
+    </span>
+  )
+  return (
+    <div data-testid="brain-view" style={{ border: `1px solid ${c.border}`, borderRadius: 9, background: c.panel, padding: '18px 22px', fontSize: 13.5, lineHeight: 1.65 }}>
+      {md.split('\n').map((l, i) => {
+        const t = l.trim()
+        if (t.startsWith('<!--')) return null
+        if (t === '') return <div key={i} style={{ height: 8 }} />
+        if (t.startsWith('# ')) return <div key={i} style={{ fontFamily: font.display, fontWeight: 700, fontSize: 19, margin: '2px 0 6px' }}>{inline(t.slice(2), i)}</div>
+        if (t.startsWith('## ')) return <div key={i} style={{ fontFamily: font.display, fontWeight: 700, fontSize: 13.5, textTransform: 'uppercase', letterSpacing: '.05em', color: c.fg2, margin: '14px 0 4px' }}>{inline(t.slice(3), i)}</div>
+        if (t.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: 8, paddingLeft: 4 }}><span style={{ color: c.muted2 }}>–</span><span>{inline(t.slice(2), i)}</span></div>
+        return <div key={i}>{inline(t, i)}</div>
+      })}
+    </div>
+  )
+}
+
+function BrainTab({ appName, sb, onError, toast, apps, onOpenApp }: { appName: string; sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void; apps?: TApp[]; onOpenApp?: (id: string, tab?: string) => void }) {
   const [text, setText] = useState<string | null>(null)
   const [exists, setExists] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (!sb) return
@@ -390,17 +430,22 @@ function BrainTab({ appName, sb, onError, toast }: { appName: string; sb: Sandbo
   return (
     <div data-testid="brain-tab">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <span style={{ ...mono, fontSize: 11.5, color: c.muted }}>BRAIN.md ({text.split('\n').length} lines) — read by the agent before every task · git-excluded</span>
+        <span style={{ ...mono, fontSize: 11.5, color: c.muted }}>BRAIN.md ({text.split('\n').length} lines) — read by the agent before every task · git-excluded · link projects with [[name]]</span>
         <div style={{ flex: 1 }} />
-        {dirty && <Btn variant="primary" disabled={busy} onClick={() => save(text)} data-testid="brain-save">{busy ? 'Saving…' : 'Save'}</Btn>}
+        {editing && dirty && <Btn variant="primary" disabled={busy} onClick={() => { save(text); setEditing(false) }} data-testid="brain-save">{busy ? 'Saving…' : 'Save'}</Btn>}
+        <Btn onClick={() => setEditing((e) => !e)} data-testid="brain-edit-toggle">{editing ? 'View' : 'Edit'}</Btn>
       </div>
-      <textarea
-        value={text}
-        onChange={(e) => { setText(e.target.value); setDirty(true) }}
-        spellCheck={false}
-        data-testid="brain-editor"
-        style={{ width: '100%', height: 520, resize: 'vertical', background: c.panel, color: c.fg, border: `1px solid ${c.border}`, borderRadius: 9, padding: '14px 16px', ...mono, fontSize: 12.5, lineHeight: 1.55 }}
-      />
+      {editing ? (
+        <textarea
+          value={text}
+          onChange={(e) => { setText(e.target.value); setDirty(true) }}
+          spellCheck={false}
+          data-testid="brain-editor"
+          style={{ width: '100%', height: 520, resize: 'vertical', background: c.panel, color: c.fg, border: `1px solid ${c.border}`, borderRadius: 9, padding: '14px 16px', ...mono, fontSize: 12.5, lineHeight: 1.55 }}
+        />
+      ) : (
+        <BrainView md={text} apps={apps} onOpenApp={onOpenApp} />
+      )}
     </div>
   )
 }
