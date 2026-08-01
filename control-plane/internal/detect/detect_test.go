@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,4 +249,74 @@ func TestExistingManifestValidityConsistent(t *testing.T) {
 	if !good.Valid || len(good.Errors) != 0 {
 		t.Errorf("version:1 manifest must be valid with no errors: %+v", good)
 	}
+}
+
+// The base image ships pnpm/npm/bun + corepack, but the built-in presets assume
+// pnpm — so a repo declaring another manager fails on its first command. These
+// cover the generic detection that makes such repos runnable.
+func TestDetectPackageManagerPrefersThePin(t *testing.T) {
+	f := mapFiles{"yarn.lock": "", "package.json": `{"packageManager":"yarn@1.22.22"}`}
+	var p pkgJSON
+	_ = json.Unmarshal([]byte(f["package.json"]), &p)
+	pm, ok := DetectPackageManager(f, &p)
+	if !ok || pm.Name != "yarn" {
+		t.Fatalf("pm = %+v, ok = %v; want yarn", pm, ok)
+	}
+	if !strings.HasPrefix(pm.Install, "corepack ") {
+		t.Errorf("a pinned manager must run through corepack, got %q", pm.Install)
+	}
+}
+
+func TestDetectPackageManagerFallsBackToLockfiles(t *testing.T) {
+	cases := []struct{ lock, want string }{
+		{"yarn.lock", "yarn"},
+		{"bun.lockb", "bun"},
+		{"package-lock.json", "npm"},
+		{"pnpm-lock.yaml", "pnpm"},
+	}
+	for _, tc := range cases {
+		pm, ok := DetectPackageManager(mapFiles{tc.lock: ""}, nil)
+		if !ok || pm.Name != tc.want {
+			t.Errorf("%s -> %+v (ok=%v), want %s", tc.lock, pm, ok, tc.want)
+		}
+	}
+	if pm, ok := DetectPackageManager(mapFiles{}, nil); ok || pm.Name != "pnpm" {
+		t.Errorf("no signal must keep the pnpm default, got %+v ok=%v", pm, ok)
+	}
+}
+
+func TestPackageManagerSuggestionOnlyForNonPnpm(t *testing.T) {
+	// pnpm is what the presets already do — no advisory suggestion.
+	if _, ok := packageManagerSuggestion(mapFiles{"pnpm-lock.yaml": ""}, nil); ok {
+		t.Error("pnpm must not produce a package-manager suggestion")
+	}
+	// A yarn monorepo gets a ready-to-apply manifest that uses corepack yarn.
+	raw := `{"packageManager":"yarn@1.22.22","scripts":{"start":"vite"}}`
+	var p pkgJSON
+	_ = json.Unmarshal([]byte(raw), &p)
+	s, ok := packageManagerSuggestion(mapFiles{"package.json": raw, "yarn.lock": ""}, &p)
+	if !ok {
+		t.Fatal("a yarn repo must produce a suggestion")
+	}
+	for _, want := range []string{"corepack yarn install", "corepack yarn run start", "--host 0.0.0.0", "port: 3000"} {
+		if !strings.Contains(s.SuggestedManifest, want) {
+			t.Errorf("manifest missing %q:\n%s", want, s.SuggestedManifest)
+		}
+	}
+	if s.Runnable {
+		t.Error("the suggestion is advisory — no built-in preset runs yarn")
+	}
+}
+
+func TestInspectSurfacesThePackageManagerForAYarnRepo(t *testing.T) {
+	res := Inspect(mapFiles{
+		"package.json": `{"packageManager":"yarn@1.22.22","scripts":{"dev":"vite"}}`,
+		"yarn.lock":    "",
+	})
+	for _, s := range res.Suggestions {
+		if strings.Contains(s.SuggestedManifest, "corepack yarn") {
+			return
+		}
+	}
+	t.Errorf("Inspect must surface a yarn manifest; got %d suggestions", len(res.Suggestions))
 }

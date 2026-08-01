@@ -110,6 +110,9 @@ type pkgJSON struct {
 	Dependencies    map[string]string `json:"dependencies"`
 	DevDependencies map[string]string `json:"devDependencies"`
 	Scripts         map[string]string `json:"scripts"`
+	// PackageManager is npm's standard "corepack" pin, e.g. "yarn@1.22.22".
+	// A repo that declares one usually REFUSES any other package manager.
+	PackageManager string `json:"packageManager"`
 }
 
 func (p *pkgJSON) has(dep string) bool {
@@ -206,6 +209,12 @@ func Inspect(f Files) Result {
 	// Worker
 	if f.Exists("worker.sh") {
 		add(framework("worker", true, true, "worker.sh present", ""))
+	}
+	// A JS repo that requires a non-pnpm package manager: the built-in presets
+	// would run pnpm and fail on the first command, so surface a ready manifest
+	// using the manager the repo actually declares.
+	if pms, ok := packageManagerSuggestion(f, pkg); ok {
+		add(pms)
 	}
 
 	rank(&res)
@@ -316,4 +325,120 @@ func rank(res *Result) {
 		res.Warnings = append(res.Warnings,
 			"could not confidently detect a runtime — pick a preset or add a sandbox.yaml")
 	}
+}
+
+// --- package manager -------------------------------------------------
+//
+// The base image ships pnpm, npm and bun, plus corepack (which provides yarn
+// and any version a repo pins). The built-in JS presets assume pnpm, so a repo
+// that uses another manager fails on its very first command — yarn repos abort
+// with "This project is configured to use yarn" and nothing runs. Detecting the
+// manager is generic and data-driven: the standard `packageManager` pin first
+// (npm's own corepack mechanism), then the lockfile. No project-specific
+// knowledge; every JS repo benefits.
+
+// PackageManager describes how to install and run a JS project.
+type PackageManager struct {
+	Name    string // yarn | npm | bun | pnpm
+	Install string // install command, corepack-prefixed when the repo pins a version
+	Exec    string // run a binary from node_modules (e.g. vite)
+	Run     string // run a package.json script
+	Reason  string // why it was picked (surfaced to the user)
+}
+
+// pnpmDefault is what the built-in presets already assume.
+var pnpmDefault = PackageManager{
+	Name: "pnpm", Install: "pnpm install", Exec: "pnpm exec", Run: "pnpm run",
+}
+
+// DetectPackageManager reports the manager a JS repo requires, and false when
+// nothing indicates one (callers keep the pnpm default). Precedence: the
+// `packageManager` pin beats lockfiles, because it is what corepack enforces
+// and what makes a repo refuse other managers.
+func DetectPackageManager(f Files, pkg *pkgJSON) (PackageManager, bool) {
+	if pkg != nil && strings.TrimSpace(pkg.PackageManager) != "" {
+		spec := strings.TrimSpace(pkg.PackageManager)
+		name := spec
+		if i := strings.IndexByte(name, '@'); i > 0 {
+			name = name[:i]
+		}
+		if pm, ok := managerFor(name, true); ok {
+			pm.Reason = "package.json pins packageManager: " + spec
+			return pm, true
+		}
+	}
+	for _, lf := range []struct{ file, name string }{
+		{"yarn.lock", "yarn"},
+		{"bun.lockb", "bun"},
+		{"bun.lock", "bun"},
+		{"package-lock.json", "npm"},
+		{"pnpm-lock.yaml", "pnpm"},
+	} {
+		if f.Exists(lf.file) {
+			if pm, ok := managerFor(lf.name, false); ok {
+				pm.Reason = lf.file + " present"
+				return pm, true
+			}
+		}
+	}
+	return pnpmDefault, false
+}
+
+// managerFor builds the commands for a manager. corepack is used for yarn (not
+// installed in the image, but corepack provides it) and whenever the repo pins
+// a version, so the pinned version is what runs.
+func managerFor(name string, pinned bool) (PackageManager, bool) {
+	prefix := ""
+	if name == "yarn" || pinned {
+		prefix = "corepack "
+	}
+	switch name {
+	case "yarn":
+		return PackageManager{Name: "yarn", Install: prefix + "yarn install", Exec: prefix + "yarn exec", Run: prefix + "yarn run"}, true
+	case "npm":
+		return PackageManager{Name: "npm", Install: prefix + "npm install", Exec: prefix + "npx", Run: prefix + "npm run"}, true
+	case "bun":
+		return PackageManager{Name: "bun", Install: prefix + "bun install", Exec: prefix + "bunx", Run: prefix + "bun run"}, true
+	case "pnpm":
+		return PackageManager{Name: "pnpm", Install: prefix + "pnpm install", Exec: prefix + "pnpm exec", Run: prefix + "pnpm run"}, true
+	}
+	return PackageManager{}, false
+}
+
+// packageManagerSuggestion returns an advisory suggestion for a JS repo that
+// needs a non-pnpm manager: the built-in presets would run pnpm and fail, so
+// the user gets a ready sandbox.yaml using the right one. Advisory only —
+// nothing is written or applied.
+func packageManagerSuggestion(f Files, pkg *pkgJSON) (Suggestion, bool) {
+	pm, found := DetectPackageManager(f, pkg)
+	if !found || pm.Name == "pnpm" {
+		return Suggestion{}, false // pnpm is what the presets already do
+	}
+	script := "dev"
+	if pkg != nil {
+		if _, ok := pkg.Scripts["dev"]; !ok {
+			for _, alt := range []string{"start", "serve"} {
+				if _, ok := pkg.Scripts[alt]; ok {
+					script = alt
+					break
+				}
+			}
+		}
+	}
+	// Bind 0.0.0.0 explicitly: a dev server on localhost is unreachable through
+	// the preview proxy, the single most common reason a preview 404s.
+	manifest := "version: 1\nweb:\n  command: \"[ -d node_modules ] || " + pm.Install +
+		"; " + pm.Run + " " + script + " --host 0.0.0.0 --port 3000\"\n  port: 3000\n  health_path: \"/\"\nbuild:\n  command: \"\"\n"
+	return Suggestion{
+		Preset:            "node-" + pm.Name,
+		Runnable:          false, // advisory: no built-in preset uses this manager
+		Confidence:        "high",
+		Reasons:           []string{pm.Reason, "the built-in presets run pnpm, which this project refuses"},
+		SuggestedManifest: manifest,
+		Notes: []string{
+			"The sandbox image ships pnpm, npm and bun plus corepack, so " + pm.Name + " is available without installing anything.",
+			"Apply this sandbox.yaml (Runtime → apply, or write it in Files) to run the project with " + pm.Name + ".",
+		},
+		Tags: []string{"javascript", pm.Name},
+	}, true
 }
