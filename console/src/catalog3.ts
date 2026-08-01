@@ -565,4 +565,36 @@ cd "$R/dist"
 exec python3 -m http.server 3000 --bind 0.0.0.0
 `,
   },
+  {
+    id: 'excalidraw',
+    name: 'Excalidraw',
+    blurb: 'Virtual hand-drawn style whiteboard',
+    category: 'productivity',
+    effort: 'build',
+    modifiable: 'source',
+    repo: 'https://github.com/excalidraw/excalidraw',
+    healthPath: '/',
+    script:
+      SH +
+      `R=/home/sandbox/workspace/app/excalidraw
+# The repo pins yarn via corepack. Install corepack's shims into the writable
+# home (the rootfs is read-only) so a BARE \`yarn\` resolves — the package
+# scripts invoke yarn again internally, which a \`corepack yarn\` prefix cannot
+# satisfy.
+mkdir -p "$HOME/.local/bin"
+corepack enable --install-directory "$HOME/.local/bin" >/dev/null 2>&1 || true
+export PATH="$HOME/.local/bin:$PATH"
+if [ ! -d "$R/node_modules" ]; then
+  rm -rf "$R" && git clone --depth 1 https://github.com/excalidraw/excalidraw "$R"
+  cd "$R" && yarn install --network-timeout 900000
+fi
+cd "$R"
+# BROWSER=none: the dev script auto-opens a browser and dies on missing
+# xdg-open in a headless sandbox.
+export BROWSER=none
+exec yarn run start --host 0.0.0.0 --port 3000
+`,
+    agentNotes:
+      'Excalidraw is a yarn (corepack-pinned) monorepo cloned to workspace/app/excalidraw. The app lives in excalidraw-app/, shared code in packages/. Use yarn (already on PATH via corepack shims in ~/.local/bin) — pnpm is refused by this repo. The dev server must keep --host 0.0.0.0 and BROWSER=none. Restart the web process to pick up changes; Vite hot-reloads most edits.',
+  },
 ]

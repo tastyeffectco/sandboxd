@@ -262,8 +262,14 @@ func TestDetectPackageManagerPrefersThePin(t *testing.T) {
 	if !ok || pm.Name != "yarn" {
 		t.Fatalf("pm = %+v, ok = %v; want yarn", pm, ok)
 	}
-	if !strings.HasPrefix(pm.Install, "corepack ") {
-		t.Errorf("a pinned manager must run through corepack, got %q", pm.Install)
+	// Nested calls (a package script invoking the manager again by bare name)
+	// need a real binary on PATH, so setup installs corepack shims into a
+	// writable dir rather than prefixing each command.
+	if !strings.Contains(pm.Setup, "corepack enable") || !strings.Contains(pm.Setup, ".local/bin") {
+		t.Errorf("a pinned manager must put shims on PATH, got Setup=%q", pm.Setup)
+	}
+	if strings.HasPrefix(pm.Install, "corepack ") {
+		t.Errorf("install must be the plain command once shims are on PATH, got %q", pm.Install)
 	}
 }
 
@@ -298,7 +304,7 @@ func TestPackageManagerSuggestionOnlyForNonPnpm(t *testing.T) {
 	if !ok {
 		t.Fatal("a yarn repo must produce a suggestion")
 	}
-	for _, want := range []string{"corepack yarn install", "corepack yarn run start", "--host 0.0.0.0", "port: 3000"} {
+	for _, want := range []string{"BROWSER=none", "corepack enable", ".local/bin", "yarn install", "yarn run start", "--host 0.0.0.0", "port: 3000"} {
 		if !strings.Contains(s.SuggestedManifest, want) {
 			t.Errorf("manifest missing %q:\n%s", want, s.SuggestedManifest)
 		}
@@ -314,7 +320,7 @@ func TestInspectSurfacesThePackageManagerForAYarnRepo(t *testing.T) {
 		"yarn.lock":    "",
 	})
 	for _, s := range res.Suggestions {
-		if strings.Contains(s.SuggestedManifest, "corepack yarn") {
+		if strings.Contains(s.SuggestedManifest, "yarn install") && strings.Contains(s.SuggestedManifest, "corepack enable") {
 			return
 		}
 	}

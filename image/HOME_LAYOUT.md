@@ -107,6 +107,7 @@ interactive shells, non-interactive `docker exec`, the entrypoint chain, daemons
 | `PIP_INDEX_URL` | `https://pypi.org/simple/` | pip + uv (uv reads pip's env block) |
 | `PATH` | `…:/home/sandbox/.local/bin:/home/sandbox/.bun/bin` | every binary is on PATH without a shell-init step |
 | `LANG`, `DEBIAN_FRONTEND` | C.UTF-8 / noninteractive | base locale + apt hygiene |
+| `BROWSER` | `none` | a sandbox has no browser; dev servers that auto-open one (`vite --open` and friends) otherwise crash on the missing `xdg-open` |
 
 **Rule of thumb**: if a setting MUST work for a bare `docker exec s-id pnpm install`
 (no `bash -l`), it belongs in the Dockerfile `ENV`. Operators who run a caching

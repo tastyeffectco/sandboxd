@@ -136,6 +136,37 @@ It is **opt-in**, used only where the runtime has no live reload of its own:
 | Node/Express | `web.restart_after_task: true` (`node server.js` has no reload) |
 | Worker | worker `restart_after_task: true` (re-runs the editable `worker.sh`) |
 
+### JavaScript projects that do not use pnpm
+
+The built-in JS presets run **pnpm**. A repo that declares another package
+manager — a `packageManager` pin (corepack) or a lockfile — refuses it outright
+(`This project is configured to use yarn`), so it needs a manifest that uses the
+manager it actually declares. `GET /v1/apps/{id}/runtime-inspect` detects this
+and returns a ready-to-apply one.
+
+The image ships **pnpm, npm and bun** plus **corepack**, which provides yarn and
+any pinned version. Two details make the difference between "starts" and
+"crashes", and the generated manifest includes both:
+
+- **Put the manager on `PATH`, do not just prefix commands.** Package scripts
+  routinely re-invoke the manager by bare name (`yarn --cwd ./app start`), and a
+  `corepack yarn …` prefix does not help those nested calls. corepack's shims
+  normally go to a system directory, which the read-only rootfs forbids, so
+  install them into the writable home:
+  `mkdir -p "$HOME/.local/bin" && corepack enable --install-directory "$HOME/.local/bin"`.
+- **`export BROWSER=none`.** A sandbox has no browser; a dev server that
+  auto-opens one dies on the missing `xdg-open`. (The image sets this too — the
+  manifest repeats it so a hand-written command is safe anywhere.)
+
+```yaml
+version: 1
+web:
+  command: "export BROWSER=none; mkdir -p \"$HOME/.local/bin\" && corepack enable --install-directory \"$HOME/.local/bin\" >/dev/null 2>&1 || true; [ -d node_modules ] || yarn install; yarn run start --host 0.0.0.0 --port 3000"
+  port: 3000
+build:
+  command: ""      # dev server: no post-task production build
+```
+
 ## Process model
 runtimed supervises each declared process — one web process (optional) plus any
 workers — restarting on unexpected exit with backoff, and abandoning a process

@@ -158,7 +158,8 @@ RUN /usr/sbin/groupadd -g 1000 sandbox \
 # /home/sandbox/.cache so a returning user resumes with hot caches.
 ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ \
-    PIP_INDEX_URL=https://pypi.org/simple/
+    PIP_INDEX_URL=https://pypi.org/simple/ \
+    BROWSER=none
 
 # runtimed — the in-sandbox supervisor, compiled in stage 1. It becomes
 # the container's main process below.

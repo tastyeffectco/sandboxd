@@ -339,12 +339,23 @@ func rank(res *Result) {
 
 // PackageManager describes how to install and run a JS project.
 type PackageManager struct {
-	Name    string // yarn | npm | bun | pnpm
-	Install string // install command, corepack-prefixed when the repo pins a version
+	Name string // yarn | npm | bun | pnpm
+	// Setup puts the manager on PATH as a REAL binary before anything else
+	// runs. Package scripts routinely re-invoke the manager by bare name (a
+	// monorepo's "start" running `yarn --cwd ./app start`), and a
+	// `corepack <mgr>` prefix cannot satisfy those nested calls — they need
+	// `<mgr>` itself resolvable. corepack's shims normally go to a system dir,
+	// which the read-only rootfs forbids, so they are installed into
+	// ~/.local/bin: writable, and already on PATH in the image.
+	Setup   string
+	Install string // install dependencies
 	Exec    string // run a binary from node_modules (e.g. vite)
 	Run     string // run a package.json script
 	Reason  string // why it was picked (surfaced to the user)
 }
+
+// corepackSetup installs corepack's shims where the sandbox may write.
+const corepackSetup = `mkdir -p "$HOME/.local/bin" && corepack enable --install-directory "$HOME/.local/bin" >/dev/null 2>&1 || true`
 
 // pnpmDefault is what the built-in presets already assume.
 var pnpmDefault = PackageManager{
@@ -388,19 +399,21 @@ func DetectPackageManager(f Files, pkg *pkgJSON) (PackageManager, bool) {
 // installed in the image, but corepack provides it) and whenever the repo pins
 // a version, so the pinned version is what runs.
 func managerFor(name string, pinned bool) (PackageManager, bool) {
-	prefix := ""
+	// yarn is not installed in the image at all, and a pinned version must come
+	// from corepack too. Either way the shims go on PATH so nested calls resolve.
+	setup := ""
 	if name == "yarn" || pinned {
-		prefix = "corepack "
+		setup = corepackSetup
 	}
 	switch name {
 	case "yarn":
-		return PackageManager{Name: "yarn", Install: prefix + "yarn install", Exec: prefix + "yarn exec", Run: prefix + "yarn run"}, true
+		return PackageManager{Name: "yarn", Setup: setup, Install: "yarn install", Exec: "yarn exec", Run: "yarn run"}, true
 	case "npm":
-		return PackageManager{Name: "npm", Install: prefix + "npm install", Exec: prefix + "npx", Run: prefix + "npm run"}, true
+		return PackageManager{Name: "npm", Setup: setup, Install: "npm install", Exec: "npx", Run: "npm run"}, true
 	case "bun":
-		return PackageManager{Name: "bun", Install: prefix + "bun install", Exec: prefix + "bunx", Run: prefix + "bun run"}, true
+		return PackageManager{Name: "bun", Setup: setup, Install: "bun install", Exec: "bunx", Run: "bun run"}, true
 	case "pnpm":
-		return PackageManager{Name: "pnpm", Install: prefix + "pnpm install", Exec: prefix + "pnpm exec", Run: prefix + "pnpm run"}, true
+		return PackageManager{Name: "pnpm", Setup: setup, Install: "pnpm install", Exec: "pnpm exec", Run: "pnpm run"}, true
 	}
 	return PackageManager{}, false
 }
@@ -427,8 +440,14 @@ func packageManagerSuggestion(f Files, pkg *pkgJSON) (Suggestion, bool) {
 	}
 	// Bind 0.0.0.0 explicitly: a dev server on localhost is unreachable through
 	// the preview proxy, the single most common reason a preview 404s.
-	manifest := "version: 1\nweb:\n  command: \"[ -d node_modules ] || " + pm.Install +
-		"; " + pm.Run + " " + script + " --host 0.0.0.0 --port 3000\"\n  port: 3000\n  health_path: \"/\"\nbuild:\n  command: \"\"\n"
+	// BROWSER=none: dev servers that auto-open a browser (vite --open and
+	// friends) crash on the missing xdg-open in a headless sandbox.
+	cmd := "export BROWSER=none; "
+	if pm.Setup != "" {
+		cmd += pm.Setup + "; "
+	}
+	cmd += "[ -d node_modules ] || " + pm.Install + "; " + pm.Run + " " + script + " --host 0.0.0.0 --port 3000"
+	manifest := "version: 1\nweb:\n  command: \"" + cmd + "\"\n  port: 3000\n  health_path: \"/\"\nbuild:\n  command: \"\"\n"
 	return Suggestion{
 		Preset:            "node-" + pm.Name,
 		Runnable:          false, // advisory: no built-in preset uses this manager
