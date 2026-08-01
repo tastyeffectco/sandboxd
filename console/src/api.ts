@@ -367,19 +367,18 @@ export const api = {
     req<ManifestValidation>('POST', '/v1/runtime/manifest/validate', { manifest: mfst }),
   // Write one workspace file via the existing generic PUT endpoint (raw body).
   // Used by the explicit "Apply sandbox.yaml" CTA — console-only, no new endpoint.
-  // Read a workspace file. NOTE the path asymmetry: GET content is relative to
-  // the APP dir (e.g. "AGENTS.md"), while putWorkspaceFile is relative to the
-  // workspace MOUNT (e.g. "workspace/app/AGENTS.md"). Returns null on 404.
+  // Read a workspace file, APP-dir relative (e.g. "AGENTS.md"). Writes use the
+  // same root (PUT /files resolves against the app dir), so read and write take
+  // identical paths. Returns null on 404.
   // List workspace files. Pass recursive:true for the whole tree in one call.
   listFiles: (sandboxId: string, opts: { path?: string; recursive?: boolean } = {}) =>
     req<{ path: string; recursive: boolean; entries: FileEntry[] }>(
       'GET',
       `/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(opts.path || '')}&recursive=${opts.recursive ? 'true' : 'false'}`,
     ),
-  // Write a file by its APP-relative path — hides the read(app-dir)/write(mount)
-  // root asymmetry so callers use one consistent path everywhere.
+  // Write a file by its APP-relative path (same root as the read above).
   writeAppFile: (sandboxId: string, appRelPath: string, content: string) =>
-    api.putWorkspaceFile(sandboxId, `workspace/app/${appRelPath}`, content),
+    api.putWorkspaceFile(sandboxId, appRelPath, content),
   // Download the whole workspace as a zip (href for an <a download>).
   exportUrl: (sandboxId: string) => `/v1/sandboxes/${sandboxId}/export`,
   getWorkspaceFile: async (sandboxId: string, appRelPath: string): Promise<string | null> => {

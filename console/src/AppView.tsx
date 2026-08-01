@@ -41,12 +41,12 @@ async function ensureAppAgentsMd(sandboxId: string, app: TApp | null, pick: Runt
   try {
     const existing = await api.getWorkspaceFile(sandboxId, 'AGENTS.md')
     if (existing !== null) return // don't touch the user's own AGENTS.md
-    await api.putWorkspaceFile(sandboxId, 'workspace/app/AGENTS.md', buildAppAgentsMd(app, pick))
+    await api.putWorkspaceFile(sandboxId, 'AGENTS.md', buildAppAgentsMd(app, pick))
     if (app?.git) {
       const ex = (await api.getWorkspaceFile(sandboxId, '.git/info/exclude').catch(() => null)) || ''
       if (!ex.split('\n').includes('AGENTS.md')) {
         const sep = ex === '' || ex.endsWith('\n') ? '' : '\n'
-        await api.putWorkspaceFile(sandboxId, 'workspace/app/.git/info/exclude', `${ex}${sep}AGENTS.md\n`).catch(() => undefined)
+        await api.putWorkspaceFile(sandboxId, '.git/info/exclude', `${ex}${sep}AGENTS.md\n`).catch(() => undefined)
       }
     }
   } catch { /* app context is advisory — never block the runtime apply */ }
@@ -90,7 +90,7 @@ export function AppView({
     const pick = insp.suggestions.find((s) => s.preset === insp.default_suggestion && s.suggested_manifest)
       || insp.suggestions.find((s) => s.suggested_manifest && (opts.auto ? s.confidence === 'high' : true))
     if (!pick?.suggested_manifest) { if (!opts.auto) onError('No runtime could be confidently detected — add a sandbox.yaml manually'); return false }
-    await api.putWorkspaceFile(sandboxId, 'workspace/app/sandbox.yaml', pick.suggested_manifest)
+    await api.putWorkspaceFile(sandboxId, 'sandbox.yaml', pick.suggested_manifest)
     await ensureAppAgentsMd(sandboxId, app, pick) // per-app agent context (best-effort)
     await api.stopSandbox(sandboxId).catch(() => undefined)
     await api.startSandbox(sandboxId)
@@ -112,7 +112,7 @@ export function AppView({
     if (!sb) return
     setBusy(true)
     try {
-      await api.putWorkspaceFile(sb.id, 'workspace/app/sandbox.yaml', '')
+      await api.putWorkspaceFile(sb.id, 'sandbox.yaml', '')
       await api.stopSandbox(sb.id).catch(() => undefined)
       await api.startSandbox(sb.id)
       setApplied(null); toast('Reverted to defaults'); await refresh()
@@ -350,7 +350,7 @@ async function ensureBrainExcluded(sandboxId: string): Promise<void> {
     const missing = ['BRAIN.md', 'brain/'].filter((l) => !lines.includes(l))
     if (missing.length > 0) {
       const sep = ex === '' || ex.endsWith('\n') ? '' : '\n'
-      await api.putWorkspaceFile(sandboxId, 'workspace/app/.git/info/exclude', `${ex}${sep}${missing.join('\n')}\n`)
+      await api.putWorkspaceFile(sandboxId, '.git/info/exclude', `${ex}${sep}${missing.join('\n')}\n`)
     }
   } catch { /* advisory — a missing exclude never blocks saving the brain */ }
 }
@@ -416,7 +416,7 @@ function BrainTab({ appName, sb, onError, toast, apps, onOpenApp }: { appName: s
     if (!sb) return
     setBusy(true)
     try {
-      await api.putWorkspaceFile(sb.id, `workspace/app/${path}`, content)
+      await api.putWorkspaceFile(sb.id, path, content)
       await ensureBrainExcluded(sb.id)
       setDocs((d) => ({ ...(d || {}), [path]: content }))
       if (path === 'BRAIN.md') setHubExists(true)
