@@ -50,7 +50,7 @@
 # CGO disabled -> a static binary that runs in the slim base with no
 # extra runtime deps. Build context is the repo ROOT (see install.sh
 # / docker-compose), so the control-plane source is at ./control-plane.
-FROM golang:1.22-bookworm AS runtimed-builder
+FROM golang:1.26-bookworm AS runtimed-builder
 WORKDIR /src
 COPY control-plane/go.mod control-plane/go.sum ./control-plane/
 RUN cd control-plane && go mod download
