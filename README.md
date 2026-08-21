@@ -276,6 +276,7 @@ copy-pasteable runbook.
 Stars are how other builders find sandboxd — it's the fastest way to support the
 project (and it keeps us going). Thank you 🙏
 
+[![Star History Chart](https://star-history.dera.page/svg?repos=tastyeffectco/sandboxd&type=Date)](https://star-history.dera.page/#tastyeffectco/sandboxd&type=Date)
 
 ## License
 
