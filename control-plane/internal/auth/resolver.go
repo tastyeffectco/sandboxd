@@ -14,7 +14,7 @@ type CredentialResolver interface {
 	// ResolveSession maps a session cookie value to its owner. ok=false when the
 	// cookie is absent, unknown, or expired.
 	ResolveSession(ctx context.Context, cookieValue string) (owner string, ok bool)
-	// ResolveAPIKey maps a presented bearer key to its owner. ok=false when the
-	// key is absent or unknown.
-	ResolveAPIKey(ctx context.Context, presented string) (owner string, ok bool)
+	// ResolveAPIKey maps a presented bearer key to its owner and scopes (nil =
+	// full access). ok=false when the key is absent or unknown.
+	ResolveAPIKey(ctx context.Context, presented string) (owner string, scopes []string, ok bool)
 }

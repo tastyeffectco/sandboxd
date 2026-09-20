@@ -86,6 +86,9 @@ services:
       SANDBOXD_POSTHOG_HOST: ${SANDBOXD_POSTHOG_HOST:-}
       SANDBOXD_POSTHOG_KEY: ${SANDBOXD_POSTHOG_KEY:-}
       SANDBOXD_INSTALL_METHOD: ${SANDBOXD_INSTALL_METHOD:-unknown}
+      # Set by sandboxd Cloud to join privacy-safe usage buckets to the
+      # subscriber funnel. It is empty for ordinary self-hosted installs.
+      SANDBOXD_CLOUD_ORG: ${SANDBOXD_CLOUD_ORG:-}
       # Which OpenCode Zen endpoint opencode routes through the auth proxy:
       # "zen" (pay-as-you-go, full catalog) or "zengo" (Zen "go" subscription).
       SANDBOXD_OPENCODE_ZEN_PATH: ${SANDBOXD_OPENCODE_ZEN_PATH:-zen}

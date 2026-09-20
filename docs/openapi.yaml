@@ -280,6 +280,11 @@ paths:
       operationId: createApiKey
       tags: [apps]
       summary: Mint an API key (each = the shared tenant). The plaintext key is returned exactly once. Session-only.
+      description: |
+        `scopes` restricts what the key may call; omitted or empty = full access.
+        A key with scope `upgrade` may only call `GET/POST /v1/upgrade`, `GET /healthz`,
+        `GET /readyz`, `GET /version` and `GET /v1/auth/status` — every other route
+        returns 403 `forbidden`. Intended for external updaters.
       requestBody:
         required: true
         content:
@@ -289,6 +294,10 @@ paths:
               required: [name]
               properties:
                 name: { type: string, description: 1-64 printable chars }
+                scopes:
+                  type: array
+                  items: { type: string, enum: [upgrade] }
+                  description: Optional restriction; omitted = full access
       responses:
         "201":
           description: Created — plaintext key returned once
@@ -300,8 +309,9 @@ paths:
                   id: { type: string }
                   name: { type: string }
                   prefix: { type: string }
+                  scopes: { type: array, items: { type: string } }
                   key: { type: string, description: plaintext — shown only here }
-        "400": { description: Invalid name }
+        "400": { description: Invalid name or unknown scope }
         "403": { description: Requires a console login }
         "409": { description: A key with that name already exists }
     get:
@@ -326,6 +336,7 @@ paths:
                         prefix: { type: string }
                         created_at: { type: string }
                         last_used_at: { type: string }
+                        scopes: { type: array, items: { type: string }, description: empty = full access }
         "403": { description: Requires a console login }
   /v1/api-keys/{id}:
     delete:

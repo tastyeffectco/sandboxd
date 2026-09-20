@@ -217,6 +217,7 @@ export interface ApiKey {
   prefix: string
   created_at: string
   last_used_at: string | null
+  scopes?: string[] // empty = full access
 }
 
 export interface Preview {
@@ -372,7 +373,7 @@ export const api = {
 
   // API keys — session-only. The plaintext key is shown once on create.
   listApiKeys: () => req<{ keys: ApiKey[] }>('GET', '/v1/api-keys').then((r) => r.keys || []),
-  createApiKey: (name: string) => req<ApiKey & { key: string }>('POST', '/v1/api-keys', { name }),
+  createApiKey: (name: string, scopes: string[] = []) => req<ApiKey & { key: string }>('POST', '/v1/api-keys', { name, scopes }),
   revokeApiKey: (id: string) => req<void>('DELETE', `/v1/api-keys/${id}`),
 
   // Git credentials (for importing private repos in a later v0.4.x release).

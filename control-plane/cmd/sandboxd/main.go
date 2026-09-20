@@ -471,6 +471,13 @@ func main() {
 			log.Error("gvisor: write resolv.conf failed; sandbox DNS may not resolve", "err", err.Error())
 			dnsResolvConf = ""
 		} else {
+			cloudOrg := strings.TrimSpace(os.Getenv("SANDBOXD_CLOUD_ORG"))
+			if cloudOrg != "" {
+				// Cloud subscribers explicitly opt into linked product analytics in
+				// the Cloud installer. This joins acquisition, billing and safe usage
+				// buckets without sending app names, prompts, code, or file paths.
+				instanceID = "cloud:" + cloudOrg
+			}
 			log.Info("gvisor runtime enabled", "runtime", sbxRuntime, "dns", ns)
 		}
 		// gVisor sandboxes use public DNS (above) and can't reach Docker's
@@ -667,6 +674,7 @@ func main() {
 				),
 				Snapshot: func() telemetry.Snapshot {
 					s := telemetry.Snapshot{
+						CloudOrg:      cloudOrg,
 						AuthEnabled:   !authCfg.Disabled,
 						PreviewDomain: domain,
 						PreviewTLS:    previewTLS,

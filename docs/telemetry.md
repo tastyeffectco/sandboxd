@@ -50,6 +50,12 @@ names, prompts, code, tokens, or environment values ever leave the host.
 | `mem_bucket` | `<4g`, `4-8g`, `8-16g`, `16g+` | sizing guidance |
 | `$ip` | always `""` | tells the collector to drop the request IP (no geolocation, no storage) |
 
+When an operator explicitly attaches the instance to **sandboxd Cloud**, the
+Cloud installer sets `SANDBOXD_CLOUD_ORG`. Heartbeats then include that Cloud
+organization and use `cloud:<org>` as their analytics identity. This connects
+the subscriber funnel to the same bucketed usage fields above. It still sends
+no app names, prompts, code, paths, domains, secrets, or exact usage counts.
+
 ### `upgrade` (once per finished console-driven upgrade)
 
 | Field | Values |

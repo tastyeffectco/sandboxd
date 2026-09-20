@@ -35,7 +35,7 @@ const (
 	// only append events, never read them). Both are overridable via
 	// SANDBOXD_POSTHOG_HOST / SANDBOXD_POSTHOG_KEY.
 	DefaultPostHogHost = "https://us.i.posthog.com"
-	DefaultPostHogKey  = "phc_vyQtLTZPBHwEBcY8mcfneP43xAFGLzFVic9DhQ7VGrqV"
+	DefaultPostHogKey  = "phc_pma2C4Wg9EKf4KARJbnU5ZdcNDJGnA5oDtsypKofF2YY"
 
 	// defaultInterval is the heartbeat cadence once running.
 	defaultInterval = 24 * time.Hour
@@ -100,6 +100,7 @@ func newUUIDv4() (string, error) {
 // numeric field is bucketed and every string is an enumerated label before it
 // leaves the host; nothing here is free text from the user.
 type Snapshot struct {
+	CloudOrg       string // set only by the opt-in sandboxd Cloud installer
 	SandboxCount   int
 	AppCount       int
 	Tasks7d        int
@@ -121,7 +122,7 @@ type Snapshot struct {
 // (never exact), the preview domain is reduced to a kind, and "$ip" is forced
 // to "" so PostHog neither stores nor geolocates the caller's IP.
 func Props(version, arch, osName string, s Snapshot) map[string]any {
-	return map[string]any{
+	props := map[string]any{
 		"version":         version,
 		"arch":            arch,
 		"os":              osName,
@@ -143,6 +144,11 @@ func Props(version, arch, osName string, s Snapshot) map[string]any {
 		// Empty $ip tells PostHog to drop the request IP (no geo, no storage).
 		"$ip": "",
 	}
+	if s.CloudOrg != "" {
+		props["cloud_org"] = label(s.CloudOrg, "unknown")
+		props["customer_type"] = "cloud"
+	}
+	return props
 }
 
 // UpgradeProps describes one finished upgrade attempt. Versions are release

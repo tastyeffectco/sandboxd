@@ -30,14 +30,14 @@ func (r storeResolver) ResolveSession(ctx context.Context, cookieValue string) (
 	return owner, true
 }
 
-func (r storeResolver) ResolveAPIKey(ctx context.Context, presented string) (string, bool) {
+func (r storeResolver) ResolveAPIKey(ctx context.Context, presented string) (string, []string, bool) {
 	if r.st == nil || presented == "" {
-		return "", false
+		return "", nil, false
 	}
-	id, found, err := r.st.LookupAPIKey(ctx, console.HashToken(presented))
+	id, scopes, found, err := r.st.LookupAPIKey(ctx, console.HashToken(presented))
 	if err != nil || !found {
-		return "", false
+		return "", nil, false
 	}
 	_ = r.st.TouchAPIKey(ctx, id, time.Now().Unix())
-	return store.DefaultTenant, true // single shared tenant
+	return store.DefaultTenant, scopes, true // single shared tenant
 }

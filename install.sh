@@ -41,7 +41,7 @@ tel_fail() {
   id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo unknown)"
   curl -s -m 5 -o /dev/null -X POST "${SANDBOXD_POSTHOG_HOST:-https://us.i.posthog.com}/i/v0/e/" \
     -H 'Content-Type: application/json' \
-    -d "{\"api_key\":\"${SANDBOXD_POSTHOG_KEY:-phc_vyQtLTZPBHwEBcY8mcfneP43xAFGLzFVic9DhQ7VGrqV}\",\"event\":\"install_failed\",\"distinct_id\":\"$id\",\"properties\":{\"stage\":\"$1\",\"\$ip\":\"\"}}" \
+    -d "{\"api_key\":\"${SANDBOXD_POSTHOG_KEY:-phc_pma2C4Wg9EKf4KARJbnU5ZdcNDJGnA5oDtsypKofF2YY}\",\"event\":\"install_failed\",\"distinct_id\":\"$id\",\"properties\":{\"stage\":\"$1\",\"\$ip\":\"\"}}" \
     2>/dev/null || true
 }
 trap 'rc=$?; [ "$rc" -ne 0 ] && tel_fail "$STAGE"; exit $rc' EXIT

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,6 +17,9 @@ type Actor struct {
 	Kind string // service | operator | system | unknown
 	Name string // token name, or "loopback" for the operator path
 	IP   string
+	// Scopes restricts a service actor to the routes in scopes.go; nil/empty =
+	// unrestricted (console sessions, env-configured tokens, full-access keys).
+	Scopes []string
 }
 
 type actorCtxKey struct{}
@@ -123,6 +127,10 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(`{"error":"unauthorized"}` + "\n"))
 			return
 		}
+		if !ScopesAllow(actor.Scopes, r.Method, r.URL.Path) {
+			writeForbidden(w, scopeDeniedMessage(actor.Scopes))
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(WithActor(r.Context(), actor)))
 	})
 }
@@ -141,8 +149,8 @@ func (m *Middleware) resolve(r *http.Request, cfg *Config, ip string) (Actor, bo
 	// 2. bearer API key — DB-stored, then env-configured.
 	if tok := bearerToken(r); tok != "" {
 		if m.resolver != nil {
-			if owner, ok := m.resolver.ResolveAPIKey(r.Context(), tok); ok {
-				return Actor{Kind: "service", Name: owner, IP: ip}, true
+			if owner, scopes, ok := m.resolver.ResolveAPIKey(r.Context(), tok); ok {
+				return Actor{Kind: "service", Name: owner, IP: ip, Scopes: scopes}, true
 			}
 		}
 		if name, ok := MatchToken(tok, cfg.APITokens); ok {
@@ -150,6 +158,15 @@ func (m *Middleware) resolve(r *http.Request, cfg *Config, ip string) (Actor, bo
 		}
 	}
 	return Actor{Kind: "unknown", IP: ip}, false
+}
+
+// writeForbidden emits a 403 in the v1 error envelope.
+func writeForbidden(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+		"code": "forbidden", "message": msg, "retryable": false,
+	}})
 }
 
 // bearerToken extracts the token from an `Authorization: Bearer <t>`

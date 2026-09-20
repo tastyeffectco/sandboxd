@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,8 @@ type APIKey struct {
 	Prefix     string
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
+	// Scopes restricts what the key may call; empty = full access.
+	Scopes []string
 }
 
 // ── console password (single row id=1) ───────────────────────────────
@@ -105,13 +108,24 @@ func (s *Store) DeleteAllSessions(ctx context.Context) error {
 
 // ── API keys ─────────────────────────────────────────────────────────
 
-const apiKeyMetaCols = `id, name, prefix, created_at, last_used_at`
+const apiKeyMetaCols = `id, name, prefix, created_at, last_used_at, scopes`
+
+// Scopes are stored comma-separated; ” round-trips to nil (full access).
+func joinScopes(scopes []string) string { return strings.Join(scopes, ",") }
+
+func splitScopes(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
 
 func scanAPIKey(sc scanner) (*APIKey, error) {
 	k := &APIKey{}
 	var created int64
 	var lastUsed sql.NullInt64
-	if err := sc.Scan(&k.ID, &k.Name, &k.Prefix, &created, &lastUsed); err != nil {
+	var scopes string
+	if err := sc.Scan(&k.ID, &k.Name, &k.Prefix, &created, &lastUsed, &scopes); err != nil {
 		return nil, err
 	}
 	k.CreatedAt = time.Unix(created, 0).UTC()
@@ -119,16 +133,18 @@ func scanAPIKey(sc scanner) (*APIKey, error) {
 		t := time.Unix(lastUsed.Int64, 0).UTC()
 		k.LastUsedAt = &t
 	}
+	k.Scopes = splitScopes(scopes)
 	return k, nil
 }
 
 // CreateAPIKey inserts a key. keyHash is the sha256 hex of the plaintext (the
-// store never sees plaintext). ErrConflict when the name (or hash) already exists.
-func (s *Store) CreateAPIKey(ctx context.Context, id, name, keyHash, prefix string, createdAt int64) error {
+// store never sees plaintext). Empty scopes = full access. ErrConflict when the
+// name (or hash) already exists.
+func (s *Store) CreateAPIKey(ctx context.Context, id, name, keyHash, prefix string, scopes []string, createdAt int64) error {
 	return s.submit(ctx, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO api_key (id, name, key_hash, prefix, created_at, last_used_at)
-			VALUES (?,?,?,?,?,NULL)`, id, name, keyHash, prefix, createdAt)
+			INSERT INTO api_key (id, name, key_hash, prefix, scopes, created_at, last_used_at)
+			VALUES (?,?,?,?,?,?,NULL)`, id, name, keyHash, prefix, joinScopes(scopes), createdAt)
 		if isUniqueViolation(err) {
 			return ErrConflict
 		}
@@ -155,17 +171,18 @@ func (s *Store) ListAPIKeys(ctx context.Context) ([]*APIKey, error) {
 	return out, rows.Err()
 }
 
-// LookupAPIKey returns the key id for a presented key's sha256 hash. found=false
-// when no key matches.
-func (s *Store) LookupAPIKey(ctx context.Context, keyHash string) (id string, found bool, err error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id FROM api_key WHERE key_hash = ?`, keyHash)
-	switch err = row.Scan(&id); err {
+// LookupAPIKey returns the key id and scopes (nil = full access) for a
+// presented key's sha256 hash. found=false when no key matches.
+func (s *Store) LookupAPIKey(ctx context.Context, keyHash string) (id string, scopes []string, found bool, err error) {
+	var raw string
+	row := s.db.QueryRowContext(ctx, `SELECT id, scopes FROM api_key WHERE key_hash = ?`, keyHash)
+	switch err = row.Scan(&id, &raw); err {
 	case nil:
-		return id, true, nil
+		return id, splitScopes(raw), true, nil
 	case sql.ErrNoRows:
-		return "", false, nil
+		return "", nil, false, nil
 	default:
-		return "", false, err
+		return "", nil, false, err
 	}
 }
 

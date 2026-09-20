@@ -77,14 +77,14 @@ func TestConsoleAuthAPIKeys(t *testing.T) {
 	s := newConsoleStore(t)
 	now := time.Now().Unix()
 
-	if err := s.CreateAPIKey(ctx, "01A", "default", "hashA", "sk_aaa…", now); err != nil {
+	if err := s.CreateAPIKey(ctx, "01A", "default", "hashA", "sk_aaa…", nil, now); err != nil {
 		t.Fatal(err)
 	}
 	// duplicate name => ErrConflict
-	if err := s.CreateAPIKey(ctx, "01B", "default", "hashB", "sk_bbb…", now); err != ErrConflict {
+	if err := s.CreateAPIKey(ctx, "01B", "default", "hashB", "sk_bbb…", nil, now); err != ErrConflict {
 		t.Fatalf("dup name: got %v, want ErrConflict", err)
 	}
-	if err := s.CreateAPIKey(ctx, "01C", "ci-bot", "hashC", "sk_ccc…", now); err != nil {
+	if err := s.CreateAPIKey(ctx, "01C", "ci-bot", "hashC", "sk_ccc…", []string{"upgrade"}, now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,11 +97,19 @@ func TestConsoleAuthAPIKeys(t *testing.T) {
 		t.Fatal("prefix missing from list")
 	}
 
-	id, found, err := s.LookupAPIKey(ctx, "hashA")
-	if err != nil || !found || id != "01A" {
-		t.Fatalf("lookup: id=%q found=%v err=%v", id, found, err)
+	id, scopes, found, err := s.LookupAPIKey(ctx, "hashA")
+	if err != nil || !found || id != "01A" || scopes != nil {
+		t.Fatalf("lookup: id=%q scopes=%v found=%v err=%v", id, scopes, found, err)
 	}
-	if _, found, _ := s.LookupAPIKey(ctx, "nope"); found {
+	if _, scopes, found, _ := s.LookupAPIKey(ctx, "hashC"); !found || len(scopes) != 1 || scopes[0] != "upgrade" {
+		t.Fatalf("scoped lookup: scopes=%v found=%v", scopes, found)
+	}
+	for _, k := range keys {
+		if k.ID == "01C" && (len(k.Scopes) != 1 || k.Scopes[0] != "upgrade") {
+			t.Fatalf("list scopes: %v", k.Scopes)
+		}
+	}
+	if _, _, found, _ := s.LookupAPIKey(ctx, "nope"); found {
 		t.Fatal("unknown hash reported found")
 	}
 	if err := s.TouchAPIKey(ctx, "01A", now+5); err != nil {

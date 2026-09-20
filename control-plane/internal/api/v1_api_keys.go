@@ -8,6 +8,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,11 +19,12 @@ import (
 )
 
 type v1APIKey struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Prefix     string `json:"prefix"`
-	CreatedAt  string `json:"created_at"`
-	LastUsedAt string `json:"last_used_at,omitempty"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Prefix     string   `json:"prefix"`
+	CreatedAt  string   `json:"created_at"`
+	LastUsedAt string   `json:"last_used_at,omitempty"`
+	Scopes     []string `json:"scopes"`
 }
 
 func toV1APIKey(k *store.APIKey) v1APIKey {
@@ -31,6 +33,10 @@ func toV1APIKey(k *store.APIKey) v1APIKey {
 		Name:      k.Name,
 		Prefix:    k.Prefix,
 		CreatedAt: k.CreatedAt.Format(time.RFC3339),
+		Scopes:    k.Scopes,
+	}
+	if out.Scopes == nil {
+		out.Scopes = []string{}
 	}
 	if k.LastUsedAt != nil {
 		out.LastUsedAt = k.LastUsedAt.Format(time.RFC3339)
@@ -48,7 +54,8 @@ func requireUser(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// POST /v1/api-keys {name} — mint a key; returns the plaintext ONCE.
+// POST /v1/api-keys {name, scopes?} — mint a key; returns the plaintext ONCE.
+// scopes restricts the key to the routes in auth/scopes.go; omitted = full access.
 func (s *Server) v1CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if s.Store == nil {
 		writeV1Err(w, http.StatusServiceUnavailable, "unavailable", "auth store not configured")
@@ -58,7 +65,8 @@ func (s *Server) v1CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024))
 	dec.DisallowUnknownFields()
@@ -71,13 +79,22 @@ func (s *Server) v1CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "name must be 1-64 printable characters")
 		return
 	}
+	scopes := make([]string, 0, len(body.Scopes))
+	for _, sc := range body.Scopes {
+		if !auth.ValidScope(sc) {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request",
+				"unknown scope "+strconv.Quote(sc)+"; known scopes: "+strings.Join(auth.KnownScopes(), ", "))
+			return
+		}
+		scopes = append(scopes, sc)
+	}
 	plain, hash, prefix, err := console.NewToken()
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "could not generate key")
 		return
 	}
 	id := newULID()
-	if err := s.Store.CreateAPIKey(r.Context(), id, name, hash, prefix, time.Now().Unix()); err != nil {
+	if err := s.Store.CreateAPIKey(r.Context(), id, name, hash, prefix, scopes, time.Now().Unix()); err != nil {
 		if err == store.ErrConflict {
 			writeV1Err(w, http.StatusConflict, "conflict", "a key with that name already exists")
 			return
@@ -88,7 +105,7 @@ func (s *Server) v1CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	s.auditAPIKey(r, "api_key.created", id, name)
 	// The plaintext key is returned exactly once — it cannot be retrieved again.
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id": id, "name": name, "prefix": prefix, "key": plain,
+		"id": id, "name": name, "prefix": prefix, "scopes": scopes, "key": plain,
 	})
 }
 

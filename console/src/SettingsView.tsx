@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
+import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
 
 // --- source badges: every value on this page is one of these ----------------
 // editable  → change it here, saved live via PATCH /v1/settings
@@ -49,6 +50,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   const [newPw, setNewPw] = useState('')
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [keyName, setKeyName] = useState('')
+  const [keyAccess, setKeyAccess] = useState<KeyAccess>('')
   const [newKey, setNewKey] = useState('')
   const [models, setModels] = useState<Record<string, string>>({})
 
@@ -74,7 +76,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   const addCred = async () => { if (!gc.name || !gc.host || !gc.token) return; try { await api.createGitCredential(gc); setGc({ name: '', host: '', username: '', token: '' }); toast('Credential added'); loadCreds() } catch (e) { onError((e as Error).message) } }
   const changePw = async () => { if (!curPw || !newPw) return; try { await api.changePassword({ current_password: curPw, new_password: newPw }); setCurPw(''); setNewPw(''); toast('Password changed') } catch (e) { onError((e as Error).message) } }
   const signOutEverywhere = async () => { try { await api.logoutEverywhere(); location.reload() } catch (e) { onError((e as Error).message) } }
-  const createKey = async () => { if (!keyName.trim()) return; try { const k = await api.createApiKey(keyName.trim()); setNewKey(k.key); setKeyName(''); loadKeys() } catch (e) { onError((e as Error).message) } }
+  const createKey = async () => { if (!keyName.trim()) return; try { const k = await api.createApiKey(keyName.trim(), accessScopes(keyAccess)); setNewKey(k.key); setKeyName(''); setKeyAccess(''); loadKeys() } catch (e) { onError((e as Error).message) } }
   const copyKey = () => { navigator.clipboard?.writeText(newKey).then(() => toast('Copied')).catch(() => {}) }
 
   const legendItem = (badge: ReactNode, text: string) => (
@@ -207,14 +209,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
         <H style={{ marginBottom: 6 }}>API keys</H>
         <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 12 }}>Programmatic access to the <span style={{ ...mono, fontSize: 11.5 }}>/v1</span> API. The full key is shown once at creation — store it somewhere safe.</div>
         {keys.length === 0 && <div style={{ color: c.muted2, fontSize: 12, marginBottom: 8 }}>No API keys yet.</div>}
-        {keys.map((k) => (
-          <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', border: `1px solid ${c.border}`, borderRadius: 7, background: c.panel2, marginBottom: 6, fontSize: 12.5 }} data-testid={`api-key-${k.id}`}>
-            <span style={{ fontWeight: 500 }}>{k.name}</span>
-            <span style={{ ...mono, fontSize: 11.5, color: c.muted }}>{k.prefix}…</span>
-            <span style={{ fontSize: 11.5, color: c.muted2 }}>{k.last_used_at || 'never used'}</span>
-            <a onClick={() => api.revokeApiKey(k.id).then(loadKeys)} className="dc-hoverink" style={{ marginLeft: 'auto', color: c.muted2, fontSize: 12, cursor: 'pointer' }} data-testid="api-key-revoke">Revoke</a>
-          </div>
-        ))}
+        {keys.map((k) => <ApiKeyRow key={k.id} k={k} onRevoke={(id) => api.revokeApiKey(id).then(loadKeys)} />)}
         {newKey && (
           <div style={{ marginTop: 10, padding: '12px 14px', border: `1px solid ${c.good}40`, background: `${c.good}14`, borderRadius: 8 }} data-testid="api-key-new">
             <div style={{ fontSize: 12, color: c.good, fontWeight: 600, marginBottom: 6 }}>Copy it now — it won't be shown again.</div>
@@ -227,6 +222,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <Input value={keyName} onChange={(e) => setKeyName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createKey()} placeholder="key name (ci, laptop…)" style={{ flex: 1, fontFamily: font.sans }} data-testid="api-key-name" />
+          <ApiKeyAccessSelect value={keyAccess} onChange={setKeyAccess} />
           <Btn variant="primary" onClick={createKey} data-testid="api-key-create">Create key</Btn>
         </div>
       </Card>
