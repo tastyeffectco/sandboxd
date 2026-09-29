@@ -6,7 +6,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    labels: ["dependencies", "go"]
     groups:
       go:
         patterns: ["*"]
@@ -19,7 +18,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    labels: ["dependencies", "console"]
     groups:
       npm:
         patterns: ["*"]
@@ -33,7 +31,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    labels: ["dependencies", "ci"]
     groups:
       actions:
         patterns: ["*"]
@@ -47,7 +44,6 @@ updates:
       - /image
     schedule:
       interval: weekly
-    labels: ["dependencies", "docker"]
     groups:
       docker:
         patterns: ["*"]
