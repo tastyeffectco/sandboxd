@@ -367,6 +367,9 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 		model = proxyModel
 	}
 	args := []string{"run", "--format", "json", "--auto", "--pure"}
+	if spec.workDir != "" {
+		args = append(args, "--dir", spec.workDir)
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -387,6 +390,11 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	// mounted auth dir (/run/agent-auth/opencode), if any. Credentials come from
 	// files under HOME, never from inherited container env.
 	cmd.Env = agentEnv(o.name(), spec.env)
+	// OpenCode uses PWD during workspace discovery. Setting cmd.Dir alone does
+	// not update an explicitly supplied environment inherited from runtimed.
+	if spec.workDir != "" {
+		cmd.Env = append(cmd.Env, "PWD="+spec.workDir)
+	}
 	if cfgPath != "" {
 		cmd.Env = append(cmd.Env, "OPENCODE_CONFIG="+cfgPath)
 		if spec.provider != nil {

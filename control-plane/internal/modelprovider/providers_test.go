@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -270,5 +271,62 @@ func TestCapabilityDeadlineCancelsUpstream(t *testing.T) {
 	}
 	if _, err := s.verify(conn.Token); err == nil {
 		t.Fatal("expired capability remained usable")
+	}
+}
+
+func TestProbeUsesSelectedModelAndRedactsUpstreamErrors(t *testing.T) {
+	for _, protocol := range []string{OpenAI, Anthropic} {
+		t.Run(protocol, func(t *testing.T) {
+			s, _ := testService(t)
+			key := "probe-secret"
+			var reject atomic.Bool
+			var requests atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				var payload struct {
+					Model  string `json:"model"`
+					Stream bool   `json:"stream"`
+				}
+				json.NewDecoder(r.Body).Decode(&payload)
+				if payload.Model != "second/model" || payload.Stream {
+					t.Error("probe did not use the selected model and non-streaming mode")
+				}
+				if reject.Load() {
+					http.Error(w, key, http.StatusForbidden)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if protocol == Anthropic {
+					if r.URL.Path != "/v1/messages" || r.Header.Get("X-Api-Key") != key {
+						t.Error("incorrect Anthropic probe route/auth")
+					}
+					io.WriteString(w, `{"content":[{"type":"text","text":"OK"}]}`)
+				} else {
+					if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer "+key {
+						t.Error("incorrect OpenAI probe route/auth")
+					}
+					io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"OK"}}]}`)
+				}
+			}))
+			defer upstream.Close()
+			c, err := s.Save(context.Background(), "", Input{Name: "Probe", Protocol: protocol,
+				BaseURL: upstream.URL + "/v1", APIKey: &key, Models: []Model{{ID: "first/model"}, {ID: "second/model"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Probe(context.Background(), c.ID, "second/model"); err != nil {
+				t.Fatal(err)
+			}
+			reject.Store(true)
+			if err := s.Probe(context.Background(), c.ID, "second/model"); err == nil || strings.Contains(err.Error(), key) {
+				t.Fatal("probe leaked an upstream error or reported success")
+			}
+			if err := s.Probe(context.Background(), c.ID, "missing"); err == nil {
+				t.Fatal("probe accepted an unknown model")
+			}
+			if requests.Load() != 2 {
+				t.Fatalf("unexpected inference requests: %d", requests.Load())
+			}
+		})
 	}
 }

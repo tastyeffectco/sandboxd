@@ -51,6 +51,8 @@ func TestRealProviderAgents(t *testing.T) {
 				t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
 				t.Setenv("OPENCODE_DISABLE_MODELS_FETCH", "true")
 				t.Setenv("OPENCODE_DISABLE_AUTOUPDATE", "true")
+				// The daemon's inherited PWD may differ from the task workspace.
+				t.Setenv("PWD", filepath.Join(root, "wrong-workspace"))
 				st, err := store.Open(context.Background(), filepath.Join(root, "test.sqlite"), "../../migrations")
 				if err != nil {
 					t.Fatal(err)
@@ -124,6 +126,10 @@ func TestRealProviderAgents(t *testing.T) {
 						} `json:"function"`
 					}
 					json.Unmarshal(body["tools"], &tools)
+					if len(tools) > 0 && !strings.Contains(string(body["system"])+string(body["messages"]), work) {
+						bad("agent system prompt did not identify the requested workspace")
+						return
+					}
 					if expectHistory && len(tools) > 0 && !strings.Contains(string(body["messages"]), "real agent tool ran") {
 						bad("agent did not resume its prior session")
 						return

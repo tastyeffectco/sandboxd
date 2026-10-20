@@ -157,6 +157,9 @@ func (p *piAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (stri
 	cmd := exec.Command("pi", args...)
 	cmd.Dir = spec.workDir
 	cmd.Env = append(agentEnv(p.name(), spec.env), "PI_CODING_AGENT_DIR="+dir)
+	if spec.workDir != "" {
+		cmd.Env = append(cmd.Env, "PWD="+spec.workDir)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

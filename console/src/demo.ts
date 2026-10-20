@@ -33,7 +33,15 @@ const presets = [
 
 const agents = [
   { id: 'opencode', label: 'OpenCode', installed_state: 'installed', status: 'connected', method: 'oauth', supports_oauth: true, supports_api_key: true, runnable: true },
+  { id: 'pi', label: 'Pi', installed_state: 'installed', status: 'needs_login', method: '', supports_oauth: false, supports_api_key: false, runnable: true },
   { id: 'claude-code', label: 'Claude Code', installed_state: 'installed', status: 'connected', method: 'api_key', supports_oauth: true, supports_api_key: true, runnable: true },
+]
+
+const modelProviders = [
+  { id: 'demo-local', name: 'Local model (demo)', protocol: 'openai-completions', base_url: 'http://ollama:11434/v1', has_api_key: false,
+    models: [{ id: 'qwen2.5-coder:7b', context_window: 32768, max_tokens: 4096 }] },
+  { id: 'demo-litellm', name: 'LiteLLM gateway (demo)', protocol: 'anthropic-messages', base_url: 'https://models.example.com/v1', has_api_key: true,
+    models: [{ id: 'team/bedrock-coder', context_window: 128000, max_tokens: 4096 }] },
 ]
 
 const settings = {
@@ -43,7 +51,7 @@ const settings = {
   runtime: { storage_mode: 'directory', base_image: 'sandboxd-base:0.3.0' },
   lifecycle: { idle_reap_enabled: true, idle_threshold_seconds: 2100, keepalive_max_seconds: 86400 },
   egress: { mode: 'disabled' },
-  agents: { providers: ['opencode', 'claude-code'] },
+  agents: { providers: ['opencode', 'pi', 'claude-code'], default_models: {} },
   presets,
   capabilities: { snapshots: true, config_secrets: true, templates: false, forward_auth: true },
   editable: ['lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds'],
@@ -117,6 +125,7 @@ function route(method: string, url: string): { status: number; body?: unknown; t
   if (match(u, /\/v1\/presets$/)) return { status: 200, body: { presets } }
   if (match(u, /\/v1\/settings$/)) return { status: 200, body: settings }
   if (match(u, /\/v1\/agents$/)) return { status: 200, body: { providers: agents } }
+  if (match(u, /\/v1\/model-providers$/)) return { status: 200, body: { providers: modelProviders } }
   if (match(u, /\/v1\/git-credentials$/)) return { status: 200, body: { credentials: [{ id: 'gc1', name: 'github', host: 'github.com', username: 'x-access-token', token_set: true, created_at: '2026-07-09T10:00:00Z' }] } }
   if (match(u, /\/v1\/apps\/[^/]+\/runtime\/manifest$/)) return { status: 200, body: manifest }
   if (match(u, /\/v1\/apps\/[^/]+\/runtime-inspect$/)) return { status: 200, body: { existing_manifest: { present: true }, suggestions: [], default_suggestion: 'react-vite', alternatives: [] } }
