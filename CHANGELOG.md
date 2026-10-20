@@ -10,6 +10,15 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ### Added
 
+- Configurable OpenAI-compatible and Anthropic-compatible model connections,
+  usable by OpenCode and the new Pi agent. Manage URLs, keys, exact model aliases
+  and token limits in Settings; select the agent, connection and model per task.
+  Supports local model servers and LiteLLM gateways (#119), with encrypted
+  control-plane credentials and temporary model-scoped proxy capabilities.
+- Pin and test OpenCode 1.19.3 and Pi 1.3.0, including actual tool execution
+  through both protocols. Add console browser workflow tests and opt-in live
+  model tests. See [model connections](docs/model-providers.md).
+
 - Offer MiniMax M3.1 Flash before M3 in the OpenCode model picker and route it
   through the direct MiniMax proxy. Preserve saved defaults and explicit legacy
   model requests; M2.7 is no longer offered in the ordinary picker.

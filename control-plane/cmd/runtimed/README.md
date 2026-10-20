@@ -24,7 +24,8 @@ run the agent → authoritative `files_changed` from `git diff` against the chec
 → a build check → the canonical `runtime.TaskResult`.
 
 **Agents.** Adapters for **opencode** (default), **claude-code**, and **codex** —
-each drives the CLI with `--dangerously-skip-permissions` and parses its stream into
+each drives its CLI in headless mode (OpenCode `--auto`, Claude
+`--dangerously-skip-permissions`) and parses its stream into
 canonical `message` events. Provider credentials never enter the sandbox; the
 control-plane proxy injects them on the wire (see [agent-auth](../../../docs/agent-auth.md)).
 
@@ -81,3 +82,8 @@ automatically — there is no `docker exec`-started dev server.
   surfaced; `files_changed` is always computed from git.
 - **Dev-server restart on dependency changes** — a task that edits `package.json`
   does not yet trigger a dev-server restart.
+
+OpenCode and Pi also accept structured model-connection settings from the control
+plane. Their adapters receive a temporary proxy capability and never an upstream
+API key. See [model connections](../../../docs/model-providers.md) for setup,
+session behavior and real-agent tests.

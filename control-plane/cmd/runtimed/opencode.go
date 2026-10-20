@@ -15,16 +15,19 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
 // agentSpec is the input to an agent adapter run.
 type agentSpec struct {
-	workDir string
-	prompt  string
-	model   string // per-task model (agent CLI --model); empty = agent default
-	env     map[string]string
-	rawLog  io.Writer // the agent's own diagnostics (stderr)
+	stateDir string // runtime state outside the app workspace
+	provider *modelconfig.Connection
+	workDir  string
+	prompt   string
+	model    string // per-task model (agent CLI --model); empty = agent default
+	env      map[string]string
+	rawLog   io.Writer // the agent's own diagnostics (stderr)
 	// systemPrompt is the rendered platform briefing (agentprompt.Render). Each
 	// adapter delivers it in its own supported way (claude: --append-system-prompt;
 	// opencode/codex: a preamble on the user prompt). Empty = inject nothing.
@@ -35,8 +38,8 @@ type agentSpec struct {
 	cont bool
 }
 
-// agent is the coding-agent adapter boundary. This slice implements
-// opencode only; claude_code / codex slot in here later.
+// agent is the coding-agent adapter boundary shared by OpenCode, Pi, Claude
+// Code and Codex. Model gateway selection is supplied separately.
 type agent interface {
 	name() string
 	run(ctx context.Context, spec agentSpec, emit eventSink) (finalMessage string, usage runtime.TokenUsage, err error)
@@ -349,7 +352,13 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	// file: a custom openai-compatible "proxy" provider carrying a dummy key (the
 	// proxy injects the real one). When it applies, the model is rewritten to
 	// `proxy/<id>` so the run uses that provider. No credential enters the sandbox.
-	cfgPath, proxyModel, cfgErr := writeOpencodeProxyConfig(model)
+	var cfgPath, proxyModel string
+	var cfgErr error
+	if spec.provider != nil {
+		cfgPath, proxyModel, cfgErr = writeOpencodeConnection(spec.provider)
+	} else {
+		cfgPath, proxyModel, cfgErr = writeOpencodeProxyConfig(model)
+	}
 	if cfgErr != nil {
 		return "", usage, fmt.Errorf("configure opencode proxy: %w", cfgErr)
 	}
@@ -357,7 +366,7 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 		defer os.Remove(cfgPath)
 		model = proxyModel
 	}
-	args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+	args := []string{"run", "--format", "json", "--auto", "--pure"}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -371,7 +380,7 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	if spec.systemPrompt != "" && !spec.cont {
 		prompt = spec.systemPrompt + "\n\n---\n\n# Your task\n\n" + spec.prompt
 	}
-	args = append(args, prompt)
+	args = append(args, "--", prompt)
 	cmd := exec.Command("opencode", args...)
 	cmd.Dir = spec.workDir
 	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's
@@ -380,6 +389,13 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	cmd.Env = agentEnv(o.name(), spec.env)
 	if cfgPath != "" {
 		cmd.Env = append(cmd.Env, "OPENCODE_CONFIG="+cfgPath)
+		if spec.provider != nil {
+			dataDir := connectionSessionDir(spec, "opencode")
+			if err := os.MkdirAll(dataDir, 0o700); err != nil {
+				return "", usage, err
+			}
+			cmd.Env = append(cmd.Env, "XDG_DATA_HOME="+dataDir, "OPENCODE_DISABLE_MODELS_FETCH=true")
+		}
 	}
 	// Own process group so cancel/timeout kills the whole agent tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

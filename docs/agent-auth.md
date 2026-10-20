@@ -4,12 +4,19 @@ How sandboxd gives a sandbox's coding agent its credentials — and its
 environment context — **without** putting secrets in the workspace, snapshots,
 container env, logs, events, or task results.
 
-Two agents ship today behind one adapter interface: **opencode** and
+Three agents ship today behind one adapter interface: **opencode**, **pi** and
 **claude-code** are runnable (they have `runtimed` task adapters). **codex** is
 runnable by the backend too but is **parked** — disabled/hidden in the UI until
 its ChatGPT-subscription auth can be secured (see below). Every provider carries its **own**
 credentials, connected by the owner and stored opaquely; a provider's material
 is only ever used for that provider.
+
+For **local models, remote compatible APIs, and LiteLLM**, use
+[Model connections](model-providers.md). OpenCode and Pi support both
+OpenAI-compatible and Anthropic-compatible endpoints through that API.
+These connections store keys encrypted in SQLite and use temporary proxy
+capabilities. The built-in agent-auth flows described below use the existing
+opaque credential-file store.
 
 ## Connecting a provider
 

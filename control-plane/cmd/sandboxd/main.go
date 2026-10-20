@@ -48,6 +48,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/logging"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelprovider"
 	nginxwatch "github.com/tastyeffectco/sandboxd/control-plane/internal/nginx"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/previewhost"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/reaper"
@@ -427,12 +428,20 @@ func main() {
 		}()
 	}
 
+	modelProviders, err := modelprovider.New(st, secretsCipher)
+	if err != nil {
+		log.Error("initialize model providers", "err", err)
+		os.Exit(1)
+	}
 	agentProxyURL := envDefault("SANDBOXD_AGENT_PROXY_URL", "http://sandboxd:9100")
 	if proxy := authproxy.New(agentAuth, log.With("component", "authproxy")); proxy != nil && agentProxyURL != "" {
 		proxyAddr := envDefault("SANDBOXD_AGENT_PROXY_ADDR", "0.0.0.0:9100")
+		proxyMux := http.NewServeMux()
+		proxyMux.Handle("/providers/", modelProviders)
+		proxyMux.Handle("/", proxy)
 		go func() {
 			log.Info("auth proxy listening", "addr", proxyAddr, "url", agentProxyURL)
-			if err := (&http.Server{Addr: proxyAddr, Handler: proxy}).ListenAndServe(); err != nil {
+			if err := (&http.Server{Addr: proxyAddr, Handler: proxyMux, ReadHeaderTimeout: 10 * time.Second}).ListenAndServe(); err != nil {
 				log.Error("auth proxy stopped", "err", err.Error())
 			}
 		}()
@@ -529,6 +538,7 @@ func main() {
 	server := &api.Server{
 		Store:             st,
 		Secrets:           secretsCipher,
+		ModelProviders:    modelProviders,
 		Update:            updateChecker,
 		AgentAuth:         agentAuth,
 		AgentOAuth:        agentOAuth,

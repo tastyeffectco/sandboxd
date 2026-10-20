@@ -44,8 +44,8 @@ curl -s http://127.0.0.1:9090/readyz    # -> ready
 
 ## Core API
 Base URL = `http://${SANDBOXD_API_BIND}` (default `http://127.0.0.1:9090`).
-Auth is **off by default** (local). If you set `SANDBOXD_API_AUTH_DISABLED=false`
-+ `SANDBOXD_API_TOKENS=name:secret`, add `-H "Authorization: Bearer secret"`.
+Auth is **on by default**. Use a console-issued API key or a configured
+`SANDBOXD_API_TOKENS=name:secret` token with `-H "Authorization: Bearer secret"`.
 
 | Method & path | Body | Purpose |
 |---|---|---|
@@ -88,11 +88,15 @@ curl -s -H "Host: s-$ID-3000.preview.localhost" http://127.0.0.1:${HTTP_PORT:-80
 curl -s -XPOST $API/sandbox/$ID/purge
 ```
 
-## Running Claude Code / OpenCode inside a sandbox
-Both CLIs (`claude`, `opencode`) are pre-installed in every sandbox. OpenCode
+## Running coding agents inside a sandbox
+Claude Code, OpenCode and Pi (`claude`, `opencode`, `pi`) are pre-installed.
+For local/remote compatible endpoints, use **Settings → Model connections**
+and select OpenCode or Pi plus that connection in the app. See
+[`docs/model-providers.md`](docs/model-providers.md) for the API, LiteLLM and
+network setup. OpenCode
 works on its free plan out of the box. To use your own account, **connect a
-provider** — the control plane stores the credential encrypted server-side and
-supplies it to the agent process at task time.
+provider** — the control plane keeps the provider credential server-side and
+injects it into upstream requests through the proxy.
 
 > Credential-shaped env vars (`*_KEY`, `*_TOKEN`, `*_SECRET`, …) passed via a
 > sandbox's `env` are deliberately **scrubbed** from the agent process
@@ -101,7 +105,7 @@ supplies it to the agent process at task time.
 
 ```bash
 # API key:
-curl -s -XPOST $API/v1/agents/anthropic/api-key -d '{"api_key":"sk-ant-..."}'
+curl -s -XPOST $API/v1/agents/claude-code/api-key -d '{"api_key":"sk-ant-..."}'
 # or a Claude subscription via guided OAuth (setup-token / PKCE):
 curl -s -XPOST $API/v1/agents/claude-code/oauth/start   # open the URL, then /oauth/finish
 

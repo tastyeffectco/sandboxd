@@ -112,8 +112,14 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
  && mv /root/.bun/bin/bun /usr/local/bin/bun \
  && rm -rf /root/.bun
 
-# OpenCode (npm global) + Claude Code (official native installer) + Codex CLI.
-RUN npm install -g opencode-ai @openai/codex@0.142.5 \
+# Versions verified by the real-agent compatible-provider integration tests.
+ARG OPENCODE_VERSION=1.19.3
+ARG PI_VERSION=1.3.0
+# Pi requires Node >=22.19.0; the NodeSource 22.x install above supplies it.
+RUN node -e 'const [a,b]=process.versions.node.split(".").map(Number); if(a<22||(a===22&&b<19)) process.exit(1)' \
+ && npm install -g opencode-ai@${OPENCODE_VERSION} @earendil-works/pi-coding-agent@${PI_VERSION} @openai/codex@0.142.5 \
+ && test "$(opencode --version)" = "${OPENCODE_VERSION}" \
+ && test "$(pi --version)" = "${PI_VERSION}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && cp /root/.local/bin/claude /usr/local/bin/claude \
  && chmod 755 /usr/local/bin/claude

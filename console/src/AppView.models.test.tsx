@@ -7,6 +7,7 @@ vi.mock('./api', () => ({ api: {
   appManifest: vi.fn().mockResolvedValue({ present: false }),
   runtimeInspect: vi.fn().mockResolvedValue({ suggestions: [] }),
   getAgents: vi.fn().mockResolvedValue([]),
+  listModelProviders: vi.fn().mockResolvedValue([]),
 } }))
 
 afterEach(cleanup)

@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, TaskSummary, RuntimeSuggestion } from './api'
+import { api, App as TApp, Sandbox, Process, ConfigItem, Snapshot, AppEvent, GitStatus, GitFile, FileEntry, TaskSummary, RuntimeSuggestion, ModelProvider } from './api'
 import { c, font, mono, Card, H, Btn, Pill, StatusPill, statusTone, Input, tab } from './design/kit'
 import { DeployModal } from './DeployModal'
 import { IS_DEMO } from './demo'
@@ -609,6 +609,10 @@ function RuntimeCard({ appId, onApplyRuntime, canApply }: { appId: string; onApp
 
 function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onError: (m: string) => void; toast: (m: string) => void; refresh: () => void }) {
   const [agent, setAgent] = useState('opencode')
+  const [providers, setProviders] = useState<ModelProvider[]>([])
+  const [provider, setProvider] = useState('')
+  const selectedProvider = providers.find((p) => p.id === provider)
+  useEffect(() => { let alive = true; api.listModelProviders().then((p) => { if (alive) setProviders(p) }).catch(() => {}); return () => { alive = false } }, [])
   const [model, setModel] = useState('')
   const [cont, setCont] = useState(true) // continue the last agent session by default
   const [text, setText] = useState('')
@@ -625,7 +629,7 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
   // Block input only when the selected agent needs a credential and has none.
   // opencode is exempt: it runs on a keyless free tier out of the box, so an
   // un-connected opencode is still usable (we just show a free-tier note).
-  const inputBlocked = agentConnected === false && agent !== 'opencode'
+  const inputBlocked = provider ? !selectedProvider : agent === 'pi' || (agentConnected === false && agent !== 'opencode')
 
   // Is the selected agent actually connected? For non-opencode agents a task with
   // no connected agent fails immediately with an auth error — gate the input so
@@ -658,11 +662,11 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
   }
 
   const send = async () => {
-    if (!sb || !sandboxRunning || !text.trim() || running) return
+    if (!sb || !sandboxRunning || !text.trim() || running || inputBlocked) return
     const prompt = text.trim()
     setText(''); setLive({ prompt, text: '' }); setResolved(''); setRunning(true)
     try {
-      const t = await api.submitTask(sb.id, prompt, agent, model || undefined, cont)
+      const t = await api.submitTask(sb.id, prompt, agent, model || undefined, cont, provider || undefined)
       let agentText = ''
       let settled = false
       const finish = async () => {
@@ -712,22 +716,35 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
 
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', height: 640, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3 }}>
-        <H size={14}>Agent</H>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-          <label title="Continue the sandbox's most recent agent session instead of starting fresh" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: cont ? c.fg : c.muted2, cursor: 'pointer' }} data-testid="task-continue">
+      <div style={{ padding: '12px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <H size={14}>Agent</H>
+          <label title="Continue this agent's conversation for the selected connection and model" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: cont ? c.fg : c.muted2, cursor: 'pointer' }} data-testid="task-continue">
             <input type="checkbox" checked={cont} onChange={(e) => setCont(e.target.checked)} style={{ accentColor: c.ink, width: 13, height: 13 }} />
             Continue
           </label>
-          <select value={agent} onChange={(e) => { setAgent(e.target.value); setModel('') }} data-testid="task-agent" style={selStyle}>
-            <option value="claude-code">Claude Code</option><option value="opencode">OpenCode</option>
-            {/* Codex hidden from the run picker until it's behind the auth proxy — the adapter is wired but subscription auth can't be secured yet. */}
-          </select>
-          <select value={model} onChange={(e) => setModel(e.target.value)} data-testid="task-model" style={selStyle}>
-            <option value="">Default model</option>
-            {agent === 'claude-code' && <><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></>}
-            {agent === 'opencode' && <><option value="opencode/glm-5">GLM-5</option><option value="opencode/kimi-k2.6">Kimi K2.6</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/MiniMax-M3.1-Flash">MiniMax M3.1 Flash</option><option value="opencode/MiniMax-M3">MiniMax M3</option></>}
-          </select>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
+          <label style={{ display: 'grid', gap: 4, color: c.muted, fontSize: 11 }}>Coding agent
+            <select value={agent} onChange={(e) => { setAgent(e.target.value); setModel(''); if (e.target.value === 'claude-code') setProvider('') }} data-testid="task-agent" style={{ ...selStyle, minWidth: 0 }}>
+              <option value="opencode">OpenCode</option><option value="pi">Pi</option><option value="claude-code">Claude Code</option>
+            </select>
+          </label>
+          {(agent === 'opencode' || agent === 'pi') && <label style={{ display: 'grid', gap: 4, color: c.muted, fontSize: 11 }}>Connection
+            <select aria-label="Model connection" data-testid="task-provider" value={provider}
+              onChange={(e) => { setProvider(e.target.value); setModel('') }} style={{ ...selStyle, minWidth: 0 }}>
+              <option value="">{agent === 'pi' ? 'Select connection…' : 'Built-in provider'}</option>
+              {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>}
+          <label style={{ display: 'grid', gridColumn: '1 / -1', gap: 4, color: c.muted, fontSize: 11 }}>Model
+            <select value={model} onChange={(e) => setModel(e.target.value)} data-testid="task-model" style={{ ...selStyle, minWidth: 0 }}>
+              <option value="">{selectedProvider ? selectedProvider.models[0].id + ' (default)' : 'Default model'}</option>
+              {selectedProvider?.models.slice(1).map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+              {agent === 'claude-code' && <><option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option></>}
+              {!provider && agent === 'opencode' && <><option value="opencode/glm-5">GLM-5</option><option value="opencode/kimi-k2.6">Kimi K2.6</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/MiniMax-M3.1-Flash">MiniMax M3.1 Flash</option><option value="opencode/MiniMax-M3">MiniMax M3</option></>}
+            </select>
+          </label>
         </div>
       </div>
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -761,10 +778,10 @@ function AgentChat({ sb, onError, toast, refresh }: { sb: Sandbox | null; onErro
       </div>
       {inputBlocked && (
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${c.border}`, background: c.panel2, fontSize: 12, color: c.fg }} data-testid="agent-not-connected">
-          ⚠ No <b>{agent === 'claude-code' ? 'Claude Code' : agent}</b> agent connected — connect one in <b>Settings → AI Agents</b> to start building.
+          {agent === 'pi' || provider ? <>Select a model connection above. Add connections in <b>Settings → Model connections</b>.</> : <>Connect <b>Claude Code</b> in <b>Settings → Agents</b> to start building.</>}
         </div>
       )}
-      {agent === 'opencode' && agentConnected === false && (
+      {!provider && agent === 'opencode' && agentConnected === false && (
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${c.border}`, background: c.panel2, fontSize: 12, color: c.muted2 }} data-testid="opencode-free-tier">
           Using the <b>OpenCode free tier</b> — no setup needed. Connect an API key in <b>Settings → AI Agents</b> for the full model catalog.
         </div>

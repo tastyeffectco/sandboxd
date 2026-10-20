@@ -28,8 +28,8 @@ export function H({ children, size = 15, style }: { children: ReactNode; size?: 
 
 type BtnVariant = 'primary' | 'outline' | 'ghost' | 'danger'
 export function Btn({
-  children, onClick, variant = 'outline', disabled, title, style, sm,
-}: { children: ReactNode; onClick?: () => void; variant?: BtnVariant; disabled?: boolean; title?: string; style?: CSSProperties; sm?: boolean }) {
+  children, onClick, variant = 'outline', disabled, title, style, sm, type,
+}: { children: ReactNode; onClick?: () => void; variant?: BtnVariant; disabled?: boolean; title?: string; style?: CSSProperties; sm?: boolean; type?: 'button' | 'submit' | 'reset' }) {
   const base: CSSProperties = {
     borderRadius: 7, fontSize: sm ? 12 : 12.5, fontFamily: font.sans, fontWeight: 500,
     padding: sm ? '5px 12px' : '7px 14px', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -42,7 +42,7 @@ export function Btn({
     danger: { background: 'transparent', border: '1px solid rgba(220,38,38,.3)', color: c.bad },
   }
   return (
-    <button title={title} disabled={disabled} onClick={onClick} className="dc-hoverborder" style={{ ...base, ...v[variant], ...style }}>
+    <button type={type} title={title} disabled={disabled} onClick={onClick} className="dc-hoverborder" style={{ ...base, ...v[variant], ...style }}>
       {children}
     </button>
   )

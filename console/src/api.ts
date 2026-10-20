@@ -329,7 +329,24 @@ export type UpgradeState = {
   log_tail?: string
 }
 
+export interface ModelProviderInput {
+ name: string
+ protocol: 'openai-completions' | 'anthropic-messages'
+ base_url: string
+ models: { id: string; context_window: number; max_tokens: number }[]
+ api_key?: string
+}
+export interface ModelProvider extends Omit<ModelProviderInput, 'api_key'> {
+ id: string
+ has_api_key: boolean
+}
+
 export const api = {
+ listModelProviders: () => req<{providers: ModelProvider[]}>('GET', '/v1/model-providers').then((r) => r.providers || []),
+ saveModelProvider: (id: string | undefined, input: ModelProviderInput) =>
+   req<ModelProvider>(id ? 'PUT' : 'POST', id ? `/v1/model-providers/${encodeURIComponent(id)}` : '/v1/model-providers', input),
+ deleteModelProvider: (id: string) => req<void>('DELETE', `/v1/model-providers/${encodeURIComponent(id)}`),
+ testModelProvider: (id: string, model: string) => req<{ok: boolean}>('POST', `/v1/model-providers/${encodeURIComponent(id)}/test`, {model}),
   getUpgrade: () => req<UpgradeState>('GET', '/v1/upgrade'),
   startUpgrade: (target: string) => req<UpgradeState>('POST', '/v1/upgrade', { target }),
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
@@ -501,10 +518,11 @@ export const api = {
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
 
-  submitTask: (id: string, prompt: string, agent: string = 'opencode', model?: string, cont?: boolean) =>
+  submitTask: (id: string, prompt: string, agent: string = 'opencode', model?: string, cont?: boolean, provider?: string) =>
     req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, {
       prompt,
       agent,
+      ...(provider ? { provider } : {}),
       ...(model && model.trim() ? { model: model.trim() } : {}),
       // Send the choice explicitly so unchecking forces a fresh session; omitting
       // it would let the server fall back to its continue-by-default behavior.

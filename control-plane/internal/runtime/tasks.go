@@ -3,6 +3,8 @@ package runtime
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
 )
 
 // DefaultTaskTimeout is the runtimed task timeout applied when a task
@@ -35,13 +37,15 @@ const (
 
 // StartTaskRequest is the POST /tasks body.
 type StartTaskRequest struct {
-	TaskID string            `json:"task_id"`
-	Prompt string            `json:"prompt"`
-	Agent  string            `json:"agent,omitempty"` // opencode | claude-code
-	Env    map[string]string `json:"env,omitempty"`   // passed to the agent process (credentials)
+	Provider *modelconfig.Connection `json:"provider,omitempty"`
+	TaskID   string                  `json:"task_id"`
+	Prompt   string                  `json:"prompt"`
+	Agent    string                  `json:"agent,omitempty"` // opencode | pi | claude-code | codex
+	Env      map[string]string       `json:"env,omitempty"`   // additional agent environment
 	// Model, when set, is the model this task runs on — passed to the agent CLI's
 	// model flag (opencode -m, claude --model). Agent-namespaced (opencode wants
-	// provider/model). Empty = the agent's configured/global default.
+	// provider/model). With Provider set, this is the exact configured model ID.
+	// Empty = the connection or agent default.
 	Model    string `json:"model,omitempty"`
 	TimeoutS int    `json:"timeout_s,omitempty"`
 	// Continue resumes the sandbox's most recent agent session instead of starting

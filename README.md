@@ -85,6 +85,12 @@ instead of a VM each. Under the hood it's deliberately small: **one Go program
 driving Docker**, Traefik for URLs, SQLite for state — no Kubernetes, no separate
 database, no queue.
 
+**Bring your own models.** Run **OpenCode or Pi** against local or remote
+**OpenAI-compatible** and **Anthropic-compatible** endpoints. Add connections,
+model aliases and token limits in the console; provider keys stay encrypted on
+the control plane. Use your local model server or a LiteLLM gateway, including
+gateways routing to AWS Bedrock. [Set up model connections →](docs/model-providers.md)
+
 ## Two ways to use it
 
 - **API-first** — everything is a `/v1` call, so you can build sandboxd into your

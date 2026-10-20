@@ -6,14 +6,14 @@ info:
     The public, tenant-scoped API for sandboxd. This is the only surface a
     console or external integration should use — the internal /sandbox and
     /wake endpoints are not part of this contract. Scoped by the API token
-    (Bearer); when auth is disabled (the single-user default) the whole
+    (Bearer); when an operator explicitly disables auth, the whole
     surface is reachable without a token.
 servers:
   - url: http://127.0.0.1:9090
     description: Default loopback bind (docker-compose maps SANDBOXD_API_BIND here)
 security:
   - bearerAuth: []
-  - {} # auth disabled by default (single-user)
+  - {} # only when auth is explicitly disabled by the operator
 
 tags:
   - name: apps
@@ -350,6 +350,77 @@ paths:
         "403": { description: Requires a console login }
         "404": { description: No such key }
 
+  /v1/model-providers:
+    get:
+      operationId: listModelProviders
+      summary: List operator-managed model connections (never returns API keys)
+      responses:
+        "200":
+          description: Connections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items: { $ref: "#/components/schemas/ModelProvider" }
+    post:
+      operationId: createModelProvider
+      summary: Connect an OpenAI-compatible or Anthropic-compatible endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelProviderInput" }
+      responses:
+        "201":
+          description: Connection created; no inference request sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelProvider" }
+        "400": { description: Invalid configuration }
+  /v1/model-providers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: updateModelProvider
+      summary: Replace a connection and revoke its existing task capabilities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelProviderInput" }
+      responses:
+        "200":
+          description: Connection updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelProvider" }
+        "404": { description: Connection not found }
+    delete:
+      operationId: deleteModelProvider
+      summary: Delete a connection and revoke task access
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Connection not found }
+  /v1/model-providers/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: testModelProvider
+      summary: Send a small inference request (provider charges may apply)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string, description: Configured model ID; first model when omitted }
+      responses:
+        "200": { description: Model returned a valid inference response }
+        "502": { description: Provider test failed; credentials and upstream error bodies are redacted }
   /v1/agents:
     get:
       operationId: listAgents
@@ -1526,6 +1597,38 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    ProviderModel:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200, description: Exact model ID or gateway alias, including any slashes }
+        context_window: { type: integer, minimum: 512, maximum: 10000000, default: 32768 }
+        max_tokens: { type: integer, minimum: 1, default: 4096, description: Must be smaller than context_window }
+    ModelProviderInput:
+      type: object
+      required: [name, protocol, base_url, models]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        protocol: { type: string, enum: [openai-completions, anthropic-messages] }
+        base_url: { type: string, format: uri, description: "HTTP(S) API base URL including its API prefix, e.g. http://ollama:11434/v1. Resolved from the control plane. No URL credentials, query or fragment." }
+        models:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ProviderModel" }
+        api_key: { type: string, writeOnly: true, description: "Optional. Omit to retain the saved key on update; empty string removes it. Stored encrypted on the control plane." }
+    ModelProvider:
+      type: object
+      required: [id, name, protocol, base_url, models, has_api_key]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        protocol: { type: string, enum: [openai-completions, anthropic-messages] }
+        base_url: { type: string }
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ProviderModel" }
+        has_api_key: { type: boolean }
     Settings:
       type: object
       description: Read-only instance summary (GET /v1/settings) and the shape returned by PATCH.
@@ -1752,11 +1855,14 @@ components:
       required: [prompt]
       properties:
         prompt: { type: string }
-        agent: { type: string, enum: [opencode, claude-code], default: opencode }
+        agent: { type: string, enum: [opencode, pi, claude-code, codex], default: opencode }
+        provider: { type: string, description: "Configured model connection ID, supported by OpenCode and Pi. Required for Pi. With a connection, model is an exact configured ID; omitted selects its first model." }
+        continue: { type: boolean, default: true, description: Resume this agent session when available }
         model:
           type: string
           description: >
-            Optional per-task model, passed to the agent CLI's --model. Agent-namespaced:
+            With provider set, an exact configured model ID (no extra agent prefix).
+            Otherwise, optional per-task model, passed to the agent CLI's --model. Agent-namespaced:
             opencode wants "provider/model" (e.g. opencode/claude-sonnet-4-5), claude an
             alias/id (e.g. sonnet). Empty = the agent's default. Max 200 chars; validity
             is the agent's concern (an unknown model fails the task).

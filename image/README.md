@@ -66,3 +66,13 @@ docker run --rm sandboxd-base:0.3.0 bash /opt/verify-base.sh
 
 Confirms the toolchains (Node/npm/pnpm/bun, python3/uv/setuptools, build tools) are
 present and working in the built image.
+
+## Coding agents and compatible model servers
+
+The base image pins OpenCode 1.19.3 and Pi 1.3.0
+(`@earendil-works/pi-coding-agent`), alongside the existing Claude Code and Codex
+installations. Pi requires Node 22.19.0 or later; the image checks this during
+build. Configure model URLs and credentials through the control plane, using
+[Model connections](../docs/model-providers.md), then select OpenCode or Pi in the
+console. Recreate an existing sandbox after upgrading the base image to install
+new agent binaries.

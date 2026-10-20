@@ -1,14 +1,11 @@
-// Package agentauth is the foundation for "managed agent auth" (Phase 10B):
-// a static registry of the coding-agent CLI providers and a host-side store
-// of opaque credential directories. This A0 slice is READ-ONLY — it knows the
-// providers, where their auth would live, and whether they're "connected"
-// (a non-empty dir). It never creates provider dirs, parses tokens, or injects
-// anything into a sandbox. Connect/import and per-task injection come later.
+// Package agentauth manages the built-in coding-agent registry and legacy
+// credential-file store. Configurable model connections live in modelprovider;
+// Pi uses those connections rather than a built-in credential-file import.
 package agentauth
 
 // Provider is one coding-agent CLI we can run as a task agent.
 type Provider struct {
-	ID     string // stable id used in the API ("opencode", "claude-code", "codex")
+	ID     string // stable id used in the API ("opencode", "pi", "claude-code", "codex")
 	Label  string // human label for the console
 	Binary string // the CLI binary name, probed for "installed"
 }
@@ -19,6 +16,7 @@ type Provider struct {
 // is reached through an agent's proxy path, not run as its own task agent).
 var registry = []Provider{
 	{ID: "opencode", Label: "OpenCode", Binary: "opencode"},
+	{ID: "pi", Label: "Pi", Binary: "pi"},
 	{ID: "claude-code", Label: "Claude Code", Binary: "claude"},
 	{ID: "codex", Label: "Codex", Binary: "codex"},
 	// MiniMax is a credential-only provider: the owner connects a MiniMax API
@@ -46,11 +44,12 @@ func Get(id string) (Provider, bool) {
 }
 
 // runnable is the set of providers runtimed can actually run as a task agent.
-// MUST be kept in sync with runtimed's selectAgent. All three have adapters;
+// MUST be kept in sync with runtimed's selectAgent. All four have adapters;
 // codex is runnable here but parked in the UI (its ChatGPT-subscription auth
 // isn't proxyable yet), so the console hides it from the run picker.
 var runnable = map[string]bool{
 	"opencode":    true,
+	"pi":          true,
 	"claude-code": true,
 	"codex":       true,
 }
@@ -75,13 +74,9 @@ func CredentialFile(id string) (string, bool) {
 	return f, ok
 }
 
-// apiKeyEnv maps a provider to the single environment variable its CLI reads an
-// API key from. This is the ONE deliberate exception to runtimed's secret-env
-// scrub: when an owner connects a provider by API key, runtimed injects just
-// this var (from the stored key file) into the agent process — nothing else
-// secret-shaped survives the scrub. opencode connects with an OpenCode (Zen)
-// key against api.opencode.ai, so it maps to OPENCODE_API_KEY — NOT an Anthropic
-// key (Zen is opencode's own gateway; the key is issued at opencode.ai).
+// apiKeyEnv names the credential kinds supported by built-in providers. With
+// the auth proxy enabled, these keys are read and injected control-plane-side;
+// runtimed receives dummy keys. The map also supports legacy credential import.
 var apiKeyEnv = map[string]string{
 	"claude-code": "ANTHROPIC_API_KEY",
 	"codex":       "OPENAI_API_KEY",

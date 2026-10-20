@@ -13,6 +13,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
@@ -40,8 +41,9 @@ func opencodeFreeModel() string {
 // --- POST /v1/sandboxes/{id}/tasks ----------------------------------
 
 type v1TaskSubmitReq struct {
-	Prompt string `json:"prompt"`
-	Agent  string `json:"agent,omitempty"`
+	Provider string `json:"provider,omitempty"` // configured connection ID; model IDs stay opaque
+	Prompt   string `json:"prompt"`
+	Agent    string `json:"agent,omitempty"`
 	// Model, when set, runs this task on the given model (passed to the agent
 	// CLI's --model). Agent-namespaced: opencode wants "provider/model" (e.g.
 	// "opencode/claude-sonnet-4-5"), claude an alias/id ("sonnet"). Empty = the
@@ -112,7 +114,7 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	// creds are mounted at sandbox create if connected. See docs/agent-auth.md.
 	if !agentauth.Runnable(agent) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			"unsupported agent (supported: opencode, claude-code)")
+			"unsupported agent (supported: opencode, pi, claude-code, codex)")
 		return
 	}
 	if req.TimeoutS < 0 {
@@ -138,7 +140,7 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	//   2. opencode's zero-friction free tier (only when nothing is connected).
 	// An explicit per-task model always wins over both. Downstream, runtimed adds
 	// its own env/agent-default fallback (RUNTIMED_OPENCODE_MODEL). See docs/agent-auth.md.
-	if req.Model == "" && s.Live != nil {
+	if req.Provider == "" && req.Model == "" && s.Live != nil {
 		req.Model = s.Live.DefaultModel(agent) // "" when unset
 	}
 	// OpenCode zero-friction free tier: when opencode has no connected credential
@@ -146,14 +148,39 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	// can build with no setup at all. A connected key/subscription (handled in the
 	// proxy) or any chosen model takes precedence and uses the full catalog. Only
 	// opencode has a free tier — other agents still need to be connected first.
-	if agent == "opencode" && req.Model == "" &&
+	if req.Provider == "" && agent == "opencode" && req.Model == "" &&
 		(s.AgentAuth == nil || !s.AgentAuth.Connected("opencode")) {
 		req.Model = opencodeFreeModel()
 	}
 
+	var connection *modelconfig.Connection
+	if req.Provider != "" {
+		if agent != "opencode" && agent != "pi" {
+			writeV1Err(w, 400, "invalid_request", "configured model connections support OpenCode and Pi")
+			return
+		}
+		if s.ModelProviders == nil || s.AgentProxyURL == "" {
+			writeV1Err(w, 503, "unavailable", "model provider proxy is unavailable")
+			return
+		}
+		ttl := runtime.DefaultTaskTimeout
+		if req.TimeoutS > 0 {
+			ttl = time.Duration(req.TimeoutS) * time.Second
+		}
+		connection, err = s.ModelProviders.Connection(r.Context(), req.Provider, req.Model, s.AgentProxyURL, ttl+time.Minute)
+		if err != nil {
+			writeV1Err(w, 400, "invalid_request", "cannot use model connection: "+err.Error())
+			return
+		}
+		req.Model = connection.Model.ID
+	} else if agent == "pi" {
+		writeV1Err(w, 400, "invalid_request", "select a model provider connection for Pi in Settings")
+		return
+	}
+
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
-		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, TimeoutS: req.TimeoutS, Continue: req.Continue,
+		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, Provider: connection, TimeoutS: req.TimeoutS, Continue: req.Continue,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")

@@ -85,7 +85,7 @@ func probeInstalledAgents(image string) map[string]string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	const script = `for b in opencode claude codex; do if command -v "$b" >/dev/null 2>&1; then echo "$b=1"; else echo "$b=0"; fi; done`
+	const script = `for b in opencode pi claude codex; do if command -v "$b" >/dev/null 2>&1; then echo "$b=1"; else echo "$b=0"; fi; done`
 	out, err := exec.CommandContext(ctx, "docker", "run", "--rm", "--entrypoint", "sh", image, "-lc", script).Output()
 	if err != nil {
 		return nil

@@ -40,7 +40,7 @@ status() { curl -s -m5 "$API/v1/sandboxes/$1" | grep -oE '"status":"[a-z]+"' | h
 log "image smoke: required binaries + react-standard template"
 docker run --rm "$IMG" bash -lc '
   set -e
-  for b in runtimed opencode claude node pnpm git rg; do
+  for b in runtimed opencode pi claude node pnpm git rg; do
     command -v "$b" >/dev/null || { echo "MISSING $b on PATH"; exit 1; }
   done
   test -f /opt/templates/react-standard/package.json

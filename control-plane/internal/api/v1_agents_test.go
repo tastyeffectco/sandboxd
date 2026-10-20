@@ -90,8 +90,8 @@ func TestListAgentsProbeUnknown(t *testing.T) {
 		Providers []map[string]any `json:"providers"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &d)
-	if len(d.Providers) != 4 {
-		t.Fatalf("want 4 providers, got %d", len(d.Providers))
+	if len(d.Providers) != 5 {
+		t.Fatalf("want 5 providers, got %d", len(d.Providers))
 	}
 	for _, p := range d.Providers {
 		// minimax is a credential-only provider with no CLI to probe, so its

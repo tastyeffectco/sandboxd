@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
+import { ModelProviders } from './ModelProviders'
 import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
 
 // --- source badges: every value on this page is one of these ----------------
@@ -86,7 +87,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '36px 40px 90px' }}>
       <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Settings</h1>
-      <p style={{ color: c.muted, margin: '0 0 16px' }}>Connect agents and tune the sandbox lifecycle here. Everything else is fixed at deploy time — each value below shows where to change it.</p>
+      <p style={{ color: c.muted, margin: '0 0 16px' }}>Connect model servers and agents, and tune the sandbox lifecycle here. Everything else is fixed at deploy time — each value below shows where to change it.</p>
 
       {/* legend — how to read the page */}
       <Card style={{ padding: '12px 16px', marginBottom: 8, display: 'flex', gap: 20, flexWrap: 'wrap', background: c.panel3 }}>
@@ -98,6 +99,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
       {/* ─────────────── YOU MANAGE HERE ─────────────── */}
       <SectionTitle note="agents, credentials & lifecycle — changes take effect immediately">You manage here</SectionTitle>
 
+      <ModelProviders onError={onError} toast={toast} />
       <Card style={{ padding: 16, marginBottom: 12 }}>
         <H style={{ marginBottom: 10 }}>Agents</H>
         <div data-testid="settings-agents-list">
@@ -117,7 +119,7 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
               {disabled ? (
                 <span style={{ marginLeft: 'auto' }}><Pill tone="neutral">disabled</Pill></span>
               ) : (<>
-                <span style={{ marginLeft: 'auto' }}><Pill tone={a.status === 'connected' ? 'good' : 'warn'}>{a.status === 'connected' ? 'connected' : 'needs login'}</Pill></span>
+                <span style={{ marginLeft: 'auto' }}><Pill tone={a.id === 'pi' ? 'neutral' : a.status === 'connected' ? 'good' : a.id === 'opencode' ? 'neutral' : 'warn'}>{a.id === 'pi' ? 'uses model connections' : a.status === 'connected' ? 'connected' : a.id === 'opencode' ? 'free tier / connections' : 'needs login'}</Pill></span>
                 {a.status === 'connected' ? (
                   <Btn sm variant="ghost" onClick={() => api.disconnectAgent(a.id).then(() => { toast('Disconnected'); loadAgents() })} data-testid="agent-disconnect">Disconnect</Btn>
                 ) : (
@@ -135,12 +137,12 @@ export function SettingsView({ onError, toast }: { onError: (m: string) => void;
             model id; it's used when a task doesn't pick one. */}
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${c.border}` }} data-testid="settings-agent-models">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <H style={{ fontSize: 13 }}>Default model</H>
+            <H style={{ fontSize: 13 }}>Built-in default models</H>
             <Src kind={modelsEditable ? 'editable' : undefined} env={modelsEditable ? undefined : 'SANDBOXD_OPENCODE_MODEL'} />
             <span style={{ marginLeft: 'auto', fontSize: 11.5, color: c.muted2 }}>optional — used when a task doesn't pick a model</span>
           </div>
-          <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>Paste each agent's own model id (e.g. OpenCode <span style={{ ...mono, fontSize: 11 }}>glm-5</span>, Claude <span style={{ ...mono, fontSize: 11 }}>sonnet</span>). Leave blank for the agent's default — OpenCode with no API key falls back to its free tier (<span style={{ ...mono, fontSize: 11 }}>big-pickle</span>).</div>
-          {agents.filter((a) => a.id !== 'codex' && a.runnable).map((a) => (
+          <div style={{ color: c.muted2, fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>Model connections use their first listed model by default. For built-in providers, paste each agent's own model id (e.g. OpenCode <span style={{ ...mono, fontSize: 11 }}>glm-5</span>, Claude <span style={{ ...mono, fontSize: 11 }}>sonnet</span>). Leave blank for the agent's default — OpenCode with no API key falls back to its free tier (<span style={{ ...mono, fontSize: 11 }}>big-pickle</span>).</div>
+          {agents.filter((a) => a.id !== 'codex' && a.id !== 'pi' && a.runnable).map((a) => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <span style={{ width: 130, fontSize: 12.5, color: c.muted }}>{a.label}</span>
               <Input mono value={models[a.id] || ''} onChange={(e) => setModels({ ...models, [a.id]: e.target.value })} disabled={!modelsEditable} placeholder={a.id === 'opencode' ? 'big-pickle (free tier)' : 'agent default'} style={{ width: 260 }} data-testid={`agent-model-${a.id}`} />
