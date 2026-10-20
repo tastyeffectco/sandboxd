@@ -901,6 +901,7 @@ function BrainTab({
   const [editing, setEditing] = useState(false)
   const [noteName, setNoteName] = useState<string | null>(null)
   const [noteError, setNoteError] = useState('')
+  const savedDocs = useRef<Record<string, string>>({})
 
   useEffect(() => {
     if (!sb) return
@@ -910,6 +911,7 @@ function BrainTab({
         const d: Record<string, string> = {}
         if (b.hub !== null) d['BRAIN.md'] = b.hub
         for (const [name, content] of Object.entries(b.spokes)) d[`brain/${name}.md`] = content
+        savedDocs.current = d
         setDocs(d)
         setHubExists(b.hub !== null)
         setSel('BRAIN.md')
@@ -923,6 +925,7 @@ function BrainTab({
     try {
       await api.putWorkspaceFile(sb.id, path, content)
       await ensureBrainExcluded(sb.id)
+      savedDocs.current = { ...savedDocs.current, [path]: content }
       setDocs((d) => ({ ...(d || {}), [path]: content }))
       if (path === 'BRAIN.md') setHubExists(true)
       setDirty(false)
@@ -936,8 +939,15 @@ function BrainTab({
     }
   }
 
+  const discardCurrent = () => {
+    if (!dirty) return true
+    if (!window.confirm('Discard unsaved changes?')) return false
+    setDocs((d) => ({ ...(d || {}), [sel]: savedDocs.current[sel] || '' }))
+    setDirty(false)
+    return true
+  }
   const switchDoc = (path: string) => {
-    if (dirty && !window.confirm('Discard unsaved changes?')) return
+    if (!discardCurrent()) return
     setSel(path)
     setDirty(false)
     setEditing(false)
@@ -1051,7 +1061,7 @@ function BrainTab({
         })}
         <button
           onClick={() => {
-            if (dirty && !window.confirm('Discard unsaved changes?')) return
+            if (!discardCurrent()) return
             setNoteError('')
             setNoteName('')
           }}
