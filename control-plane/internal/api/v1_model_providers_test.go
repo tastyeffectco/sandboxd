@@ -112,7 +112,7 @@ func TestModelProviderAPIAndTaskDispatch(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("task watcher did not persist the terminal event")
+			t.Fatalf("task watcher did not persist the terminal event: task=%+v err=%v", persisted, err)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

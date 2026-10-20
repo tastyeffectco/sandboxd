@@ -18,7 +18,11 @@ import (
 
 func newProcLogsServer(t *testing.T) (*Server, string, string) {
 	t.Helper()
-	st, err := store.Open(context.Background(), "file::memory:?_fk=1", "../../migrations")
+	// The store uses a connection pool. A private :memory: database gives each
+	// connection a different schema, so concurrent task watchers can see
+	// "no such table". Use an isolated file with the production SQLite options.
+	dsn := "file:" + filepath.Join(t.TempDir(), "test.db") + "?_journal=WAL&_busy_timeout=5000&_fk=1"
+	st, err := store.Open(context.Background(), dsn, "../../migrations")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
