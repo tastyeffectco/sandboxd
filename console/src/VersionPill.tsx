@@ -68,7 +68,7 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
   )
 
   return (
-    <div ref={root} style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 100, fontSize: 12 }}>
+    <div className="version-widget" ref={root} style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 100, fontSize: 12 }}>
       {open && (
         <div data-testid="version-panel" role="dialog" style={{ position: 'absolute', left: 0, bottom: 'calc(100% + 8px)', width: 440, maxWidth: 'calc(100vw - 24px)', background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.14)', padding: 14 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>

@@ -1,25 +1,87 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, setOnUnauthorized, App as TApp, Preset, GitCredential, Agent, Settings, UpgradeState } from './api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, setOnUnauthorized, App as TApp, Settings, UpgradeState } from './api'
 import { previewReach, type PreviewReach } from './publicurl'
-import { c, font, mono, Card, Btn, StatusPill, Input, navItem } from './design/kit'
-import { PRESET_ICONS } from './design/presetIcons'
-import { STARTERS, STARTER_ICONS } from './design/starters'
+import { c, font, mono, Card, Input } from './design/kit'
 import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { BrainGraph } from './BrainGraph'
 import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
+import { BuilderHome, BuilderDraft } from './BuilderHome'
+import { BuildIntent } from './AgentPicker'
+import { Dialog } from './design/Dialog'
+import { IS_DEMO } from './demo'
+import { Icon, IconName } from './design/Icon'
+import { confirmLeaveWorkspace } from './unsavedChanges'
 import { VersionPill } from './VersionPill'
 import { Login, CreatePassword } from './AuthGate'
 
-type Route = { name: 'apps' } | { name: 'brain' } | { name: 'store' } | { name: 'settings' } | { name: 'app'; id: string; tab?: string; task?: string }
+function readRoute(): Route {
+  const parts = location.hash.replace(/^#\/?/, '').split('/')
+  if (parts[0] === 'app' && parts[1]) {
+    try {
+      return { name: 'app', id: decodeURIComponent(parts[1]), tab: parts[2] }
+    } catch {
+      return { name: 'apps' }
+    }
+  }
+  if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
+  return { name: ['brain', 'store', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
+}
+
+type Route =
+  | { name: 'apps' }
+  | { name: 'brain' }
+  | { name: 'store' }
+  | { name: 'settings'; section?: string }
+  | { name: 'app'; id: string; tab?: string; task?: string }
 
 export default function App() {
-  const [route, setRoute] = useState<Route>({ name: 'apps' })
+  const [route, setRouteState] = useState<Route>(readRoute)
+  const routeRef = useRef(route)
+  routeRef.current = route
+  const setRoute = useCallback((next: Route) => {
+    const current = routeRef.current
+    if (
+      current.name === 'app' &&
+      (next.name !== 'app' || next.id !== current.id) &&
+      !confirmLeaveWorkspace()
+    ) {
+      history.replaceState(
+        null,
+        '',
+        `#/app/${encodeURIComponent(current.id)}${current.tab ? '/' + current.tab : ''}`,
+      )
+      return
+    }
+    routeRef.current = next
+    setRouteState(next)
+  }, [])
+  const [builderDraft, setBuilderDraft] = useState<BuilderDraft>()
+  const [chatDrafts, setChatDrafts] = useState<Record<string, BuildIntent>>({})
+  const [pendingBuilds, setPendingBuilds] = useState<Record<string, BuildIntent>>({})
+  const [mobileNav, setMobileNav] = useState(false)
+  useEffect(() => {
+    const listener = () => setRoute(readRoute())
+    window.addEventListener('hashchange', listener)
+    return () => window.removeEventListener('hashchange', listener)
+  }, [])
+  useEffect(() => {
+    const hash =
+      route.name === 'app'
+        ? `#/app/${encodeURIComponent(route.id)}${route.tab ? '/' + route.tab : ''}`
+        : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}`
+    if (location.hash !== hash) location.hash = hash
+    setMobileNav(false)
+  }, [route])
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [apps, setApps] = useState<TApp[]>([])
-  const [auth, setAuth] = useState<{ enabled: boolean; authenticated: boolean; password_set: boolean } | null>(null)
+  const [auth, setAuth] = useState<{
+    enabled: boolean
+    authenticated: boolean
+    password_set: boolean
+  } | null>(null)
   // Version pill (bottom left): the control plane checks GitHub releases
   // (cached ~6h) and reports update_available + notes in /v1/settings.
   // Dismissal is remembered per version, so each new release nudges once.
@@ -41,9 +103,20 @@ export default function App() {
   }, [])
   const onError = useCallback((m: string) => toast(m), [toast])
 
-  const loadApps = useCallback(() => api.listApps().then(setApps).catch(() => {}), [])
+  const loadApps = useCallback(
+    () =>
+      api
+        .listApps()
+        .then(setApps)
+        .catch(() => {}),
+    [],
+  )
   const refreshAuth = useCallback(
-    () => api.authStatus().then(setAuth).catch(() => setAuth({ enabled: true, authenticated: false, password_set: false })),
+    () =>
+      api
+        .authStatus()
+        .then(setAuth)
+        .catch(() => setAuth({ enabled: true, authenticated: false, password_set: false })),
     [],
   )
 
@@ -51,68 +124,118 @@ export default function App() {
   // bounces back to the gate. Only load apps once we know we're allowed through.
   useEffect(() => {
     refreshAuth()
-    setOnUnauthorized(() => setAuth((a) => (a ? { ...a, authenticated: false } : a)))
+    setOnUnauthorized(() => {
+      setAuth((a) => (a ? { ...a, authenticated: false } : a))
+      setBuilderDraft(undefined)
+      setChatDrafts({})
+      setPendingBuilds({})
+    })
   }, [refreshAuth])
   useEffect(() => {
     if (auth && (auth.authenticated || auth.enabled === false)) loadApps()
   }, [auth, loadApps])
-  const loadSettings = useCallback(() => api.getSettings().then((s) => {
-    setSettings(s)
-    setUpdDismissed(!!s.latest_version && localStorage.getItem('sandboxd-update-dismissed') === s.latest_version)
-    return s
-  }), [])
+  const loadSettings = useCallback(
+    () =>
+      api.getSettings().then((s) => {
+        setSettings(s)
+        setUpdDismissed(
+          !!s.latest_version && localStorage.getItem('sandboxd-update-dismissed') === s.latest_version,
+        )
+        return s
+      }),
+    [],
+  )
   useEffect(() => {
     if (!(auth && (auth.authenticated || auth.enabled === false))) return
-    loadSettings().then((s) => {
-      const r = previewReach(s.networking?.preview_domain || '', !!s.networking?.preview_tls)
-      if (r !== 'ok' && localStorage.getItem('sandboxd-public-url-hint') !== 'dismissed') setReach(r)
-    }).catch(() => {})
+    loadSettings()
+      .then((s) => {
+        const r = previewReach(s.networking?.preview_domain || '', !!s.networking?.preview_tls)
+        if (!IS_DEMO && r !== 'ok' && localStorage.getItem('sandboxd-public-url-hint') !== 'dismissed')
+          setReach(r)
+      })
+      .catch(() => {})
   }, [auth, loadSettings])
   const dismissUpdate = useCallback(() => {
     if (settings?.latest_version) localStorage.setItem('sandboxd-update-dismissed', settings.latest_version)
     setUpdDismissed(true)
   }, [settings])
 
-  const startUpgrade = useCallback((target: string) => {
-    api.startUpgrade(target).then(setUpg).catch((e: Error) => { toast(e.message || 'could not start upgrade'); setUpg(null) })
-  }, [toast])
+  const startUpgrade = useCallback(
+    (target: string) => {
+      api
+        .startUpgrade(target)
+        .then(setUpg)
+        .catch((e: Error) => {
+          toast(e.message || 'could not start upgrade')
+          setUpg(null)
+        })
+    },
+    [toast],
+  )
   useEffect(() => {
     if (!upg || upg.phase !== 'running') return
     const id = setInterval(() => {
-      api.getUpgrade().then((s) => {
-        setUpg(s)
-        if (s.phase === 'succeeded') { refreshAuth().then(loadApps); loadSettings().catch(() => {}) }
-      }).catch(() => { /* control plane restarting — keep polling */ })
+      api
+        .getUpgrade()
+        .then((s) => {
+          setUpg(s)
+          if (s.phase === 'succeeded') {
+            refreshAuth().then(loadApps)
+            loadSettings().catch(() => {})
+          }
+        })
+        .catch(() => {
+          /* control plane restarting — keep polling */
+        })
     }, 3000)
     return () => clearInterval(id)
   }, [upg, refreshAuth, loadApps, loadSettings])
 
-  const onAuthed = useCallback(() => { refreshAuth().then(loadApps) }, [refreshAuth, loadApps])
-  const logout = useCallback(() => { api.logout().finally(() => setAuth((a) => (a ? { ...a, authenticated: false } : a))) }, [])
+  const onAuthed = useCallback(() => {
+    refreshAuth().then(loadApps)
+  }, [refreshAuth, loadApps])
+  const logout = useCallback(() => {
+    if (!confirmLeaveWorkspace()) return
+    setBuilderDraft(undefined)
+    setChatDrafts({})
+    setPendingBuilds({})
+    api.logout().finally(() => setAuth((a) => (a ? { ...a, authenticated: false } : a)))
+  }, [])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((o) => !o) }
-      else if (e.key === 'Escape') setPaletteOpen(false)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      } else if (e.key === 'Escape') setPaletteOpen(false)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
 
   const goApp = (id: string, tab?: string) => setRoute({ name: 'app', id, tab })
-  const running = apps.find((a) => a.current_sandbox_id)
 
   const nav = [
-    { key: 'apps', label: 'Apps' },
-    { key: 'brain', label: 'Brain' },
-    { key: 'store', label: 'App Store' },
-    { key: 'settings', label: 'Settings' },
+    { key: 'apps', label: 'Build & projects', icon: 'grid' },
+    { key: 'brain', label: 'Project memory', icon: 'book' },
+    { key: 'store', label: 'App library', icon: 'box' },
+    { key: 'settings', label: 'Settings', icon: 'settings' },
   ]
 
   // Auth gate — render before the app chrome. null = still resolving status.
   if (auth === null) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: c.bg, color: c.muted2, fontFamily: font.sans }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          background: c.bg,
+          color: c.muted2,
+          fontFamily: font.sans,
+        }}
+      >
         Loading…
       </div>
     )
@@ -122,336 +245,244 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: c.bg, color: c.fg, fontFamily: font.sans, overflow: 'hidden' }}>
-      {/* REACHABILITY HINT — previews can't be opened from outside this network. */}
+    <div className="studio-shell">
       {reach && (
-        <div data-testid="public-url-hint" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexShrink: 0, padding: '5px 40px 5px 16px', fontSize: 12.5, background: c.panel2, borderBottom: `1px solid ${c.border}`, position: 'relative' }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.muted, flexShrink: 0 }} />
+        <div className="reachability-hint" data-testid="public-url-hint">
+          <Icon name="external" size={14} />
           <span>
-            {reach === 'lan' ? <b>Previews only work on this network.</b> : <b>Previews are plain HTTP on an IP address.</b>}
-            <span style={{ marginLeft: 6, color: c.muted }}>Get <span style={{ ...mono, fontSize: 11.5 }}>https://you.sandboxd.io</span> in one command — no DNS, ports or certs — or set your own domain.</span>
+            {reach === 'lan' ? 'Preview links are available on your network.' : 'Preview links use HTTP.'}{' '}
+            <a href="https://sandboxd.io/guides/production-tls" target="_blank" rel="noreferrer">
+              Configure public sharing ↗
+            </a>
           </span>
-          <a href="https://sandboxd.io/cloud?ref=console" target="_blank" rel="noreferrer" style={{ color: c.link, textDecoration: 'none' }}>Public URL ↗</a>
-          <a href="https://sandboxd.io/guides/production-tls" target="_blank" rel="noreferrer" style={{ color: c.muted, textDecoration: 'none' }}>Own domain ↗</a>
-          <span data-testid="public-url-hint-dismiss" className="dc-hoverink" onClick={() => { localStorage.setItem('sandboxd-public-url-hint', 'dismissed'); setReach(null) }} style={{ position: 'absolute', right: 14, color: c.muted, cursor: 'pointer', fontSize: 13 }}>✕</span>
+          <button
+            className="icon-button"
+            aria-label="Dismiss sharing notice"
+            data-testid="public-url-hint-dismiss"
+            onClick={() => {
+              localStorage.setItem('sandboxd-public-url-hint', 'dismissed')
+              setReach(null)
+            }}
+          >
+            <Icon name="close" size={13} />
+          </button>
         </div>
       )}
-      {/* TOP BAR */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: 52, flexShrink: 0, padding: '0 20px', borderBottom: `1px solid ${c.border}`, background: c.panel }}>
-        <div onClick={() => setRoute({ name: 'apps' })} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg,#3f3f46,#18181b)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 11, color: c.bg }}>&gt;_</div>
-          <span style={{ fontFamily: font.display, fontWeight: 700, fontSize: 15, letterSpacing: '.2px' }}>sandboxd <span style={{ fontWeight: 500, color: c.muted }}>console</span></span>
-        </div>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {nav.map((n) => (
-            <div key={n.key} data-testid={`nav-${n.key}`} className="dc-hoverink" onClick={() => setRoute({ name: n.key } as Route)} style={navItem(route.name === n.key)}>
-              {n.label}
-            </div>
-          ))}
-        </div>
-        <div style={{ flex: 1 }} />
-        {running && (
-          <div onClick={() => goApp(running.id)} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 7, border: `1px solid ${c.border}`, background: c.bg, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.good }} />
-            <span style={{ ...mono, fontSize: 11.5 }}>{running.name}</span>
-          </div>
-        )}
-        <div onClick={() => setPaletteOpen(true)} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${c.border}`, background: c.bg, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', width: 180 }}>
-          <span style={{ color: c.muted2, fontSize: 12, flex: 1 }}>Search…</span>
-          <span style={{ ...mono, fontSize: 10, color: c.muted2, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 5px' }}>⌘K</span>
-        </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <a href="https://sandboxd.io" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Docs</a>
-          <a href="https://github.com/tastyeffectco/sandboxd" target="_blank" rel="noreferrer" className="dc-hoverink" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>GitHub</a>
-          <a href="https://github.com/tastyeffectco/sandboxd/discussions" target="_blank" rel="noreferrer" className="dc-hoverink" data-testid="nav-feedback" style={{ color: c.muted, textDecoration: 'none', fontSize: 12 }}>Feedback</a>
-          {auth?.enabled && (
-            <span data-testid="nav-logout" className="dc-hoverink" onClick={logout} style={{ color: c.muted, fontSize: 12, cursor: 'pointer' }}>Log out</span>
-          )}
-        </div>
-      </div>
-
-      {/* MAIN */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-        {route.name === 'apps' && <AppsScreen apps={apps} reload={loadApps} onOpen={(id) => goApp(id)} onError={onError} goStore={() => setRoute({ name: 'store' })} />}
-        {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}
-        {route.name === 'store' && <StoreView onError={onError} toast={toast} onOpen={(id) => goApp(id)} reloadApps={loadApps} />}
-        {route.name === 'settings' && <SettingsView onError={onError} toast={toast} />}
-        {route.name === 'app' && (
-          <AppView
-            appId={route.id}
-            initialTab={route.tab}
-            onError={onError}
-            toast={toast}
-            goApps={() => { setRoute({ name: 'apps' }); loadApps() }}
-            goSettings={() => setRoute({ name: 'settings' })}
-            apps={apps}
-            onOpenApp={(id, tab) => goApp(id, tab)}
+      <header className="mobile-bar">
+        <button className="icon-button" aria-label="Open navigation" onClick={() => setMobileNav(true)}>
+          <Icon name="menu" />
+        </button>
+        <strong>sandboxd</strong>
+        <button
+          className="icon-button"
+          aria-label="Search projects and commands"
+          onClick={() => setPaletteOpen(true)}
+        >
+          <Icon name="search" />
+        </button>
+      </header>
+      <div className="studio-body">
+        {mobileNav && (
+          <button
+            className="nav-backdrop"
+            aria-label="Close navigation"
+            onClick={() => setMobileNav(false)}
           />
         )}
+        <aside className={`studio-sidebar ${mobileNav ? 'is-open' : ''}`}>
+          <button className="studio-brand" onClick={() => setRoute({ name: 'apps' })}>
+            <span>
+              <Icon name="box" size={23} />
+            </span>
+            <strong>
+              sandboxd<small>BUILD SOMETHING YOURS</small>
+            </strong>
+          </button>
+          <button
+            className="sidebar-new"
+            onClick={() => {
+              setRoute({ name: 'apps' })
+              setTimeout(() => document.getElementById('build-prompt')?.focus(), 0)
+            }}
+          >
+            <Icon name="plus" size={18} />
+            <span>New project</span>
+          </button>
+          <button className="sidebar-search" onClick={() => setPaletteOpen(true)}>
+            <Icon name="search" size={16} />
+            <span>Quick search</span>
+            <kbd>⌘ K</kbd>
+          </button>
+          <nav aria-label="Main navigation">
+            {nav.map((n) => (
+              <button
+                key={n.key}
+                data-testid={`nav-${n.key}`}
+                title={n.label}
+                aria-current={route.name === n.key ? 'page' : undefined}
+                className={route.name === n.key ? 'sidebar-link active' : 'sidebar-link'}
+                onClick={() => setRoute({ name: n.key } as Route)}
+              >
+                <Icon name={n.icon as IconName} />
+                <span>{n.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-projects">
+            <div className="sidebar-caption">RECENT PROJECTS</div>
+            {apps.slice(0, 7).map((a) => (
+              <button
+                key={a.id}
+                title={a.name}
+                className={
+                  route.name === 'app' && route.id === a.id ? 'sidebar-project active' : 'sidebar-project'
+                }
+                onClick={() => goApp(a.id)}
+              >
+                <span className="project-initial" aria-hidden="true">
+                  {a.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span>{a.name}</span>
+              </button>
+            ))}
+            {!apps.length && <p>Your next idea starts here.</p>}
+          </div>
+          <footer className="sidebar-footer">
+            <a href="https://sandboxd.io" target="_blank" rel="noreferrer">
+              <Icon name="book" size={16} />
+              <span>Documentation</span>
+              <Icon name="external" size={12} />
+            </a>
+            <a
+              href="https://github.com/tastyeffectco/sandboxd/discussions"
+              target="_blank"
+              rel="noreferrer"
+              data-testid="nav-feedback"
+            >
+              <Icon name="code" size={16} />
+              <span>Community & feedback</span>
+            </a>
+            {auth.enabled && (
+              <button onClick={logout} data-testid="nav-logout">
+                <Icon name="logout" size={16} />
+                <span>Sign out</span>
+              </button>
+            )}
+            <div className="instance-label">
+              <span className="brand-dot" />
+              Self-hosted workspace
+            </div>
+            {settings && (
+              <VersionPill
+                settings={settings}
+                dismissed={updDismissed}
+                onDismiss={dismissUpdate}
+                upg={upg}
+                startUpgrade={startUpgrade}
+                clearUpgrade={() => setUpg(null)}
+              />
+            )}
+          </footer>
+        </aside>
+        {/* MAIN */}
+        <main
+          id="main-content"
+          className={route.name === 'app' ? 'studio-main workspace-main' : 'studio-main'}
+        >
+          {route.name === 'apps' && (
+            <BuilderHome
+              draft={builderDraft}
+              saveDraft={setBuilderDraft}
+              apps={apps}
+              reload={loadApps}
+              onOpen={(id) => goApp(id)}
+              goStore={() => setRoute({ name: 'store' })}
+              goSettings={() => setRoute({ name: 'settings' })}
+              onCreated={(id, intent) => {
+                if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
+                goApp(id)
+              }}
+            />
+          )}
+          {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}
+          {route.name === 'store' && (
+            <StoreView onError={onError} toast={toast} onOpen={(id) => goApp(id)} reloadApps={loadApps} />
+          )}
+          {route.name === 'settings' && (
+            <SettingsView initialSection={route.section} onError={onError} toast={toast} />
+          )}
+          {route.name === 'app' && (
+            <AppView
+              key={route.id}
+              appId={route.id}
+              initialBuild={pendingBuilds[route.id]}
+              chatDraft={chatDrafts[route.id]}
+              saveChatDraft={(draft) => setChatDrafts((p) => ({ ...p, [route.id]: draft }))}
+              consumeBuild={() =>
+                setPendingBuilds((p) => {
+                  const next = { ...p }
+                  delete next[route.id]
+                  return next
+                })
+              }
+              initialTab={route.tab}
+              onError={onError}
+              toast={toast}
+              goApps={() => {
+                setRoute({ name: 'apps' })
+                loadApps()
+              }}
+              goSettings={() => setRoute({ name: 'settings' })}
+              apps={apps}
+              onOpenApp={(id, tab) => goApp(id, tab)}
+            />
+          )}
+        </main>
       </div>
 
-      {paletteOpen && <Palette apps={apps} close={() => setPaletteOpen(false)} onGo={(r) => { setRoute(r); setPaletteOpen(false) }} />}
-      <Helper />
-      {settings && <VersionPill settings={settings} dismissed={updDismissed} onDismiss={dismissUpdate} upg={upg} startUpgrade={startUpgrade} clearUpgrade={() => setUpg(null)} />}
+      {paletteOpen && (
+        <Palette
+          apps={apps}
+          close={() => setPaletteOpen(false)}
+          onGo={(r) => {
+            setRoute(r)
+            setPaletteOpen(false)
+          }}
+        />
+      )}
 
       {/* TOASTS */}
       {toasts.length > 0 && (
-        <div style={{ position: 'fixed', bottom: 80, right: 20, zIndex: 99, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 80,
+            right: 20,
+            zIndex: 99,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
           {toasts.map((t) => (
-            <div key={t.id} style={{ background: c.ink, color: '#fff', borderRadius: 8, padding: '10px 16px', fontSize: 12.5, boxShadow: '0 8px 24px rgba(0,0,0,.18)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: '#4ade80' }}>✓</span>{t.msg}
+            <div
+              role="status"
+              key={t.id}
+              style={{
+                background: c.ink,
+                color: '#fff',
+                borderRadius: 8,
+                padding: '10px 16px',
+                fontSize: 12.5,
+                boxShadow: '0 8px 24px rgba(0,0,0,.18)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              {t.msg}
             </div>
           ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Short label + tagline per preset (cleaner than the API's full sentences).
-const PRESET_META: Record<string, { short: string; tag: string }> = {
-  'react-vite': { short: 'React', tag: 'Vite SPA · hot reload' },
-  nextjs: { short: 'Next.js', tag: 'App Router · SSR' },
-  'node-express': { short: 'Express', tag: 'Node REST API' },
-  fastapi: { short: 'FastAPI', tag: 'Python REST API' },
-  worker: { short: 'Worker', tag: 'Background · no preview' },
-}
-
-function AppsScreen({ apps, reload, onOpen, onError, goStore }: { apps: TApp[]; reload: () => void; onOpen: (id: string) => void; onError: (m: string) => void; goStore: () => void }) {
-  const [name, setName] = useState('')
-  const [starter, setStarter] = useState('')
-  const [preset, setPreset] = useState('')
-  const [presets, setPresets] = useState<Preset[]>([])
-  const [repo, setRepo] = useState('')
-  const [branch, setBranch] = useState('main')
-  const [credId, setCredId] = useState('')
-  const [creds, setCreds] = useState<GitCredential[]>([])
-  const [busy, setBusy] = useState(false)
-  const [sbInfo, setSbInfo] = useState<Record<string, { status: string; url?: string }>>({})
-  const [agents, setAgents] = useState<Agent[]>([])
-  // Progressive disclosure: the simple path (name → create) shows first; the
-  // power options (stack / git / starter) reveal only when asked for.
-  const [showStack, setShowStack] = useState(false)
-  const [showGit, setShowGit] = useState(false)
-  const [showStarter, setShowStarter] = useState(false)
-  const [creating, setCreating] = useState(false) // returning users open the form via "+ New app"
-
-  useEffect(() => {
-    api.listPresets().then(setPresets).catch(() => {})
-    api.listGitCredentials().then(setCreds).catch(() => {})
-    api.getAgents().then(setAgents).catch(() => {})
-  }, [])
-  useEffect(() => {
-    Promise.all(apps.filter((a) => a.current_sandbox_id).map(async (a) => {
-      try { const s = await api.getSandbox(a.current_sandbox_id as string); return [a.id, { status: s.status, url: s.preview?.url }] as const }
-      catch { return [a.id, { status: 'unknown' }] as const }
-    })).then((p) => setSbInfo(Object.fromEntries(p)))
-  }, [apps])
-
-  const create = async () => {
-    const useGit = showGit && !!repo.trim()
-    const pick = starter ? STARTERS.find((s) => s.id === starter) : undefined
-    // No forced naming: derive a sensible default (from the repo/starter, else a
-    // short slug) when the field is blank. Renameable anytime from the app header.
-    const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40)
-    const derived = useGit ? slug(repo.trim().replace(/\.git$/, '').split('/').pop() || '')
-      : pick ? slug(pick.id) : ''
-    const finalName = name.trim() || derived || `app-${Math.random().toString(36).slice(2, 6)}`
-    setBusy(true)
-    try {
-      const a = await api.createApp({
-        name: finalName,
-        runtime_preset: !useGit && !pick && preset ? preset : undefined, // no stack chosen → auto-detected
-        git: useGit ? { repo_url: repo.trim(), branch: branch.trim() || 'main', ...(credId ? { credential_id: credId } : {}) } // no credId → public tokenless clone
-          : pick ? { repo_url: `https://github.com/${pick.repo}`, branch: pick.branch } // public → tokenless
-          : undefined,
-      })
-      // Zero-friction: boot the sandbox right away so the app is ready to use.
-      // If it fails, the app view still offers a Create-sandbox retry.
-      try { await api.createAppSandbox(a.id, {}) } catch { /* app exists; retry from the app view */ }
-      setName(''); setRepo(''); setCreating(false); reload(); onOpen(a.id)
-    } catch (e) { onError((e as Error).message) } finally { setBusy(false) }
-  }
-
-  const secBtn = (label: string, active: boolean, onClick: () => void) => (
-    <div onClick={onClick} className="dc-hoverborder" style={{ padding: '7px 13px', fontSize: 12.5, borderRadius: 7, cursor: 'pointer', border: `1px solid ${active ? c.faint : c.border}`, color: active ? c.fg : c.muted, background: active ? c.panel2 : 'transparent' }}>{label}</div>
-  )
-
-  // Live overview — all real (no fabricated time-series/graphs). "asleep" = apps
-  // not currently serving (stopped/sleeping/no sandbox yet); they wake on request.
-  const runningApps = apps.filter((a) => sbInfo[a.id]?.status === 'running')
-  const otherApps = apps.filter((a) => sbInfo[a.id]?.status !== 'running')
-  const live = runningApps.length
-  const connected = agents.filter((a) => a.status === 'connected').length
-  const tiles: { n: string | number; label: string; tone: string; dot?: string }[] = [
-    { n: apps.length, label: 'apps', tone: c.fg },
-    { n: live, label: 'live', tone: c.good, dot: live ? c.good : undefined },
-    { n: Math.max(0, apps.length - live), label: 'asleep', tone: c.muted },
-    { n: `${connected}/${agents.length}`, label: 'agents', tone: connected ? c.fg : c.warn },
-  ]
-  const showForm = creating || apps.length === 0
-
-  return (
-    <div style={{ maxWidth: 920, margin: '0 auto', padding: '36px 40px 80px' }}>
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Apps</h1>
-      <p style={{ color: c.muted, margin: '0 0 18px', maxWidth: 580 }}>Each app runs isolated in its own sandbox with a live preview URL — an AI agent builds it, you own it. Idle apps sleep and wake on request.</p>
-
-      {/* At-a-glance overview: real, live counts pulled from the API. */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 26 }} data-testid="overview-stats">
-        {tiles.map((t) => (
-          <Card key={t.label} style={{ padding: '12px 16px', minWidth: 92, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <span style={{ fontFamily: font.display, fontSize: 26, fontWeight: 700, lineHeight: 1, color: t.tone }}>{t.n}</span>
-            <span style={{ ...mono, fontSize: 11, letterSpacing: '.04em', color: c.muted, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
-              {t.dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.dot }} />}
-              {t.label}
-            </span>
-          </Card>
-        ))}
-      </div>
-
-      {/* RUNNING NOW — the live app is the hero, not a tiny pill in the top bar. */}
-      {runningApps.length > 0 && (
-        <div style={{ marginBottom: 28 }} data-testid="running-now">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.good }} />
-            <span style={{ fontFamily: font.display, fontWeight: 700, fontSize: 14 }}>Running now</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 12 }}>
-            {runningApps.map((a) => {
-              const url = sbInfo[a.id]?.url
-              return (
-                <Card key={a.id} style={{ padding: 14, borderColor: c.good }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.good, flexShrink: 0 }} />
-                    <span style={{ ...mono, fontWeight: 500, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                    <span style={{ ...mono, fontSize: 10, color: c.good, letterSpacing: '.05em' }}>LIVE</span>
-                  </div>
-                  {url && <div style={{ ...mono, fontSize: 11, color: c.muted2, marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url.replace(/^https?:\/\//, '')}</div>}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Btn variant="primary" onClick={() => url ? window.open(url, '_blank') : onOpen(a.id)} style={{ padding: '7px 14px', fontSize: 12.5 }}>Open ↗</Btn>
-                    <Btn onClick={() => onOpen(a.id)} style={{ padding: '7px 12px', fontSize: 12.5 }}>Manage</Btn>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* CREATE — simple by default (name → create, stack auto-detected); the
-          power paths (stack / git / starter) reveal only on demand. */}
-      {showForm && (
-        <Card style={{ padding: 16, marginBottom: 28 }}>
-          {apps.length === 0 && <div style={{ fontFamily: font.display, fontWeight: 700, fontSize: 16, marginBottom: 10 }}>Build an app you own</div>}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-            <Input mono value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Describe or name your app…" style={{ flex: 1, fontSize: 13 }} data-testid="app-name" />
-            <Btn variant="primary" disabled={busy} onClick={create} style={{ padding: '9px 18px', fontSize: 13 }}>Create app</Btn>
-          </div>
-
-          {/* optional stack picker — hidden by default */}
-          <div onClick={() => setShowStack((v) => !v)} className="dc-hoverink" data-testid="stack-toggle" style={{ ...mono, fontSize: 12, color: c.muted, cursor: 'pointer', userSelect: 'none' }}>
-            {showStack ? '▾' : '▸'} Choose a stack <span style={{ color: c.muted2 }}>(optional — auto-detected by default)</span>
-          </div>
-          {showStack && (
-            <div data-testid="app-preset" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(158px,1fr))', gap: 10, marginTop: 12 }}>
-              {presets.map((p) => {
-                const meta = PRESET_META[p.id] || { short: p.label, tag: p.description }
-                const active = preset === p.id
-                return (
-                  <div key={p.id} data-testid={`preset-${p.id}`} onClick={() => setPreset(active ? '' : p.id)} className="dc-hoverborder"
-                    style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 8, padding: '13px 13px 12px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${active ? c.ink : c.border}`, background: active ? c.panel2 : c.panel, boxShadow: active ? `inset 0 0 0 1px ${c.ink}` : 'none' }}>
-                    {active && <span style={{ position: 'absolute', top: 9, right: 9, width: 16, height: 16, borderRadius: '50%', background: c.ink, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</span>}
-                    <span className="prov-ico" style={{ width: 26, height: 26 }} dangerouslySetInnerHTML={{ __html: PRESET_ICONS[p.id] || '' }} />
-                    <div>
-                      <div style={{ fontFamily: font.display, fontWeight: 600, fontSize: 13.5 }}>{meta.short}</div>
-                      <div style={{ color: c.muted2, fontSize: 11.5, lineHeight: 1.35, marginTop: 1 }}>{meta.tag}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* secondary paths — off to the side, not shoved up front */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: `1px solid ${c.border}` }}>
-            <span style={{ color: c.muted2, fontSize: 12, marginRight: 2 }}>or</span>
-            {secBtn('Import from Git', showGit, () => { setShowGit((v) => !v); setShowStarter(false) })}
-            {secBtn('Start from a starter', showStarter, () => { setShowStarter((v) => !v); setShowGit(false) })}
-            {secBtn('Browse App Store', false, goStore)}
-          </div>
-
-          {showGit && (
-            <>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <Input mono value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ flex: 1, minWidth: 220, fontSize: 12.5 }} data-testid="git-repo-url" />
-                <Input mono value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch" style={{ width: 120, fontSize: 12.5 }} data-testid="git-branch" />
-                <select value={credId} onChange={(e) => setCredId(e.target.value)} data-testid="git-cred" style={{ background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 10px', color: c.fg, fontSize: 12.5, fontFamily: font.sans }}>
-                  <option value="">Public repo — no credential</option>
-                  {creds.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </div>
-              {creds.length === 0 && (
-                <div style={{ marginTop: 8, fontSize: 12, color: c.muted }} data-testid="git-no-creds"><b>Public repos import with no credential.</b> For a <b>private</b> repo, add a personal access token in <b>Settings → Git credentials</b>.</div>
-              )}
-            </>
-          )}
-
-          {showStarter && (
-            <div data-testid="starter-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(212px,1fr))', gap: 10, marginTop: 12 }}>
-              {STARTERS.map((s) => {
-                const active = starter === s.id
-                return (
-                  <div key={s.id} data-testid={`starter-${s.id}`} onClick={() => setStarter(active ? '' : s.id)} className="dc-hoverborder"
-                    style={{ position: 'relative', display: 'flex', gap: 10, padding: '12px 13px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${active ? c.ink : c.border}`, background: active ? c.panel2 : c.panel, boxShadow: active ? `inset 0 0 0 1px ${c.ink}` : 'none' }}>
-                    {active && <span style={{ position: 'absolute', top: 8, right: 8, width: 15, height: 15, borderRadius: '50%', background: c.ink, color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</span>}
-                    <span className="prov-ico" style={{ width: 24, height: 24, flexShrink: 0, marginTop: 1 }} dangerouslySetInnerHTML={{ __html: STARTER_ICONS[s.tech] || '' }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontFamily: font.display, fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-                        {s.stars && <span style={{ ...mono, fontSize: 10, color: c.muted2, flexShrink: 0 }}>★{s.stars}</span>}
-                      </div>
-                      <div style={{ color: c.muted2, fontSize: 11, lineHeight: 1.35, marginTop: 2 }}>{s.blurb}</div>
-                      <div style={{ ...mono, fontSize: 10, color: c.faint, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.repo}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* YOUR APPS — the asleep/idle ones; running apps live in "Running now". */}
-      {apps.length > 0 && (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ fontFamily: font.display, fontWeight: 700, fontSize: 14 }}>Your apps</span>
-            <div style={{ flex: 1 }} />
-            <Btn variant="primary" onClick={() => setCreating((v) => !v)} style={{ padding: '7px 14px', fontSize: 12.5 }} data-testid="new-app-toggle">{creating ? 'Close' : '+ New app'}</Btn>
-          </div>
-          {otherApps.length === 0 ? (
-            <p style={{ color: c.muted2, fontSize: 13 }}>Every app is running — see “Running now” above.</p>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(270px,1fr))', gap: 14 }} data-testid="app-list">
-              {otherApps.map((a) => (
-                <Card key={a.id} style={{ padding: 16, cursor: 'pointer' }}>
-                  <div className="dc-hoverborder" onClick={() => onOpen(a.id)} data-testid="app-card">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ ...mono, fontWeight: 500, fontSize: 14 }}>{a.name}</span>
-                      <StatusPill status={a.current_sandbox_id ? sbInfo[a.id]?.status : undefined} />
-                    </div>
-                    <div style={{ color: c.muted, fontSize: 12.5, marginBottom: 12 }}>{a.description || a.id}</div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      {(a.tags || []).slice(0, 3).map((t) => (
-                        <span key={t} style={{ ...mono, fontSize: 10.5, color: c.muted, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 5, padding: '2px 7px' }}>{t}</span>
-                      ))}
-                      <span style={{ marginLeft: 'auto', color: c.link, fontSize: 12 }}>Open →</span>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -467,25 +498,38 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
 
   useEffect(() => {
     apps.forEach((a) => {
-      if (!a.current_sandbox_id) { setBrains((b) => ({ ...b, [a.id]: null })); return }
-      api.getAppBrain(a.current_sandbox_id)
+      if (!a.current_sandbox_id) {
+        setBrains((b) => ({ ...b, [a.id]: null }))
+        return
+      }
+      api
+        .getAppBrain(a.current_sandbox_id)
         .then((br) => setBrains((b) => ({ ...b, [a.id]: br })))
         .catch(() => setBrains((b) => ({ ...b, [a.id]: null })))
     })
   }, [apps])
 
-  const hasBrain = (id: string) => { const b = brains[id]; return !!b && (typeof b.hub === 'string' || Object.keys(b.spokes).length > 0) }
+  const hasBrain = (id: string) => {
+    const b = brains[id]
+    return !!b && (typeof b.hub === 'string' || Object.keys(b.spokes).length > 0)
+  }
   const withBrain = apps.filter((a) => hasBrain(a.id))
   const without = apps.filter((a) => brains[a.id] !== undefined && !hasBrain(a.id))
 
   return (
-    <div style={{ maxWidth: 920, margin: '0 auto', padding: '36px 40px 80px' }}>
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Brain</h1>
+    <div className="content-page">
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>
+        Project memory
+      </h1>
       <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 600 }}>
-        Every project's memory in one place — state, decisions, gotchas. Each app's <span style={{ ...mono, fontSize: 12 }}>BRAIN.md</span> is read by the agent before every task and updated as it learns.
+        Every project's memory in one place — state, decisions, gotchas. Each app's{' '}
+        <span style={{ ...mono, fontSize: 12 }}>BRAIN.md</span> is read by the agent before every task and
+        updated as it learns.
       </p>
 
-      {apps.length === 0 && <p style={{ color: c.muted2 }}>No apps yet — the brain fills in as you build.</p>}
+      {apps.length === 0 && (
+        <p style={{ color: c.muted2 }}>Your project notes and decisions will appear here as you build.</p>
+      )}
 
       {/* Knowledge graph: [[wikilinks]] between brains become edges; dashed
           nodes are ghosts (no brain yet, or a linked concept with no app). */}
@@ -498,21 +542,48 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
           <>
             <Card style={{ padding: '8px 10px', marginBottom: 22 }}>
               <BrainGraph nodes={g.nodes} edges={g.edges} onOpen={onOpen} />
-              <div style={{ ...mono, fontSize: 10.5, color: c.muted2, textAlign: 'center', paddingBottom: 6 }}>
-                Link projects &amp; concepts from any brain with [[name]] — dashed nodes have no note yet · err-* concepts flag repeat mistakes.
+              <div
+                style={{ ...mono, fontSize: 10.5, color: c.muted2, textAlign: 'center', paddingBottom: 6 }}
+              >
+                Link projects &amp; concepts from any brain with [[name]] — dashed nodes have no note yet ·
+                err-* concepts flag repeat mistakes.
               </div>
             </Card>
             {g.concepts.length > 0 && (
               <Card style={{ padding: 16, marginBottom: 22 }} data-testid="brain-concepts">
-                <div style={{ fontFamily: font.display, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Concepts without a note yet</div>
+                <div style={{ fontFamily: font.display, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                  Concepts without a note yet
+                </div>
                 <div style={{ color: c.muted2, fontSize: 12, marginBottom: 10 }}>
-                  Linked from your brains but written nowhere. A concept shared by several apps is knowledge worth a note — an <span style={{ ...mono, fontSize: 11 }}>err-*</span> concept shared by several apps is a <b style={{ color: c.fg2 }}>repeat mistake</b>.
+                  Linked from your brains but written nowhere. A concept shared by several apps is knowledge
+                  worth a note — an <span style={{ ...mono, fontSize: 11 }}>err-*</span> concept shared by
+                  several apps is a <b style={{ color: c.fg2 }}>repeat mistake</b>.
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {g.concepts.slice(0, 12).map((cs) => (
-                    <span key={cs.slug} title={`${cs.mentions} mention${cs.mentions > 1 ? 's' : ''} across ${cs.apps} app${cs.apps > 1 ? 's' : ''}`}
-                      style={{ ...mono, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, border: `1px dashed ${cs.isError ? c.warn : c.border2}`, borderRadius: 7, padding: '5px 11px', color: cs.isError ? c.warn : c.muted }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: cs.isError && cs.apps > 1 ? c.warn : c.muted2 }} />
+                    <span
+                      key={cs.slug}
+                      title={`${cs.mentions} mention${cs.mentions > 1 ? 's' : ''} across ${cs.apps} app${cs.apps > 1 ? 's' : ''}`}
+                      style={{
+                        ...mono,
+                        fontSize: 12,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        border: `1px dashed ${cs.isError ? c.warn : c.border2}`,
+                        borderRadius: 7,
+                        padding: '5px 11px',
+                        color: cs.isError ? c.warn : c.muted,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: cs.isError && cs.apps > 1 ? c.warn : c.muted2,
+                        }}
+                      />
                       [[{cs.label}]]
                       <span style={{ color: c.muted2, fontSize: 10.5 }}>{cs.apps}×</span>
                     </span>
@@ -524,7 +595,10 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
         )
       })()}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }} data-testid="brain-list">
+      <div
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}
+        data-testid="brain-list"
+      >
         {withBrain.map((a) => {
           const b = brains[a.id] as AppBrain
           const md = b.hub || ''
@@ -534,8 +608,23 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
             <Card key={a.id} style={{ padding: 16, cursor: 'pointer' }}>
               <div className="dc-hoverborder" onClick={() => onOpen(a.id)} data-testid="brain-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ ...mono, fontWeight: 500, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                  <span style={{ ...mono, fontSize: 10, color: c.muted2 }}>{md.split('\n').length} lines{spokeCount > 0 ? ` · ${spokeCount} note${spokeCount > 1 ? 's' : ''}` : ''}</span>
+                  <span
+                    style={{
+                      ...mono,
+                      fontWeight: 500,
+                      fontSize: 14,
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {a.name}
+                  </span>
+                  <span style={{ ...mono, fontSize: 10, color: c.muted2 }}>
+                    {md.split('\n').length} lines
+                    {spokeCount > 0 ? ` · ${spokeCount} note${spokeCount > 1 ? 's' : ''}` : ''}
+                  </span>
                 </div>
                 <div style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.5, minHeight: 38 }}>
                   {excerpt || <i style={{ color: c.muted2 }}>No current state written yet.</i>}
@@ -549,10 +638,35 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
 
       {without.length > 0 && (
         <div style={{ marginTop: 26 }}>
-          <div style={{ fontFamily: font.display, fontWeight: 700, fontSize: 13, color: c.muted, marginBottom: 10 }}>No brain yet</div>
+          <div
+            style={{
+              fontFamily: font.display,
+              fontWeight: 700,
+              fontSize: 13,
+              color: c.muted,
+              marginBottom: 10,
+            }}
+          >
+            No brain yet
+          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {without.map((a) => (
-              <span key={a.id} onClick={() => onOpen(a.id)} className="dc-hoverborder" style={{ ...mono, fontSize: 12, color: c.muted, border: `1px solid ${c.border}`, borderRadius: 7, padding: '5px 11px', cursor: 'pointer' }}>{a.name} +</span>
+              <span
+                key={a.id}
+                onClick={() => onOpen(a.id)}
+                className="dc-hoverborder"
+                style={{
+                  ...mono,
+                  fontSize: 12,
+                  color: c.muted,
+                  border: `1px solid ${c.border}`,
+                  borderRadius: 7,
+                  padding: '5px 11px',
+                  cursor: 'pointer',
+                }}
+              >
+                {a.name} +
+              </span>
             ))}
           </div>
         </div>
@@ -563,60 +677,55 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
 
 function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo: (r: Route) => void }) {
   const [q, setQ] = useState('')
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => { ref.current?.focus() }, [])
-  const items = useMemo(() => {
-    const cmds: { kind: string; label: string; go: Route }[] = [
-      { kind: 'go', label: 'Apps', go: { name: 'apps' } },
-      { kind: 'go', label: 'App Store', go: { name: 'store' } },
-      { kind: 'go', label: 'Settings', go: { name: 'settings' } },
-      ...apps.map((a) => ({ kind: 'app', label: a.name, go: { name: 'app', id: a.id } as Route })),
-    ]
-    const s = q.trim().toLowerCase()
-    return s ? cmds.filter((x) => x.label.toLowerCase().includes(s)) : cmds
-  }, [q, apps])
+  const [selected, setSelected] = useState(0)
+  const commands: { label: string; route: Route }[] = [
+    { label: 'Build a new project', route: { name: 'apps' } },
+    { label: 'Explore the app library', route: { name: 'store' } },
+    { label: 'Project memory', route: { name: 'brain' } },
+    { label: 'Model connections', route: { name: 'settings', section: 'models' } },
+    { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },
+    { label: 'Git credentials', route: { name: 'settings', section: 'git' } },
+    { label: 'Security & API keys', route: { name: 'settings', section: 'access' } },
+    ...apps.map((a) => ({ label: a.name, route: { name: 'app', id: a.id } as Route })),
+  ]
+  const items = commands.filter((c) => c.label.toLowerCase().includes(q.trim().toLowerCase()))
   return (
-    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(9,9,11,.32)', zIndex: 90, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '14vh' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 560, maxWidth: '90vw', background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,.18)', overflow: 'hidden' }}>
-        <input ref={ref} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps, commands…" style={{ width: '100%', border: 'none', borderBottom: `1px solid ${c.border}`, padding: '14px 16px', fontSize: 14, color: c.fg, outline: 'none', fontFamily: font.sans }} />
-        <div style={{ maxHeight: 320, overflowY: 'auto', padding: 6 }}>
-          {items.length === 0 ? (
-            <div style={{ padding: 16, textAlign: 'center', color: c.muted2, fontSize: 12.5 }}>No matching commands</div>
-          ) : items.map((it, i) => (
-            <div key={i} onClick={() => onGo(it.go)} className="dc-hoverborder" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 7, cursor: 'pointer', border: '1px solid transparent' }}>
-              <span style={{ ...mono, fontSize: 10.5, color: c.muted2, background: c.panel2, border: `1px solid ${c.border}`, borderRadius: 4, padding: '1px 6px', minWidth: 44, textAlign: 'center' }}>{it.kind}</span>
-              <span style={{ fontSize: 13 }}>{it.label}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 14, padding: '8px 14px', borderTop: `1px solid ${c.panel2}`, background: c.panel3, fontSize: 11, color: c.faint }}>
-          <span>↑↓ navigate</span><span>↵ run</span><span>esc close</span>
-        </div>
+    <Dialog title="Jump to…" close={close}>
+      <Input
+        autoFocus
+        aria-label="Search projects and commands"
+        placeholder="Search projects, settings, tools…"
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value)
+          setSelected(0)
+        }}
+        style={{ width: '100%' }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setSelected((i) => Math.min(i + 1, items.length - 1))
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setSelected((i) => Math.max(0, i - 1))
+          }
+          if (e.key === 'Enter' && items[selected]) {
+            e.preventDefault()
+            onGo(items[selected].route)
+          }
+        }}
+      />
+      <div className="command-list">
+        {items.map((c, i) => (
+          <button key={c.label} className={i === selected ? 'selected' : ''} onClick={() => onGo(c.route)}>
+            <Icon name={c.route.name === 'app' ? 'code' : 'arrow'} size={16} />
+            {c.label}
+          </button>
+        ))}
+        {items.length === 0 && <p role="status">No matching projects or commands.</p>}
       </div>
-    </div>
-  )
-}
-
-function Helper() {
-  const [open, setOpen] = useState(false)
-  if (!open) {
-    return (
-      <div onClick={() => setOpen(true)} title="Ask sandboxd" style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 80, width: 44, height: 44, borderRadius: '50%', background: c.ink, color: c.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 15, cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,.22)' }}>?</div>
-    )
-  }
-  return (
-    <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 81, width: 320, height: 380, background: c.panel, border: `1px solid ${c.border}`, borderRadius: 12, boxShadow: '0 16px 48px rgba(0,0,0,.2)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: `1px solid ${c.border}`, background: c.panel3, borderRadius: '12px 12px 0 0' }}>
-        <div style={{ width: 22, height: 22, borderRadius: 6, background: 'linear-gradient(135deg,#3f3f46,#18181b)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 10, color: c.bg }}>?</div>
-        <div>
-          <div style={{ fontFamily: font.display, fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>Ask sandboxd</div>
-          <div style={{ fontSize: 10.5, color: c.muted2, lineHeight: 1.2 }}>Platform-wide help</div>
-        </div>
-        <div onClick={() => setOpen(false)} className="dc-hoverink" style={{ marginLeft: 'auto', color: c.muted2, cursor: 'pointer', fontSize: 15, padding: '2px 6px', borderRadius: 5 }}>×</div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 12, color: c.muted2, fontSize: 12 }}>
-        Ask about sandboxes, agents, git, snapshots, networking. (Chat wiring coming in a later phase.)
-      </div>
-    </div>
+      <p className="field-help">↑ ↓ to choose · Enter to open · Esc to close</p>
+    </Dialog>
   )
 }

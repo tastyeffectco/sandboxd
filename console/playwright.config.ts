@@ -4,6 +4,7 @@ import { defineConfig } from '@playwright/test'
 // the stack up first:  docker compose --profile console up -d
 export default defineConfig({
   testDir: './e2e',
+  testMatch: 'console.spec.ts',
   timeout: 120_000,
   expect: { timeout: 10_000 },
   reporter: 'list',

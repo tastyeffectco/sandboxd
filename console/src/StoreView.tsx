@@ -4,28 +4,79 @@ import { CATALOG, CATEGORIES, CatalogRecipe, recipeManifest, recipeAgentsMd } fr
 import { c, font, Card, Btn, Input } from './design/kit'
 import { APP_ICONS } from './appIcons'
 
-const initials = (name: string) => name.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+const initials = (name: string) =>
+  name
+    .replace(/[^A-Za-z0-9 ]/g, '')
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 
 // Real project logo (curated open-source app icons served from /app-icons).
 // No owner avatars — apps without a real logo get a clean monogram, never a face.
 function AppLogo({ id, name }: { id: string; name: string }) {
   const [failed, setFailed] = useState(false)
   const src = APP_ICONS[id]
-  const box = { width: 30, height: 30, borderRadius: 8, border: `1px solid ${c.border}`, flexShrink: 0 } as const
+  const box = {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    border: `1px solid ${c.border}`,
+    flexShrink: 0,
+  } as const
   if (!src || failed) {
-    return <span style={{ ...box, background: c.panel2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font.mono, fontSize: 11, fontWeight: 600, color: c.muted }}>{initials(name)}</span>
+    return (
+      <span
+        style={{
+          ...box,
+          background: c.panel2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: font.mono,
+          fontSize: 11,
+          fontWeight: 600,
+          color: c.muted,
+        }}
+      >
+        {initials(name)}
+      </span>
+    )
   }
-  return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{ ...box, objectFit: 'contain', background: '#fff', padding: 2 }} />
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+      style={{ ...box, objectFit: 'contain', background: '#fff', padding: 2 }}
+    />
+  )
 }
 
-export function StoreView({ onError, toast, onOpen, reloadApps }: { onError: (m: string) => void; toast: (m: string) => void; onOpen: (id: string) => void; reloadApps: () => void }) {
+export function StoreView({
+  onError,
+  toast,
+  onOpen,
+  reloadApps,
+}: {
+  onError: (m: string) => void
+  toast: (m: string) => void
+  onOpen: (id: string) => void
+  reloadApps: () => void
+}) {
   const [cat, setCat] = useState<string>('all')
   const [q, setQ] = useState('')
   const [installing, setInstalling] = useState<string>('')
 
   const items = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return CATALOG.filter((r) => (cat === 'all' || r.category === cat) && (!s || r.name.toLowerCase().includes(s) || r.blurb.toLowerCase().includes(s)))
+    return CATALOG.filter(
+      (r) =>
+        (cat === 'all' || r.category === cat) &&
+        (!s || r.name.toLowerCase().includes(s) || r.blurb.toLowerCase().includes(s)),
+    )
   }, [cat, q])
 
   const install = async (r: CatalogRecipe) => {
@@ -42,30 +93,77 @@ export function StoreView({ onError, toast, onOpen, reloadApps }: { onError: (m:
       toast(`Installing ${r.name}…`)
       reloadApps()
       onOpen(app.id)
-    } catch (e) { onError((e as Error).message) } finally { setInstalling('') }
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setInstalling('')
+    }
   }
 
   return (
-    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '36px 40px 80px' }}>
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>App Store</h1>
-      <p style={{ color: c.muted, margin: '0 0 20px', maxWidth: 720 }}>One-click open-source apps, installed as ordinary sandboxd apps — each runs isolated in its own sandbox with a live preview URL. Recipes are data on top of the public API; the core engine is untouched.</p>
+    <div className="content-page library-page">
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>
+        App library
+      </h1>
+      <p style={{ color: c.muted, margin: '0 0 20px', maxWidth: 720 }}>
+        Make something useful your own. Explore open-source apps you can install, customize and run in your
+        workspace.
+      </p>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
         {CATEGORIES.map((k) => (
-          <div key={k.id} onClick={() => setCat(k.id)} className="dc-hoverborder" style={{ padding: '5px 12px', fontSize: 12.5, borderRadius: 7, cursor: 'pointer', border: `1px solid ${cat === k.id ? c.faint : c.border}`, color: cat === k.id ? c.fg : c.muted, background: cat === k.id ? c.panel2 : 'transparent' }}>{k.label}</div>
+          <button
+            key={k.id}
+            aria-pressed={cat === k.id}
+            onClick={() => setCat(k.id)}
+            className="dc-hoverborder"
+            style={{
+              padding: '5px 12px',
+              fontSize: 12.5,
+              borderRadius: 7,
+              cursor: 'pointer',
+              border: `1px solid ${cat === k.id ? c.faint : c.border}`,
+              color: cat === k.id ? c.fg : c.muted,
+              background: cat === k.id ? c.panel2 : 'transparent',
+            }}
+          >
+            {k.label}
+          </button>
         ))}
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps…" style={{ marginLeft: 'auto', width: 220, fontFamily: font.sans }} />
+        <Input
+          aria-label="Search app library"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search apps…"
+          style={{ marginLeft: 'auto', width: 220, fontFamily: font.sans }}
+        />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: 14 }}>
+      <div className="library-grid">
+        {items.length === 0 && (
+          <p role="status" className="empty-state">
+            No apps match your search. Try another category or keyword.
+          </p>
+        )}
         {items.map((r) => (
           <Card key={r.id} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <AppLogo id={r.id} name={r.name} />
               <span style={{ fontFamily: font.display, fontWeight: 600, fontSize: 14.5 }}>{r.name}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: c.muted2, textTransform: 'capitalize' }}>{r.category}</span>
+              <span
+                style={{ marginLeft: 'auto', fontSize: 11, color: c.muted2, textTransform: 'capitalize' }}
+              >
+                {r.category}
+              </span>
             </div>
             <div style={{ color: c.fg2, fontSize: 12.5, flex: 1 }}>{r.blurb}</div>
             {r.note && <div style={{ color: c.muted2, fontSize: 11.5 }}>{r.note}</div>}
-            <Btn variant="outline" disabled={!!installing} onClick={() => install(r)} style={{ border: `1px solid ${c.border2}`, background: c.panel2 }}>{installing === r.id ? 'Installing…' : 'Install'}</Btn>
+            <Btn
+              variant="outline"
+              disabled={!!installing}
+              onClick={() => install(r)}
+              style={{ border: `1px solid ${c.border2}`, background: c.panel2 }}
+            >
+              {installing === r.id ? 'Installing…' : 'Install'}
+            </Btn>
           </Card>
         ))}
       </div>

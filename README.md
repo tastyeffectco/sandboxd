@@ -102,6 +102,12 @@ gateways routing to AWS Bedrock. [Set up model connections →](docs/model-provi
 
 > **New here? Start with the console. Building a product? Drive the API.**
 
+The console starts with your idea: describe an app, choose a stack and agent,
+then work in a persistent conversation beside preview, code, terminal and Git.
+Settings groups model connections, coding-agent accounts, Git credentials and
+security controls. Workspace menus expose secrets, versions, memory and runtime
+tools. See the [console guide](console/README.md) for the complete workflow.
+
 ## What can you run? (a lot — from one console, no code)
 
 The console isn't only for coders. Open it and, in **one click or one prompt**, you can:

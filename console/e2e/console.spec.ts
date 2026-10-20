@@ -1,48 +1,62 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, Page } from '@playwright/test'
 
-// These drive the real console + sandboxd stack
-// (docker compose --profile console up). The lifecycle test creates a
-// sandbox, which builds + installs on first boot, so it is slow.
+// Opt-in live tests: point CONSOLE_URL at a disposable sandboxd test instance.
+// They create workspaces and run an agent; never point this suite at production.
+// Set CONSOLE_PASSWORD if the test instance requires an existing console login.
+let createdApp: string | undefined
 
-test('app list loads', async ({ page }) => {
+test.beforeEach(async ({ page }) => {
+  createdApp = undefined
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Apps' })).toBeVisible()
-  await expect(page.getByTestId('create-app')).toBeVisible()
+  await expect(page.getByTestId('build-prompt').or(page.getByTestId('login-password'))).toBeVisible()
+  if (await page.getByTestId('login-password').isVisible()) {
+    if (!process.env.CONSOLE_PASSWORD) throw new Error('Set CONSOLE_PASSWORD for this test instance')
+    await page.getByTestId('login-password').fill(process.env.CONSOLE_PASSWORD)
+    await page.getByTestId('login-submit').click()
+  }
+  await expect(page.getByTestId('build-prompt')).toBeVisible()
 })
 
-test('create app from the UI', async ({ page }) => {
-  await page.goto('/')
+test.afterEach(async ({ page }) => {
+  // Only remove the app created by this test, never pre-existing projects.
+  if (createdApp) expect((await page.request.delete(`/v1/apps/${createdApp}`)).ok()).toBe(true)
+})
+
+async function createBlank(page: Page) {
   const name = `e2e-${Date.now()}`
+  await page.getByRole('button', { name: 'Project options' }).click()
   await page.getByTestId('app-name').fill(name)
-  await page.getByTestId('create-app').click()
-  // Navigates to the new app's detail.
-  await expect(page.getByRole('heading', { name })).toBeVisible()
-  await expect(page.getByTestId('create-sandbox')).toBeVisible()
+  const created = page.waitForResponse(
+    (response) => response.url().endsWith('/v1/apps') && response.request().method() === 'POST',
+  )
+  await page.getByRole('button', { name: 'Blank project' }).click()
+  createdApp = (await (await created).json()).id
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+}
+
+test('prompt-first home loads', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: 'What do you want to build?' })).toBeVisible()
+  await expect(page.getByTestId('build-app')).toBeVisible()
 })
 
-test('full lifecycle: sandbox → preview → task → stop/start', async ({ page }) => {
-  test.slow()
-  await page.goto('/')
-  const name = `e2e-life-${Date.now()}`
-  await page.getByTestId('app-name').fill(name)
-  await page.getByTestId('create-app').click()
-  await expect(page.getByRole('heading', { name })).toBeVisible()
-
-  // Create the app's sandbox.
-  await page.getByTestId('create-sandbox').click()
-
-  // Preview iframe appears once the dev server is up (install + vite).
+test('create an app and workspace from the UI', async ({ page }) => {
+  await createBlank(page)
   await expect(page.getByTestId('preview')).toBeVisible({ timeout: 90_000 })
-  await expect(page.getByTestId('status')).toContainText('running')
+  await expect(page.getByTestId('task-prompt')).toBeVisible()
+})
 
-  // Submit a task and see a status badge appear (running → terminal).
-  await page.getByTestId('task-prompt').fill('say hello')
-  await page.getByTestId('run-task').click()
-  await expect(page.getByTestId('task-status')).toBeVisible({ timeout: 30_000 })
-
-  // Stop → state flips to stopped; Start brings it back.
-  await page.getByTestId('stop').click()
-  await expect(page.getByTestId('status')).toContainText('stopped', { timeout: 30_000 })
-  await page.getByTestId('start').click()
-  await expect(page.getByTestId('status')).toContainText('running', { timeout: 60_000 })
+test('full lifecycle: preview, task and stop/start', async ({ page }) => {
+  test.slow()
+  await createBlank(page)
+  await expect(page.getByTestId('preview')).toBeVisible({ timeout: 90_000 })
+  await page.getByTestId('task-prompt').fill('Reply hello without changing any files.')
+  await page.getByTestId('task-send').click()
+  await expect(page.locator('.task-status')).toBeVisible({ timeout: 120_000 })
+  await page.getByRole('button', { name: 'Project actions' }).click()
+  await page.getByRole('button', { name: 'Stop workspace', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Start workspace', exact: true })).toBeVisible({
+    timeout: 30_000,
+  })
+  await page.getByRole('button', { name: 'Start workspace', exact: true }).click()
+  await expect(page.getByTestId('preview')).toBeVisible({ timeout: 60_000 })
 })

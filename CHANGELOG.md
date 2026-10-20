@@ -10,6 +10,14 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ### Added
 
+- Rework the console around prompt-first app creation, stack and model selection,
+  and a persistent coding conversation beside preview, code, terminal and Git.
+  Add responsive navigation, searchable commands, workspace versions and grouped
+  settings for model connections, agent accounts, Git credentials and security.
+- Add guided credential dialogs, explicit secret rotation, draft preservation and
+  unsaved-edit warnings. Retain the app library, project memory, process controls
+  and activity; make preview sharing and deployment limits explicit.
+
 - Configurable OpenAI-compatible and Anthropic-compatible model connections,
   usable by OpenCode and the new Pi agent. Manage URLs, keys, exact model aliases
   and token limits in Settings; select the agent, connection and model per task.

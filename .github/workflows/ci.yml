@@ -125,7 +125,7 @@ jobs:
         run: pnpm test
       - name: browser setup
         run: pnpm exec playwright install --with-deps chromium
-      - name: model connection browser tests
+      - name: builder and model connection browser tests
         run: pnpm exec playwright test --config playwright.providers.config.ts
       - name: build
         run: pnpm build

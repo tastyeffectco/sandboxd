@@ -2,10 +2,23 @@ import { CSSProperties, ReactNode } from 'react'
 
 // Exact palette from the design.
 export const c = {
-  bg: '#fafafa', panel: '#ffffff', panel2: '#f4f4f5', panel3: '#fcfcfc',
-  fg: '#09090b', fg2: '#3f3f46', muted: '#52525b', muted2: '#71717a', faint: '#a1a1aa',
-  border: '#e4e4e7', border2: '#d4d4d8', ink: '#18181b', ink2: '#3f3f46', link: '#171717',
-  good: '#15803d', warn: '#b45309', bad: '#dc2626',
+  bg: '#f8f9f7',
+  panel: '#ffffff',
+  panel2: '#f1f3ef',
+  panel3: '#fcfcfc',
+  fg: '#09090b',
+  fg2: '#3f3f46',
+  muted: '#52525b',
+  muted2: '#71717a',
+  faint: '#a1a1aa',
+  border: '#e4e4e7',
+  border2: '#d4d4d8',
+  ink: '#183d32',
+  ink2: '#3f3f46',
+  link: '#22634f',
+  good: '#15803d',
+  warn: '#b45309',
+  bad: '#dc2626',
 }
 export const font = {
   sans: "'IBM Plex Sans',system-ui,sans-serif",
@@ -14,26 +27,68 @@ export const font = {
 }
 export const mono: CSSProperties = { fontFamily: font.mono }
 
-export function Card({ children, style, pad, onClick }: { children: ReactNode; style?: CSSProperties; pad?: number | boolean; onClick?: (e: React.MouseEvent) => void }) {
+export function Card({
+  children,
+  style,
+  pad,
+  onClick,
+  ...rest
+}: React.HTMLAttributes<HTMLDivElement> & { pad?: number | boolean }) {
   return (
-    <div onClick={onClick} style={{ background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, ...(pad ? { padding: pad === true ? 16 : pad } : {}), ...style }}>
+    <div
+      {...rest}
+      onClick={onClick}
+      style={{
+        background: c.panel,
+        border: `1px solid ${c.border}`,
+        borderRadius: 10,
+        ...(pad ? { padding: pad === true ? 16 : pad } : {}),
+        ...style,
+      }}
+    >
       {children}
     </div>
   )
 }
 
-export function H({ children, size = 15, style }: { children: ReactNode; size?: number; style?: CSSProperties }) {
+export function H({
+  children,
+  size = 15,
+  style,
+}: {
+  children: ReactNode
+  size?: number
+  style?: CSSProperties
+}) {
   return <div style={{ fontFamily: font.display, fontSize: size, fontWeight: 600, ...style }}>{children}</div>
 }
 
 type BtnVariant = 'primary' | 'outline' | 'ghost' | 'danger'
 export function Btn({
-  children, onClick, variant = 'outline', disabled, title, style, sm, type,
-}: { children: ReactNode; onClick?: () => void; variant?: BtnVariant; disabled?: boolean; title?: string; style?: CSSProperties; sm?: boolean; type?: 'button' | 'submit' | 'reset' }) {
+  children,
+  onClick,
+  variant = 'outline',
+  disabled,
+  title,
+  style,
+  sm,
+  type = 'button',
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; sm?: boolean }) {
   const base: CSSProperties = {
-    borderRadius: 7, fontSize: sm ? 12 : 12.5, fontFamily: font.sans, fontWeight: 500,
-    padding: sm ? '5px 12px' : '7px 14px', cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.55 : 1, whiteSpace: 'nowrap',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 9,
+    minHeight: sm ? 30 : 36,
+    fontSize: sm ? 12 : 13,
+    fontFamily: font.sans,
+    fontWeight: 500,
+    padding: sm ? '5px 12px' : '7px 14px',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1,
+    whiteSpace: 'nowrap',
   }
   const v: Record<BtnVariant, CSSProperties> = {
     primary: { background: c.ink, color: '#fff', fontWeight: 600, border: 'none' },
@@ -42,7 +97,15 @@ export function Btn({
     danger: { background: 'transparent', border: '1px solid rgba(220,38,38,.3)', color: c.bad },
   }
   return (
-    <button type={type} title={title} disabled={disabled} onClick={onClick} className="dc-hoverborder" style={{ ...base, ...v[variant], ...style }}>
+    <button
+      {...rest}
+      type={type}
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="dc-hoverborder"
+      style={{ ...base, ...v[variant], ...style }}
+    >
       {children}
     </button>
   )
@@ -50,13 +113,31 @@ export function Btn({
 
 type Tone = 'good' | 'warn' | 'bad' | 'neutral'
 const toneColor: Record<Tone, string> = { good: c.good, warn: c.warn, bad: c.bad, neutral: c.muted2 }
-export function Pill({ tone = 'neutral', dot, children }: { tone?: Tone; dot?: boolean; children: ReactNode }) {
+export function Pill({
+  tone = 'neutral',
+  dot,
+  children,
+}: {
+  tone?: Tone
+  dot?: boolean
+  children: ReactNode
+}) {
   const col = toneColor[tone]
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: font.mono, fontSize: 10.5,
-      color: col, background: `${col}14`, border: `1px solid ${col}40`, borderRadius: 5, padding: '1px 8px',
-    }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontFamily: font.mono,
+        fontSize: 10.5,
+        color: col,
+        background: `${col}14`,
+        border: `1px solid ${col}40`,
+        borderRadius: 5,
+        padding: '1px 8px',
+      }}
+    >
       {dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: col }} />}
       {children}
     </span>
@@ -72,7 +153,11 @@ export function statusTone(status?: string): Tone {
 }
 export function StatusPill({ status }: { status?: string }) {
   const s = status || 'no sandbox'
-  return <Pill tone={statusTone(status)} dot>{s}</Pill>
+  return (
+    <Pill tone={statusTone(status)} dot>
+      {s}
+    </Pill>
+  )
 }
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }) {
@@ -81,8 +166,14 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement> & { mon
     <input
       {...rest}
       style={{
-        background: c.bg, border: `1px solid ${c.border2}`, borderRadius: 7, padding: '8px 11px',
-        color: c.fg, fontSize: 12.5, fontFamily: m ? font.mono : font.sans, ...style,
+        background: c.bg,
+        border: `1px solid ${c.border2}`,
+        borderRadius: 7,
+        padding: '8px 11px',
+        color: c.fg,
+        fontSize: 12.5,
+        fontFamily: m ? font.mono : font.sans,
+        ...style,
       }}
     />
   )
@@ -90,11 +181,22 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement> & { mon
 
 export function tab(active: boolean): CSSProperties {
   return {
-    padding: '8px 12px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+    padding: '8px 12px',
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
     color: active ? c.fg : c.muted2,
-    borderBottom: `2px solid ${active ? c.fg : 'transparent'}`, marginBottom: -1,
+    borderBottom: `2px solid ${active ? c.fg : 'transparent'}`,
+    marginBottom: -1,
   }
 }
 export function navItem(active: boolean): CSSProperties {
-  return { padding: '5px 10px', fontSize: 12.5, cursor: 'pointer', borderRadius: 6, color: active ? c.fg : c.muted, background: active ? c.panel2 : 'transparent' }
+  return {
+    padding: '5px 10px',
+    fontSize: 12.5,
+    cursor: 'pointer',
+    borderRadius: 6,
+    color: active ? c.fg : c.muted,
+    background: active ? c.panel2 : 'transparent',
+  }
 }

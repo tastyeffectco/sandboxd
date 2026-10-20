@@ -530,6 +530,8 @@ export const api = {
     }),
   getTask: (id: string, taskId: string) =>
     req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
+  cancelTask: (id: string, taskId: string) =>
+    req<{ status: string }>('POST', `/v1/sandboxes/${id}/tasks/${taskId}/cancel`),
   // Task history (newest first) + revert-to-checkpoint.
   listTasks: (id: string) =>
     req<{ tasks: TaskSummary[] }>('GET', `/v1/sandboxes/${id}/tasks`).then((r) => r.tasks || []),
