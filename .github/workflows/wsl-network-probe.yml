@@ -1,0 +1,19 @@
+name: wsl-network-probe
+on:
+  push:
+    branches: [feat/desktop-windows-engine-setup]
+    paths: ['.github/workflows/wsl-network-probe.yml', '.github/scripts/wsl-network-probe.cjs']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node .github/scripts/wsl-network-probe.cjs
