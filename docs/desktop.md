@@ -155,7 +155,9 @@ do not apply npm's suggested tooling downgrade blindly.
 ## Maintainer release procedure
 
 The `desktop` workflow builds and launches native clients on macOS ARM64/x64 and
-Windows ARM64/x64, with API-boundary tests and installer policy checks. Review its
+Windows ARM64/x64, with API-boundary tests and installer policy checks. It also
+installs the generated NSIS package / extracts the Mac ZIP into a disposable
+runner directory and launches that installed app, verifying its fuses and archive. Review its
 screenshots and unsigned build artifacts before releasing.
 
 Configure the `desktop-release` GitHub environment with:

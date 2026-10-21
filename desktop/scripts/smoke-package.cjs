@@ -17,7 +17,7 @@ async function main() {
       : process.platform === 'win32'
         ? [`win${process.arch === 'arm64' ? '-arm64' : ''}-unpacked/sandboxd.exe`]
         : [`linux${process.arch === 'arm64' ? '-arm64' : ''}-unpacked/sandboxd-desktop`]
-  const executable = path.join(output, candidates[0])
+  const executable = process.env.SANDBOXD_PACKAGE_EXECUTABLE || path.join(output, candidates[0])
   await fs.access(executable)
   const fuses = await getCurrentFuseWire(executable)
   for (const name of [

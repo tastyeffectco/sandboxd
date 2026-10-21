@@ -72,6 +72,9 @@ jobs:
           Get-ChildItem desktop/release/*.exe | ForEach-Object {
             if ((Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid') { throw "Invalid signature: $($_.Name)" }
           }
+      - name: Install and launch the signed package
+        run: |
+          node desktop/scripts/install-review.cjs
       - run: npm --prefix desktop run smoke:package
       - uses: actions/upload-artifact@v7
         with:

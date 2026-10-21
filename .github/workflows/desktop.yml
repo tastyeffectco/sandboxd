@@ -58,7 +58,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm --prefix desktop run dist -- --${{ matrix.os }} --${{ matrix.arch }}
-      - name: Launch packaged app with security fuses enabled
+      - name: Install the native review package on this disposable runner
+        run: node desktop/scripts/install-review.cjs
+      - name: Launch installed app with security fuses enabled
         run: npm --prefix desktop run smoke:package
       - uses: actions/upload-artifact@v7
         if: always()
