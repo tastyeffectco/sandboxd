@@ -52,6 +52,13 @@ export default function DesktopHost() {
     const timer = setInterval(() => void probe(), 15000)
     return () => clearInterval(timer)
   }, [state?.selected, probe])
+  useEffect(() => {
+    if (state?.selected === local.url && state.localEngine?.phase === 'ready') {
+      // AuthGate may have loaded while WSL was starting after a Windows reboot.
+      setRevision((value) => value + 1)
+      setOnline(true)
+    }
+  }, [state?.selected, state?.localEngine?.phase])
   const selected = state?.connections.find((c) => c.url === state.selected)
   const connected = (next: DesktopState) => {
     setError('')
