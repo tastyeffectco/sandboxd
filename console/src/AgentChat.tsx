@@ -214,7 +214,14 @@ export function AgentChat({
         </span>
         <div>
           <strong>
-            Build with {choice.agent === 'opencode' ? 'OpenCode' : choice.agent === 'pi' ? 'Pi' : 'Claude'}
+            Build with{' '}
+            {choice.agent === 'opencode'
+              ? 'OpenCode'
+              : choice.agent === 'pi'
+                ? 'Pi'
+                : choice.agent === 'codex'
+                  ? 'Codex'
+                  : 'Claude'}
           </strong>
           <span>{active ? 'Working on your app' : 'Your coding partner'}</span>
         </div>

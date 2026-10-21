@@ -117,7 +117,7 @@ ARG OPENCODE_VERSION=1.19.3
 ARG PI_VERSION=1.3.0
 # Pi requires Node >=22.19.0; the NodeSource 22.x install above supplies it.
 RUN node -e 'const [a,b]=process.versions.node.split(".").map(Number); if(a<22||(a===22&&b<19)) process.exit(1)' \
- && npm install -g opencode-ai@${OPENCODE_VERSION} @earendil-works/pi-coding-agent@${PI_VERSION} @openai/codex@0.142.5 \
+ && npm install -g opencode-ai@${OPENCODE_VERSION} @earendil-works/pi-coding-agent@${PI_VERSION} @openai/codex@0.162.1 \
  && test "$(opencode --version)" = "${OPENCODE_VERSION}" \
  && test "$(pi --version)" = "${PI_VERSION}" \
  && curl -fsSL https://claude.ai/install.sh | bash \

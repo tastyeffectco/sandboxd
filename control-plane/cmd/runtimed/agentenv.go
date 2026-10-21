@@ -40,9 +40,8 @@ func agentEnv(agentName string, specEnv map[string]string) []string {
 			overlay["ANTHROPIC_API_KEY"] = dummyKey
 			overlay["OPENAI_API_KEY"] = dummyKey
 		case "codex":
-			// codex is parked (its ChatGPT-subscription auth can't be proxied yet);
-			// the API-key path would set model_providers.openai.base_url in the
-			// adapter. No env credential either way.
+			// The Codex adapter configures the Responses proxy through CLI
+			// provider settings; no local API key or subscription token is needed.
 		}
 	}
 	return buildAgentEnv(os.Environ(), overlay)

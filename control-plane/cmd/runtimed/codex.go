@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,7 +37,10 @@ type codexEvent struct {
 	Type     string `json:"type"`      // thread.started | turn.started | item.completed | turn.completed | error
 	ThreadID string `json:"thread_id"` // on thread.started
 	Message  string `json:"message"`   // on top-level {"type":"error"}
-	Item     *struct {
+	Error    *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Item *struct {
 		ID      string `json:"id"`
 		Type    string `json:"type"` // agent_message | reasoning | command_execution | file_change | error
 		Text    string `json:"text"`
@@ -59,6 +63,8 @@ type codexParseResult struct {
 	SawText      bool
 	SawTool      bool
 	ErrMsg       string // last top-level error; only fatal if no text was produced
+	Failed       bool   // turn.failed is terminal even after partial text or tools
+	StreamError  bool   // stop a child that may still be writing after a scanner failure
 }
 
 // parseCodexStream consumes `codex exec --json` NDJSON, dispatches canonical
@@ -75,6 +81,12 @@ func parseCodexStream(r io.Reader, emit eventSink) codexParseResult {
 			continue // best-effort: skip lines we can't parse
 		}
 		switch ev.Type {
+		case "turn.failed":
+			pr.Failed = true
+			pr.ErrMsg = "Codex turn failed"
+			if ev.Error != nil && ev.Error.Message != "" {
+				pr.ErrMsg = ev.Error.Message
+			}
 		case "thread.started":
 			if ev.ThreadID != "" {
 				emit(runtime.EventStatus, map[string]any{"phase": "session", "thread_id": ev.ThreadID})
@@ -113,11 +125,16 @@ func parseCodexStream(r io.Reader, emit eventSink) codexParseResult {
 			}
 		case "turn.completed":
 			if ev.Usage != nil {
-				pr.Usage.Input += ev.Usage.InputTokens
+				pr.Usage.Input += max(0, ev.Usage.InputTokens-ev.Usage.CachedInputTokens)
 				pr.Usage.Output += ev.Usage.OutputTokens
 				pr.Usage.CacheRead += ev.Usage.CachedInputTokens
 			}
 		}
+	}
+	if err := sc.Err(); err != nil {
+		pr.Failed = true
+		pr.ErrMsg = "read Codex events: " + err.Error()
+		pr.StreamError = true
 	}
 	pr.Usage.Total = pr.Usage.Input + pr.Usage.Output + pr.Usage.CacheRead
 	pr.FinalMessage = b.String()
@@ -146,8 +163,18 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 
 	args := []string{"exec", "--json", "--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox", "-C", spec.workDir, "-o", outPath}
-	// Model applies to a fresh session; a resumed session keeps its recorded model.
-	if spec.model != "" && !spec.cont {
+	if proxy := strings.TrimRight(os.Getenv("RUNTIMED_ANTHROPIC_PROXY"), "/"); proxy != "" {
+		args = append(args,
+			"-c", `model_provider="sandboxd"`,
+			"-c", `model_providers.sandboxd.name="sandboxd"`,
+			"-c", "model_providers.sandboxd.base_url="+strconv.Quote(proxy+"/codex/openai"),
+			"-c", `model_providers.sandboxd.wire_api="responses"`,
+			"-c", `model_providers.sandboxd.requires_openai_auth=false`,
+			"-c", `model_providers.sandboxd.supports_websockets=false`,
+		)
+	}
+	// Honor the selected model for continuation too.
+	if spec.model != "" {
 		args = append(args, "-m", spec.model)
 	}
 	if spec.cont {
@@ -163,10 +190,16 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 
 	cmd := exec.Command("codex", args...)
 	cmd.Dir = spec.workDir
-	// Scrub secret-shaped env, point HOME at the mounted codex auth dir
-	// (/run/agent-auth/codex → $CODEX_HOME defaults to $HOME/.codex), and inject
-	// OPENAI_API_KEY when the provider was connected by API key.
+	// Scrub inherited secrets and keep proxy-mode conversation state separate
+	// for each model. Subscription credentials stay in the control plane.
 	cmd.Env = agentEnv(c.name(), spec.env)
+	if os.Getenv("RUNTIMED_ANTHROPIC_PROXY") != "" {
+		dir := connectionSessionDir(spec, c.name())
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return "", usage, err
+		}
+		cmd.Env = append(cmd.Env, "CODEX_HOME="+dir)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	stdout, err := cmd.StdoutPipe()
@@ -206,6 +239,9 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 	}()
 
 	pr := parseCodexStream(stdout, emit)
+	if pr.StreamError {
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	}
 	waitErr := cmd.Wait()
 	<-stderrDone
 
@@ -222,6 +258,8 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 	switch {
 	case ctx.Err() != nil:
 		return final, usage, nil
+	case pr.Failed:
+		return final, usage, fmt.Errorf("codex: %s", pr.ErrMsg)
 	case !pr.SawText && pr.ErrMsg != "":
 		return final, usage, fmt.Errorf("codex: %s", pr.ErrMsg)
 	case waitErr != nil:

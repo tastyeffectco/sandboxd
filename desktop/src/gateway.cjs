@@ -228,6 +228,29 @@ async function createGateway({ uiRoot, engine = '', session = '', onSession = ()
       current = next
       engineSession = session
     },
+    // Main-process-only import: credentials never pass through renderer IPC.
+    async importAgentLogin(agent, credentials, expectedEngine) {
+      if (current !== expectedEngine || !current) throw new Error('Engine changed. Retry the import.')
+      if (!['claude-code', 'codex', 'opencode', 'pi'].includes(agent))
+        throw new Error('Unsupported coding agent.')
+      const target = new URL(current)
+      if (target.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname))
+        throw new Error('Use HTTPS before sending an account login to a remote engine.')
+      const response = await fetch(current + '/v1/agents/' + agent + '/import', {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(20000),
+        headers: {
+          'content-type': 'application/json',
+          origin: current,
+          ...(engineSession ? { cookie: `sbx_session=${engineSession}` } : {}),
+        },
+        body: JSON.stringify({ credentials }),
+      })
+      await response.body?.cancel()
+      if (!response.ok)
+        throw new Error(`Could not import login (HTTP ${response.status}). Sign in to the engine and retry.`)
+    },
     async close() {
       for (const stream of streams) stream.destroy()
       for (const socket of sockets) socket.destroy()

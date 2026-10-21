@@ -62,7 +62,7 @@ func NewOAuth(store *Store) *OAuth {
 	if store == nil {
 		return nil
 	}
-	return &OAuth{store: store, hc: &http.Client{Timeout: 30 * time.Second}, pending: map[string]pending{}}
+	return &OAuth{store: store, hc: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, pending: map[string]pending{}}
 }
 
 // claudeCred is the on-disk credential shape the CLI (and our proxy) read.
@@ -155,9 +155,22 @@ func (o *OAuth) Finish(pasted string) error {
 // Refresh renews the stored token when it is within skew of expiry, using the
 // stored refresh token. No-op when absent or still fresh. Safe to call often.
 func (o *OAuth) Refresh() error {
-	cur, err := o.read()
-	if err != nil || cur.RefreshToken == "" {
-		return err
+	o.store.refreshMu.Lock()
+	defer o.store.refreshMu.Unlock()
+	before, readErr := os.ReadFile(o.credPath())
+	if readErr != nil {
+		return readErr
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(before, &document); err != nil {
+		return errors.New("invalid Claude login; reconnect")
+	}
+	var cur claudeCred
+	if err := json.Unmarshal(document["claudeAiOauth"], &cur); err != nil {
+		return errors.New("invalid Claude login; reconnect")
+	}
+	if cur.RefreshToken == "" {
+		return nil
 	}
 	if cur.ExpiresAt != 0 && time.Now().Add(15*time.Minute).UnixMilli() < cur.ExpiresAt {
 		return nil // still fresh
@@ -177,7 +190,20 @@ func (o *OAuth) Refresh() error {
 	if cred.SubscriptionType == "" {
 		cred.SubscriptionType = cur.SubscriptionType
 	}
-	return o.write(cred)
+	if len(cred.Scopes) == 0 {
+		cred.Scopes = cur.Scopes
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(document["claudeAiOauth"], &fields)
+	encoded, _ := json.Marshal(cred)
+	var refreshed map[string]json.RawMessage
+	_ = json.Unmarshal(encoded, &refreshed)
+	for key, value := range refreshed {
+		fields[key] = value
+	}
+	document["claudeAiOauth"], _ = json.Marshal(fields)
+	after, _ := json.Marshal(document)
+	return o.store.replaceCredential("claude-code", claudeCredRel, before, after)
 }
 
 // exchange POSTs to the token endpoint and normalizes the response.
@@ -193,7 +219,7 @@ func (o *OAuth) exchange(body map[string]string) (claudeCred, error) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode/100 != 2 {
-		return claudeCred{}, fmt.Errorf("token endpoint %d: %s", resp.StatusCode, snippet(raw))
+		return claudeCred{}, fmt.Errorf("subscription token refresh or exchange failed (HTTP %d); reconnect Claude Code", resp.StatusCode)
 	}
 	var tr struct {
 		AccessToken  string `json:"access_token"`

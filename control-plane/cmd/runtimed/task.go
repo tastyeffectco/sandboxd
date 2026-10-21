@@ -251,10 +251,26 @@ func (a *app) runTask(t *task) {
 	sysPrompt := agentprompt.Render(agentprompt.Vars{
 		AppDir: a.appDir, Port: a.previewPort, HealthPath: a.webHealthPath,
 	})
+	sawConversation := false
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
 		workDir: a.appDir, stateDir: a.runtimeDir, prompt: t.prompt, model: t.model, provider: t.provider, env: t.env, rawLog: rl,
-		systemPrompt: sysPrompt, cont: t.cont,
-	}, t.emit)
+		systemPrompt: sysPrompt, cont: canContinue(a.runtimeDir, t),
+	}, func(kind string, payload any) {
+		if kind == runtime.EventTool {
+			sawConversation = true
+		}
+		if kind == runtime.EventMessage {
+			if message, ok := payload.(map[string]any); ok && message["role"] == "agent" {
+				sawConversation = true
+			}
+		}
+		t.emit(kind, payload)
+	})
+	if sawConversation {
+		if err := rememberSession(a.runtimeDir, t); err != nil {
+			a.log.Warn("could not remember agent session", "err", err.Error())
+		}
+	}
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage
 

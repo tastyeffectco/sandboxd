@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,11 @@ import (
 
 func connectionSessionDir(spec agentSpec, agent string) string {
 	// Keep continuation within this workspace, agent, connection and model.
-	sum := sha256.Sum256([]byte(spec.provider.ID + "\x00" + spec.provider.Model.ID))
+	providerID, model := "builtin", spec.model
+	if spec.provider != nil {
+		providerID, model = spec.provider.ID, spec.provider.Model.ID
+	}
+	sum := sha256.Sum256([]byte(providerID + "\x00" + model))
 	root := spec.stateDir
 	if root == "" {
 		root = filepath.Join(spec.workDir, ".runtimed")
@@ -30,6 +35,8 @@ func writeOpencodeConnection(c *modelconfig.Connection) (string, string, error) 
 	npm := "@ai-sdk/openai-compatible"
 	switch c.Protocol {
 	case "openai-completions":
+	case "openai-responses", "openai-codex-responses":
+		npm = "@ai-sdk/openai"
 	case "anthropic-messages":
 		npm = "@ai-sdk/anthropic"
 	default:
@@ -43,7 +50,7 @@ func writeOpencodeConnection(c *modelconfig.Connection) (string, string, error) 
 				"npm": npm, "name": "sandboxd",
 				"options": map[string]any{"baseURL": base, "apiKey": c.Token},
 				"models": map[string]any{id: map[string]any{
-					"name": id, "limit": map[string]int{"context": c.Model.ContextWindow, "output": c.Model.MaxTokens},
+					"name": id, "options": map[string]any{"store": false}, "limit": map[string]int{"context": c.Model.ContextWindow, "output": c.Model.MaxTokens},
 				}},
 			},
 		},
@@ -65,7 +72,7 @@ func writePiConnection(c *modelconfig.Connection) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if c.Protocol != "openai-completions" && c.Protocol != "anthropic-messages" {
+	if c.Protocol != "openai-completions" && c.Protocol != "anthropic-messages" && c.Protocol != "openai-responses" && c.Protocol != "openai-codex-responses" {
 		return "", fmt.Errorf("unsupported model protocol %q", c.Protocol)
 	}
 	dir, err := os.MkdirTemp("", "sandboxd-pi-")
@@ -77,9 +84,17 @@ func writePiConnection(c *modelconfig.Connection) (string, error) {
 	if c.Protocol == "anthropic-messages" {
 		base = strings.TrimSuffix(base, "/v1")
 	}
+	token := c.Token
+	if c.Protocol == "openai-codex-responses" {
+		// Pi's transport requires an account-shaped placeholder locally. This is
+		// deliberately unsigned and carries no real identity or authorization;
+		// the proxy replaces both it and the account header on the wire.
+		claims := `{"https://api.openai.com/auth":{"chatgpt_account_id":"sandboxd-proxy"}}`
+		token = "e30." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".sandboxd"
+	}
 	cfg := map[string]any{"providers": map[string]any{
 		"sandboxd": map[string]any{
-			"baseUrl": base, "api": c.Protocol, "apiKey": c.Token,
+			"baseUrl": base, "api": c.Protocol, "apiKey": token,
 			"models": []map[string]any{{
 				"id": c.Model.ID, "name": c.Model.ID, "reasoning": false, "input": []string{"text"},
 				"contextWindow": c.Model.ContextWindow, "maxTokens": c.Model.MaxTokens,
@@ -92,6 +107,10 @@ func writePiConnection(c *modelconfig.Connection) (string, error) {
 		err = os.WriteFile(filepath.Join(dir, "models.json"), raw, 0o600)
 	}
 	if err != nil {
+		os.RemoveAll(dir)
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"transport":"sse"}`), 0600); err != nil {
 		os.RemoveAll(dir)
 		return "", err
 	}
