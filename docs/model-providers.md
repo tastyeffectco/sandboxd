@@ -174,3 +174,15 @@ the real model and agent tools.
 Browser workflow checks run with
 `cd console && pnpm exec playwright test --config playwright.providers.config.ts`.
 They use API fixtures; API and real-agent integration are tested separately.
+
+### LiteLLM with a Codex subscription
+
+In live verification with LiteLLM 1.106.0's `chatgpt` provider, OpenCode and Pi
+both completed file-editing tasks through the OpenAI-compatible connection.
+The same gateway's Anthropic-compatible route failed upstream with
+`System messages are not allowed`, including with
+`use_chat_completions_url_for_anthropic_messages: true`. This is a gateway
+translation limitation for that backend; it is not evidence that every
+Anthropic-compatible endpoint fails. Use the OpenAI-compatible connection for
+this combination until the gateway translation is corrected. Sandboxd does
+not silently remove system instructions or substitute another model.

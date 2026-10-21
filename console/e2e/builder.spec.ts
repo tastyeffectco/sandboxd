@@ -87,6 +87,7 @@ async function fixture(
           },
         ],
       })
+    if (/^\/v1\/agents\/[^/]+\/models$/.test(path)) return json({ source: 'provider', models: [{ id: 'fixture-account-model', name: 'Fixture account model' }] })
     if (path === '/v1/agents') return json({ providers: state.agents })
     if (path.endsWith('/oauth/start')) return json({ authorize_url: 'https://example.com/authorize' })
     if (/\/agents\/.+\/(api-key|oauth\/finish|credential)$/.test(path)) {

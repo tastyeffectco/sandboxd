@@ -222,7 +222,13 @@ export function BuilderHome({
                 disabled={!!busy}
               >
                 <Icon name="spark" size={15} />
-                {choice.agent === 'opencode' ? 'OpenCode' : choice.agent === 'pi' ? 'Pi' : 'Claude Code'}
+                {choice.agent === 'opencode'
+                  ? 'OpenCode'
+                  : choice.agent === 'pi'
+                    ? 'Pi'
+                    : choice.agent === 'codex'
+                      ? 'Codex'
+                      : 'Claude Code'}
                 <Icon name="chevron" size={13} />
               </button>
               <button

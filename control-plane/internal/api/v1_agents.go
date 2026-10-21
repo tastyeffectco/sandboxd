@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
 )
 
 type v1Agent struct {
@@ -29,6 +30,19 @@ type v1Agent struct {
 	// Runnable: runtimed has a task adapter for this provider. When connected
 	// but NOT runnable, the credentials are "imported, runner not enabled yet".
 	Runnable bool `json:"runnable"`
+}
+
+func (s *Server) v1AgentModels(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.agentProvider(w, r)
+	if !ok {
+		return
+	}
+	catalog, err := authproxy.New(s.AgentAuth, nil).Models(r.Context(), p.ID)
+	if err != nil {
+		writeV1Err(w, http.StatusBadGateway, "model_discovery_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // v1ListAgents — GET /v1/agents.

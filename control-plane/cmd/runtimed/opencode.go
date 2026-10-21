@@ -397,12 +397,15 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	}
 	if cfgPath != "" {
 		cmd.Env = append(cmd.Env, "OPENCODE_CONFIG="+cfgPath)
-		if spec.provider != nil {
+		{
 			dataDir := connectionSessionDir(spec, "opencode")
 			if err := os.MkdirAll(dataDir, 0o700); err != nil {
 				return "", usage, err
 			}
-			cmd.Env = append(cmd.Env, "XDG_DATA_HOME="+dataDir, "OPENCODE_DISABLE_MODELS_FETCH=true")
+			cmd.Env = append(cmd.Env, "XDG_DATA_HOME="+dataDir)
+			if spec.provider != nil {
+				cmd.Env = append(cmd.Env, "OPENCODE_DISABLE_MODELS_FETCH=true")
+			}
 		}
 	}
 	// Own process group so cancel/timeout kills the whole agent tree.

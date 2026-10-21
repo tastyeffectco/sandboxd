@@ -4,12 +4,9 @@ How sandboxd gives a sandbox's coding agent its credentials — and its
 environment context — **without** putting secrets in the workspace, snapshots,
 container env, logs, events, or task results.
 
-Three agents ship today behind one adapter interface: **opencode**, **pi** and
-**claude-code** are runnable (they have `runtimed` task adapters). **codex** is
-runnable by the backend too but is **parked** — disabled/hidden in the UI until
-its ChatGPT-subscription auth can be secured (see below). Every provider carries its **own**
-credentials, connected by the owner and stored opaquely; a provider's material
-is only ever used for that provider.
+Four coding agents ship behind one adapter interface: **OpenCode**, **Pi**,
+**Claude Code**, and **Codex**. Connect their accounts in Settings. Credentials
+stay in the control plane and are injected into requests by the auth proxy.
 
 For **local models, remote compatible APIs, and LiteLLM**, use
 [Model connections](model-providers.md). OpenCode and Pi support both
@@ -27,14 +24,14 @@ provider holds exactly one at a time):
 
 | Method | Endpoint | Notes |
 | --- | --- | --- |
-| **API key** | `POST /v1/agents/{provider}/api-key` `{"api_key":"…"}` | Stored opaquely; injected as the provider's one key env var at task time. |
-| **Import** | `POST /v1/agents/{provider}/import` `{"credentials":"…"}` | Paste the bundle your local `<cli> login` produced. Written verbatim, never parsed. |
+| **API key** | `POST /v1/agents/{provider}/api-key` `{"api_key":"…"}` | Stored server-side; injected into upstream requests by the proxy. |
+| **Import** | `POST /v1/agents/{provider}/import` `{"credentials":"…"}` | Paste the bundle your local `<cli> login` produced. Parsed only in the control plane for account discovery, routing and refresh. |
 | **Guided OAuth** (claude-code) | `POST /v1/agents/claude-code/oauth/start` → open URL → `…/oauth/finish` `{"code":"<code#state>"}` | A real `claude setup-token` **PKCE** flow, driven server-side. |
 
 `POST /v1/agents/{provider}/disconnect` wipes the material. Stored
-credentials are encrypted/opaque, never returned, echoed, logged, or emitted in
-events; the console inputs are write-only. Auth changes take effect on the next
-sandbox (re)create.
+credentials are stored in restricted files outside workspaces (built-in auth)
+or encrypted in SQLite (model connections). They are never returned to the console.
+With the proxy enabled, account changes apply to subsequent requests.
 
 ## How the credential reaches the agent — two models
 
@@ -59,22 +56,28 @@ agent's stored credential for that upstream and injects it. Upstreams:
   a Claude **subscription** (OAuth bearer + `anthropic-beta` are injected proxy-side).
 - **opencode** — routed via an `OPENCODE_CONFIG` file that runtimed writes, which
   sends opencode's requests to the proxy with the dummy key. Which OpenCode Zen
-  endpoint it uses is set by `SANDBOXD_OPENCODE_ZEN_PATH` — see
+  endpoint it uses for a directly connected Zen/Go key is set by `SANDBOXD_OPENCODE_ZEN_PATH` — see
   [OpenCode Zen: subscription vs pay-as-you-go](#opencode-zen-subscription-vs-pay-as-you-go)
   below. (Implementation note: opencode's Zen provider ignores base-URL env vars
   and its Bun runtime rejects a bare hostname, so we can't just set a `*_BASE_URL`;
   the config file defines a custom `@ai-sdk/openai-compatible` provider pointed at
   the proxy's resolved **IP**, and the task's model is rewritten to `proxy/<id>`.)
-- **codex** — parked: its ChatGPT-subscription backend is a WebSocket that can't be
-  proxied yet, so codex is hidden from the run picker.
+- **Codex** — the CLI uses the Responses API through the proxy. ChatGPT logins
+  go to the Codex subscription backend; API keys go to the OpenAI API. The real
+  access token and account ID are injected server-side. WebSockets are disabled
+  for this route so streaming works through the HTTP proxy.
+- **Pi / imported OpenCode accounts** — import their CLI auth JSON. Supported
+  entries are Anthropic, OpenAI, Codex, OpenCode Zen and OpenCode Go. OpenCode's
+  `openai` OAuth entry uses the Codex backend; Pi's corresponding entry is
+  `openai-codex`. Unknown providers are not guessed or redirected to Zen.
+  Unsupported OAuth refresh flows require re-login in the original CLI.
 
 - **MiniMax** — a credential-only provider: connect a MiniMax API key in
   Settings → AI Agents (`POST /v1/agents/minimax/api-key`). MiniMax is not a
   task agent (no CLI, not in the run picker); its key is injected by the proxy
-  for the MiniMax direct upstreams. The OpenCode opencode model dropdown exposes
-  `MiniMax-M3.1-Flash` first, followed by `MiniMax-M3`; selecting one routes the task to the MiniMax
-  OpenAI-compatible endpoint with the connected key (the China region is
-  selected with `SANDBOXD_MINIMAX_REGION=cn_zh`, default `global_en`).
+  for the MiniMax direct upstreams. For model selection use a configured MiniMax
+  model connection; the account picker does not invent MiniMax models. Legacy
+  direct model routes remain supported by runtimed.
 
   | Region | OpenAI-compatible | Anthropic-compatible |
   |--------|-------------------|----------------------|
@@ -158,15 +161,40 @@ unconnected. See `internal/authproxy/proxy.go` (`credFor`) and
 
 ### Per-agent default model (optional)
 
-Set a default model per agent in **Settings → AI Agents → Default model** (or via
-`PATCH /v1/settings` `agents.default_models`). You supply the agent's real model
-id (e.g. opencode `glm-5`, claude `sonnet`); it's used when a task doesn't specify
-one. Stored durably, applied live. Model precedence for a task:
+The task picker and **Settings → AI Agents → Default models** query
+`GET /v1/agents/{provider}/models`. This is an authenticated provider catalog,
+not a bundled list of guessed model IDs or CLI aliases. Imported OpenCode/Pi
+models are namespaced by account, for example `openai/<returned-model-id>`.
+The exact model ID is preserved when configuring the agent. Catalog failure
+shows an error and retry action; it never silently substitutes another model.
 
-1. the task's own `model` (per request), then
-2. the per-agent default (this setting), then
-3. opencode's free-tier default (only when opencode has no key), then
-4. runtimed's env/agent default (`SANDBOXD_OPENCODE_MODEL` / the CLI's own).
+For connected accounts, task model selection is checked against the current
+catalog. An explicit task selection wins, followed by a saved default, then the
+first listed model. A catalog entry is not a guarantee of available quota;
+a provider can still reject inference. Custom model connections retain their
+operator-configured model IDs and explicit inference test.
+
+OpenCode's keyless free tier retains its configured free default. Free-tier
+inference is used only by the real OpenCode CLI, not by other agents.
+
+### Reusing an existing local login
+
+In the Electron desktop, **Connect subscription → Use existing login** appears
+when a supported login is found on this computer. A native confirmation names
+the destination engine before sending the credential. The credential is read
+and transferred by the main process; the renderer receives availability and
+success status only. Remote imports require HTTPS.
+
+Known locations are `~/.codex/auth.json`, `~/.claude/.credentials.json`,
+`~/.local/share/opencode/auth.json`, and `~/.pi/agent/auth.json`. On macOS,
+Claude's `Claude Code-credentials` Keychain service is also checked. Custom CLI
+credential locations require manual import. An expired login may need renewal
+with the original CLI before importing. The browser console supports manual
+import and guided Claude OAuth; it cannot read your computer's login files.
+
+Supported OAuth credentials are refreshed before model discovery and inference.
+Concurrent refreshes are serialized, and an in-flight refresh cannot undo a
+Disconnect or overwrite a newly connected account.
 
 ### Fallback: no proxy → mounted auth dir
 
@@ -231,8 +259,10 @@ Defaults:
 - **Continue** — `continue` is a tri-state and **defaults to continuing** the
   sandbox's most recent agent session (`claude/opencode --continue`, codex
   `resume --last`). Omit it and runtimed continues when a prior session exists and
-  starts fresh on the first task; send `true`/`false` to force the choice. Each
-  sandbox is one workspace, so "most recent" is naturally per-sandbox.
+  starts fresh on the first task. Conversation state is separated by agent,
+  connection and model. Failed authentication does not create a resumable
+  session. Send `false` to start fresh. Existing sessions created before this
+  isolation change start fresh once after upgrading.
 
 ## Configuration reference
 
@@ -248,3 +278,25 @@ Operator knobs for agent auth & task defaults (all optional; sensible defaults s
 
 Per-task, `POST /tasks` also accepts `agent`, `model`, and `continue` (tri-state —
 see [Running a task](#running-a-task)).
+
+## Verifying connected accounts
+
+`TestLiveBuiltinAgents` is opt-in and uses isolated workspaces and a private copy
+of the supplied login. It queries the account catalog and performs two actual
+file-editing turns. It does not install or restart the production engine.
+
+```sh
+cd control-plane
+SANDBOXD_TEST_CODEX_AUTH_FILE="$HOME/.codex/auth.json" \
+SANDBOXD_TEST_CODEX_MODEL='<exact ID from the account catalog>' \
+go test ./cmd/runtimed -run '^TestLiveBuiltinAgents/codex$' -v -count=1
+```
+
+Equivalent variables use `CLAUDE_CODE`, `OPENCODE`, or `PI` instead of `CODEX`.
+For imported OpenCode/Pi accounts, select the account-prefixed model ID returned
+by `/v1/agents/{provider}/models`. `SANDBOXD_TEST_OPENCODE_FREE=1` explicitly
+opts into the real OpenCode free-tier check. These calls use the connected
+account's quota; they are never enabled in ordinary unit tests.
+
+Catalog discovery and successful inference are separate checks. A failed login
+or catalog request must be resolved before calling an account verified.

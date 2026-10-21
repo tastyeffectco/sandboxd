@@ -124,6 +124,7 @@ function route(method: string, url: string): { status: number; body?: unknown; t
   if (match(u, /\/v1\/apps$/)) return { status: 200, body: { apps: [app] } }
   if (match(u, /\/v1\/presets$/)) return { status: 200, body: { presets } }
   if (match(u, /\/v1\/settings$/)) return { status: 200, body: settings }
+  if (match(u, /\/v1\/agents\/[^/]+\/models$/)) return { status: 502, body: { error: { code: 'demo', message: 'Account model discovery is unavailable in this read-only demo.' } } }
   if (match(u, /\/v1\/agents$/)) return { status: 200, body: { providers: agents } }
   if (match(u, /\/v1\/model-providers$/)) return { status: 200, body: { providers: modelProviders } }
   if (match(u, /\/v1\/git-credentials$/)) return { status: 200, body: { credentials: [{ id: 'gc1', name: 'github', host: 'github.com', username: 'x-access-token', token_set: true, created_at: '2026-07-09T10:00:00Z' }] } }

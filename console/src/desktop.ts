@@ -7,6 +7,8 @@ export type DesktopState = {
   canRemember: boolean
 }
 export interface DesktopBridge {
+  agentLogin?(agent: string): Promise<{ available: boolean }>
+  importAgentLogin?(agent: string): Promise<{ imported: boolean }>
   state(): Promise<DesktopState>
   connect(connection: DesktopConnection): Promise<DesktopState>
   disconnect(forget?: boolean): Promise<DesktopState>

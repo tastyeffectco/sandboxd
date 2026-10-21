@@ -352,6 +352,11 @@ export const api = {
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
   listPresets: () => req<{ presets: Preset[] }>('GET', '/v1/presets').then((r) => r.presets || []),
   getSettings: () => req<Settings>('GET', '/v1/settings'),
+  getAgentModels: (agent: string) =>
+    req<{ models: { id: string; name: string; context_window?: number }[]; source: string }>(
+      'GET',
+      `/v1/agents/${encodeURIComponent(agent)}/models`,
+    ),
   getAgents: () => req<{ providers: Agent[] }>('GET', '/v1/agents').then((r) => r.providers || []),
 
   // Connect an agent provider by subscription (paste the credential bundle the

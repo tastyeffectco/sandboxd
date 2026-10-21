@@ -89,7 +89,7 @@ curl -s -XPOST $API/sandbox/$ID/purge
 ```
 
 ## Running coding agents inside a sandbox
-Claude Code, OpenCode and Pi (`claude`, `opencode`, `pi`) are pre-installed.
+Claude Code, Codex, OpenCode and Pi (`claude`, `codex`, `opencode`, `pi`) are pre-installed.
 For local/remote compatible endpoints, use **Settings → Model connections**
 and select OpenCode or Pi plus that connection in the app. See
 [`docs/model-providers.md`](docs/model-providers.md) for the API, LiteLLM and

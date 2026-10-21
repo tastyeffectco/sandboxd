@@ -12,6 +12,7 @@ import (
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
@@ -173,9 +174,25 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.Model = connection.Model.ID
-	} else if agent == "pi" {
-		writeV1Err(w, 400, "invalid_request", "select a model provider connection for Pi in Settings")
-		return
+	} else if agent == "pi" || (agent == "opencode" && s.AgentAuth != nil && s.AgentAuth.Method(agent) == "oauth") {
+		if s.AgentAuth == nil || s.AgentProxyURL == "" {
+			writeV1Err(w, 400, "invalid_request", "connect Pi or select a model connection in Settings")
+			return
+		}
+		connection, err = authproxy.New(s.AgentAuth, nil).BuiltinConnection(r.Context(), agent, req.Model, s.AgentProxyURL)
+		if err != nil {
+			writeV1Err(w, 400, "invalid_request", err.Error())
+			return
+		}
+		req.Model = connection.Model.ID
+	}
+
+	if req.Provider == "" && connection == nil && s.AgentAuth != nil && s.AgentAuth.Connected(agent) {
+		req.Model, err = authproxy.New(s.AgentAuth, nil).ResolveModel(r.Context(), agent, req.Model)
+		if err != nil {
+			writeV1Err(w, 400, "invalid_request", err.Error())
+			return
+		}
 	}
 
 	taskID := newULID()
