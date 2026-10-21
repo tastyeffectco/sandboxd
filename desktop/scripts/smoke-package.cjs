@@ -77,7 +77,6 @@ async function main() {
       `PASS: packaged ${process.platform}/${process.arch} client launches with bundled UI and no renderer Node access`,
     )
   } finally {
-    if (browser) await browser.close()
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, 'exit')
       child.kill()
@@ -85,6 +84,9 @@ async function main() {
       await exited
       clearTimeout(force)
     }
+    // Closing the last Mac window keeps an application alive. Stop the owned
+    // process before closing CDP, which otherwise waits indefinitely for exit.
+    if (browser) await browser.close()
     await fs.rm(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 }
