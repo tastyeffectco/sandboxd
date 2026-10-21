@@ -40,7 +40,7 @@ async function main() {
   )
   assert(!files.some((file) => /[\\/]node_modules[\\/]/.test(file)), 'Build dependencies must not ship')
   assert(
-    files.some((file) => file.endsWith('/src/windows-engine-bootstrap.sh')),
+    files.some((file) => /[\\/]src[\\/]windows-engine-bootstrap\.sh$/.test(file)),
     'Managed engine bootstrap missing',
   )
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-package-'))
