@@ -58,7 +58,7 @@ test('private gateway rejects forged capabilities, Host, Origin and cross-site r
   const page = await request('/', { origin: gateway.origin, 'sec-fetch-site': 'same-origin' })
   assert.equal(page.status, 200)
   assert.match(page.body, /Packaged UI/)
-  assert.match(page.headers['content-security-policy'], /script-src 'self'/)
+  assert(page.headers['content-security-policy'].includes(`script-src ${gateway.origin}/assets/`))
   assert.equal(page.headers['access-control-allow-origin'], undefined)
 })
 test('sessions remain in the host, logout clears them, and no ambient headers reach the engine', async (t) => {

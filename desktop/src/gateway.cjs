@@ -79,7 +79,11 @@ async function createGateway({ uiRoot, engine = '', session = '', onSession = ()
   const server = http.createServer(async (request, response) => {
     response.setHeader('x-content-type-options', 'nosniff')
     response.setHeader('referrer-policy', 'no-referrer')
-    response.setHeader('content-security-policy', CSP)
+    // Script sources are restricted to bundled assets, excluding every API path.
+    response.setHeader(
+      'content-security-policy',
+      CSP.replace("script-src 'self'", `script-src ${origin}/assets/`),
+    )
     response.setHeader('cache-control', 'no-store')
     if (!authorized(request)) return error(response, 403, 'This connection belongs to the desktop app.')
     let url

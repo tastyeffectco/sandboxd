@@ -16,6 +16,10 @@ async function main() {
   const engine = http.createServer((req, res) => {
     requests.push({ url: req.url, headers: req.headers })
     res.setHeader('content-type', 'application/json')
+    if (req.url === '/v1/desktop-script-probe') {
+      res.setHeader('content-type', 'application/javascript')
+      return res.end('window.engineScriptExecuted = true')
+    }
     if (req.url === '/v1/auth/status')
       return res.end(
         JSON.stringify({
@@ -133,6 +137,22 @@ async function main() {
     await expect(page.getByTestId('nav-apps')).toBeVisible()
     await page.screenshot({ path: path.join(output, 'workspace.png') })
     assert.equal(await page.evaluate(() => document.cookie), '')
+    assert.equal(
+      await page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const script = document.createElement('script')
+            script.src = '/v1/desktop-script-probe'
+            script.onload = () => resolve('loaded')
+            script.onerror = () => resolve('blocked')
+            document.head.append(script)
+          }),
+      ),
+      'blocked',
+    )
+    assert.equal(await page.evaluate(() => typeof window.engineScriptExecuted), 'undefined')
+    assert(!requests.some((request) => request.url === '/v1/desktop-script-probe'))
+
     assert.equal(
       await page.evaluate(
         () =>

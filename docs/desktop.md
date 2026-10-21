@@ -145,7 +145,9 @@ run without that override.
   filesystem bridge, custom URL protocol or desktop telemetry is added.
 
 The Electron and electron-builder versions are pinned with an npm lockfile and
-covered by Dependabot. As of this implementation, `npm audit` reports the
+covered by Dependabot. The builder pin uses the maintained v26 line, including
+[the NSIS archive decoder compatibility fix](https://github.com/electron-userland/electron-builder/pull/9989)
+needed for executable files in Windows ARM64 installers (26.15.6 or newer). As of this implementation, `npm audit` reports the
 unpatched moderate [sprintf-js precision DoS advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)
 in the **build-tool dependency tree** (eight affected package paths). It is not a
 runtime dependency and is not included in the packaged app. There are no high or
