@@ -26,7 +26,9 @@ cat > /usr/local/sbin/sandboxd-start-docker <<'START'
 docker info >/dev/null 2>&1 && exit 0
 mkdir -p /run
 if [ -f /run/docker.pid ] && ! kill -0 "$(cat /run/docker.pid)" 2>/dev/null; then rm -f /run/docker.pid; fi
-nohup dockerd --host=unix:///var/run/docker.sock > /var/log/sandboxd-docker.log 2>&1 < /dev/null 9>&- &
+# Detach the session as well as ignoring SIGHUP: otherwise docker-proxy children
+# inherit the WSL setup terminal and disappear when its session closes.
+nohup setsid dockerd --host=unix:///var/run/docker.sock > /var/log/sandboxd-docker.log 2>&1 < /dev/null 9>&- &
 START
 chmod 755 /usr/local/sbin/sandboxd-start-docker
 # Settings apply only to this dedicated distribution. Never change .wslconfig.
