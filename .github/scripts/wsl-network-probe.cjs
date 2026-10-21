@@ -1,18 +1,19 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawnSync, spawn } = require('node:child_process')
 const { ROOTFS, download, decode } = require('../../desktop/src/windows-engine.cjs')
 async function main() {
   if (process.platform !== 'win32' || !process.env.GITHUB_ACTIONS || !process.env.RUNNER_TEMP) throw new Error('Disposable Windows CI only')
   const directory = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, 'sandboxd-net-probe-'))
   const name = 'sandboxd-network-probe'
   const wsl = (args, input) => {
-    const r = spawnSync('wsl.exe', args, {input, timeout:600000, maxBuffer:2*1024*1024})
+    const r = spawnSync('wsl.exe', args, {input, windowsHide:true, timeout:600000, maxBuffer:2*1024*1024})
     return {code:r.status, stdout:decode(r.stdout || Buffer.alloc(0)), stderr:decode(r.stderr || Buffer.alloc(0))}
   }
   const shell = (script) => wsl(['-d',name,'-u','root','--cd','/','--exec','bash','-s'],script.replace(/\r/g,''))
   let imported = false
   try {
+    try { await fetch('http://127.0.0.1:9090',{signal:AbortSignal.timeout(3000)}) } catch(e) {console.log('Initial probe',e.cause?.code)}
     console.log('WSL status',wsl(['--status']))
     const config = await fs.readFile(path.join(process.env.USERPROFILE,'.wslconfig'),'utf8').catch(()=>'(default)')
     console.log('Network config',config.split(/\r?\n/).filter(l=>/network|localhost|firewall|ipv6/i.test(l)))
@@ -38,6 +39,13 @@ cat /proc/net/tcp
     for(const port of [9090,9091,19090,19091]) {
       try {const r=await fetch('http://127.0.0.1:'+port,{signal:AbortSignal.timeout(5000)}); console.log('Windows',port,r.status)}
       catch(e) {console.log('Windows',port,e.message,e.cause?.code)}
+    }
+    const keeper=spawn('wsl.exe',['-d',name,'-u','root','--cd','/','--exec','flock','-n','/run/sandboxd-desktop.keepalive','sleep','infinity'],{detached:true,windowsHide:true,stdio:'ignore'})
+    keeper.unref()
+    await new Promise(r=>setTimeout(r,5000))
+    for(const port of [9090,9091,19090,19091]) {
+      try {const r=await fetch('http://127.0.0.1:'+port,{signal:AbortSignal.timeout(5000)}); console.log('With detached keeper',port,r.status)}
+      catch(e) {console.log('With detached keeper',port,e.message,e.cause?.code)}
     }
     console.log('Bindings',shell('ps aux | grep -E "docker-proxy|dockerd|python3"\n'))
   } finally {
