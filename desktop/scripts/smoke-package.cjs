@@ -78,10 +78,12 @@ async function main() {
     )
   } finally {
     if (browser) await browser.close()
-    if (child.exitCode === null) {
+    if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, 'exit')
       child.kill()
+      const force = setTimeout(() => child.kill('SIGKILL'), 3000)
       await exited
+      clearTimeout(force)
     }
     await fs.rm(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }

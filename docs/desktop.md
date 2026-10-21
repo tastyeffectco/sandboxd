@@ -90,8 +90,9 @@ this engine** removes the local profile and saved session. Signing out revokes
 the session on the engine. Forgotten sessions are not remotely revoked.
 
 Remote connections require HTTPS unless you explicitly enable unencrypted HTTP
-in connection options. Private/self-signed certificates must be trusted by the
-operating environment; certificate verification is never disabled. An offline
+in connection options. API requests use the bundled Node TLS trust store; private/self-signed
+certificates may not work even when a browser trusts them. Certificate
+verification is never disabled, and there is no certificate-exception switch. An offline
 banner offers retry and connection settings. The app requires a reachable engine
 for workspace actions; it is not an offline copy of your code.
 

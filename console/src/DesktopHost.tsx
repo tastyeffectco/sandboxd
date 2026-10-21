@@ -51,6 +51,7 @@ export default function DesktopHost() {
   }, [state?.selected, probe])
   const selected = state?.connections.find((c) => c.url === state.selected)
   const connected = (next: DesktopState) => {
+    setError('')
     setState(next)
     setRevision((n) => n + 1)
     setConnections(false)
