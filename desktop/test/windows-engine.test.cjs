@@ -49,6 +49,7 @@ test('new setup pins downloads, imports an isolated distro, streams stages and v
   assert.deepEqual(imported.args.slice(-2), ['--version', '2'])
   const bootstrap = f.commands.find((c) => c.args.includes('bash'))
   assert.equal(bootstrap.args.at(-1), ENGINE_COMMIT)
+  assert.equal(bootstrap.args[bootstrap.args.indexOf('--cd') + 1], '/')
   assert.match(bootstrap.options.input, /bash install.sh --build --no-desktop --no-console/)
   assert(f.events.some((e) => e.message.includes('15–30 minutes')))
   assert.equal(f.keepalives.length, 1)
@@ -92,6 +93,8 @@ test('missing WSL requests only the fixed Microsoft installer and exposes restar
   assert.match(script, /--no-distribution/)
   assert.match(script, /-Verb RunAs/)
   assert.doesNotMatch(script, /Restart-Computer|shutdown|ExecutionPolicy|sandboxd/)
+  const reopened = createWindowsEngine({ dataDir: f.directory, platform: 'win32', probe: async () => false })
+  assert.equal((await reopened.load()).phase, 'restart', 'restart guidance must survive closing the app')
 })
 
 test('declining Windows elevation produces a retryable failure', async (t) => {

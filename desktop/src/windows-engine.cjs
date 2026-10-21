@@ -249,7 +249,19 @@ function createWindowsEngine({
       const script = await fs.readFile(path.join(__dirname, 'windows-engine-bootstrap.sh'), 'utf8')
       const result = await execute(
         wsl,
-        ['--distribution', manifest.distro, '--user', 'root', '--exec', 'bash', '-s', '--', ENGINE_COMMIT],
+        [
+          '--distribution',
+          manifest.distro,
+          '--user',
+          'root',
+          '--cd',
+          '/',
+          '--exec',
+          'bash',
+          '-s',
+          '--',
+          ENGINE_COMMIT,
+        ],
         {
           input: script.replace(/\r/g, ''),
           timeout: 60 * 60 * 1000,
@@ -273,6 +285,8 @@ function createWindowsEngine({
         manifest.distro,
         '--user',
         'root',
+        '--cd',
+        '/',
         '--exec',
         'flock',
         '-n',
@@ -283,8 +297,6 @@ function createWindowsEngine({
       set({ phase: 'starting', message: 'Connecting to your engine…' })
       for (let attempt = 0; attempt < 45; attempt++) {
         if (await probe()) {
-          manifest.installed = true
-          await save()
           set({ phase: 'ready', installed: true, message: 'Your local engine is ready.' })
           return { ...state }
         }

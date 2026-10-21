@@ -65,6 +65,8 @@ async function main() {
           manifest.distro,
           '-u',
           'root',
+          '--cd',
+          '/',
           '--exec',
           'bash',
           '-c',
