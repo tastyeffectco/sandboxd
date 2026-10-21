@@ -70,22 +70,29 @@ func TestLiveCompatibleProviders(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-				defer cancel()
-				var diagnostics bytes.Buffer
-				final, usage, err := agent.run(ctx, agentSpec{
-					workDir: work, stateDir: filepath.Join(root, "runtime"), provider: connection, model: model,
-					prompt: "Use the write tool to create greeting.txt containing exactly the text: hello from sandboxd\nDo not inspect any other files. After creating it, reply Done.",
-					rawLog: &diagnostics,
-				}, func(string, any) {})
-				if ctx.Err() != nil || err != nil {
-					t.Fatalf("live task failed: context=%v error=%v stderr=%s", ctx.Err(), err, diagnostics.String())
+
+				for turn, expected := range []string{"hello from sandboxd", "hello again from sandboxd"} {
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+					var diagnostics bytes.Buffer
+					prompt := "Use the write tool to create greeting.txt containing exactly the text: " + expected + "\nDo not inspect any other files. After creating it, reply Done."
+					if turn > 0 {
+						prompt = "Update greeting.txt to contain exactly the text: " + expected + "\nThen reply Done."
+					}
+					final, usage, err := agent.run(ctx, agentSpec{
+						workDir: work, stateDir: filepath.Join(root, "runtime"), provider: connection, model: model,
+						prompt: prompt, cont: turn > 0, rawLog: &diagnostics,
+					}, func(string, any) {})
+					contextErr := ctx.Err()
+					cancel()
+					if contextErr != nil || err != nil {
+						t.Fatalf("live turn %d failed: context=%v error=%v stderr=%s", turn, contextErr, err, diagnostics.String())
+					}
+					content, err := os.ReadFile(filepath.Join(work, "greeting.txt"))
+					if err != nil || strings.TrimSpace(string(content)) != expected {
+						t.Fatalf("live turn %d did not perform the requested edit: content=%q err=%v final=%q", turn, content, err, final)
+					}
+					t.Logf("real model completed turn %d; input=%d output=%d final=%q", turn, usage.Input, usage.Output, final)
 				}
-				content, err := os.ReadFile(filepath.Join(work, "greeting.txt"))
-				if err != nil || strings.TrimSpace(string(content)) != "hello from sandboxd" {
-					t.Fatalf("live model did not perform the requested edit: content=%q err=%v final=%q", content, err, final)
-				}
-				t.Logf("real model wrote greeting.txt; input=%d output=%d final=%q", usage.Input, usage.Output, final)
 			})
 		}
 	}
