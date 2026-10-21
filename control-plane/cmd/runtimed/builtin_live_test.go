@@ -68,7 +68,7 @@ func TestLiveBuiltinAgents(t *testing.T) {
 			if name == "opencode" && model == "" {
 				model = "big-pickle"
 			}
-			if name == "codex" || (name == "opencode" && credentialPath == "") {
+			if name == "codex" || name == "claude-code" || (name == "opencode" && credentialPath == "") {
 				catalog, err := authproxy.New(st, nil).Models(context.Background(), name)
 				if err != nil {
 					t.Fatal(err)
