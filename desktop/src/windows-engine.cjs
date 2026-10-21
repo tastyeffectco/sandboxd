@@ -164,11 +164,13 @@ function createWindowsEngine({
         set({ phase: 'ready', message: 'Your local engine is ready.' })
         return { ...state }
       }
-      if (await isPortOpen(9090))
+      await load()
+      // WSL may retain its localhost listener while our installed engine restarts.
+      // Starting the owned distro is safe; never stop an unrelated port owner.
+      if (!manifest?.installed && (await isPortOpen(9090)))
         throw new Error(
           'Another app is using port 9090. Close it or connect to your existing engine using its API address.',
         )
-      await load()
       if (!manifest) {
         manifest = { distro: `sandboxd-desktop-${randomBytes(8).toString('hex')}`, installed: false }
         await save()

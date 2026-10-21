@@ -168,3 +168,25 @@ test('downloader hashes the actual response bytes and rejects corrupt archives',
     /checksum verification failed/,
   )
 })
+
+test('an installed engine can restart while WSL retains its localhost listener', async (t) => {
+  const distro = 'sandboxd-desktop-0123456789abcdef'
+  let bootstrapped = false
+  const f = await fixture(t, {
+    probe: async () => bootstrapped,
+    isPortOpen: async () => true,
+    execute: async (_command, args) => {
+      if (args.includes('--list')) return { code: 0, output: distro }
+      if (args.includes('bash')) bootstrapped = true
+      return { code: 0, output: '' }
+    },
+  })
+  await fs.mkdir(path.join(f.directory, 'local-engine'))
+  await fs.writeFile(
+    path.join(f.directory, 'local-engine/engine.json'),
+    JSON.stringify({ distro, installed: true }),
+  )
+  assert.equal((await f.manager.start()).phase, 'ready')
+  assert.equal(bootstrapped, true)
+  assert.equal(f.downloads.length, 0)
+})
