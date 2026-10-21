@@ -143,3 +143,37 @@ func TestRefreshErrorsNeverExposeProviderBody(t *testing.T) {
 		t.Fatalf("unsafe error: %v", err)
 	}
 }
+
+func TestReconnectNeverTemporarilyLooksLikeFreeTier(t *testing.T) {
+	st := NewStore(t.TempDir())
+	if err := st.ImportCredential("opencode", APIKeyFile, []byte("old-key")); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		defer close(done)
+		for i := 0; i < 60; i++ {
+			if err := st.ImportCredential("opencode", APIKeyFile, []byte("new-key")); err != nil {
+				result <- err
+				return
+			}
+		}
+		result <- nil
+	}()
+	for {
+		if st.Method("opencode") != "api_key" {
+			t.Error("reconnect exposed an unconnected state that could route a paid request to the free tier")
+			break
+		}
+		select {
+		case <-done:
+			if err := <-result; err != nil {
+				t.Fatal(err)
+			}
+			return
+		default:
+		}
+	}
+	<-done
+}

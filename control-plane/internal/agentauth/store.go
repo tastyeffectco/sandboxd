@@ -41,6 +41,8 @@ func (s *Store) EnsureRoot() error {
 // Connected reports whether a provider's auth dir exists AND is non-empty. It
 // treats the contents as opaque — it never opens or parses any file.
 func (s *Store) Connected(provider string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	entries, err := os.ReadDir(s.Dir(provider))
 	if err != nil {
 		return false // absent (or unreadable) => not connected
@@ -120,6 +122,8 @@ func (s *Store) HasFile(provider, rel string) bool {
 // credential file is present), "api_key" (the API-key file is present), or ""
 // (not connected). Each connect fully replaces the dir, so at most one applies.
 func (s *Store) Method(provider string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.HasFile(provider, APIKeyFile) {
 		return "api_key"
 	}
