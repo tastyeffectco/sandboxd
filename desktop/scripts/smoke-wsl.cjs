@@ -3,6 +3,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const assert = require('node:assert/strict')
 const { spawnSync } = require('node:child_process')
+const { randomBytes } = require('node:crypto')
 const { createWindowsEngine, ENGINE_URL } = require('../src/windows-engine.cjs')
 
 async function main() {
@@ -33,6 +34,14 @@ async function main() {
     assert.equal(installed.installed, true)
     manifest = JSON.parse(await fs.readFile(path.join(directory, 'local-engine/engine.json')))
     assert.equal((await fetch(ENGINE_URL + '/readyz')).status, 200)
+    const password = randomBytes(24).toString('base64url')
+    const setup = await fetch(ENGINE_URL + '/v1/auth/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+      signal: AbortSignal.timeout(10000),
+    })
+    assert.equal(setup.status, 204, 'First-run password setup must work from Windows')
     // Stopping only the fixture distro simulates reboot; starting again must reuse it.
     assert.equal(spawnSync('wsl.exe', ['--terminate', manifest.distro], { timeout: 60000 }).status, 0)
     for (let n = 0; n < 30 && (await probe()); n++) await new Promise((r) => setTimeout(r, 1000))
@@ -44,12 +53,29 @@ async function main() {
     })
     assert.equal((await resumed.load()).installed, true)
     assert.equal((await resumed.start()).phase, 'ready')
+    const login = await fetch(ENGINE_URL + '/v1/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+      signal: AbortSignal.timeout(10000),
+    })
+    assert.equal(login.status, 204, 'The engine password must survive restarting WSL')
+    const cookie = login.headers
+      .getSetCookie()
+      .find((value) => value.startsWith('sbx_session='))
+      ?.split(';')[0]
+    assert(cookie, 'Login must issue an engine session')
+    assert.equal(
+      (await fetch(ENGINE_URL + '/v1/apps', { headers: { cookie }, signal: AbortSignal.timeout(10000) }))
+        .status,
+      200,
+    )
     assert.equal(
       JSON.parse(await fs.readFile(path.join(directory, 'local-engine/engine.json'))).distro,
       manifest.distro,
     )
     console.log(
-      'PASS: actual WSL import, Docker installation, engine build, Windows localhost connectivity, and restart recovery',
+      'PASS: actual WSL import, Docker installation, engine build, Windows localhost connectivity, first-run login, and persistent auth after restart',
     )
   } finally {
     manifest ||= await fs
