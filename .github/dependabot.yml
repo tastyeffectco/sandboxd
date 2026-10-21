@@ -26,6 +26,17 @@ updates:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
 
+  # Keep the Electron runtime and packaging tooling visible to security updates.
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      desktop:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   # GitHub Actions — group everything (action major bumps are low-risk).
   - package-ecosystem: github-actions
     directory: /

@@ -1601,6 +1601,7 @@ function FilesTab({
             </span>
             <a
               href={api.exportUrl(sandboxId)}
+              download
               title="Download workspace (.zip)"
               style={{ fontSize: 13, color: c.muted2, textDecoration: 'none' }}
             >

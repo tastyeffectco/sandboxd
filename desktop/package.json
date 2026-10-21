@@ -1,0 +1,75 @@
+{
+  "name": "sandboxd-desktop",
+  "version": "0.3.23",
+  "private": true,
+  "description": "The native desktop client for the sandboxd engine",
+  "author": "sandboxd contributors",
+  "license": "MIT",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build:ui": "node scripts/build-ui.cjs",
+    "test": "node --test test/*.test.cjs",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never",
+    "smoke": "node scripts/smoke.cjs",
+    "smoke:package": "node scripts/smoke-package.cjs"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.sandboxd.desktop",
+    "productName": "sandboxd",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**",
+      "ui/**",
+      "package.json"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "category": "Development",
+      "icon": "build/icon.png"
+    },
+    "artifactName": "sandboxd-desktop-${version}-${os}-${arch}.${ext}",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
+    }
+  }
+}

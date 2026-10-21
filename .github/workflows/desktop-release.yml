@@ -1,0 +1,106 @@
+name: desktop-release
+on:
+  push:
+    tags: ['desktop-v*']
+permissions:
+  contents: read
+jobs:
+  signed:
+    if: github.repository == 'tastyeffectco/sandboxd'
+    environment: desktop-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, os: mac, arch: arm64 }
+          - { runner: macos-15-intel, os: mac, arch: x64 }
+          - { runner: windows-latest, os: win, arch: x64 }
+          - { runner: windows-11-arm, os: win, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Require a mainline commit and matching desktop version
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node -e 'if(process.env.GITHUB_REF_NAME !== "desktop-v" + require("./desktop/package.json").version) process.exit(1)'
+      - run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - run: |
+          pnpm --dir console install --frozen-lockfile --ignore-scripts
+          npm --prefix desktop ci --ignore-scripts --no-audit --no-fund
+          node desktop/node_modules/electron/install.js
+          pnpm --dir console exec tsc --noEmit
+          npm --prefix desktop test
+          npm --prefix desktop run build:ui
+          npm --prefix desktop run smoke
+      - name: Sign and notarize Mac packages
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$CSC_LINK" && test -n "$CSC_KEY_PASSWORD" && test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
+          npm --prefix desktop run dist -- --mac --${{ matrix.arch }} -c.forceCodeSigning=true
+          app=$(find desktop/release -maxdepth 2 -name sandboxd.app -type d | head -1)
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute "$app"
+          xcrun stapler validate "$app"
+      - name: Sign Windows packages
+        if: runner.os == 'Windows'
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          test -n "$CSC_LINK" && test -n "$CSC_KEY_PASSWORD"
+          npm --prefix desktop run dist -- --win --${{ matrix.arch }} -c.forceCodeSigning=true
+      - name: Verify Windows installer signature
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem desktop/release/*.exe | ForEach-Object {
+            if ((Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid') { throw "Invalid signature: $($_.Name)" }
+          }
+      - run: npm --prefix desktop run smoke:package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signed-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe
+  draft:
+    needs: signed
+    runs-on: ubuntu-latest
+    environment: desktop-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: signed-desktop-*
+          merge-multiple: true
+          path: installers
+      - name: Create checksums and reviewable draft release
+        working-directory: installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DESKTOP_TAG: ${{ github.ref_name }}
+        run: |
+          sha256sum *.dmg *.zip *.exe > SHA256SUMS
+          printf '%s\n' 'Native Electron client for the sandboxd engine. Includes macOS Apple Silicon/Intel and Windows ARM64/x64 installers. The engine remains a separate local or remote service.' '' 'Maintainer: review the signed installers and desktop setup instructions before publishing this draft. Keep this release excluded from latest engine releases.' > "$RUNNER_TEMP/desktop-notes.txt"
+          gh release create "$DESKTOP_TAG" --verify-tag --draft --latest=false --title "sandboxd desktop ${DESKTOP_TAG#desktop-v}" --notes-file "$RUNNER_TEMP/desktop-notes.txt" ./*

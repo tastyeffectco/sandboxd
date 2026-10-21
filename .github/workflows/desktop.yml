@@ -1,0 +1,69 @@
+name: desktop
+on:
+  pull_request:
+    paths: ['desktop/**', 'console/**', 'install.sh', 'install.ps1', 'scripts/*install*', '.github/workflows/desktop*.yml']
+  push:
+    branches: [main]
+    paths: ['desktop/**', 'console/**', 'install.sh', 'install.ps1', 'scripts/*install*', '.github/workflows/desktop*.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    name: desktop-${{ matrix.os }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, os: mac, arch: arm64 }
+          - { runner: macos-15-intel, os: mac, arch: x64 }
+          - { runner: windows-latest, os: win, arch: x64 }
+          - { runner: windows-11-arm, os: win, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - name: Install locked dependencies (no lifecycle scripts)
+        run: |
+          pnpm --dir console install --frozen-lockfile --ignore-scripts
+          npm --prefix desktop ci --ignore-scripts --no-audit --no-fund
+          node desktop/node_modules/electron/install.js
+      - name: Typecheck, transport security and desktop UI
+        run: |
+          pnpm --dir console exec tsc --noEmit
+          npm --prefix desktop test
+          npm --prefix desktop run build:ui
+      - name: Native Electron interaction smoke (OS sandbox enabled)
+        run: npm --prefix desktop run smoke
+      - name: macOS installer defaults
+        if: runner.os == 'macOS'
+        run: bash scripts/test-install.sh
+      - name: Windows installer policy
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-install-windows.ps1
+      - name: Build native review installers
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm --prefix desktop run dist -- --${{ matrix.os }} --${{ matrix.arch }}
+      - name: Launch packaged app with security fuses enabled
+        run: npm --prefix desktop run smoke:package
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: desktop-${{ matrix.os }}-${{ matrix.arch }}
+          retention-days: 14
+          path: |
+            desktop/test-results/*.png
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe

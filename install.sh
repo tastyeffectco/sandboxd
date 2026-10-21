@@ -15,8 +15,8 @@
 #   5. `docker compose up -d`
 #   6. prints how to create your first sandbox
 #
-# Idempotent: safe to re-run. It never touches anything outside the repo
-# and the configured data dir.
+# Idempotent engine installation. On macOS, also installs the optional desktop
+# client under ~/Applications by default; disable with --no-desktop.
 
 set -euo pipefail
 
@@ -32,8 +32,8 @@ for arg in "$@"; do
   case "$arg" in
     --build) MODE=build ;;
     --pull) MODE=pull ;;
-    --no-console) ;;
-    *) die "Unknown option: $arg (use --build, --pull, or --no-console)" ;;
+    --no-console|--no-desktop) ;;
+    *) die "Unknown option: $arg (use --build, --pull, --no-console, or --no-desktop)" ;;
   esac
 done
 
@@ -237,6 +237,20 @@ $COMPOSE pull --policy missing traefik
 $COMPOSE $PROFILE_ARGS up -d --pull never
 ok "stack is up"
 chmod +x console-login.sh 2>/dev/null || true   # so `./console-login.sh` always runs
+
+# Optional native client: on by default for Mac desktop installs. Headless Linux
+# stays unchanged. The Windows entrypoint installs its own native client.
+DESKTOP="${SANDBOXD_DESKTOP:-1}"
+case " $* " in *" --no-desktop "*) DESKTOP=0 ;; esac
+if [ "$(uname -s)" = Darwin ] && [ "$DESKTOP" != 0 ]; then
+  STAGE=desktop
+  if bash "$REPO_ROOT/scripts/install-desktop.sh"; then
+    ok "desktop client ready — connect to http://${SANDBOXD_API_BIND:-127.0.0.1:9090}"
+  else
+    info "The engine is running, but desktop installation did not finish."
+    info "Retry: bash scripts/install-desktop.sh — see docs/desktop.md for release availability."
+  fi
+fi
 
 # ── summary ──────────────────────────────────────────────────────────
 STAGE=done
