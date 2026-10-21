@@ -10,7 +10,7 @@ async function main() {
     const r = spawnSync('wsl.exe', args, {input, timeout:600000, maxBuffer:2*1024*1024})
     return {code:r.status, stdout:decode(r.stdout || Buffer.alloc(0)), stderr:decode(r.stderr || Buffer.alloc(0))}
   }
-  const shell = (script) => wsl(['-d',name,'-u','root','--cd','/','--exec','bash','-s'],script)
+  const shell = (script) => wsl(['-d',name,'-u','root','--cd','/','--exec','bash','-s'],script.replace(/\r/g,''))
   let imported = false
   try {
     console.log('WSL status',wsl(['--status']))
@@ -23,7 +23,9 @@ async function main() {
     if(result.code!==0) throw new Error('Import failed')
     imported=true
     const bootstrap=(await fs.readFile('desktop/src/windows-engine-bootstrap.sh','utf8')).split('if [ ! -f /var/lib/sandboxd-desktop/ready ]; then')[0]
-    console.log('Prerequisites',shell(bootstrap.replace('ref="$1"','ref="1a860a57b4d0ca27bcebbfd712a7e45e6fa4a6c9"')+'\napt-get install -y python3 >> /var/log/sandboxd-setup.log 2>&1\n'))
+    const prerequisites=shell(bootstrap.replace('ref="$1"','ref="1a860a57b4d0ca27bcebbfd712a7e45e6fa4a6c9"')+'\napt-get install -y python3 >> /var/log/sandboxd-setup.log 2>&1\n')
+    console.log('Prerequisites',prerequisites)
+    if(prerequisites.code!==0) throw new Error('Probe prerequisites failed')
     console.log('Start listeners',shell(`mkdir -p /tmp/probe
 nohup python3 -m http.server 19090 --bind 127.0.0.1 --directory /tmp/probe >/tmp/probe/python.log 2>&1 </dev/null &
 nohup python3 -m http.server 19091 --bind 0.0.0.0 --directory /tmp/probe >/tmp/probe/python2.log 2>&1 </dev/null &
