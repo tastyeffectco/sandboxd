@@ -4,7 +4,7 @@
 acquire_images() {
   local release_tag release_version ref digest identity clean=0 eligible=0
   local base_ref plane_ref console_ref verified=1
-  release_tag="$(git -C "$REPO_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)"
+  release_tag="$(git -C "$REPO_ROOT" describe --tags --match 'v[0-9]*' --exact-match HEAD 2>/dev/null || true)"
   release_version="${release_tag#v}"
   git -C "$REPO_ROOT" diff --quiet HEAD -- && clean=1
   if [[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&

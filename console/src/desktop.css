@@ -378,3 +378,36 @@
   height: 100%;
   overflow: auto;
 }
+
+/* Decorative artwork stays behind readable content at smaller window sizes. */
+.desktop-welcome-story::after {
+  z-index: 0;
+}
+.desktop-welcome-story > * {
+  position: relative;
+  z-index: 1;
+}
+@media (max-height: 760px) {
+  .desktop-welcome-story {
+    padding: 28px;
+  }
+  .desktop-welcome-story h1 {
+    font-size: 44px;
+    margin: 16px 0;
+  }
+  .desktop-welcome-story > p {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .desktop-app-mark {
+    width: 56px;
+    height: 56px;
+    flex: none;
+    margin-bottom: 24px;
+    border-radius: 17px;
+  }
+  .desktop-feature-list {
+    gap: 12px;
+    margin: 18px 0 24px;
+  }
+}

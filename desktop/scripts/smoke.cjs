@@ -95,6 +95,19 @@ async function main() {
     const origin = `http://127.0.0.1:${engine.address().port}`
     await expect(page.getByRole('heading', { name: 'Connect your engine.' })).toBeVisible()
     await page.screenshot({ path: path.join(output, 'welcome.png') })
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(880, 640))
+    await page.waitForFunction(() => window.innerWidth <= 880)
+    assert(
+      await page.evaluate(() => {
+        const story = document.querySelector('.desktop-welcome-story').getBoundingClientRect()
+        const footer = document.querySelector('.desktop-welcome-story > small').getBoundingClientRect()
+        return footer.bottom <= story.bottom && document.documentElement.scrollWidth <= window.innerWidth
+      }),
+      'Welcome content must fit the minimum window',
+    )
+    await page.screenshot({ path: path.join(output, 'welcome-small.png') })
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 960))
+
     assert.deepEqual(
       await page.evaluate(() => ({
         node: typeof require,

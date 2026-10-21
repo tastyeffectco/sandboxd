@@ -23,6 +23,7 @@ run_case() (
   ok() { :; }
   die() { printf '%s\n' "$*" >> "$TEST_LOG"; exit 1; }
   git() {
+    if [ "${TEST_REAL_GIT:-0}" = 1 ]; then command git "$@"; return; fi
     case "$*" in
       *describe*) printf '%s\n' "$TEST_TAG" ;;
       *diff*) return "$TEST_DIRTY" ;;
@@ -48,6 +49,7 @@ run_case() (
     return "$TEST_BAD_SIGNATURE"
   }
   case "$1" in
+    desktop-tag) TEST_REAL_GIT=1; REPO_ROOT="$tmp/tagged" ;;
     development) TEST_TAG= ;;
     dirty) TEST_DIRTY=1 ;;
     mismatch) SANDBOXD_IMAGE_TAG=0.3.0 ;;
@@ -71,6 +73,14 @@ for scenario in development dirty mismatch custom unavailable unsigned-auto; do
 done
 run_case build build
 ! grep -q '^docker pull ' "$tmp/build.log"
+# A separate annotated desktop tag must not hide an engine tag on the same
+# commit (Git otherwise prefers the annotated tag over the lightweight tag).
+command git init -q "$tmp/tagged"
+command git -C "$tmp/tagged" -c user.name=Fixture -c user.email=fixture@example.invalid commit --allow-empty -qm fixture
+command git -C "$tmp/tagged" tag v1.2.3
+command git -C "$tmp/tagged" -c user.name=Fixture -c user.email=fixture@example.invalid tag -a desktop-v9.9.9 -m desktop
+run_case desktop-tag pull
+grep -q '^result pull=1 base=ghcr.io/tastyeffectco/sandboxd-base:1.2.3$' "$tmp/desktop-tag.log"
 run_case verified pull
 grep -q '^result pull=1 ' "$tmp/verified.log"
 [ "$(grep -c '^cosign verify ' "$tmp/verified.log")" = 3 ]

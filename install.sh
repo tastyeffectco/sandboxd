@@ -208,7 +208,7 @@ STAGE=stack
 # Drop it so compose picks up the .env value.
 unset SANDBOXD_API_TOKENS
 # Stamp the build (sandboxd version / telemetry / settings) from git when present.
-export SANDBOXD_VERSION="$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)"
+export SANDBOXD_VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)"
 # Record the checkout path for console-driven upgrades (POST /v1/upgrade), and
 # build the tiny upgrader image (docker CLI + compose + git) that runs them.
 grep -q '^SANDBOXD_INSTALL_METHOD=' .env 2>/dev/null || printf 'SANDBOXD_INSTALL_METHOD=%s\n' "${SANDBOXD_INSTALL_METHOD:-install.sh}" >> .env

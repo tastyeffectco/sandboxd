@@ -31,7 +31,7 @@ die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || die "git is required."
 
 # ── current + latest versions ────────────────────────────────────────
-CUR="$(git describe --tags --always 2>/dev/null || echo unknown)"
+CUR="$(git describe --tags --match 'v[0-9]*' --always 2>/dev/null || echo unknown)"
 LATEST="$(curl -fsSL https://api.github.com/repos/tastyeffectco/sandboxd/releases/latest 2>/dev/null \
           | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1 || true)"
 [ -n "$LATEST" ] || LATEST="(couldn't reach GitHub)"
@@ -170,7 +170,7 @@ git reset --hard -q FETCH_HEAD
 git fetch --tags --depth 1 -q origin 2>/dev/null || true
 NEW_SHA="$(git rev-parse HEAD)"
 if [ "$NEW_SHA" = "$PREV_SHA" ]; then ok "already up to date — nothing to do."; exit 0; fi
-ok "updated source to $(git describe --tags --always 2>/dev/null || echo "$NEW_SHA")"
+ok "updated source to $(git describe --tags --match 'v[0-9]*' --always 2>/dev/null || echo "$NEW_SHA")"
 
 # ── 3. rebuild + restart (migrations apply on control-plane boot) ────
 bold "3/4 · Building + restarting the stack"
@@ -203,7 +203,7 @@ else
 fi
 
 # Stamp the build (sandboxd version / telemetry / settings) from git.
-export SANDBOXD_VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+export SANDBOXD_VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)"
 grep -q '^SANDBOXD_SRC_DIR=.' .env 2>/dev/null || printf 'SANDBOXD_SRC_DIR=%s\n' "$(pwd)" >> .env
 $DOCKER build -q -t "sandboxd-upgrader:${SANDBOXD_VERSION}" image/upgrader >/dev/null && {
   tmp="$(mktemp "${TMPDIR:-/tmp}/sandboxd-env.XXXXXX")"; grep -vE '^SANDBOXD_UPGRADER_IMAGE=' .env > "$tmp" 2>/dev/null || true
@@ -223,7 +223,7 @@ done
 
 if [ "$healthy" = "1" ]; then
   echo
-  ok "sandboxd is healthy on $(git describe --tags --always 2>/dev/null || echo "$NEW_SHA") 🎉"
+  ok "sandboxd is healthy on $(git describe --tags --match 'v[0-9]*' --always 2>/dev/null || echo "$NEW_SHA") 🎉"
   info "backup kept at $BK — delete it once you're happy."
 else
   echo
@@ -231,7 +231,7 @@ else
   [ -f "$BK/sandboxd.db" ] && { cp "$BK/sandboxd.db" "$DB" 2>/dev/null || sudo cp "$BK/sandboxd.db" "$DB"; }
   git reset --hard -q "$PREV_SHA"
   # Re-stamp so the rebuilt image reports the version we actually rolled back to.
-  export SANDBOXD_VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+  export SANDBOXD_VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)"
   export SANDBOXD_GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
   $COMPOSE $BUILD_PROFILE build >/dev/null 2>&1 || true
   $COMPOSE $PROFILE up -d || true
