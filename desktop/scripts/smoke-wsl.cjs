@@ -12,12 +12,15 @@ async function main() {
     'This destructive fixture cleanup is restricted to disposable Windows CI runners.',
   )
   const directory = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, 'sandboxd-wsl-smoke-'))
+  let lastProbe = ''
   const probe = async () => {
     try {
       const r = await fetch(ENGINE_URL + '/v1/auth/status', { signal: AbortSignal.timeout(3000) })
       const body = await r.json()
+      lastProbe = `HTTP ${r.status}; enabled=${typeof body.enabled}; authenticated=${typeof body.authenticated}`
       return r.ok && typeof body.enabled === 'boolean' && typeof body.authenticated === 'boolean'
-    } catch {
+    } catch (error) {
+      lastProbe = `${error.message}; ${error.cause?.code || ''}`
       return false
     }
   }
@@ -30,6 +33,7 @@ async function main() {
   try {
     assert.equal(await probe(), false, 'Runner must not have an existing engine')
     const installed = await manager.start()
+    console.log('Last Windows API probe:', lastProbe)
     assert.equal(installed.phase, 'ready', installed.message)
     assert.equal(installed.installed, true)
     manifest = JSON.parse(await fs.readFile(path.join(directory, 'local-engine/engine.json')))
@@ -96,7 +100,7 @@ async function main() {
           '--exec',
           'bash',
           '-c',
-          'test -f /var/lib/sandboxd-desktop/packages-ready && echo packages-ready; test -f /var/lib/sandboxd-desktop/ready && echo engine-ready; docker ps --format "{{.Names}}: {{.Status}}"',
+          'test -f /var/lib/sandboxd-desktop/packages-ready && echo packages-ready; test -f /var/lib/sandboxd-desktop/ready && echo engine-ready; docker ps --format "{{.Names}}: {{.Status}} {{.Ports}}"; curl -fsS --max-time 3 http://127.0.0.1:9090/v1/auth/status; ps aux | grep -E "docker-proxy|flock|sleep infinity"',
         ],
         { timeout: 20000, encoding: 'utf8' },
       )
