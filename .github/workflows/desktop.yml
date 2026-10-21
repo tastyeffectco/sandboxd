@@ -12,6 +12,17 @@ concurrency:
   group: desktop-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  windows-engine:
+    name: windows-engine-wsl
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install and restart an actual engine in disposable WSL
+        run: node desktop/scripts/smoke-wsl.cjs
   native:
     name: desktop-${{ matrix.os }}-${{ matrix.arch }}
     strategy:

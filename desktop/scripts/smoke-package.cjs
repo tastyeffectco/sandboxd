@@ -39,6 +39,10 @@ async function main() {
     'Packaged UI missing',
   )
   assert(!files.some((file) => /[\\/]node_modules[\\/]/.test(file)), 'Build dependencies must not ship')
+  assert(
+    files.some((file) => file.endsWith('/src/windows-engine-bootstrap.sh')),
+    'Managed engine bootstrap missing',
+  )
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-package-'))
   const args = [`--user-data-dir=${temp}`, '--remote-debugging-port=0']
   if (process.env.SANDBOXD_TEST_NO_OS_SANDBOX === '1') args.push('--no-sandbox')
@@ -69,6 +73,7 @@ async function main() {
     const context = browser.contexts()[0]
     const page = context.pages()[0] || (await context.waitForEvent('page'))
     await expect(page.getByRole('heading', { name: 'Connect your engine.' })).toBeVisible({ timeout: 15000 })
+    if (process.platform === 'win32') await expect(page.getByTestId('desktop-install-engine')).toBeVisible()
     if ((await page.evaluate(() => typeof require)) !== 'undefined')
       throw new Error('Node exposed in packaged renderer')
     await fs.mkdir(path.resolve(__dirname, '../test-results'), { recursive: true })
