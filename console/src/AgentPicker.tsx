@@ -18,6 +18,7 @@ export function AgentPicker({
   agents: Agent[]
   disabled?: boolean
 }) {
+  const account = agents.find((agent) => agent.id === value.agent)
   const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([])
   const [catalogError, setCatalogError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -45,7 +46,7 @@ export function AgentPicker({
     return () => {
       active = false
     }
-  }, [value.agent, value.provider, reload])
+  }, [value.agent, value.provider, reload, account?.status, account?.method])
   const selected = providers.find((p) => p.id === value.provider)
   return (
     <div className="agent-picker">

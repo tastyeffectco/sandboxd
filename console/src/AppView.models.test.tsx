@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AppView } from './AppView'
+import { AgentPicker } from './AgentPicker'
 import { api } from './api'
 
 vi.mock('./api', () => ({
@@ -48,5 +49,32 @@ describe('account model picker', () => {
     expect(
       Array.from((screen.getByTestId('task-model') as HTMLSelectElement).options).map((o) => o.value),
     ).toEqual([''])
+  })
+  it('reloads models when an account becomes connected', async () => {
+    vi.mocked(api.getAgentModels)
+      .mockRejectedValueOnce(new Error('Connect this account'))
+      .mockResolvedValue({ source: 'provider', models: [{ id: 'connected-model', name: 'Connected model' }] })
+    const props = { value: { agent: 'codex', provider: '', model: '' }, onChange: () => {}, providers: [] }
+    const view = render(<AgentPicker {...props} agents={[]} />)
+    await screen.findByText(/Connect this account/)
+    view.rerender(
+      <AgentPicker
+        {...props}
+        agents={[
+          {
+            id: 'codex',
+            label: 'Codex',
+            installed_state: 'installed',
+            status: 'connected',
+            method: 'oauth',
+            supports_oauth: true,
+            supports_api_key: true,
+            runnable: true,
+          },
+        ]}
+      />,
+    )
+    await screen.findByRole('option', { name: 'Connected model' })
+    expect(screen.queryByText(/Connect this account/)).toBeNull()
   })
 })

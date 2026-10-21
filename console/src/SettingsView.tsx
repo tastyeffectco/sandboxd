@@ -303,6 +303,7 @@ export function SettingsView({
                       <label key={a.id} className="form-field">
                         {a.label}
                         <AccountModelSelect
+                          key={`${a.status}:${a.method}`}
                           agent={a.id}
                           value={models[a.id] || ''}
                           onChange={(model) => setModels({ ...models, [a.id]: model })}
