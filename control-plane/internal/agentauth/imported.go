@@ -28,7 +28,7 @@ func (s *Store) RefreshImported(ctx context.Context, agent string) error {
 		return fmt.Errorf("invalid account login; reconnect %s", agent)
 	}
 	for name, doc := range accounts {
-		if name != "openai-codex" && name != "openai" && name != "anthropic" {
+		if (name == "openai-codex" && agent != "pi") || (name != "openai-codex" && name != "openai" && name != "anthropic") {
 			continue
 		}
 		var kind, access, refresh string

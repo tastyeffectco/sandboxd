@@ -115,3 +115,13 @@ func TestAnthropicCatalogPaginationAndDefault(t *testing.T) {
 		t.Fatal("accepted unlisted alias")
 	}
 }
+
+func TestAccountKeysAreAgentSpecific(t *testing.T) {
+	oauth := importedCredential{Type: "oauth", Access: "token"}
+	if importedUpstream("opencode", "openai-codex", oauth) != "" {
+		t.Fatal("OpenCode must not alias a second credential to its openai subscription route")
+	}
+	if importedUpstream("opencode", "openai", oauth) != "codex" || importedUpstream("pi", "openai-codex", oauth) != "codex" || importedUpstream("pi", "openai", oauth) != "openai" {
+		t.Fatal("account schema was guessed across agents")
+	}
+}

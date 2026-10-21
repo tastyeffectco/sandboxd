@@ -41,7 +41,7 @@ func (p *Proxy) importedCredentials(agent string) map[string]importedCredential 
 func importedUpstream(agent, account string, c importedCredential) string {
 	switch account {
 	case "openai-codex":
-		if c.Type == "oauth" {
+		if agent == "pi" && c.Type == "oauth" {
 			return "codex"
 		}
 	case "openai":
