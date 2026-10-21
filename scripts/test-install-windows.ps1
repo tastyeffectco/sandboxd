@@ -10,7 +10,7 @@ function Invoke-WebRequest {
     $global:sandboxdInstallerTest.Calls += 'download'
     if ($OutFile) { [IO.File]::WriteAllText($OutFile, 'fixture'); return }
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') { 'arm64' } else { 'x64' }
-    return @{ Content = ('a' * 64) + "  sandboxd-desktop-0.3.23-win-$arch.exe`n" }
+    return @{ Content = ('a' * 64) + "  sandboxd-desktop-0.3.24-win-$arch.exe`n" }
 }
 function Get-FileHash { param($Algorithm, $Path) return @{ Hash = $(if ($global:sandboxdInstallerTest.BadHash) { 'b' * 64 } else { 'a' * 64 }) } }
 function Get-AuthenticodeSignature { param($FilePath) return @{ Status = $(if ($global:sandboxdInstallerTest.BadSignature) { 'NotSigned' } else { 'Valid' }) } }

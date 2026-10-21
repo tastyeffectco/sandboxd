@@ -1,6 +1,6 @@
 {
   "name": "sandboxd-desktop",
-  "version": "0.3.23",
+  "version": "0.3.24",
   "private": true,
   "description": "The native desktop client for the sandboxd engine",
   "author": "sandboxd contributors",

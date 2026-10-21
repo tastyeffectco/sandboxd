@@ -40,6 +40,9 @@ export default function DesktopHost() {
         location.hash = `#/${route}`
       }),
       bridge.onSearch(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))),
+      bridge.onEngineProgress((localEngine) =>
+        setState((previous) => previous && { ...previous, localEngine }),
+      ),
     ]
     return () => remove.forEach((unsubscribe) => unsubscribe())
   }, [])
@@ -49,6 +52,13 @@ export default function DesktopHost() {
     const timer = setInterval(() => void probe(), 15000)
     return () => clearInterval(timer)
   }, [state?.selected, probe])
+  useEffect(() => {
+    if (state?.selected === local.url && state.localEngine?.phase === 'ready') {
+      // AuthGate may have loaded while WSL was starting after a Windows reboot.
+      setRevision((value) => value + 1)
+      setOnline(true)
+    }
+  }, [state?.selected, state?.localEngine?.phase])
   const selected = state?.connections.find((c) => c.url === state.selected)
   const connected = (next: DesktopState) => {
     setError('')
@@ -74,7 +84,11 @@ export default function DesktopHost() {
       </header>
       {!online && selected && (
         <div className="desktop-offline" role="status">
-          <span>Cannot reach {selected.name}. Your workspace is still on the engine.</span>
+          <span>
+            {state?.localEngine?.busy
+              ? state.localEngine.message
+              : `Cannot reach ${selected.name}. Your workspace is still on the engine.`}
+          </span>
           <button
             className="text-button"
             onClick={() => {
@@ -143,8 +157,9 @@ export default function DesktopHost() {
               <div className="desktop-setup-help">
                 <strong>New to sandboxd?</strong>
                 <p>
-                  The engine runs your apps and agents. Connect an existing engine, or follow the local setup
-                  guide.
+                  {state.platform === 'win32'
+                    ? 'Choose Install & open workspace to set up an engine on this computer. No terminal needed.'
+                    : 'The engine runs your apps and agents. Connect an existing engine, or follow the local setup guide.'}
                 </p>
                 <button
                   className="text-button"
@@ -235,8 +250,25 @@ function ConnectionForm({
   const [mode, setMode] = useState(choice.url === local.url ? 'local' : 'remote')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const working = busy || !!state.localEngine?.busy
+  useEffect(() => {
+    onBusy(working)
+  }, [working, onBusy])
+  const install = async () => {
+    if (working || !confirmLeaveWorkspace()) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await bridge!.installEngine()
+      if (result.phase === 'ready') onConnected(await bridge!.connect(local))
+    } catch (e) {
+      setError((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, ''))
+    } finally {
+      setBusy(false)
+    }
+  }
   const connect = async (connection = choice) => {
-    if (busy || !confirmLeaveWorkspace()) return
+    if (working || !confirmLeaveWorkspace()) return
     setBusy(true)
     onBusy(true)
     setError('')
@@ -254,7 +286,7 @@ function ConnectionForm({
       <div className="desktop-connection-modes">
         <button
           aria-pressed={mode === 'local'}
-          disabled={busy}
+          disabled={working}
           onClick={() => {
             setMode('local')
             setChoice(local)
@@ -266,7 +298,7 @@ function ConnectionForm({
         </button>
         <button
           aria-pressed={mode === 'remote'}
-          disabled={busy}
+          disabled={working}
           onClick={() => {
             setMode('remote')
             setChoice({ name: '', url: '', allowInsecure: false })
@@ -277,6 +309,49 @@ function ConnectionForm({
           <span>Your server or team instance</span>
         </button>
       </div>
+      {mode === 'local' && state.platform === 'win32' && (
+        <section className="desktop-local-setup" aria-label="Local engine setup">
+          <strong>
+            {state.localEngine?.installed
+              ? 'Your engine on this computer'
+              : 'Everything you need, installed for you.'}
+          </strong>
+          <p>
+            Sets up a private Linux environment and the sandboxd engine. First setup downloads several GB and
+            can take 15–30 minutes. Windows may ask for administrator permission or a restart.
+          </p>
+          {state.localEngine?.message && (
+            <p
+              role={state.localEngine.phase === 'error' ? 'alert' : 'status'}
+              className={state.localEngine.phase === 'error' ? 'inline-error' : 'desktop-setup-progress'}
+            >
+              {state.localEngine.message}
+            </p>
+          )}
+          <Btn
+            variant="primary"
+            disabled={working}
+            onClick={() => void install()}
+            data-testid="desktop-install-engine"
+          >
+            {working
+              ? 'Setting up your engine…'
+              : state.localEngine?.phase === 'restart'
+                ? 'Continue setup'
+                : state.localEngine?.phase === 'error'
+                  ? 'Retry setup'
+                  : state.localEngine?.installed
+                    ? 'Start & open workspace'
+                    : 'Install & open workspace'}
+            {!working && <Icon name="arrow" size={16} />}
+          </Btn>
+          <small>
+            {working
+              ? 'Keep this window open. Your progress is saved if setup needs to restart.'
+              : 'Already have an engine? Connect using its address below.'}
+          </small>
+        </section>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -291,7 +366,7 @@ function ConnectionForm({
               onChange={(e) => setChoice({ ...choice, name: e.target.value })}
               placeholder="My studio"
               maxLength={80}
-              disabled={busy}
+              disabled={working}
             />
           </label>
         )}
@@ -304,13 +379,15 @@ function ConnectionForm({
             value={choice.url}
             onChange={(e) => setChoice({ ...choice, url: e.target.value })}
             placeholder="https://sandboxd.example.com"
-            disabled={busy}
+            disabled={working}
             data-testid="desktop-engine-url"
           />
         </label>
         {mode === 'local' && (
           <p className="field-help">
-            Usually http://127.0.0.1:9090. The engine needs to be running before you connect.
+            {state.platform === 'win32'
+              ? 'Use the address of an existing engine, or install one above.'
+              : 'Usually http://127.0.0.1:9090. The engine needs to be running before you connect.'}
           </p>
         )}
         {mode === 'remote' && (
@@ -321,7 +398,7 @@ function ConnectionForm({
                 type="checkbox"
                 checked={choice.allowInsecure}
                 onChange={(e) => setChoice({ ...choice, allowInsecure: e.target.checked })}
-                disabled={busy}
+                disabled={working}
               />{' '}
               Allow unencrypted HTTP
             </label>
@@ -341,7 +418,7 @@ function ConnectionForm({
         <Btn
           type="submit"
           variant="primary"
-          disabled={busy || !choice.url.trim()}
+          disabled={working || !choice.url.trim()}
           data-testid="desktop-connect"
         >
           {busy ? 'Connecting…' : 'Open workspace'}
@@ -356,7 +433,7 @@ function ConnectionForm({
         <div className="desktop-recent">
           <h3>Recent engines</h3>
           {state.connections.map((connection) => (
-            <button key={connection.url} disabled={busy} onClick={() => void connect(connection)}>
+            <button key={connection.url} disabled={working} onClick={() => void connect(connection)}>
               <Icon name="box" size={17} />
               <span>
                 <strong>{connection.name}</strong>

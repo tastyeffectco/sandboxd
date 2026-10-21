@@ -3,6 +3,7 @@ const path = require('node:path')
 const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
+const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 
 let window,
   gateway,
@@ -11,6 +12,7 @@ let window,
 let config = { connections: [], selected: '', sessions: {} }
 let writes = Promise.resolve()
 let connecting = false
+let localEngine
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -22,6 +24,7 @@ const publicState = () => ({
   connections: config.connections,
   selected: config.selected,
   canRemember: canRemember(),
+  localEngine: localEngine?.state(),
 })
 const persist = () => {
   const json = JSON.stringify(config)
@@ -139,6 +142,16 @@ async function createWindow() {
     else quitting = false
   })
   window.once('ready-to-show', () => window.show())
+  window.on('close', (event) => {
+    if (localEngine?.state().busy) {
+      event.preventDefault()
+      dialog.showMessageBoxSync(window, {
+        type: 'info',
+        title: 'Engine setup is running',
+        message: 'Keep sandboxd open while engine setup finishes. Progress is shown in the app.',
+      })
+    }
+  })
   window.on('closed', () => {
     window = null
   })
@@ -168,6 +181,21 @@ async function start() {
     config.sessions = stored.sessions && typeof stored.sessions === 'object' ? stored.sessions : {}
   } catch {
     /* Fresh install, or invalid config: offer connection setup. */
+  }
+  if (process.platform === 'win32') {
+    localEngine = createWindowsEngine({
+      dataDir: app.getPath('userData'),
+      probe: async () => {
+        try {
+          await probeEngine(ENGINE_URL, false)
+          return true
+        } catch {
+          return false
+        }
+      },
+      onChange: (state) => window?.webContents.send('desktop:engine-progress', state),
+    })
+    await localEngine.load().catch(() => {})
   }
   gateway = await createGateway({
     uiRoot: path.join(__dirname, '../ui'),
@@ -208,6 +236,12 @@ async function start() {
   ipcMain.handle('desktop:state', (event) => {
     trusted(event)
     return publicState()
+  })
+  ipcMain.handle('desktop:install-engine', (event, ...args) => {
+    trusted(event)
+    if (args.length) throw new Error('Engine setup does not accept commands or options.')
+    if (!localEngine) throw new Error('Automatic engine setup is available on Windows.')
+    return localEngine.start()
   })
   ipcMain.handle('desktop:connect', async (event, input) => {
     trusted(event)
@@ -335,6 +369,7 @@ async function start() {
     copyright: 'MIT · sandboxd contributors',
   })
   await createWindow()
+  if (localEngine?.state().installed && config.selected === ENGINE_URL) void localEngine.start()
 }
 if (process.env.SANDBOXD_DESKTOP_TEST_DATA && !app.isPackaged)
   app.setPath('userData', process.env.SANDBOXD_DESKTOP_TEST_DATA)
@@ -358,6 +393,10 @@ else {
     if (process.platform !== 'darwin') app.quit()
   })
   app.on('before-quit', (event) => {
+    if (localEngine?.state().busy) {
+      event.preventDefault()
+      return
+    }
     if (quitting) return
     event.preventDefault()
     void writes

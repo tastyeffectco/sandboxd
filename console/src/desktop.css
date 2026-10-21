@@ -7,6 +7,28 @@
   color: #203b30;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
+.desktop-local-setup {
+  padding: 18px;
+  margin: 18px 0;
+  background: #edf2e8;
+  border: 1px solid #d9e3d2;
+  border-radius: 12px;
+}
+.desktop-local-setup > p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #586f50;
+  margin: 8px 0 14px;
+}
+.desktop-local-setup > small {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #61765a;
+}
+.desktop-local-setup .desktop-setup-progress {
+  font-weight: 600;
+}
 .desktop-titlebar {
   height: 48px;
   flex: none;

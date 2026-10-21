@@ -3,7 +3,7 @@
 # Separate process: a failed optional desktop download never rolls back an engine.
 set -euo pipefail
 [ "$(uname -s)" = Darwin ] || { echo 'The native desktop installer supports macOS and Windows.' >&2; exit 1; }
-VERSION="${SANDBOXD_DESKTOP_VERSION:-0.3.23}"
+VERSION="${SANDBOXD_DESKTOP_VERSION:-0.3.24}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid desktop version.' >&2; exit 1; }
 case "$(uname -m)" in arm64) ARCH=arm64 ;; x86_64) ARCH=x64 ;; *) echo 'Unsupported Mac architecture.' >&2; exit 1 ;; esac
 BASE="https://github.com/tastyeffectco/sandboxd/releases/download/desktop-v$VERSION"
