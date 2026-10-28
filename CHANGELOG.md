@@ -6,7 +6,15 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
-## [Unreleased]
+## [0.3.23] — 2026-10-28
+
+### Breaking changes
+
+- **Claude subscriptions now sign in inside each project.** A Claude Pro/Max
+  login connected in Settings → Coding agents is removed on upgrade, because
+  Anthropic doesn't allow third-party apps to store or relay Claude.ai logins.
+  To keep using it, open a project, choose Claude Code and click **Sign in with
+  Claude**. Claude API keys are not affected.
 
 ### Changed
 
@@ -48,13 +56,15 @@ patch** — each lands the meaningful changes merged since the last one — and 
   and token limits in Settings; select the agent, connection and model per task.
   Supports local model servers and LiteLLM gateways (#119), with encrypted
   control-plane credentials and temporary model-scoped proxy capabilities.
-- Pin and test OpenCode 1.19.3 and Pi 1.3.0, including actual tool execution
+- Test OpenCode and Pi with actual tool execution
   through both protocols. Add console browser workflow tests and opt-in live
   model tests. See [model connections](docs/model-providers.md).
 
 - Offer MiniMax M3.1 Flash before M3 in the OpenCode model picker and route it
   through the direct MiniMax proxy. Preserve saved defaults and explicit legacy
   model requests; M2.7 is no longer offered in the ordinary picker.
+
+**Full Changelog**: https://github.com/tastyeffectco/sandboxd/compare/v0.3.22...v0.3.23
 
 ## [0.3.22] — 2026-10-12
 
