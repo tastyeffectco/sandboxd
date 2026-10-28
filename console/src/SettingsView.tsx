@@ -227,7 +227,7 @@ export function SettingsView({
                             : a.id === 'opencode'
                               ? 'Build with the free tier or your own account'
                               : a.id === 'claude-code'
-                                ? 'Build with your Claude account'
+                                ? 'Add an API key here. To use a Claude subscription, sign in with Claude inside a project.'
                                 : a.runnable
                                   ? 'Coding agent'
                                   : 'Model gateway for OpenCode'}

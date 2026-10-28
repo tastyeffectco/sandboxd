@@ -362,7 +362,7 @@ async function start() {
   })
   ipcMain.handle('desktop:import-agent-login', async (event, agent) => {
     trusted(event)
-    if (!['claude-code', 'codex', 'opencode', 'pi'].includes(agent))
+    if (!['codex', 'opencode', 'pi'].includes(agent))
       throw new Error('Unsupported coding agent.')
     const engine = gateway.engine
     if (!engine) throw new Error('Connect an engine first.')

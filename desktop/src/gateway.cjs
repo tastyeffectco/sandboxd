@@ -240,7 +240,7 @@ async function createGateway({
     // Main-process-only import: credentials never pass through renderer IPC.
     async importAgentLogin(agent, credentials, expectedEngine) {
       if (current !== expectedEngine || !current) throw new Error('Engine changed. Retry the import.')
-      if (!['claude-code', 'codex', 'opencode', 'pi'].includes(agent))
+      if (!['codex', 'opencode', 'pi'].includes(agent))
         throw new Error('Unsupported coding agent.')
       const target = new URL(current)
       if (target.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname))

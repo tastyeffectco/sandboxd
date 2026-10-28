@@ -52,6 +52,11 @@ func importedUpstream(agent, account string, c importedCredential) string {
 		}
 		return "openai"
 	case "anthropic":
+		// A Claude subscription login is only for Claude Code itself; Anthropic
+		// API keys are fine.
+		if c.Type == "oauth" {
+			return ""
+		}
 		return "anthropic"
 	case "opencode":
 		return "zen"

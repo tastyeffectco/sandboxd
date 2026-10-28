@@ -138,3 +138,28 @@ func TestUnconnectedOpenCodeCatalogIsTheFreeModel(t *testing.T) {
 		t.Fatalf("catalog=%+v error=%v", catalog, err)
 	}
 }
+
+// A Claude subscription (Anthropic OAuth) inside an imported OpenCode or Pi
+// login is never used outside Claude Code; an Anthropic API key there is.
+func TestImportedClaudeSubscriptionIsIgnored(t *testing.T) {
+	for _, agent := range []string{"opencode", "pi"} {
+		if up := importedUpstream(agent, "anthropic", importedCredential{Type: "oauth", Access: "x"}); up != "" {
+			t.Errorf("%s: Claude subscription routed to %q", agent, up)
+		}
+		if up := importedUpstream(agent, "anthropic", importedCredential{Type: "api", Key: "k"}); up != "anthropic" {
+			t.Errorf("%s: Anthropic API key routed to %q; want anthropic", agent, up)
+		}
+	}
+}
+
+// Without a Claude API key, Claude Code's model aliases are offered without
+// contacting Anthropic (the subscription is signed in inside the project).
+func TestClaudeSignInCatalogUsesClaudeCodeAliases(t *testing.T) {
+	stubUpstream(t, "anthropic", func(w http.ResponseWriter, r *http.Request) {
+		t.Error("no account catalog to query without an API key")
+	})
+	catalog, err := New(agentauth.NewStore(t.TempDir()), nil).Models(context.Background(), "claude-code")
+	if err != nil || catalog.Source != "claude-code" || len(catalog.Models) != 3 || catalog.Models[0].ID != "sonnet" {
+		t.Fatalf("catalog=%+v error=%v", catalog, err)
+	}
+}

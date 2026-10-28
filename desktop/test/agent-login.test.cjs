@@ -20,18 +20,12 @@ test('local discovery returns only availability and never accepts arbitrary path
   assert.deepEqual(await login.available('codex'), { available: false })
 })
 
-test('macOS Claude keychain lookup uses one fixed service and keeps tokens out of discovery', async (t) => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-agent-keychain-'))
+test('Claude logins are never read, from files or the macOS Keychain', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-agent-claude-'))
   t.after(() => fs.rm(home, { recursive: true }))
-  const login = createAgentLogins({
-    home,
-    platform: 'darwin',
-    run: async (command, args) => {
-      assert.equal(command, '/usr/bin/security')
-      assert.deepEqual(args, ['find-generic-password', '-s', 'Claude Code-credentials', '-w'])
-      return { stdout: '{"claudeAiOauth":{"accessToken":"private"}}' }
-    },
-  })
-  assert.deepEqual(await login.available('claude-code'), { available: true })
-  assert.deepEqual(await login.available('codex'), { available: false })
+  await fs.mkdir(path.join(home, '.claude'))
+  await fs.writeFile(path.join(home, '.claude', '.credentials.json'), '{"claudeAiOauth":{"accessToken":"x"}}')
+  const login = createAgentLogins({ home })
+  assert.deepEqual(await login.available('claude-code'), { available: false })
+  await assert.rejects(login.credential('claude-code'), /No usable local login/)
 })

@@ -61,53 +61,6 @@ func TestCodexRefreshSerializesAndPreservesMetadata(t *testing.T) {
 	}
 }
 
-func TestRefreshCannotUndoDisconnectOrReconnect(t *testing.T) {
-	for _, action := range []string{"disconnect", "reconnect"} {
-		t.Run(action, func(t *testing.T) {
-			st := NewStore(t.TempDir())
-			o := NewOAuth(st)
-			if err := o.write(claudeCred{AccessToken: "old", RefreshToken: "refresh", ExpiresAt: 1}); err != nil {
-				t.Fatal(err)
-			}
-			started, release := make(chan struct{}), make(chan struct{})
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				close(started)
-				<-release
-				json.NewEncoder(w).Encode(map[string]any{"access_token": "stale-result", "expires_in": 3600})
-			}))
-			defer server.Close()
-			old := oauthTokenURL
-			oauthTokenURL = server.URL
-			defer func() { oauthTokenURL = old }()
-			result := make(chan error, 1)
-			go func() { result <- o.Refresh() }()
-			<-started
-			if action == "disconnect" {
-				if err := st.Delete("claude-code"); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				if err := o.write(claudeCred{AccessToken: "new-account", ExpiresAt: 4102444800000}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			close(release)
-			if err := <-result; err == nil {
-				t.Fatal("stale refresh must fail")
-			}
-			if action == "disconnect" && st.Connected("claude-code") {
-				t.Fatal("resurrected deleted account")
-			}
-			if action == "reconnect" {
-				cred, _ := o.read()
-				if cred.AccessToken != "new-account" {
-					t.Fatal("overwrote new account")
-				}
-			}
-		})
-	}
-}
-
 func TestImportedRefreshPreservesOtherProvidersAndRotatedTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"access_token": testJWT(time.Now().Add(time.Hour).Unix()), "refresh_token": "rotated", "expires_in": 3600})

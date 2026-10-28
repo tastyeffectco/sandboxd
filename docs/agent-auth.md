@@ -25,8 +25,34 @@ provider holds exactly one at a time):
 | Method | Endpoint | Notes |
 | --- | --- | --- |
 | **API key** | `POST /v1/agents/{provider}/api-key` `{"api_key":"…"}` | Stored server-side; injected into upstream requests by the proxy. |
-| **Import** | `POST /v1/agents/{provider}/import` `{"credentials":"…"}` | Paste the bundle your local `<cli> login` produced. Parsed only in the control plane for account discovery, routing and refresh. |
-| **Guided OAuth** (claude-code) | `POST /v1/agents/claude-code/oauth/start` → open URL → `…/oauth/finish` `{"code":"<code#state>"}` | A real `claude setup-token` **PKCE** flow, driven server-side. |
+| **Import** | `POST /v1/agents/{provider}/import` `{"credentials":"…"}` | Codex, OpenCode and Pi. Paste the bundle your local `<cli> login` produced. Parsed only in the control plane for account discovery, routing and refresh. |
+
+### Claude subscriptions sign in inside each project
+
+Anthropic doesn't allow third-party apps to collect, store or relay Claude.ai
+logins ([legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)):
+a Claude Pro/Max subscription must sign in to the unmodified Claude Code binary
+through Anthropic's own flow. So sandboxd never stores, imports or proxies a
+Claude subscription login:
+
+- **Sign in with Claude** (the project's Agent panel, or the API below) runs
+  Claude Code's own `claude auth login` in that project's sandbox. The user opens
+  Anthropic's sign-in page, approves, and pastes the code it shows; sandboxd
+  types it into Claude Code, as a terminal would. Claude Code keeps the login in
+  the project's workspace (`~/.claude`); the control plane never sees it.
+- Without a connected Claude **API key**, claude-code tasks run Claude Code on
+  that login, talking to Anthropic directly (no proxy). Sign in once per project.
+- A Claude **API key** connected in Settings still goes through the proxy for
+  every project.
+- A Claude subscription inside an imported OpenCode or Pi login is ignored.
+  A subscription login stored by an earlier version is deleted at startup.
+
+| Call | Purpose |
+| --- | --- |
+| `GET /v1/sandboxes/{id}/claude-login` | `{"logged_in": bool, "method"}` from `claude auth status` |
+| `POST /v1/sandboxes/{id}/claude-login` | Starts `claude auth login`; returns `{"url"}` (Anthropic's sign-in page) |
+| `POST /v1/sandboxes/{id}/claude-login/code` | `{"code"}` from that page; returns the new status |
+| `DELETE /v1/sandboxes/{id}/claude-login` | `claude auth logout` |
 
 `POST /v1/agents/{provider}/disconnect` wipes the material. Stored
 credentials are stored in restricted files outside workspaces (built-in auth)
@@ -51,9 +77,9 @@ agent's stored credential for that upstream and injects it. Upstreams:
 "go" subscription), and the MiniMax direct endpoints `minimax`,
 `minimax-cn` (China), `minimax-anthropic`, `minimax-anthropic-cn` (China).
 
-- **claude-code** — `ANTHROPIC_BASE_URL` = `<proxy>/claude-code/anthropic`,
-  `ANTHROPIC_API_KEY` = `sandboxd-proxy-injected`. Works for both an API key and
-  a Claude **subscription** (OAuth bearer + `anthropic-beta` are injected proxy-side).
+- **claude-code** with a Claude **API key** — `ANTHROPIC_BASE_URL` =
+  `<proxy>/claude-code/anthropic`, `ANTHROPIC_API_KEY` = `sandboxd-proxy-injected`.
+  A Claude subscription instead signs in inside the project (above) and uses no proxy.
 - **opencode** — routed via an `OPENCODE_CONFIG` file that runtimed writes, which
   sends opencode's requests to the proxy with the dummy key. Which OpenCode Zen
   endpoint it uses for a directly connected Zen/Go key is set by `SANDBOXD_OPENCODE_ZEN_PATH` — see
@@ -187,12 +213,11 @@ the destination engine before sending the credential. The credential is read
 and transferred by the main process; the renderer receives availability and
 success status only. Remote imports require HTTPS.
 
-Known locations are `~/.codex/auth.json`, `~/.claude/.credentials.json`,
-`~/.local/share/opencode/auth.json`, and `~/.pi/agent/auth.json`. On macOS,
-Claude's `Claude Code-credentials` Keychain service is also checked. Custom CLI
+Known locations are `~/.codex/auth.json`, `~/.local/share/opencode/auth.json`,
+and `~/.pi/agent/auth.json`. Claude logins are never read (see above). Custom CLI
 credential locations require manual import. An expired login may need renewal
 with the original CLI before importing. The browser console supports manual
-import and guided Claude OAuth; it cannot read your computer's login files.
+import; it cannot read your computer's login files.
 
 Supported OAuth credentials are refreshed before model discovery and inference.
 Concurrent refreshes are serialized, and an in-flight refresh cannot undo a
@@ -242,9 +267,9 @@ layers are injected with **no change to your source**:
 ## What's guaranteed
 
 Credentials are absent from: the workspace, snapshots (workspace tree only), the
-container env / `docker inspect`, task results, events, and logs. For claude-code
-subscriptions the token isn't even on the container filesystem — it lives only
-behind the control-plane proxy.
+container env / `docker inspect`, task results, events, and logs. A Claude
+subscription is the exception by design: Claude Code itself keeps that login in
+the project's workspace (`~/.claude`), and it never reaches the control plane.
 
 ## Running a task
 

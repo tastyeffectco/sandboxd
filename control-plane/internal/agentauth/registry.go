@@ -61,10 +61,9 @@ func Runnable(id string) bool { return runnable[id] }
 // `<cli> login` produces one of these on the owner's machine; the owner pastes
 // its contents in. The control plane parses it for discovery and refresh.
 var credentialFiles = map[string]string{
-	"claude-code": ".claude/.credentials.json",
-	"codex":       ".codex/auth.json",
-	"pi":          ".pi/agent/auth.json",
-	"opencode":    ".local/share/opencode/auth.json",
+	"codex":    ".codex/auth.json",
+	"pi":       ".pi/agent/auth.json",
+	"opencode": ".local/share/opencode/auth.json",
 }
 
 // CredentialFile returns the provider's credential file path (relative to HOME).

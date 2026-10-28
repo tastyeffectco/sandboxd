@@ -530,40 +530,6 @@ paths:
         "204": { description: Disconnected }
         "404": { description: Unknown provider }
         "503": { description: Agent auth not configured }
-  /v1/agents/claude-code/oauth/start:
-    post:
-      operationId: startClaudeOAuth
-      tags: [apps]
-      summary: Begin the guided Claude subscription login — returns the authorize URL the user opens in a browser.
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  authorize_url: { type: string, description: The Claude OAuth authorize URL (PKCE); open it, approve, and paste the returned code to /finish. }
-        "503": { description: OAuth not configured }
-  /v1/agents/claude-code/oauth/finish:
-    post:
-      operationId: finishClaudeOAuth
-      tags: [apps]
-      summary: Complete the login — exchange the pasted code for tokens, stored host-side (never returned). Refreshed automatically thereafter.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [code]
-              properties:
-                code: { type: string, description: "The code the authorize page returned (form 'code#state')." }
-      responses:
-        "200": { description: Connected }
-        "400": { description: Missing/invalid code, or no pending login }
-        "503": { description: OAuth not configured }
-
   /v1/presets:
     get:
       operationId: listPresets
@@ -1269,6 +1235,72 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/sandboxes/{id}/claude-login:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: getClaudeSignIn
+      tags: [tasks]
+      summary: Whether this project's Claude Code is signed in to a Claude subscription
+      description: >
+        Claude subscriptions sign in to the unmodified Claude Code binary inside
+        each project, through Anthropic's own flow. The login stays in the
+        project's workspace; the control plane never reads, stores or relays it.
+        Without a connected Claude API key, claude-code tasks use this login.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaudeSignIn" }
+        "409": { description: The project is not running }
+    post:
+      operationId: startClaudeSignIn
+      tags: [tasks]
+      summary: Start `claude auth login` in the project and return Anthropic's sign-in link
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: "Anthropic's sign-in page. After approving, paste the code it shows to /code." }
+        "409": { description: The project is not running }
+        "502": { description: Claude Code could not start signing in }
+    delete:
+      operationId: signOutClaude
+      tags: [tasks]
+      summary: Sign this project's Claude Code out (`claude auth logout`)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaudeSignIn" }
+  /v1/sandboxes/{id}/claude-login/code:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: finishClaudeSignIn
+      tags: [tasks]
+      summary: Type the code from Anthropic's sign-in page into Claude Code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: The code shown after approving on Anthropic's sign-in page. }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaudeSignIn" }
+        "400": { description: Missing or malformed code }
+        "409": { description: No sign-in in progress, or Claude did not accept the code }
   /v1/sandboxes/{id}/tasks:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
@@ -1628,6 +1660,11 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    ClaudeSignIn:
+      type: object
+      properties:
+        logged_in: { type: boolean }
+        method: { type: string, description: "How Claude Code is signed in (e.g. claude.ai), when logged_in." }
     ProviderModel:
       type: object
       required: [id]

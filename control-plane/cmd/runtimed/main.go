@@ -39,6 +39,7 @@ type app struct {
 	runtimeDir    string
 	log           *slog.Logger
 	bootedAt      time.Time
+	claude        claudeLogins // this workspace's Claude Code sign-in session
 
 	mu           sync.Mutex
 	lastCode     int

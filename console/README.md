@@ -58,8 +58,9 @@ project or browser page.
 - **Model connections:** compatible OpenAI Chat Completions or Anthropic Messages
   endpoints, gateway keys, exact model aliases and token limits. See
   [model providers](../docs/model-providers.md) for LiteLLM and local servers.
-- **Coding agents:** connect an API key or subscription, use the guided Claude
-  OAuth flow, disconnect accounts and choose built-in default models.
+- **Coding agents:** connect an API key or an imported Codex/OpenCode/Pi login,
+  disconnect accounts and choose built-in default models. A Claude subscription
+  signs in inside each project ("Sign in with Claude" in the Agent panel).
 - **Git credentials:** add named host credentials for private imports and pushes.
 - **Security & API keys:** change the console password, sign out sessions, create
   scoped API keys and revoke them. New API keys are shown only once.

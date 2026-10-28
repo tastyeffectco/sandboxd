@@ -28,7 +28,8 @@ async function fixture(
       installed_state: 'installed',
       status: 'needs_login',
       supports_api_key: id !== 'pi',
-      supports_oauth: id !== 'pi',
+      // Claude subscriptions sign in inside a project, never in Settings.
+      supports_oauth: id === 'opencode',
       runnable: true,
     })),
     calls: [] as { path: string; method: string; body: any }[],
@@ -87,10 +88,13 @@ async function fixture(
           },
         ],
       })
-    if (/^\/v1\/agents\/[^/]+\/models$/.test(path)) return json({ source: 'provider', models: [{ id: 'fixture-account-model', name: 'Fixture account model' }] })
+    if (/^\/v1\/agents\/[^/]+\/models$/.test(path))
+      return json({
+        source: 'provider',
+        models: [{ id: 'fixture-account-model', name: 'Fixture account model' }],
+      })
     if (path === '/v1/agents') return json({ providers: state.agents })
-    if (path.endsWith('/oauth/start')) return json({ authorize_url: 'https://example.com/authorize' })
-    if (/\/agents\/.+\/(api-key|oauth\/finish|credential)$/.test(path)) {
+    if (/\/agents\/.+\/(api-key|credential)$/.test(path)) {
       state.agents.find((a) => a.id === path.split('/')[3])!.status = 'connected'
       return json({ status: 'connected' })
     }
@@ -336,7 +340,7 @@ test('code edits survive switching panels and secrets are write-only with explic
   expect(s.errors).toEqual([])
 })
 
-test('agent credentials, guided OAuth, Git credentials and settings use accessible dialogs', async ({
+test('agent credentials, Claude sign-in guidance, Git credentials and settings use accessible dialogs', async ({
   page,
 }, info) => {
   const s = await fixture(page)
@@ -350,15 +354,12 @@ test('agent credentials, guided OAuth, Git credentials and settings use accessib
   })
   await page.getByTestId('agent-claude-code').getByRole('button', { name: 'Disconnect' }).click()
   await page.getByRole('button', { name: 'Disconnect account' }).click()
-  await page.getByTestId('agent-claude-code').getByRole('button', { name: 'Connect subscription' }).click()
-  await page.getByRole('button', { name: 'Start authorization' }).click()
-  await expect(page.getByRole('link', { name: /Open authorization/ })).toHaveAttribute(
-    'href',
-    'https://example.com/authorize',
-  )
-  await page.getByLabel('2. Paste the authorization code').fill('test-oauth-code')
-  await page.getByRole('button', { name: 'Connect account', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  // A Claude subscription is never connected in Settings: it signs in inside a project.
+  await expect(
+    page.getByTestId('agent-claude-code').getByRole('button', { name: 'Connect subscription' }),
+  ).toHaveCount(0)
+  await expect(page.getByTestId('agent-claude-code')).toContainText('sign in with Claude inside a project')
   await page.screenshot({ path: info.outputPath('agents.png') })
   await page.getByRole('button', { name: 'Git credentials Connect private repositories' }).click()
   await page.getByRole('button', { name: 'Add Git credential' }).click()

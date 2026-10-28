@@ -28,7 +28,9 @@ func (s *Store) RefreshImported(ctx context.Context, agent string) error {
 		return fmt.Errorf("invalid account login; reconnect %s", agent)
 	}
 	for name, doc := range accounts {
-		if (name == "openai-codex" && agent != "pi") || (name != "openai-codex" && name != "openai" && name != "anthropic") {
+		// Claude subscription (Anthropic OAuth) logins are never used outside
+		// Claude Code itself, so they are not refreshed here.
+		if (name == "openai-codex" && agent != "pi") || (name != "openai-codex" && name != "openai") {
 			continue
 		}
 		var kind, access, refresh string
@@ -62,12 +64,6 @@ func (s *Store) RefreshImported(ctx context.Context, agent string) error {
 			if next.ExpiresIn > 0 {
 				nextExpires = time.Now().Add(time.Duration(next.ExpiresIn) * time.Second).UnixMilli()
 			}
-		case name == "anthropic":
-			next, err := NewOAuth(s).exchange(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh, "client_id": oauthClientID})
-			if err != nil {
-				return err
-			}
-			nextAccess, nextRefresh, nextExpires = next.AccessToken, next.RefreshToken, next.ExpiresAt
 		default:
 			// Unsupported accounts are not part of sandboxd's model catalog.
 			if name != "openai" {

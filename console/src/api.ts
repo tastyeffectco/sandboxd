@@ -319,6 +319,11 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (ct.includes('application/json') ? res.json() : (res.text() as unknown)) as Promise<T>
 }
 
+export interface ClaudeSignIn {
+  logged_in: boolean
+  method?: string
+}
+
 export type UpgradeState = {
   phase: 'idle' | 'running' | 'succeeded' | 'failed' | 'rolled_back' | 'unavailable'
   target?: string
@@ -330,23 +335,29 @@ export type UpgradeState = {
 }
 
 export interface ModelProviderInput {
- name: string
- protocol: 'openai-completions' | 'anthropic-messages'
- base_url: string
- models: { id: string; context_window: number; max_tokens: number }[]
- api_key?: string
+  name: string
+  protocol: 'openai-completions' | 'anthropic-messages'
+  base_url: string
+  models: { id: string; context_window: number; max_tokens: number }[]
+  api_key?: string
 }
 export interface ModelProvider extends Omit<ModelProviderInput, 'api_key'> {
- id: string
- has_api_key: boolean
+  id: string
+  has_api_key: boolean
 }
 
 export const api = {
- listModelProviders: () => req<{providers: ModelProvider[]}>('GET', '/v1/model-providers').then((r) => r.providers || []),
- saveModelProvider: (id: string | undefined, input: ModelProviderInput) =>
-   req<ModelProvider>(id ? 'PUT' : 'POST', id ? `/v1/model-providers/${encodeURIComponent(id)}` : '/v1/model-providers', input),
- deleteModelProvider: (id: string) => req<void>('DELETE', `/v1/model-providers/${encodeURIComponent(id)}`),
- testModelProvider: (id: string, model: string) => req<{ok: boolean}>('POST', `/v1/model-providers/${encodeURIComponent(id)}/test`, {model}),
+  listModelProviders: () =>
+    req<{ providers: ModelProvider[] }>('GET', '/v1/model-providers').then((r) => r.providers || []),
+  saveModelProvider: (id: string | undefined, input: ModelProviderInput) =>
+    req<ModelProvider>(
+      id ? 'PUT' : 'POST',
+      id ? `/v1/model-providers/${encodeURIComponent(id)}` : '/v1/model-providers',
+      input,
+    ),
+  deleteModelProvider: (id: string) => req<void>('DELETE', `/v1/model-providers/${encodeURIComponent(id)}`),
+  testModelProvider: (id: string, model: string) =>
+    req<{ ok: boolean }>('POST', `/v1/model-providers/${encodeURIComponent(id)}/test`, { model }),
   getUpgrade: () => req<UpgradeState>('GET', '/v1/upgrade'),
   startUpgrade: (target: string) => req<UpgradeState>('POST', '/v1/upgrade', { target }),
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),
@@ -372,14 +383,17 @@ export const api = {
       api_key,
     }),
   disconnectAgent: (provider: string) => req<unknown>('POST', `/v1/agents/${provider}/disconnect`),
-  // Guided Claude subscription login: get the authorize link, then submit the
-  // code the user pastes back. Tokens are exchanged + stored + refreshed host-side.
-  oauthStart: (provider: string) =>
-    req<{ authorize_url: string }>('POST', `/v1/agents/${provider}/oauth/start`),
-  oauthFinish: (provider: string, code: string) =>
-    req<{ provider: string; status: string; method: string }>('POST', `/v1/agents/${provider}/oauth/finish`, {
-      code,
-    }),
+  // A Claude subscription signs in to Claude Code inside each project through
+  // Anthropic's own page; the login stays in the project and never reaches the
+  // control plane. Start returns the sign-in link; finish takes the shown code.
+  claudeSignInStatus: (sandboxId: string) =>
+    req<ClaudeSignIn>('GET', `/v1/sandboxes/${sandboxId}/claude-login`),
+  startClaudeSignIn: (sandboxId: string) =>
+    req<{ url: string }>('POST', `/v1/sandboxes/${sandboxId}/claude-login`),
+  finishClaudeSignIn: (sandboxId: string, code: string) =>
+    req<ClaudeSignIn>('POST', `/v1/sandboxes/${sandboxId}/claude-login/code`, { code }),
+  signOutClaude: (sandboxId: string) =>
+    req<ClaudeSignIn>('DELETE', `/v1/sandboxes/${sandboxId}/claude-login`),
   patchSettings: (body: SettingsPatch) => req<Settings>('PATCH', '/v1/settings', body),
 
   // Auth — session lifecycle. The session cookie is HttpOnly, so state is read
@@ -395,7 +409,8 @@ export const api = {
 
   // API keys — session-only. The plaintext key is shown once on create.
   listApiKeys: () => req<{ keys: ApiKey[] }>('GET', '/v1/api-keys').then((r) => r.keys || []),
-  createApiKey: (name: string, scopes: string[] = []) => req<ApiKey & { key: string }>('POST', '/v1/api-keys', { name, scopes }),
+  createApiKey: (name: string, scopes: string[] = []) =>
+    req<ApiKey & { key: string }>('POST', '/v1/api-keys', { name, scopes }),
   revokeApiKey: (id: string) => req<void>('DELETE', `/v1/api-keys/${id}`),
 
   // Git credentials (for importing private repos in a later v0.4.x release).
@@ -442,14 +457,22 @@ export const api = {
     try {
       const l = await api.listFiles(sandboxId, { path: 'brain' })
       const mds = (l.entries || []).filter((e) => e.type === 'file' && e.path.endsWith('.md'))
-      const contents = await Promise.all(mds.map((e) => api.getWorkspaceFile(sandboxId, e.path.startsWith('brain/') ? e.path : `brain/${e.path}`).catch(() => null)))
+      const contents = await Promise.all(
+        mds.map((e) =>
+          api
+            .getWorkspaceFile(sandboxId, e.path.startsWith('brain/') ? e.path : `brain/${e.path}`)
+            .catch(() => null),
+        ),
+      )
       mds.forEach((e, i) => {
         const c = contents[i]
         if (typeof c !== 'string') return
         const name = e.path.replace(/^brain\//, '').replace(/\.md$/, '')
         spokes[name] = c
       })
-    } catch { /* no brain/ directory yet */ }
+    } catch {
+      /* no brain/ directory yet */
+    }
     return { hub, spokes }
   },
   putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
@@ -475,7 +498,13 @@ export const api = {
     req<GitDiff>('GET', `/v1/apps/${appId}/git/diff${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   gitCommit: (
     appId: string,
-    body: { message: string; paths?: string[]; runtime_paths?: string[]; author_name?: string; author_email?: string },
+    body: {
+      message: string
+      paths?: string[]
+      runtime_paths?: string[]
+      author_name?: string
+      author_email?: string
+    },
   ) => req<GitCommitResult>('POST', `/v1/apps/${appId}/git/commit`, body),
   gitPush: (appId: string, body: { branch?: string }) =>
     req<GitPushResult>('POST', `/v1/apps/${appId}/git/push`, body),
@@ -523,7 +552,14 @@ export const api = {
   stopSandbox: (id: string) => req<Sandbox>('POST', `/v1/sandboxes/${id}/stop`),
   deleteSandbox: (id: string) => req<unknown>('DELETE', `/v1/sandboxes/${id}`),
 
-  submitTask: (id: string, prompt: string, agent: string = 'opencode', model?: string, cont?: boolean, provider?: string) =>
+  submitTask: (
+    id: string,
+    prompt: string,
+    agent: string = 'opencode',
+    model?: string,
+    cont?: boolean,
+    provider?: string,
+  ) =>
     req<{ id: string }>('POST', `/v1/sandboxes/${id}/tasks`, {
       prompt,
       agent,
@@ -533,8 +569,7 @@ export const api = {
       // it would let the server fall back to its continue-by-default behavior.
       ...(cont !== undefined ? { continue: cont } : {}),
     }),
-  getTask: (id: string, taskId: string) =>
-    req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
+  getTask: (id: string, taskId: string) => req<TaskResult>('GET', `/v1/sandboxes/${id}/tasks/${taskId}`),
   cancelTask: (id: string, taskId: string) =>
     req<{ status: string }>('POST', `/v1/sandboxes/${id}/tasks/${taskId}/cancel`),
   // Task history (newest first) + revert-to-checkpoint.
@@ -542,8 +577,7 @@ export const api = {
     req<{ tasks: TaskSummary[] }>('GET', `/v1/sandboxes/${id}/tasks`).then((r) => r.tasks || []),
   revertTask: (id: string, taskId: string) =>
     req<{ status: string }>('POST', `/v1/sandboxes/${id}/tasks/${taskId}/revert`),
-  taskEventsURL: (id: string, taskId: string) =>
-    `/v1/sandboxes/${id}/tasks/${taskId}/events`,
+  taskEventsURL: (id: string, taskId: string) => `/v1/sandboxes/${id}/tasks/${taskId}/events`,
 
   createSnapshot: (sandboxId: string, name: string) =>
     req<{ id: string }>('POST', '/v1/snapshots', { source_sandbox_id: sandboxId, name }),
@@ -558,8 +592,7 @@ export const api = {
 
   // Phase 5 — durable activity timeline (newest-first).
   listAppEvents: (appId: string, limit = 50) =>
-    req<{ events: AppEvent[]; next_before?: string }>(
-      'GET',
-      `/v1/apps/${appId}/events?limit=${limit}`,
-    ).then((r) => r.events || []),
+    req<{ events: AppEvent[]; next_before?: string }>('GET', `/v1/apps/${appId}/events?limit=${limit}`).then(
+      (r) => r.events || [],
+    ),
 }

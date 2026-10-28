@@ -51,10 +51,12 @@ func (p *Proxy) Models(ctx context.Context, agent string) (Catalog, error) {
 			up = "codex"
 		}
 	case "claude-code":
-		if p.store.Method(agent) == "oauth" {
-			if err := agentauth.NewOAuth(p.store).Refresh(); err != nil {
-				return Catalog{}, fmt.Errorf("Claude subscription could not be refreshed; reconnect this account")
-			}
+		// A Claude subscription is signed in inside each project, so there is no
+		// account here to query; offer Claude Code's own model aliases.
+		if p.store.Method(agent) != "api_key" {
+			return Catalog{Models: []CatalogModel{
+				{ID: "sonnet", Name: "Sonnet"}, {ID: "opus", Name: "Opus"}, {ID: "haiku", Name: "Haiku"},
+			}, Source: "claude-code"}, nil
 		}
 		up = "anthropic"
 	case "opencode":

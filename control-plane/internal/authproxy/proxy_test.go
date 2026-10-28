@@ -73,34 +73,20 @@ func TestServeNoCredential(t *testing.T) {
 	}
 }
 
-// claude-code OAuth: the proxy injects the real bearer + oauth beta, strips the
-// sandbox's dummy key, and forwards the upstream path.
-func TestInjectsClaudeBearer(t *testing.T) {
-	var gotAuth, gotKey, gotBeta, gotPath string
+// A Claude subscription login is never stored or injected by the proxy (it
+// signs in to Claude Code inside the project), even if an old one is on disk.
+func TestNeverInjectsClaudeSubscription(t *testing.T) {
+	called := false
 	stubUpstream(t, "anthropic", func(w http.ResponseWriter, r *http.Request) {
-		gotAuth, gotKey, gotBeta, gotPath = r.Header.Get("Authorization"), r.Header.Get("X-Api-Key"), r.Header.Get("anthropic-beta"), r.URL.Path
+		called = true
 		w.WriteHeader(200)
 	})
 	st := agentauth.NewStore(t.TempDir())
 	writeClaudeOAuth(t, st, `{"claudeAiOauth":{"accessToken":"REAL-BEARER"}}`)
-	p := New(st, nil)
-
-	req := httptest.NewRequest("POST", "/claude-code/anthropic/v1/messages", nil)
-	req.Header.Set("X-Api-Key", "sandboxd-proxy-injected") // the dummy the sandbox sent
 	w := httptest.NewRecorder()
-	p.ServeHTTP(w, req)
-
-	if gotAuth != "Bearer REAL-BEARER" {
-		t.Errorf("Authorization = %q; want injected real bearer", gotAuth)
-	}
-	if gotKey != "" {
-		t.Errorf("X-Api-Key leaked to upstream: %q (dummy must be stripped)", gotKey)
-	}
-	if gotBeta != oauthBeta {
-		t.Errorf("anthropic-beta = %q; want %q", gotBeta, oauthBeta)
-	}
-	if gotPath != "/v1/messages" {
-		t.Errorf("forwarded path = %q; want /v1/messages", gotPath)
+	New(st, nil).ServeHTTP(w, httptest.NewRequest("POST", "/claude-code/anthropic/v1/messages", nil))
+	if called || w.Code != http.StatusUnauthorized {
+		t.Fatalf("upstream called=%v status=%d; want 401 without forwarding", called, w.Code)
 	}
 }
 

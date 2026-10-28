@@ -107,12 +107,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if agent == "claude-code" && p.store.Method(agent) == "oauth" {
-		if err := agentauth.NewOAuth(p.store).Refresh(); err != nil {
-			http.Error(w, "Claude subscription could not be refreshed; reconnect this account", http.StatusUnauthorized)
-			return
-		}
-	}
 	// Codex sends Responses requests through one route; subscription credentials
 	// belong to the ChatGPT backend, whereas API keys belong to the public API.
 	if agent == "codex" && up == "openai" && p.store.Method(agent) == "oauth" {
@@ -270,20 +264,6 @@ func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
 				}
 			}, true
 		}
-		// Only claude-code's Anthropic OAuth is proxyable today (opencode/codex
-		// OAuth/subscription formats are not — they connect by API key instead).
-		if agent == "claude-code" && up == "anthropic" {
-			tok := claudeOAuthToken(p.store)
-			if tok == "" {
-				return nil, false
-			}
-			return func(h http.Header) {
-				h.Del("X-Api-Key")
-				h.Del("Authorization")
-				h.Set("Authorization", "Bearer "+tok)
-				h.Set("anthropic-beta", mergeBeta(h.Get("anthropic-beta")))
-			}, true
-		}
 	}
 	// OpenCode zero-friction free tier: with no connected credential, opencode
 	// still works out of the box on Zen's keyless free models. We forward with NO
@@ -299,24 +279,6 @@ func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
 		}, true
 	}
 	return nil, false
-}
-
-// claudeOAuthToken reads the current subscription access token from the claude
-// credential file. Opaque read; empty when absent/unparseable.
-func claudeOAuthToken(store *agentauth.Store) string {
-	b, err := os.ReadFile(filepath.Join(store.Dir("claude-code"), ".claude/.credentials.json"))
-	if err != nil {
-		return ""
-	}
-	var d struct {
-		ClaudeAiOauth struct {
-			AccessToken string `json:"accessToken"`
-		} `json:"claudeAiOauth"`
-	}
-	if json.Unmarshal(b, &d) != nil {
-		return ""
-	}
-	return d.ClaudeAiOauth.AccessToken
 }
 
 func readTrim(path string) string {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { AgentMessage } from './AgentMessage'
@@ -64,7 +65,13 @@ export function AgentChat({
     setTool('')
   }, [sbID])
   const sandboxRunning = sb?.status === 'running' && ready
-  const blocked = choiceBlocked(choice, providers, agents)
+  // Without a Claude API key, Claude Code uses a Claude subscription signed in
+  // inside this project.
+  const claudeSignIn =
+    choice.agent === 'claude-code' &&
+    !agents.some((a) => a.id === 'claude-code' && a.status === 'connected' && a.method === 'api_key')
+  const [claudeSignedIn, setClaudeSignedIn] = useState(false)
+  const blocked = choiceBlocked(choice, providers, agents) || (claudeSignIn && !claudeSignedIn)
   const loadOptions = useCallback(() => {
     Promise.all([api.getAgents(), api.listModelProviders()])
       .then(([a, p]) => {
@@ -345,7 +352,10 @@ export function AgentChat({
           )}
         </div>
       )}
-      {blocked && loaded && (
+      {claudeSignIn && sandboxRunning && sbID && (
+        <ClaudeSignIn sandboxId={sbID} onSignedIn={setClaudeSignedIn} />
+      )}
+      {blocked && loaded && !claudeSignIn && (
         <div className="chat-notice" data-testid="agent-not-connected">
           Choose a model connection or connect your account.{' '}
           <button className="text-button" onClick={goSettings}>

@@ -8,6 +8,16 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Changed
+
+- **Claude subscriptions sign in inside each project.** Anthropic doesn't allow
+  third-party apps to store or relay Claude.ai logins, so sandboxd no longer
+  keeps a Claude subscription token or proxies it, and no longer imports Claude
+  logins (including from OpenCode/Pi or the macOS Keychain). "Sign in with
+  Claude" runs Claude Code's own `claude auth login` in the project; the login
+  stays in that workspace. A previously stored subscription login is deleted at
+  startup. Claude API keys work as before.
+
 ### Fixed
 
 - OpenCode's built-in free tier works again with nothing connected. Zen now

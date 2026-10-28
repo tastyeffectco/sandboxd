@@ -415,17 +415,14 @@ func main() {
 	// process); we listen on SANDBOXD_AGENT_PROXY_ADDR. The real credential stays
 	// here and is never mounted into the sandbox. Empty URL disables the proxy
 	// (legacy mounted-credential behaviour).
-	// Guided claude-code subscription login + token refresh (internal/agentauth).
-	agentOAuth := agentauth.NewOAuth(agentAuth)
-	if agentOAuth != nil {
-		go func() {
-			for {
-				if err := agentOAuth.Refresh(); err != nil {
-					log.Debug("claude oauth refresh", "err", err.Error())
-				}
-				time.Sleep(5 * time.Minute)
-			}
-		}()
+	// Claude subscriptions sign in to Claude Code inside each project (Anthropic
+	// doesn't allow third parties to store or relay Claude.ai logins). Remove a
+	// subscription login stored by an earlier version; an API key is kept.
+	if agentAuth != nil {
+		legacy := filepath.Join(agentAuth.Dir("claude-code"), ".claude", ".credentials.json")
+		if err := os.Remove(legacy); err == nil {
+			log.Info("removed a stored Claude subscription login; sign in with Claude inside each project")
+		}
 	}
 
 	modelProviders, err := modelprovider.New(st, secretsCipher)
@@ -541,7 +538,6 @@ func main() {
 		ModelProviders:    modelProviders,
 		Update:            updateChecker,
 		AgentAuth:         agentAuth,
-		AgentOAuth:        agentOAuth,
 		OpencodeModel:     envDefault("SANDBOXD_OPENCODE_MODEL", ""),
 		OpencodeZenPath:   envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
 		DefaultAgent:      defaultAgent,

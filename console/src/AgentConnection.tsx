@@ -30,10 +30,8 @@ export function AgentConnection({
     }
   }, [agent.id])
   const [value, setValue] = useState('')
-  const [url, setURL] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const guided = mode === 'oauth' && agent.id === 'claude-code'
   const act = async (fn: () => Promise<unknown>, done = true) => {
     if (busy) return
     setError('')
@@ -102,53 +100,21 @@ export function AgentConnection({
                 </div>
               </div>
             )}
-            {guided && (
-              <div className="oauth-step">
-                <span className="step-number">1</span>
-                <div>
-                  <strong>Authorize your Claude subscription</strong>
-                  <p>Sign in with your provider, approve access, then return with the authorization code.</p>
-                  {url ? (
-                    <a className="button-link" href={url} target="_blank" rel="noreferrer">
-                      Open authorization page <Icon name="external" size={14} />
-                    </a>
-                  ) : (
-                    <Btn
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async () => {
-                          const result = await api.oauthStart(agent.id)
-                          setURL(result.authorize_url)
-                        }, false)
-                      }
-                    >
-                      {busy ? 'Preparing…' : 'Start authorization'}
-                    </Btn>
-                  )}
-                </div>
-              </div>
-            )}
-            {(!guided || url) && (
+            {
               <form
                 className="settings-form"
                 onSubmit={(e) => {
                   e.preventDefault()
                   if (value.trim())
                     void act(() =>
-                      guided
-                        ? api.oauthFinish(agent.id, value.trim())
-                        : mode === 'key'
-                          ? api.setAgentApiKey(agent.id, value.trim())
-                          : api.importAgentCredential(agent.id, value.trim()),
+                      mode === 'key'
+                        ? api.setAgentApiKey(agent.id, value.trim())
+                        : api.importAgentCredential(agent.id, value.trim()),
                     )
                 }}
               >
                 <label className="form-field">
-                  {guided
-                    ? '2. Paste the authorization code'
-                    : mode === 'key'
-                      ? `${agent.label} API key`
-                      : 'Import subscription credential'}
+                  {mode === 'key' ? `${agent.label} API key` : 'Import subscription credential'}
                   <Input
                     autoFocus
                     required
@@ -157,15 +123,11 @@ export function AgentConnection({
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     placeholder={
-                      guided
-                        ? 'Code from the authorization page'
-                        : mode === 'key'
-                          ? 'Paste your API key'
-                          : 'Paste the credential from your provider login'
+                      mode === 'key' ? 'Paste your API key' : 'Paste the credential from your provider login'
                     }
                   />
                 </label>
-                {mode === 'oauth' && !guided && (
+                {mode === 'oauth' && (
                   <p className="field-help">
                     Use the credential from an existing {agent.label} login.{' '}
                     <a
@@ -186,7 +148,7 @@ export function AgentConnection({
                   </Btn>
                 </div>
               </form>
-            )}
+            }
           </>
         )}
         {error && (

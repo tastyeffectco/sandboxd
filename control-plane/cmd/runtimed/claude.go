@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -205,8 +206,17 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 	// Scrub secret-shaped vars and point HOME at THIS agent's mounted auth dir
 	// (/run/agent-auth/claude-code = the imported Claude creds), keyed on the
 	// agent name so it works even when the sandbox default is opencode.
-	cmd.Env = agentEnv(c.name(), spec.env)
-	if os.Getenv("RUNTIMED_ANTHROPIC_PROXY") != "" {
+	if spec.claudeSignIn {
+		// The workspace's own Claude Code login, made with `claude auth login`:
+		// no proxy variables, Claude Code talks to Anthropic itself.
+		if status, err := claudeStatus(ctx, spec.workDir); err != nil || !status.LoggedIn {
+			return "", usage, errors.New("sign in with Claude in this project first")
+		}
+		cmd.Env = claudeAccountEnv(spec.env)
+	} else {
+		cmd.Env = agentEnv(c.name(), spec.env)
+	}
+	if os.Getenv("RUNTIMED_ANTHROPIC_PROXY") != "" && !spec.claudeSignIn {
 		dir := connectionSessionDir(spec, c.name())
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return "", usage, err

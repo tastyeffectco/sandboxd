@@ -38,6 +38,9 @@ type agentSpec struct {
 	cont bool
 	// freeTier runs OpenCode on its built-in provider (see StartTaskRequest.FreeTier).
 	freeTier bool
+	// claudeSignIn runs Claude Code on the workspace's own login (see
+	// StartTaskRequest.ClaudeSignIn).
+	claudeSignIn bool
 }
 
 // agent is the coding-agent adapter boundary shared by OpenCode, Pi, Claude

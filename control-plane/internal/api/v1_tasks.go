@@ -161,6 +161,10 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	// Zen serves its free models only to OpenCode's own client, so the free
 	// model runs on OpenCode's built-in provider instead of the proxy.
 	freeTier := isFreeTier(agent, req.Provider, req.Model, opencodeConnected)
+	// Claude subscriptions sign in to Claude Code inside each project (Anthropic
+	// doesn't allow third parties to store or relay Claude.ai logins); only a
+	// Claude API key goes through the proxy.
+	claudeSignIn := agent == "claude-code" && (s.AgentAuth == nil || s.AgentAuth.Method(agent) != "api_key")
 
 	var connection *modelconfig.Connection
 	if req.Provider != "" {
@@ -195,7 +199,7 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		req.Model = connection.Model.ID
 	}
 
-	if req.Provider == "" && connection == nil && s.AgentAuth != nil && s.AgentAuth.Connected(agent) {
+	if req.Provider == "" && connection == nil && !claudeSignIn && s.AgentAuth != nil && s.AgentAuth.Connected(agent) {
 		req.Model, err = authproxy.New(s.AgentAuth, nil).ResolveModel(r.Context(), agent, req.Model)
 		if err != nil {
 			writeV1Err(w, 400, "invalid_request", err.Error())
@@ -206,7 +210,7 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
 		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, Provider: connection, TimeoutS: req.TimeoutS, Continue: req.Continue,
-		FreeTier: freeTier,
+		FreeTier: freeTier, ClaudeSignIn: claudeSignIn,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")

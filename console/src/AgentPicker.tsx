@@ -154,8 +154,6 @@ export function AgentPicker({
 export function choiceBlocked(choice: AgentChoice, providers: ModelProvider[], agents: Agent[]) {
   if (choice.provider) return !providers.some((p) => p.id === choice.provider)
   if (choice.agent === 'pi') return !agents.some((a) => a.id === 'pi' && a.status === 'connected')
-  return (
-    ['claude-code', 'codex'].includes(choice.agent) &&
-    !agents.some((a) => a.id === choice.agent && a.status === 'connected')
-  )
+  // Claude Code without an API key signs in inside the project (see ClaudeSignIn).
+  return choice.agent === 'codex' && !agents.some((a) => a.id === 'codex' && a.status === 'connected')
 }
