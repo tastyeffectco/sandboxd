@@ -31,7 +31,7 @@ func TestRealProviderAgents(t *testing.T) {
 	if os.Getenv("SANDBOXD_TEST_REAL_AGENTS") != "1" {
 		t.Skip("set SANDBOXD_TEST_REAL_AGENTS=1 with the pinned OpenCode and Pi binaries on PATH")
 	}
-	for binary, version := range map[string]string{"opencode": "1.19.3", "pi": "1.3.0"} {
+	for binary, version := range map[string]string{"opencode": "1.19.5", "pi": "1.4.0"} {
 		output, err := exec.Command(binary, "--version").CombinedOutput()
 		if err != nil || strings.TrimSpace(string(output)) != version {
 			t.Fatalf("%s: expected %s, got %q (%v)", binary, version, output, err)

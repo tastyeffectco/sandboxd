@@ -1,0 +1,31 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs/promises')
+const os = require('node:os')
+const path = require('node:path')
+const { createAgentLogins } = require('../src/agent-login.cjs')
+
+test('local discovery returns only availability and never accepts arbitrary paths', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-agent-login-'))
+  t.after(() => fs.rm(home, { recursive: true }))
+  await fs.mkdir(path.join(home, '.codex'))
+  const credential = '{"tokens":{"access_token":"private-token"}}'
+  await fs.writeFile(path.join(home, '.codex', 'auth.json'), credential)
+  const login = createAgentLogins({ home, platform: 'linux' })
+  assert.deepEqual(await login.available('codex'), { available: true })
+  assert.equal(await login.credential('codex'), credential)
+  assert.deepEqual(await login.available('../../secret'), { available: false })
+  await assert.rejects(login.credential('../../secret'), /No usable local login/)
+  await fs.writeFile(path.join(home, '.codex', 'auth.json'), 'x'.repeat(70000))
+  assert.deepEqual(await login.available('codex'), { available: false })
+})
+
+test('Claude logins are never read, from files or the macOS Keychain', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-agent-claude-'))
+  t.after(() => fs.rm(home, { recursive: true }))
+  await fs.mkdir(path.join(home, '.claude'))
+  await fs.writeFile(path.join(home, '.claude', '.credentials.json'), '{"claudeAiOauth":{"accessToken":"x"}}')
+  const login = createAgentLogins({ home })
+  assert.deepEqual(await login.available('claude-code'), { available: false })
+  await assert.rejects(login.credential('claude-code'), /No usable local login/)
+})

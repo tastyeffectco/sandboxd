@@ -31,7 +31,7 @@ func agentReq(method, provider, body string) *http.Request {
 // connected — without ever echoing the credential back. Runs for every provider
 // so the generic path is exercised across the registry.
 func TestAgentImportStoresOpaquelyAndConnects(t *testing.T) {
-	for _, prov := range []string{"claude-code", "codex", "opencode"} {
+	for _, prov := range []string{"codex", "opencode", "pi"} {
 		t.Run(prov, func(t *testing.T) {
 			s, st := newImportServer(t)
 			secret := `{"oauth":{"accessToken":"SECRET-DO-NOT-LEAK"}}`
@@ -82,18 +82,18 @@ func TestAgentAPIKeyStoresAndConnects(t *testing.T) {
 func TestAgentConnectReplacesMethod(t *testing.T) {
 	s, st := newImportServer(t)
 	w := httptest.NewRecorder()
-	s.v1AgentImport(w, agentReq("POST", "claude-code", `{"credentials":"{\"x\":1}"}`))
-	if st.Method("claude-code") != "oauth" {
-		t.Fatalf("precondition: want oauth, got %q", st.Method("claude-code"))
+	s.v1AgentImport(w, agentReq("POST", "codex", `{"credentials":"{\"x\":1}"}`))
+	if st.Method("codex") != "oauth" {
+		t.Fatalf("precondition: want oauth, got %q", st.Method("codex"))
 	}
 	w = httptest.NewRecorder()
-	s.v1AgentAPIKey(w, agentReq("POST", "claude-code", `{"api_key":"sk-x"}`))
-	if st.Method("claude-code") != "api_key" {
-		t.Fatalf("method = %q; want api_key after replace", st.Method("claude-code"))
+	s.v1AgentAPIKey(w, agentReq("POST", "codex", `{"api_key":"sk-x"}`))
+	if st.Method("codex") != "api_key" {
+		t.Fatalf("method = %q; want api_key after replace", st.Method("codex"))
 	}
 	// The old oauth credential file must be gone.
-	rel, _ := agentauth.CredentialFile("claude-code")
-	if _, err := os.Stat(filepath.Join(st.Dir("claude-code"), rel)); err == nil {
+	rel, _ := agentauth.CredentialFile("codex")
+	if _, err := os.Stat(filepath.Join(st.Dir("codex"), rel)); err == nil {
 		t.Fatal("old credential file survived the method switch")
 	}
 }
@@ -147,4 +147,15 @@ func TestAgentImportNilSafe(t *testing.T) {
 func jsonString(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return `"` + r.Replace(s) + `"`
+}
+
+// A Claude subscription signs in to Claude Code inside each project; the
+// control plane refuses to store an imported Claude login.
+func TestAgentImportRefusesClaudeSubscription(t *testing.T) {
+	s, st := newImportServer(t)
+	w := httptest.NewRecorder()
+	s.v1AgentImport(w, agentReq("POST", "claude-code", `{"credentials":"{\"claudeAiOauth\":{}}"}`))
+	if w.Code != http.StatusBadRequest || st.Connected("claude-code") {
+		t.Fatalf("got %d, connected=%v; want refused", w.Code, st.Connected("claude-code"))
+	}
 }

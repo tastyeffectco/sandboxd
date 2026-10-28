@@ -1,3 +1,4 @@
+import { AccountModelSelect } from './AccountModelSelect'
 import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
@@ -226,22 +227,20 @@ export function SettingsView({
                             : a.id === 'opencode'
                               ? 'Build with the free tier or your own account'
                               : a.id === 'claude-code'
-                                ? 'Build with your Claude account'
+                                ? 'Add an API key here. To use a Claude subscription, sign in with Claude inside a project.'
                                 : a.runnable
                                   ? 'Coding agent'
                                   : 'Model gateway for OpenCode'}
                         </p>
                       </div>
                       <Pill tone={a.status === 'connected' ? 'good' : 'neutral'}>
-                        {a.id === 'codex'
-                          ? 'Unavailable'
-                          : a.status === 'connected'
-                            ? 'Connected'
-                            : a.id === 'pi'
-                              ? 'Model connection'
-                              : a.id === 'opencode'
-                                ? 'Ready to start'
-                                : 'Not connected'}
+                        {a.status === 'connected'
+                          ? 'Connected'
+                          : a.id === 'pi'
+                            ? 'Model connection'
+                            : a.id === 'opencode'
+                              ? 'Ready to start'
+                              : 'Not connected'}
                       </Pill>
                     </div>
                     <div className="agent-account-actions">
@@ -249,13 +248,7 @@ export function SettingsView({
                         {a.installed_state === 'installed' ? 'Installed' : 'Not installed'}
                         {a.method ? ` · ${a.method === 'oauth' ? 'Subscription' : 'API key'}` : ''}
                       </span>
-                      {a.id === 'pi' ? (
-                        <Btn sm onClick={() => setSection('models')}>
-                          Manage models
-                        </Btn>
-                      ) : a.id === 'codex' ? (
-                        <small>Subscription authentication is not supported by the proxy yet.</small>
-                      ) : a.status === 'connected' ? (
+                      {a.status === 'connected' ? (
                         <Btn
                           sm
                           onClick={() => setConnecting({ agent: a, mode: 'disconnect' })}
@@ -305,16 +298,16 @@ export function SettingsView({
                   }}
                 >
                   {agents
-                    .filter((a) => a.runnable && a.id !== 'codex' && a.id !== 'pi')
+                    .filter((a) => a.runnable)
                     .map((a) => (
                       <label key={a.id} className="form-field">
                         {a.label}
-                        <Input
+                        <AccountModelSelect
+                          key={`${a.status}:${a.method}`}
+                          agent={a.id}
                           value={models[a.id] || ''}
-                          onChange={(e) => setModels({ ...models, [a.id]: e.target.value })}
-                          placeholder="Use the agent default"
+                          onChange={(model) => setModels({ ...models, [a.id]: model })}
                           disabled={!modelsEditable}
-                          data-testid={`agent-model-${a.id}`}
                         />
                       </label>
                     ))}

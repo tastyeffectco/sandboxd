@@ -169,10 +169,6 @@ type Server struct {
 	// explicit agent:"claude-code" task works regardless of this. Empty → opencode.
 	DefaultAgent string
 
-	// AgentOAuth drives the guided claude-code subscription login (authorize link
-	// → paste code → tokens) and token refresh. nil disables the OAuth endpoints.
-	AgentOAuth *agentauth.OAuth
-
 	// OpencodeModel, when set, is passed to opencode tasks as --model (e.g. an
 	// OpenCode Zen model "opencode/claude-sonnet-4-5"). Empty → opencode's default.
 	OpencodeModel string
@@ -257,6 +253,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/{id}/start", s.observe("POST /v1/sandboxes/{id}/start", s.v1StartSandbox))
 	mux.HandleFunc("DELETE /v1/sandboxes/{id}", s.observe("DELETE /v1/sandboxes/{id}", s.v1DeleteSandbox))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/tasks", s.observe("POST /v1/sandboxes/{id}/tasks", s.v1SubmitTask))
+	for _, route := range []string{"GET /v1/sandboxes/{id}/claude-login", "POST /v1/sandboxes/{id}/claude-login",
+		"DELETE /v1/sandboxes/{id}/claude-login", "POST /v1/sandboxes/{id}/claude-login/code"} {
+		mux.HandleFunc(route, s.observe(route, s.v1ClaudeLogin))
+	}
 	mux.HandleFunc("GET /v1/sandboxes/{id}/tasks", s.observe("GET /v1/sandboxes/{id}/tasks", s.v1ListTasks))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/tasks/{taskId}", s.observe("GET /v1/sandboxes/{id}/tasks/{taskId}", s.v1GetTask))
 	mux.HandleFunc("POST /v1/sandboxes/{id}/tasks/{taskId}/revert", s.observe("POST /v1/sandboxes/{id}/tasks/{taskId}/revert", s.v1RevertTask))
@@ -278,8 +278,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/model-providers/{id}", s.observe("DELETE /v1/model-providers/{id}", s.v1DeleteModelProvider))
 	mux.HandleFunc("POST /v1/model-providers/{id}/test", s.observe("POST /v1/model-providers/{id}/test", s.v1TestModelProvider))
 	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
-	mux.HandleFunc("POST /v1/agents/claude-code/oauth/start", s.observe("POST /v1/agents/claude-code/oauth/start", s.v1AgentOAuthStart))
-	mux.HandleFunc("POST /v1/agents/claude-code/oauth/finish", s.observe("POST /v1/agents/claude-code/oauth/finish", s.v1AgentOAuthFinish))
+	mux.HandleFunc("GET /v1/agents/{provider}/models", s.observe("GET /v1/agents/{provider}/models", s.v1AgentModels))
 	mux.HandleFunc("POST /v1/agents/{provider}/import", s.observe("POST /v1/agents/{provider}/import", s.v1AgentImport))
 	mux.HandleFunc("POST /v1/agents/{provider}/api-key", s.observe("POST /v1/agents/{provider}/api-key", s.v1AgentAPIKey))
 	mux.HandleFunc("POST /v1/agents/{provider}/disconnect", s.observe("POST /v1/agents/{provider}/disconnect", s.v1AgentDisconnect))

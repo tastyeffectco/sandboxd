@@ -25,7 +25,13 @@ const equal = (a, b) =>
 // A private transport for the packaged UI. Only the engine API is proxied;
 // engines can never supply desktop scripts. Each app process has a random
 // capability header injected by Electron, and upstream login cookies stay here.
-async function createGateway({ uiRoot, engine = '', session = '', onSession = () => {} }) {
+async function createGateway({
+  uiRoot,
+  engine = '',
+  session = '',
+  onSession = () => {},
+  idleTimeout = 120000,
+}) {
   const token = randomBytes(32).toString('hex')
   let origin = '',
     host = '',
@@ -143,7 +149,10 @@ async function createGateway({ uiRoot, engine = '', session = '', onSession = ()
       proxy.on('error', () =>
         error(response, 502, 'Cannot reach the engine. Check the address and whether sandboxd is running.'),
       )
-      proxy.setTimeout(120000, () => proxy.destroy())
+      // Task event streams stay open through quiet agent steps (a long install
+      // sends nothing for minutes); they end with the task, page or engine.
+      if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
+        proxy.setTimeout(idleTimeout, () => proxy.destroy())
       request.on('aborted', () => proxy.destroy())
       response.on('close', () => proxy.destroy())
       request.pipe(proxy)
@@ -227,6 +236,29 @@ async function createGateway({ uiRoot, engine = '', session = '', onSession = ()
       generation++
       current = next
       engineSession = session
+    },
+    // Main-process-only import: credentials never pass through renderer IPC.
+    async importAgentLogin(agent, credentials, expectedEngine) {
+      if (current !== expectedEngine || !current) throw new Error('Engine changed. Retry the import.')
+      if (!['codex', 'opencode', 'pi'].includes(agent))
+        throw new Error('Unsupported coding agent.')
+      const target = new URL(current)
+      if (target.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname))
+        throw new Error('Use HTTPS before sending an account login to a remote engine.')
+      const response = await fetch(current + '/v1/agents/' + agent + '/import', {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(20000),
+        headers: {
+          'content-type': 'application/json',
+          origin: current,
+          ...(engineSession ? { cookie: `sbx_session=${engineSession}` } : {}),
+        },
+        body: JSON.stringify({ credentials }),
+      })
+      await response.body?.cancel()
+      if (!response.ok)
+        throw new Error(`Could not import login (HTTP ${response.status}). Sign in to the engine and retry.`)
     },
     async close() {
       for (const stream of streams) stream.destroy()

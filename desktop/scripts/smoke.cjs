@@ -80,7 +80,7 @@ async function main() {
     socket.on('error', () => {})
     socket.on('data', () => socket.destroy())
   })
-  engine.listen(0, '127.0.0.1')
+  engine.listen(process.platform === 'win32' ? 9090 : 0, '127.0.0.1')
   await once(engine, 'listening')
   let app
   try {
@@ -97,7 +97,9 @@ async function main() {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     const origin = `http://127.0.0.1:${engine.address().port}`
-    await expect(page.getByRole('heading', { name: 'Connect your engine.' })).toBeVisible()
+    // Windows offers its own engine setup; other platforms connect to an existing engine.
+    const welcome = process.platform === 'win32' ? 'Let’s set up your studio.' : 'Connect your engine.'
+    await expect(page.getByRole('heading', { name: welcome })).toBeVisible()
     await page.screenshot({ path: path.join(output, 'welcome.png') })
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(880, 640))
     await page.waitForFunction(() => window.innerWidth <= 880)
@@ -130,8 +132,46 @@ async function main() {
       }
     })
     assert.deepEqual(prefs, { sandbox: true, node: false, isolation: true, webSecurity: true })
-    await page.getByTestId('desktop-engine-url').fill(origin)
-    await page.getByTestId('desktop-connect').click()
+    if (process.platform === 'win32') {
+      // Exercise the real renderer/preload flow without installing WSL in the UI
+      // fixture. Actual WSL lifecycle runs separately in smoke-wsl.cjs.
+      await app.evaluate(({ ipcMain }) => {
+        let attempts = 0
+        ipcMain.removeHandler('desktop:install-engine')
+        ipcMain.handle('desktop:install-engine', async (event) => {
+          const result = {
+            busy: true,
+            installed: false,
+            phase: 'installing',
+            message: 'Preparing your engine…',
+            url: 'http://127.0.0.1:9090',
+          }
+          event.sender.send('desktop:engine-progress', result)
+          await new Promise((resolve) => setTimeout(resolve, 150))
+          attempts++
+          Object.assign(
+            result,
+            attempts === 1
+              ? { phase: 'restart', message: 'Restart Windows, reopen sandboxd, and click Continue setup.' }
+              : attempts === 2
+                ? { phase: 'error', message: 'Network interrupted. Retry to continue.' }
+                : { phase: 'ready', installed: true, message: 'Your local engine is ready.' },
+            { busy: false },
+          )
+          event.sender.send('desktop:engine-progress', result)
+          return result
+        })
+      })
+      await page.getByTestId('desktop-install-engine').click()
+      await expect(page.getByRole('button', { name: 'Continue setup' })).toBeVisible()
+      await page.getByRole('button', { name: 'Continue setup' }).click()
+      await expect(page.getByText('Network interrupted. Retry to continue.')).toBeVisible()
+      await page.screenshot({ path: path.join(output, 'engine-setup-retry.png') })
+      await page.getByRole('button', { name: 'Retry setup' }).click()
+    } else {
+      await page.getByTestId('desktop-engine-url').fill(origin)
+      await page.getByTestId('desktop-connect').click()
+    }
     await page.getByTestId('login-password').fill('fixture-password')
     await page.getByTestId('login-submit').click()
     await expect(page.getByTestId('nav-apps')).toBeVisible()
@@ -229,7 +269,7 @@ async function main() {
     await expect(page.getByTestId('nav-apps')).toBeVisible()
     await page.getByRole('button', { name: /This computer/ }).click()
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Connect your engine.' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: welcome })).toBeVisible()
     const profile = await fs.readFile(path.join(temp, 'connections.json'), 'utf8')
     assert(!profile.includes('test-session') && !profile.includes('fixture-password'))
     assert.deepEqual(errors, [])

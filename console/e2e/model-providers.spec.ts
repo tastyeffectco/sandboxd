@@ -49,6 +49,7 @@ for (const protocol of ['openai-completions', 'anthropic-messages'] as const) {
         return json({ providers })
       }
       if (path.endsWith('/test')) return json({ ok: true })
+      if (/^\/v1\/agents\/[^/]+\/models$/.test(path)) return json({ source: 'provider', models: [{ id: 'fixture-account-model', name: 'Fixture account model' }] })
       if (path === '/v1/agents')
         return json({
           providers: ['opencode', 'pi'].map((id) => ({

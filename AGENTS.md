@@ -89,7 +89,7 @@ curl -s -XPOST $API/sandbox/$ID/purge
 ```
 
 ## Running coding agents inside a sandbox
-Claude Code, OpenCode and Pi (`claude`, `opencode`, `pi`) are pre-installed.
+Claude Code, Codex, OpenCode and Pi (`claude`, `codex`, `opencode`, `pi`) are pre-installed.
 For local/remote compatible endpoints, use **Settings → Model connections**
 and select OpenCode or Pi plus that connection in the app. See
 [`docs/model-providers.md`](docs/model-providers.md) for the API, LiteLLM and
@@ -106,17 +106,20 @@ injects it into upstream requests through the proxy.
 ```bash
 # API key:
 curl -s -XPOST $API/v1/agents/claude-code/api-key -d '{"api_key":"sk-ant-..."}'
-# or a Claude subscription via guided OAuth (setup-token / PKCE):
-curl -s -XPOST $API/v1/agents/claude-code/oauth/start   # open the URL, then /oauth/finish
+# or a Claude subscription: sign in inside the project (Claude's own login):
+curl -s -XPOST $API/v1/sandboxes/$ID/claude-login        # returns {"url"}; open it, approve
+curl -s -XPOST $API/v1/sandboxes/$ID/claude-login/code -d '{"code":"<code shown by Claude>"}'
 
 # then drive a task normally:
 curl -s -XPOST $API/v1/sandboxes/$ID/tasks -H 'content-type: application/json' \
   -d '{"prompt":"build a Vite todo app and run it on port 3000","agent":"claude-code"}'
 ```
 
-For a Claude **subscription**, the real bearer token stays behind a
-control-plane **auth proxy**; the sandbox only ever sees `ANTHROPIC_BASE_URL`
-(the proxy) and a dummy key, so a task can't read or exfiltrate it. See
+A Claude **API key** stays behind a control-plane **auth proxy**; the sandbox
+only sees `ANTHROPIC_BASE_URL` (the proxy) and a dummy key. A Claude
+**subscription** signs in to Claude Code inside each project through Anthropic's
+own flow (Anthropic doesn't allow apps to store or relay Claude logins), so that
+login lives in the project and never reaches the control plane. See
 `docs/agent-auth.md`.
 
 ## Web console (optional)

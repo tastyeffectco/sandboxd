@@ -169,3 +169,19 @@ func DecodeEvents(r io.Reader, fn func(Event) bool) error {
 		}
 	}
 }
+
+// ClaudeLogin relays one call to the workspace's Claude Code sign-in (`GET`,
+// `POST` or `DELETE /claude-login`, `POST /claude-login/code`) and returns
+// runtimed's status code and JSON body. Signing in waits on Claude Code, so it
+// uses a longer deadline than the other calls.
+func (c *Client) ClaudeLogin(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	resp, err := c.do(ctx, c.stream, method, "http://runtimed/claude-login"+path, body)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, err := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+	return resp.StatusCode, out, err
+}

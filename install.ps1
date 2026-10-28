@@ -9,7 +9,7 @@ param(
     [ValidateSet('auto', 'build', 'pull')][string]$Mode = 'auto',
     [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Distro = 'Ubuntu',
     [ValidatePattern('^[A-Za-z0-9._/-]+$')][string]$Ref = 'main',
-    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$DesktopVersion = '0.3.23'
+    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$DesktopVersion = '0.3.24'
 )
 $ErrorActionPreference = 'Stop'
 if ($DesktopOnly -and $NoDesktop) { throw 'DesktopOnly and NoDesktop cannot be combined.' }

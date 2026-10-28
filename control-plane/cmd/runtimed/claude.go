@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -19,10 +21,8 @@ import (
 //
 //	claude -p <prompt> --output-format stream-json --verbose --dangerously-skip-permissions
 //
-// It runs in the sandbox with HOME pointed at the mounted agent-auth dir
-// (/run/agent-home), so the CLI authenticates with the owner's imported Claude
-// credentials. This is the claude-code provider's runner — it is NOT used for
-// opencode, and claude credentials are only meaningful here.
+// In proxy mode its config directory contains conversation state only; the
+// control plane injects the connected Claude credential into upstream requests.
 type claudeCodeAgent struct{ log *slog.Logger }
 
 func (c *claudeCodeAgent) name() string { return "claude-code" }
@@ -206,7 +206,23 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 	// Scrub secret-shaped vars and point HOME at THIS agent's mounted auth dir
 	// (/run/agent-auth/claude-code = the imported Claude creds), keyed on the
 	// agent name so it works even when the sandbox default is opencode.
-	cmd.Env = agentEnv(c.name(), spec.env)
+	if spec.claudeSignIn {
+		// The workspace's own Claude Code login, made with `claude auth login`:
+		// no proxy variables, Claude Code talks to Anthropic itself.
+		if status, err := claudeStatus(ctx, spec.workDir); err != nil || !status.LoggedIn {
+			return "", usage, errors.New("sign in with Claude in this project first")
+		}
+		cmd.Env = claudeAccountEnv(spec.env)
+	} else {
+		cmd.Env = agentEnv(c.name(), spec.env)
+	}
+	if os.Getenv("RUNTIMED_ANTHROPIC_PROXY") != "" && !spec.claudeSignIn {
+		dir := connectionSessionDir(spec, c.name())
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return "", usage, err
+		}
+		cmd.Env = append(cmd.Env, "CLAUDE_CONFIG_DIR="+dir)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	stdout, err := cmd.StdoutPipe()

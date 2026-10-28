@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -103,20 +104,29 @@ func TestFastapiPreset(t *testing.T) {
 	}
 }
 
-// The Next.js template ships a .gitignore so node_modules/.next don't become
-// checkpoint noise (the workspace git repo relies on the committed .gitignore).
-func TestNextjsTemplateHasGitignore(t *testing.T) {
+// Templates that install dependencies ship a .gitignore so dependencies and
+// build output don't become checkpoint noise or get pushed (the workspace git
+// repo relies on the committed .gitignore).
+func TestTemplatesIgnoreDependencies(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	// .../control-plane/internal/preset/preset_test.go -> repo root is 3 up.
 	repo := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
-	gi := filepath.Join(repo, "image", "templates", "nextjs-standard", ".gitignore")
-	data, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("nextjs template .gitignore missing: %v", err)
-	}
-	for _, want := range []string{"node_modules", ".next", "out", ".env", ".env.local"} {
-		if !strings.Contains(string(data), want) {
-			t.Errorf(".gitignore missing %q", want)
+	for template, entries := range map[string][]string{
+		"nextjs-standard":       {"node_modules", ".next", "out", ".env", ".env.local"},
+		"react-standard":        {"node_modules", "dist", ".vite", ".env"},
+		"node-express-standard": {"node_modules", ".env"},
+		"fastapi-standard":      {".venv", "__pycache__", ".env"},
+	} {
+		data, err := os.ReadFile(filepath.Join(repo, "image", "templates", template, ".gitignore"))
+		if err != nil {
+			t.Errorf("%s .gitignore missing: %v", template, err)
+			continue
+		}
+		lines := strings.Fields(string(data))
+		for _, want := range entries {
+			if !slices.Contains(lines, want) {
+				t.Errorf("%s .gitignore missing %q", template, want)
+			}
 		}
 	}
 }

@@ -2,7 +2,11 @@ const { app, BrowserWindow, Menu, ipcMain, shell, session, safeStorage, dialog }
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
+const { createAgentLogins } = require('./agent-login.cjs')
+const agentLogins = createAgentLogins()
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
+const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
+const { signInManagedEngine } = require('./local-auth.cjs')
 
 let window,
   gateway,
@@ -11,6 +15,7 @@ let window,
 let config = { connections: [], selected: '', sessions: {} }
 let writes = Promise.resolve()
 let connecting = false
+let localEngine
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -22,6 +27,7 @@ const publicState = () => ({
   connections: config.connections,
   selected: config.selected,
   canRemember: canRemember(),
+  localEngine: localEngine?.state(),
 })
 const persist = () => {
   const json = JSON.stringify(config)
@@ -49,6 +55,50 @@ function sessionFor(url) {
       : ''
   } catch {
     return ''
+  }
+}
+function rememberSession(url, token) {
+  memorySessions.set(url, token)
+  try {
+    if (!token || !canRemember()) delete config.sessions[url]
+    else config.sessions[url] = safeStorage.encryptString(token).toString('base64')
+  } catch {
+    delete config.sessions[url]
+  }
+  void persist().catch(() => {})
+}
+// The engine this app installed has no separate account: sign in for the user
+// with a generated password kept in the OS credential store. Any other engine,
+// or a password the user changed, keeps the regular login screen.
+let managedSignIn = null
+function sessionForConnect(url) {
+  if (url !== ENGINE_URL || !localEngine?.state().installed || !canRemember())
+    return Promise.resolve(sessionFor(url))
+  // Engine-ready events and the renderer's connect can overlap; one sign-in
+  // must finish before another may create or try a password.
+  managedSignIn ||= signInManaged(url).finally(() => {
+    managedSignIn = null
+  })
+  return managedSignIn
+}
+async function signInManaged(url) {
+  try {
+    const session = await signInManagedEngine({
+      url,
+      session: sessionFor(url),
+      password: config.localPassword
+        ? safeStorage.decryptString(Buffer.from(config.localPassword, 'base64'))
+        : '',
+      savePassword: async (password) => {
+        config.localPassword = safeStorage.encryptString(password).toString('base64')
+        await persist()
+      },
+    })
+    if (session === null) return sessionFor(url)
+    rememberSession(url, session)
+    return session
+  } catch {
+    return sessionFor(url)
   }
 }
 async function openExternal(value) {
@@ -139,6 +189,16 @@ async function createWindow() {
     else quitting = false
   })
   window.once('ready-to-show', () => window.show())
+  window.on('close', (event) => {
+    if (localEngine?.state().busy) {
+      event.preventDefault()
+      dialog.showMessageBoxSync(window, {
+        type: 'info',
+        title: 'Engine setup is running',
+        message: 'Keep sandboxd open while engine setup finishes. Progress is shown in the app.',
+      })
+    }
+  })
   window.on('closed', () => {
     window = null
   })
@@ -166,23 +226,35 @@ async function start() {
       : []
     config.selected = config.connections.some((c) => c.url === stored.selected) ? stored.selected : ''
     config.sessions = stored.sessions && typeof stored.sessions === 'object' ? stored.sessions : {}
+    if (typeof stored.localPassword === 'string') config.localPassword = stored.localPassword
   } catch {
     /* Fresh install, or invalid config: offer connection setup. */
+  }
+  if (process.platform === 'win32') {
+    localEngine = createWindowsEngine({
+      dataDir: app.getPath('userData'),
+      probe: async () => {
+        try {
+          await probeEngine(ENGINE_URL, false)
+          return true
+        } catch {
+          return false
+        }
+      },
+      onChange: async (state) => {
+        // Sign in before the workspace reloads for a ready engine.
+        if (state.phase === 'ready' && gateway && config.selected === ENGINE_URL)
+          gateway.setEngine(ENGINE_URL, await sessionForConnect(ENGINE_URL))
+        window?.webContents.send('desktop:engine-progress', state)
+      },
+    })
+    await localEngine.load().catch(() => {})
   }
   gateway = await createGateway({
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
     session: sessionFor(config.selected),
-    onSession: (url, token) => {
-      memorySessions.set(url, token)
-      try {
-        if (!token || !canRemember()) delete config.sessions[url]
-        else config.sessions[url] = safeStorage.encryptString(token).toString('base64')
-      } catch {
-        delete config.sessions[url]
-      }
-      void persist().catch(() => {})
-    },
+    onSession: rememberSession,
   })
   desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
@@ -208,6 +280,19 @@ async function start() {
   ipcMain.handle('desktop:state', (event) => {
     trusted(event)
     return publicState()
+  })
+  ipcMain.handle('desktop:install-engine', (event, ...args) => {
+    trusted(event)
+    if (args.length) throw new Error('Engine setup does not accept commands or options.')
+    if (!localEngine) throw new Error('Automatic engine setup is available on Windows.')
+    return localEngine.start()
+  })
+  ipcMain.handle('desktop:sign-in', async (event, ...args) => {
+    trusted(event)
+    if (args.length) throw new Error('Sign-in does not accept options.')
+    if (config.selected !== ENGINE_URL || !localEngine?.state().installed)
+      throw new Error('Sign in with this engine’s password.')
+    gateway.setEngine(ENGINE_URL, await sessionForConnect(ENGINE_URL))
   })
   ipcMain.handle('desktop:connect', async (event, input) => {
     trusted(event)
@@ -241,7 +326,7 @@ async function start() {
         config = previous
         throw new Error('Could not save this connection. Check available disk space and profile permissions.')
       }
-      gateway.setEngine(url, sessionFor(url), input.allowInsecure)
+      gateway.setEngine(url, await sessionForConnect(url), input.allowInsecure)
       return publicState()
     } finally {
       connecting = false
@@ -270,6 +355,35 @@ async function start() {
     if (forget === true) memorySessions.delete(previous.selected)
     gateway.setEngine('')
     return publicState()
+  })
+  ipcMain.handle('desktop:agent-login', async (event, agent) => {
+    trusted(event)
+    return agentLogins.available(agent)
+  })
+  ipcMain.handle('desktop:import-agent-login', async (event, agent) => {
+    trusted(event)
+    if (!['codex', 'opencode', 'pi'].includes(agent))
+      throw new Error('Unsupported coding agent.')
+    const engine = gateway.engine
+    if (!engine) throw new Error('Connect an engine first.')
+    const account = { codex: 'ChatGPT account (Codex)', opencode: 'OpenCode account', pi: 'Pi account' }[agent]
+    const local = engine === ENGINE_URL
+    const answer = await dialog.showMessageBox(window, {
+      type: 'question',
+      buttons: ['Cancel', 'Use this account'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Use your account',
+      message: local
+        ? `Use your ${account} in sandboxd on this computer?`
+        : `Use your ${account} on ${new URL(engine).hostname}?`,
+      detail: local
+        ? 'sandboxd keeps your sign-in on this computer, outside your projects, and uses it for your coding tasks. You can disconnect it anytime in Settings.'
+        : 'That server will keep your sign-in and use it for your coding tasks. You can disconnect it anytime in Settings.',
+    })
+    if (answer.response !== 1) return { imported: false }
+    await gateway.importAgentLogin(agent, await agentLogins.credential(agent), engine)
+    return { imported: true }
   })
   ipcMain.handle('desktop:external', async (event, url) => {
     trusted(event)
@@ -335,6 +449,7 @@ async function start() {
     copyright: 'MIT · sandboxd contributors',
   })
   await createWindow()
+  if (localEngine?.state().installed && config.selected === ENGINE_URL) void localEngine.start()
 }
 if (process.env.SANDBOXD_DESKTOP_TEST_DATA && !app.isPackaged)
   app.setPath('userData', process.env.SANDBOXD_DESKTOP_TEST_DATA)
@@ -358,6 +473,10 @@ else {
     if (process.platform !== 'darwin') app.quit()
   })
   app.on('before-quit', (event) => {
+    if (localEngine?.state().busy) {
+      event.preventDefault()
+      return
+    }
     if (quitting) return
     event.preventDefault()
     void writes

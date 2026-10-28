@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { AgentMessage } from './AgentMessage'
@@ -64,7 +65,15 @@ export function AgentChat({
     setTool('')
   }, [sbID])
   const sandboxRunning = sb?.status === 'running' && ready
-  const blocked = choiceBlocked(choice, providers, agents)
+  // A resting project wakes when a task is sent, so sending stays available.
+  const canSend = sandboxRunning || sb?.status === 'stopped'
+  // Without a Claude API key, Claude Code uses a Claude subscription signed in
+  // inside this project.
+  const claudeSignIn =
+    choice.agent === 'claude-code' &&
+    !agents.some((a) => a.id === 'claude-code' && a.status === 'connected' && a.method === 'api_key')
+  const [claudeSignedIn, setClaudeSignedIn] = useState(false)
+  const blocked = choiceBlocked(choice, providers, agents) || (claudeSignIn && !claudeSignedIn)
   const loadOptions = useCallback(() => {
     Promise.all([api.getAgents(), api.listModelProviders()])
       .then(([a, p]) => {
@@ -146,7 +155,7 @@ export function AgentChat({
     scroll.current?.scrollTo?.({ top: scroll.current.scrollHeight, behavior: 'smooth' })
   }, [response, history.length, active?.id])
   const send = async (auto = false) => {
-    if (!sbID || !sandboxRunning || !text.trim() || active || blocked || !loaded || submitting.current) return
+    if (!sbID || !canSend || !text.trim() || active || blocked || !loaded || submitting.current) return
     submitting.current = true
     const prompt = text.trim()
     if (auto) {
@@ -214,7 +223,14 @@ export function AgentChat({
         </span>
         <div>
           <strong>
-            Build with {choice.agent === 'opencode' ? 'OpenCode' : choice.agent === 'pi' ? 'Pi' : 'Claude'}
+            Build with{' '}
+            {choice.agent === 'opencode'
+              ? 'OpenCode'
+              : choice.agent === 'pi'
+                ? 'Pi'
+                : choice.agent === 'codex'
+                  ? 'Codex'
+                  : 'Claude'}
           </strong>
           <span>{active ? 'Working on your app' : 'Your coding partner'}</span>
         </div>
@@ -338,7 +354,10 @@ export function AgentChat({
           )}
         </div>
       )}
-      {blocked && loaded && (
+      {claudeSignIn && sandboxRunning && sbID && (
+        <ClaudeSignIn sandboxId={sbID} onSignedIn={setClaudeSignedIn} />
+      )}
+      {blocked && loaded && !claudeSignIn && (
         <div className="chat-notice" data-testid="agent-not-connected">
           Choose a model connection or connect your account.{' '}
           <button className="text-button" onClick={goSettings}>
@@ -353,7 +372,7 @@ export function AgentChat({
             : !sb
               ? 'Create a workspace to start building. Your prompt is kept here.'
               : sb.status === 'stopped'
-                ? 'Start the workspace to continue building.'
+                ? 'Your workspace is resting. Send a message to wake it.'
                 : 'Your workspace is starting…'}
         </div>
       )}
@@ -388,7 +407,7 @@ export function AgentChat({
             <button
               className="send-button"
               type="submit"
-              disabled={!sandboxRunning || !text.trim() || blocked || !loaded}
+              disabled={!canSend || !text.trim() || blocked || !loaded}
               data-testid="task-send"
               aria-label="Send message"
             >

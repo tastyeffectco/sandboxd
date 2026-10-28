@@ -6,7 +6,7 @@ or **Anthropic-compatible Messages** APIs. This includes local model servers
 and gateways such as LiteLLM. No provider-specific SDK or AWS credentials are
 required in sandboxd core.
 
-The base image installs OpenCode **1.19.3** and Pi **1.3.0**
+The base image installs OpenCode **1.19.5** and Pi **1.4.0**
 (`@earendil-works/pi-coding-agent`). Rebuild/upgrade the base image and recreate
 existing sandboxes to install these versions; saving a connection itself needs
 no restart.
@@ -167,10 +167,59 @@ SANDBOXD_TEST_LIVE_API_KEY=your-test-gateway-key \
 go test ./cmd/runtimed -run TestLiveCompatibleProviders -v -timeout=50m
 ```
 
-This executes four real coding tasks and can incur provider charges. It is
-never enabled automatically. Each task must create the requested file using
-the real model and agent tools.
+This executes two turns for each of four agent/protocol combinations and can
+incur provider charges. It is never enabled automatically. Each conversation
+must create and then update the requested file using the real model and agent
+tools.
 
 Browser workflow checks run with
 `cd console && pnpm exec playwright test --config playwright.providers.config.ts`.
 They use API fixtures; API and real-agent integration are tested separately.
+
+### LiteLLM with a Codex subscription
+
+LiteLLM 1.106.0's `chatgpt` backend accepts the OpenAI-compatible path, but its
+Anthropic bridge leaves array-shaped system prompts as Responses `system`
+messages. The Codex subscription backend rejects those with
+`System messages are not allowed`. The chat-completions routing setting alone
+does not fix this case.
+
+The optional [gateway example](../examples/litellm-codex/config.yaml) uses
+LiteLLM's supported [request callback](https://docs.litellm.ai/docs/proxy/call_hooks)
+to convert text-only system blocks to a system string, which LiteLLM moves into
+Codex's `instructions` field. Every text block is kept in order; messages, tools,
+model IDs and other options are unchanged. Unknown block types or fields fail
+explicitly instead of losing instructions. Anthropic per-block `cache_control`
+is omitted for this Codex route, which does not implement that caching format.
+
+The callback is **opt-in on the LiteLLM gateway**; sandboxd does not rewrite
+system prompts or install it automatically. It only applies to the exact gateway
+aliases listed in `SANDBOXD_CODEX_LITELLM_MODELS`. Other models retain their
+original requests. The example requires LiteLLM 1.106.0 and an existing valid
+LiteLLM ChatGPT login in `CHATGPT_TOKEN_DIR`.
+
+```sh
+# From the repository root, in an environment with LiteLLM 1.106.0 installed:
+export SANDBOXD_CODEX_LITELLM_MODELS=subscription-coder
+# Use an exact ID returned by your connected account's catalog, not an alias guess.
+export SANDBOXD_CODEX_LITELLM_MODEL='chatgpt/<exact-account-model-id>'
+export CHATGPT_TOKEN_DIR='/path/to/your/existing/litellm/chatgpt-login'
+# Supply LITELLM_MASTER_KEY through your gateway's secret configuration.
+export PYTHONPATH="$PWD/examples/litellm-codex${PYTHONPATH:+:$PYTHONPATH}"
+litellm --config examples/litellm-codex/config.yaml --host 127.0.0.1 --port 4000
+```
+
+In sandboxd, configure the gateway's reachable `/v1` URL, its master key, and the
+exact configured alias `subscription-coder`. Either supported protocol can be
+selected. For a gateway on another host/container, configure the listener and
+network access appropriately; loopback above is suitable for a local test.
+
+Live verification with this callback completed file creation and continuation
+for OpenCode and Pi over both protocols. A separate real-model check verified that instructions
+from multiple system blocks still controlled the answer. The Python regression
+suite checks text/order preservation, untouched unrelated model requests, and
+rejection of unsupported content without requiring LiteLLM or credentials:
+
+```sh
+python3 -m unittest discover -s examples/litellm-codex -p 'test_*.py'
+```

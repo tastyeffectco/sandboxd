@@ -5,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
@@ -24,18 +25,23 @@ func (s *Server) runtimeClientFor(id string) *runtime.Client {
 	return runtime.NewClient(filepath.Join(mnt, ".runtimed", "sock"))
 }
 
-// defaultOpencodeFreeModel is the keyless Zen model an un-connected opencode
-// task falls back to. It must be one of Zen's free (no-auth) models — "big-pickle"
-// is opencode's featured free model. Override with SANDBOXD_OPENCODE_FREE_MODEL.
-const defaultOpencodeFreeModel = "big-pickle"
-
 // opencodeFreeModel is the model used when opencode runs with no connected
 // credential (its zero-friction free tier). Operator-overridable.
-func opencodeFreeModel() string {
-	if m := os.Getenv("SANDBOXD_OPENCODE_FREE_MODEL"); m != "" {
-		return m
+func opencodeFreeModel() string { return agentauth.OpencodeFreeModel() }
+
+// isFreeTier reports whether a task runs on OpenCode's built-in free model: no
+// connected account, no model connection, and the free model selected.
+func isFreeTier(agent, provider, model string, opencodeConnected bool) bool {
+	return agent == "opencode" && provider == "" && !opencodeConnected &&
+		bareModel(model) == bareModel(opencodeFreeModel())
+}
+
+// bareModel drops an agent's "provider/" prefix ("opencode/big-pickle" -> "big-pickle").
+func bareModel(model string) string {
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		return model[i+1:]
 	}
-	return defaultOpencodeFreeModel
+	return model
 }
 
 // --- POST /v1/sandboxes/{id}/tasks ----------------------------------
@@ -148,10 +154,17 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	// can build with no setup at all. A connected key/subscription (handled in the
 	// proxy) or any chosen model takes precedence and uses the full catalog. Only
 	// opencode has a free tier — other agents still need to be connected first.
-	if req.Provider == "" && agent == "opencode" && req.Model == "" &&
-		(s.AgentAuth == nil || !s.AgentAuth.Connected("opencode")) {
+	opencodeConnected := s.AgentAuth != nil && s.AgentAuth.Connected("opencode")
+	if req.Provider == "" && agent == "opencode" && req.Model == "" && !opencodeConnected {
 		req.Model = opencodeFreeModel()
 	}
+	// Zen serves its free models only to OpenCode's own client, so the free
+	// model runs on OpenCode's built-in provider instead of the proxy.
+	freeTier := isFreeTier(agent, req.Provider, req.Model, opencodeConnected)
+	// Claude subscriptions sign in to Claude Code inside each project (Anthropic
+	// doesn't allow third parties to store or relay Claude.ai logins); only a
+	// Claude API key goes through the proxy.
+	claudeSignIn := agent == "claude-code" && (s.AgentAuth == nil || s.AgentAuth.Method(agent) != "api_key")
 
 	var connection *modelconfig.Connection
 	if req.Provider != "" {
@@ -173,14 +186,31 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.Model = connection.Model.ID
-	} else if agent == "pi" {
-		writeV1Err(w, 400, "invalid_request", "select a model provider connection for Pi in Settings")
-		return
+	} else if agent == "pi" || (agent == "opencode" && s.AgentAuth != nil && s.AgentAuth.Method(agent) == "oauth") {
+		if s.AgentAuth == nil || s.AgentProxyURL == "" {
+			writeV1Err(w, 400, "invalid_request", "connect Pi or select a model connection in Settings")
+			return
+		}
+		connection, err = authproxy.New(s.AgentAuth, nil).BuiltinConnection(r.Context(), agent, req.Model, s.AgentProxyURL)
+		if err != nil {
+			writeV1Err(w, 400, "invalid_request", err.Error())
+			return
+		}
+		req.Model = connection.Model.ID
+	}
+
+	if req.Provider == "" && connection == nil && !claudeSignIn && s.AgentAuth != nil && s.AgentAuth.Connected(agent) {
+		req.Model, err = authproxy.New(s.AgentAuth, nil).ResolveModel(r.Context(), agent, req.Model)
+		if err != nil {
+			writeV1Err(w, 400, "invalid_request", err.Error())
+			return
+		}
 	}
 
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
 		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, Provider: connection, TimeoutS: req.TimeoutS, Continue: req.Continue,
+		FreeTier: freeTier, ClaudeSignIn: claudeSignIn,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")

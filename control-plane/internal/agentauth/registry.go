@@ -1,6 +1,5 @@
 // Package agentauth manages the built-in coding-agent registry and legacy
-// credential-file store. Configurable model connections live in modelprovider;
-// Pi uses those connections rather than a built-in credential-file import.
+// credential-file store. Configurable model connections live in modelprovider.
 package agentauth
 
 // Provider is one coding-agent CLI we can run as a task agent.
@@ -45,8 +44,7 @@ func Get(id string) (Provider, bool) {
 
 // runnable is the set of providers runtimed can actually run as a task agent.
 // MUST be kept in sync with runtimed's selectAgent. All four have adapters;
-// codex is runnable here but parked in the UI (its ChatGPT-subscription auth
-// isn't proxyable yet), so the console hides it from the run picker.
+// all are selectable in the console once their account is connected.
 var runnable = map[string]bool{
 	"opencode":    true,
 	"pi":          true,
@@ -61,11 +59,11 @@ func Runnable(id string) bool { return runnable[id] }
 // long-lived token to. Used as the opaque target for credential import (the
 // "connect subscription" path) and the presence check. Every provider's own
 // `<cli> login` produces one of these on the owner's machine; the owner pastes
-// its contents in. The file is never opened or parsed.
+// its contents in. The control plane parses it for discovery and refresh.
 var credentialFiles = map[string]string{
-	"claude-code": ".claude/.credentials.json",
-	"codex":       ".codex/auth.json",
-	"opencode":    ".local/share/opencode/auth.json",
+	"codex":    ".codex/auth.json",
+	"pi":       ".pi/agent/auth.json",
+	"opencode": ".local/share/opencode/auth.json",
 }
 
 // CredentialFile returns the provider's credential file path (relative to HOME).

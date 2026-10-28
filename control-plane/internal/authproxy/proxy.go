@@ -43,6 +43,7 @@ const oauthBeta = "oauth-2025-04-20"
 var upstreams = map[string]string{
 	"anthropic": "https://api.anthropic.com",
 	"openai":    "https://api.openai.com/v1",
+	"codex":     "https://chatgpt.com/backend-api/codex",
 	"zen":       "https://opencode.ai/zen/v1",    // opencode's hosted gateway (pay-as-you-go)
 	"zengo":     "https://opencode.ai/zen/go/v1", // opencode Zen "go" subscription
 	// MiniMax direct endpoints — global (api.minimax.io) and China
@@ -96,6 +97,21 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agent, up := segs[0], segs[1]
+	if err := p.store.RefreshImported(r.Context(), agent); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	if agent == "codex" {
+		if err := p.store.RefreshCodex(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
+	// Codex sends Responses requests through one route; subscription credentials
+	// belong to the ChatGPT backend, whereas API keys belong to the public API.
+	if agent == "codex" && up == "openai" && p.store.Method(agent) == "oauth" {
+		up = "codex"
+	}
 	// MiniMax direct endpoints are credential-only — never rewrite them to the
 	// opencode free-tier path (a MiniMax request needs the connected MiniMax key,
 	// never Zen's keyless free models).
@@ -185,6 +201,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // credFor returns a header-injector for (agent, upstream) using the agent's
 // stored credential, or ok=false when there's no usable/proxyable credential.
 func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
+	if (agent == "pi" || agent == "opencode") && p.store.Method(agent) == "oauth" {
+		for account, c := range p.importedCredentials(agent) {
+			if importedUpstream(agent, account, c) == up {
+				return injectImported(c, up)
+			}
+		}
+		return nil, false
+	}
+
 	// MiniMax direct endpoints are credential-only: regardless of which coding
 	// agent carries the request, the proxy injects the connected MiniMax API key
 	// (Bearer — MiniMax's OpenAI- and Anthropic-compatible endpoints both accept
@@ -216,18 +241,27 @@ func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
 			}
 		}, true
 	case "oauth":
-		// Only claude-code's Anthropic OAuth is proxyable today (opencode/codex
-		// OAuth/subscription formats are not — they connect by API key instead).
-		if agent == "claude-code" && up == "anthropic" {
-			tok := claudeOAuthToken(p.store)
-			if tok == "" {
+		if agent == "codex" && up == "codex" {
+			b, err := os.ReadFile(filepath.Join(p.store.Dir(agent), ".codex/auth.json"))
+			if err != nil {
+				return nil, false
+			}
+			var credential struct {
+				Tokens struct {
+					AccessToken string `json:"access_token"`
+					AccountID   string `json:"account_id"`
+				} `json:"tokens"`
+			}
+			if json.Unmarshal(b, &credential) != nil || credential.Tokens.AccessToken == "" {
 				return nil, false
 			}
 			return func(h http.Header) {
 				h.Del("X-Api-Key")
-				h.Del("Authorization")
-				h.Set("Authorization", "Bearer "+tok)
-				h.Set("anthropic-beta", mergeBeta(h.Get("anthropic-beta")))
+				h.Del("ChatGPT-Account-Id")
+				h.Set("Authorization", "Bearer "+credential.Tokens.AccessToken)
+				if credential.Tokens.AccountID != "" {
+					h.Set("ChatGPT-Account-Id", credential.Tokens.AccountID)
+				}
 			}, true
 		}
 	}
@@ -245,24 +279,6 @@ func (p *Proxy) credFor(agent, up string) (func(http.Header), bool) {
 		}, true
 	}
 	return nil, false
-}
-
-// claudeOAuthToken reads the current subscription access token from the claude
-// credential file. Opaque read; empty when absent/unparseable.
-func claudeOAuthToken(store *agentauth.Store) string {
-	b, err := os.ReadFile(filepath.Join(store.Dir("claude-code"), ".claude/.credentials.json"))
-	if err != nil {
-		return ""
-	}
-	var d struct {
-		ClaudeAiOauth struct {
-			AccessToken string `json:"accessToken"`
-		} `json:"claudeAiOauth"`
-	}
-	if json.Unmarshal(b, &d) != nil {
-		return ""
-	}
-	return d.ClaudeAiOauth.AccessToken
 }
 
 func readTrim(path string) string {

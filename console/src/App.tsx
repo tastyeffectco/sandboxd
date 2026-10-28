@@ -36,7 +36,13 @@ type Route =
   | { name: 'settings'; section?: string }
   | { name: 'app'; id: string; tab?: string; task?: string }
 
-export default function App() {
+// signIn: the host owns this engine's login (the desktop app's own local engine)
+// and can restore a session without asking the user for a password.
+// localEngine: the engine runs on this computer, so network-sharing hints don't apply.
+export default function App({
+  signIn,
+  localEngine = false,
+}: { signIn?: () => Promise<unknown>; localEngine?: boolean } = {}) {
   const [route, setRouteState] = useState<Route>(readRoute)
   const routeRef = useRef(route)
   routeRef.current = route
@@ -134,6 +140,20 @@ export default function App() {
   useEffect(() => {
     if (auth && (auth.authenticated || auth.enabled === false)) loadApps()
   }, [auth, loadApps])
+  // 'failed' falls back to the password form (e.g. the user changed it).
+  const [hostSignIn, setHostSignIn] = useState<'idle' | 'trying' | 'failed'>('idle')
+  useEffect(() => {
+    if (!signIn || !auth?.enabled || auth.authenticated || hostSignIn !== 'idle') return
+    setHostSignIn('trying')
+    signIn()
+      .catch(() => {})
+      .then(() => api.authStatus())
+      .then((next) => {
+        setAuth(next)
+        setHostSignIn(next.authenticated ? 'idle' : 'failed')
+      })
+      .catch(() => setHostSignIn('failed'))
+  }, [signIn, auth, hostSignIn])
   const loadSettings = useCallback(
     () =>
       api.getSettings().then((s) => {
@@ -150,11 +170,16 @@ export default function App() {
     loadSettings()
       .then((s) => {
         const r = previewReach(s.networking?.preview_domain || '', !!s.networking?.preview_tls)
-        if (!IS_DEMO && r !== 'ok' && localStorage.getItem('sandboxd-public-url-hint') !== 'dismissed')
+        if (
+          !IS_DEMO &&
+          !localEngine &&
+          r !== 'ok' &&
+          localStorage.getItem('sandboxd-public-url-hint') !== 'dismissed'
+        )
           setReach(r)
       })
       .catch(() => {})
-  }, [auth, loadSettings])
+  }, [auth, loadSettings, localEngine])
   const dismissUpdate = useCallback(() => {
     if (settings?.latest_version) localStorage.setItem('sandboxd-update-dismissed', settings.latest_version)
     setUpdDismissed(true)
@@ -223,7 +248,7 @@ export default function App() {
   ]
 
   // Auth gate — render before the app chrome. null = still resolving status.
-  if (auth === null) {
+  if (auth === null || (auth.enabled && !auth.authenticated && signIn && hostSignIn !== 'failed')) {
     return (
       <div
         style={{
@@ -362,7 +387,7 @@ export default function App() {
               <Icon name="code" size={16} />
               <span>Community & feedback</span>
             </a>
-            {auth.enabled && (
+            {auth.enabled && !signIn && (
               <button onClick={logout} data-testid="nav-logout">
                 <Icon name="logout" size={16} />
                 <span>Sign out</span>

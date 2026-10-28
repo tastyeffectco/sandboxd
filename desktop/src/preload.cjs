@@ -8,10 +8,15 @@ if (process.isMainFrame) {
   contextBridge.exposeInMainWorld(
     'sandboxdDesktop',
     Object.freeze({
+      agentLogin: (agent) => ipcRenderer.invoke('desktop:agent-login', agent),
+      importAgentLogin: (agent) => ipcRenderer.invoke('desktop:import-agent-login', agent),
       state: () => ipcRenderer.invoke('desktop:state'),
       connect: (connection) => ipcRenderer.invoke('desktop:connect', connection),
       disconnect: (forget = false) => ipcRenderer.invoke('desktop:disconnect', forget),
       openExternal: (url) => ipcRenderer.invoke('desktop:external', url),
+      installEngine: () => ipcRenderer.invoke('desktop:install-engine'),
+      signIn: () => ipcRenderer.invoke('desktop:sign-in'),
+      onEngineProgress: (callback) => subscribe('desktop:engine-progress', callback),
       onConnections: (callback) => subscribe('desktop:connections', callback),
       onNavigate: (callback) => subscribe('desktop:navigate', callback),
       onSearch: (callback) => subscribe('desktop:search', callback),

@@ -175,3 +175,46 @@ func TestWriteOpencodeProxyConfigNonMiniMaxKeepsZen(t *testing.T) {
 		t.Errorf("baseURL = %q; non-MiniMax must keep the Zen path", cfg.Provider["proxy"].Options.BaseURL)
 	}
 }
+
+// The free tier runs on OpenCode's built-in provider even when the credential
+// proxy is configured; every other model keeps the proxy.
+func TestOpencodeGatewayFreeTier(t *testing.T) {
+	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "http://127.0.0.1:9100")
+	for _, model := range []string{"big-pickle", "opencode/big-pickle"} {
+		path, got, err := opencodeGateway(agentSpec{freeTier: true}, model)
+		if err != nil || path != "" || got != "opencode/big-pickle" {
+			t.Errorf("free tier %q = (%q,%q,%v); want no config and opencode/big-pickle", model, path, got, err)
+		}
+	}
+	if path, got, err := opencodeGateway(agentSpec{freeTier: true}, ""); err != nil || path != "" || got != "" {
+		t.Errorf("free tier without a model = (%q,%q,%v); want the caller's model", path, got, err)
+	}
+	path, got, err := opencodeGateway(agentSpec{}, "opencode/glm-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if path == "" || got != "proxy/glm-5" {
+		t.Errorf("paid model = (%q,%q); want the proxy config and proxy/glm-5", path, got)
+	}
+}
+
+// The free tier must not send the proxy's dummy key to Zen; other runs keep it
+// so the proxy can inject the real credential.
+func TestOpencodeEnvFreeTier(t *testing.T) {
+	t.Setenv("RUNTIMED_ANTHROPIC_PROXY", "http://127.0.0.1:9100")
+	has := func(env []string) bool {
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "OPENCODE_API_KEY=") {
+				return true
+			}
+		}
+		return false
+	}
+	if has(opencodeEnv(agentSpec{freeTier: true})) {
+		t.Error("free tier must not pass the proxy's dummy OPENCODE_API_KEY")
+	}
+	if !has(opencodeEnv(agentSpec{})) {
+		t.Error("proxied runs must keep the dummy OPENCODE_API_KEY")
+	}
+}

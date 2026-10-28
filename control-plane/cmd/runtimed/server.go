@@ -31,6 +31,10 @@ func serve(ctx context.Context, socketPath string, a *app) error {
 	mux.HandleFunc("GET /tasks/{id}/events", a.handleTaskEvents)
 	mux.HandleFunc("POST /tasks/{id}/cancel", a.handleCancelTask)
 	mux.HandleFunc("POST /tasks/{id}/revert", a.handleRevertTask)
+	mux.HandleFunc("GET /claude-login", a.handleClaudeLoginStatus)
+	mux.HandleFunc("POST /claude-login", a.handleClaudeLoginStart)
+	mux.HandleFunc("POST /claude-login/code", a.handleClaudeLoginCode)
+	mux.HandleFunc("DELETE /claude-login", a.handleClaudeLogout)
 
 	srv := &http.Server{Handler: mux}
 	go func() {
