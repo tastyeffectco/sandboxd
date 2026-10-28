@@ -36,6 +36,8 @@ type agentSpec struct {
 	// fresh (claude --continue, opencode --continue, codex `exec resume --last`).
 	// Each sandbox is one workspace, so "most recent" is naturally per-sandbox.
 	cont bool
+	// freeTier runs OpenCode on its built-in provider (see StartTaskRequest.FreeTier).
+	freeTier bool
 }
 
 // agent is the coding-agent adapter boundary shared by OpenCode, Pi, Claude
@@ -284,6 +286,46 @@ func ipBaseURL(raw string) (string, error) {
 	return strings.TrimRight(u.String(), "/"), nil
 }
 
+// opencodeGateway picks how OpenCode reaches its model and returns (OPENCODE_CONFIG
+// path, --model). A configured connection and connected accounts go through the
+// credential proxy. The free tier uses OpenCode's built-in provider directly:
+// Zen serves free models only to OpenCode's own client, and there is no
+// credential to protect. An empty model keeps the caller's.
+func opencodeGateway(spec agentSpec, model string) (string, string, error) {
+	switch {
+	case spec.provider != nil:
+		return writeOpencodeConnection(spec.provider)
+	case spec.freeTier:
+		id := model
+		if i := strings.LastIndex(id, "/"); i >= 0 {
+			id = id[i+1:]
+		}
+		if id == "" {
+			return "", "", nil
+		}
+		return "", "opencode/" + id, nil
+	default:
+		return writeOpencodeProxyConfig(model)
+	}
+}
+
+// opencodeEnv is the agent environment for an OpenCode run. On the free tier
+// OpenCode talks to Zen itself, so the proxy's dummy key must not reach it: Zen
+// rejects it as an invalid credential instead of serving the free model.
+func opencodeEnv(spec agentSpec) []string {
+	env := agentEnv("opencode", spec.env)
+	if !spec.freeTier {
+		return env
+	}
+	kept := env[:0]
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "OPENCODE_API_KEY=") {
+			kept = append(kept, kv)
+		}
+	}
+	return kept
+}
+
 // writeOpencodeProxyConfig writes an OPENCODE_CONFIG that routes opencode through
 // the credential-injecting proxy, and returns (config path, model id to pass to
 // --model). It defines ONE custom openai-compatible provider ("proxy") pointing
@@ -352,19 +394,15 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	// file: a custom openai-compatible "proxy" provider carrying a dummy key (the
 	// proxy injects the real one). When it applies, the model is rewritten to
 	// `proxy/<id>` so the run uses that provider. No credential enters the sandbox.
-	var cfgPath, proxyModel string
-	var cfgErr error
-	if spec.provider != nil {
-		cfgPath, proxyModel, cfgErr = writeOpencodeConnection(spec.provider)
-	} else {
-		cfgPath, proxyModel, cfgErr = writeOpencodeProxyConfig(model)
-	}
+	cfgPath, gatewayModel, cfgErr := opencodeGateway(spec, model)
 	if cfgErr != nil {
 		return "", usage, fmt.Errorf("configure opencode proxy: %w", cfgErr)
 	}
 	if cfgPath != "" {
 		defer os.Remove(cfgPath)
-		model = proxyModel
+	}
+	if gatewayModel != "" {
+		model = gatewayModel
 	}
 	args := []string{"run", "--format", "json", "--auto", "--pure"}
 	if spec.workDir != "" {
@@ -389,7 +427,7 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	// Phase 10B — scrub secret-shaped vars and point HOME at THIS agent's
 	// mounted auth dir (/run/agent-auth/opencode), if any. Credentials come from
 	// files under HOME, never from inherited container env.
-	cmd.Env = agentEnv(o.name(), spec.env)
+	cmd.Env = opencodeEnv(spec)
 	// OpenCode uses PWD during workspace discovery. Setting cmd.Dir alone does
 	// not update an explicitly supplied environment inherited from runtimed.
 	if spec.workDir != "" {

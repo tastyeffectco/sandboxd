@@ -8,6 +8,21 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode's built-in free tier works again with nothing connected. Zen now
+  serves its free models only to OpenCode's own client, so free-model tasks run
+  on OpenCode's built-in provider instead of the credential proxy. Connected
+  keys, subscriptions and model connections still use the proxy.
+- New React/Vite, Node/Express and FastAPI projects ignore their dependencies
+  and build output in Git. Previously `node_modules` showed up as thousands of
+  "changed files" after the first task and could be committed or pushed.
+
+### Changed
+
+- Update the base image to OpenCode 1.19.5 and Pi 1.4.0, verified by the
+  real-agent provider tests.
+
 ### Added
 
 - Rework the console around prompt-first app creation, stack and model selection,

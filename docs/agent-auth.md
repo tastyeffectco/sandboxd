@@ -134,17 +134,19 @@ set — go-subscription models (GLM/Kimi/…) for `zengo`.
 ### OpenCode free tier — works with no key (zero friction)
 
 **opencode is usable out of the box with nothing connected.** Zen serves a set of
-free models (ids ending `-free`, e.g. `big-pickle`, `deepseek-v4-flash-free`,
-`mimo-v2.5-free`) that need **no API key**. When opencode has no connected
-credential, the proxy forwards its requests to Zen **keyless** — it drops the
-sandbox's dummy key and injects nothing — and always to the **`zen`** endpoint
-where the free models live (even if the deployment pins `zengo`, whose
-go-subscription catalog has no free models). The control plane defaults the
-task's model to a free one so a fresh install can build immediately.
+free models (e.g. `big-pickle` and ids ending `-free`) that need **no API key**,
+but only to OpenCode's own client: keyless requests from any other client,
+including the credential proxy, get `FreeUsageLimitError`. So when opencode has
+no connected credential and the task uses the free model, the control plane
+marks the task `free_tier` and runtimed runs OpenCode on its **built-in**
+`opencode` provider (`opencode/big-pickle`) instead of the proxy. There is no
+credential on this path, so nothing secret enters the sandbox. The control plane
+defaults the task's model to the free one so a fresh install can build
+immediately.
 
 > Zen's API **requires a named model** — there is no keyless "auto" model, and
-> only the `-free` models work without a key. That's why a free model must be
-> named; it's not something opencode can pick on its own through the proxy.
+> only the free models work without a key. Any other model, and every connected
+> key or subscription, still goes through the credential proxy.
 
 - **No key** → free tier. The default free model is `big-pickle`; override with
   `SANDBOXD_OPENCODE_FREE_MODEL`.

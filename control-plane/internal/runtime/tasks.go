@@ -53,6 +53,10 @@ type StartTaskRequest struct {
 	// nil (omitted) = the default, which is to continue when the sandbox already
 	// has a prior session and start fresh otherwise; true/false force the choice.
 	Continue *bool `json:"continue,omitempty"`
+	// FreeTier runs OpenCode on its built-in provider with no credential. Zen
+	// serves its free models only to OpenCode's own client, so these tasks skip
+	// the credential proxy; there is nothing secret to keep out of the sandbox.
+	FreeTier bool `json:"free_tier,omitempty"`
 }
 
 // Event is one task progress event. Data is type-specific JSON.
