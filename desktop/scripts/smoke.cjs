@@ -97,7 +97,9 @@ async function main() {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     const origin = `http://127.0.0.1:${engine.address().port}`
-    await expect(page.getByRole('heading', { name: 'Connect your engine.' })).toBeVisible()
+    // Windows offers its own engine setup; other platforms connect to an existing engine.
+    const welcome = process.platform === 'win32' ? 'Let’s set up your studio.' : 'Connect your engine.'
+    await expect(page.getByRole('heading', { name: welcome })).toBeVisible()
     await page.screenshot({ path: path.join(output, 'welcome.png') })
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(880, 640))
     await page.waitForFunction(() => window.innerWidth <= 880)
@@ -267,7 +269,7 @@ async function main() {
     await expect(page.getByTestId('nav-apps')).toBeVisible()
     await page.getByRole('button', { name: /This computer/ }).click()
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Connect your engine.' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: welcome })).toBeVisible()
     const profile = await fs.readFile(path.join(temp, 'connections.json'), 'utf8')
     assert(!profile.includes('test-session') && !profile.includes('fixture-password'))
     assert.deepEqual(errors, [])
