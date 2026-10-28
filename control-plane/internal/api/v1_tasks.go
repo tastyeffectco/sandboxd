@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
@@ -36,6 +37,14 @@ func opencodeFreeModel() string {
 		return m
 	}
 	return defaultOpencodeFreeModel
+}
+
+// bareModel drops an agent's "provider/" prefix ("opencode/big-pickle" -> "big-pickle").
+func bareModel(model string) string {
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		return model[i+1:]
+	}
+	return model
 }
 
 // --- POST /v1/sandboxes/{id}/tasks ----------------------------------
@@ -148,10 +157,14 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	// can build with no setup at all. A connected key/subscription (handled in the
 	// proxy) or any chosen model takes precedence and uses the full catalog. Only
 	// opencode has a free tier — other agents still need to be connected first.
-	if req.Provider == "" && agent == "opencode" && req.Model == "" &&
-		(s.AgentAuth == nil || !s.AgentAuth.Connected("opencode")) {
+	opencodeConnected := s.AgentAuth != nil && s.AgentAuth.Connected("opencode")
+	if req.Provider == "" && agent == "opencode" && req.Model == "" && !opencodeConnected {
 		req.Model = opencodeFreeModel()
 	}
+	// Zen serves its free models only to OpenCode's own client, so the free
+	// model runs on OpenCode's built-in provider instead of the proxy.
+	freeTier := req.Provider == "" && agent == "opencode" && !opencodeConnected &&
+		bareModel(req.Model) == bareModel(opencodeFreeModel())
 
 	var connection *modelconfig.Connection
 	if req.Provider != "" {
@@ -181,6 +194,7 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
 		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, Provider: connection, TimeoutS: req.TimeoutS, Continue: req.Continue,
+		FreeTier: freeTier,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")

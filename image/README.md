@@ -69,7 +69,7 @@ present and working in the built image.
 
 ## Coding agents and compatible model servers
 
-The base image pins OpenCode 1.19.3 and Pi 1.3.0
+The base image pins OpenCode 1.19.5 and Pi 1.4.0
 (`@earendil-works/pi-coding-agent`), alongside the existing Claude Code and Codex
 installations. Pi requires Node 22.19.0 or later; the image checks this during
 build. Configure model URLs and credentials through the control plane, using

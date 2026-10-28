@@ -6,7 +6,7 @@ or **Anthropic-compatible Messages** APIs. This includes local model servers
 and gateways such as LiteLLM. No provider-specific SDK or AWS credentials are
 required in sandboxd core.
 
-The base image installs OpenCode **1.19.3** and Pi **1.3.0**
+The base image installs OpenCode **1.19.5** and Pi **1.4.0**
 (`@earendil-works/pi-coding-agent`). Rebuild/upgrade the base image and recreate
 existing sandboxes to install these versions; saving a connection itself needs
 no restart.

@@ -36,6 +36,7 @@ type task struct {
 	agentName string
 	model     string
 	cont      bool // continue the sandbox's most recent agent session
+	freeTier  bool // OpenCode's built-in free tier (no credential, no proxy)
 	env       map[string]string
 	timeout   time.Duration
 	dir       string // .runtimed/tasks/<id>
@@ -78,7 +79,8 @@ func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
 	}
 	return &task{
 		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, provider: req.Provider, cont: cont, env: req.Env,
-		timeout: timeout, dir: dir, createdAt: time.Now().UTC(),
+		freeTier: req.FreeTier,
+		timeout:  timeout, dir: dir, createdAt: time.Now().UTC(),
 		updatedCh: make(chan struct{}), phase: "queued", eventsW: f,
 	}, nil
 }
@@ -253,7 +255,7 @@ func (a *app) runTask(t *task) {
 	})
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
 		workDir: a.appDir, stateDir: a.runtimeDir, prompt: t.prompt, model: t.model, provider: t.provider, env: t.env, rawLog: rl,
-		systemPrompt: sysPrompt, cont: t.cont,
+		systemPrompt: sysPrompt, cont: t.cont, freeTier: t.freeTier,
 	}, t.emit)
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage
