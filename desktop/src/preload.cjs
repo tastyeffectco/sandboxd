@@ -13,6 +13,7 @@ if (process.isMainFrame) {
       disconnect: (forget = false) => ipcRenderer.invoke('desktop:disconnect', forget),
       openExternal: (url) => ipcRenderer.invoke('desktop:external', url),
       installEngine: () => ipcRenderer.invoke('desktop:install-engine'),
+      signIn: () => ipcRenderer.invoke('desktop:sign-in'),
       onEngineProgress: (callback) => subscribe('desktop:engine-progress', callback),
       onConnections: (callback) => subscribe('desktop:connections', callback),
       onNavigate: (callback) => subscribe('desktop:navigate', callback),

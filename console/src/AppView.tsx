@@ -156,6 +156,13 @@ export function AppView({
   useEffect(() => {
     refresh()
   }, [refresh])
+  // The agent may restart the dev server while it works, so the preview can be
+  // showing an error page; reload it whenever a task ends or a checkpoint is restored.
+  const [previewKey, setPreviewKey] = useState(0)
+  const afterAgent = useCallback(() => {
+    void refresh()
+    setPreviewKey((n) => n + 1)
+  }, [refresh])
   // Poll fast while anything is in flight (sandbox starting/stopping, or the dev
   // server not yet answering the preview probe) so first-run readiness surfaces
   // quickly; back off once it's settled.
@@ -419,7 +426,7 @@ export function AppView({
             sb={sb}
             onError={onError}
             toast={toast}
-            refresh={refresh}
+            refresh={afterAgent}
             initialBuild={initialBuild}
             consumeBuild={consumeBuild}
             goSettings={goSettings}
@@ -473,7 +480,7 @@ export function AppView({
             </details>
           </nav>
           <div className={`workspace-content content-${tabName}`}>
-            {tabName === 'overview' && <PreviewPane sb={sb} />}
+            {tabName === 'overview' && <PreviewPane sb={sb} reloadKey={previewKey} />}
             {tabName === 'runtime' && (
               <div className="runtime-panels">
                 <ProcessesCard
@@ -605,7 +612,7 @@ export function AppView({
   )
 }
 
-function PreviewPane({ sb }: { sb: Sandbox | null }) {
+export function PreviewPane({ sb, reloadKey = 0 }: { sb: Sandbox | null; reloadKey?: number }) {
   const [size, setSize] = useState<'desktop' | 'mobile'>('desktop')
   const [nonce, setNonce] = useState(0)
   const [blocked, setBlocked] = useState(false)
@@ -627,7 +634,7 @@ function PreviewPane({ sb }: { sb: Sandbox | null }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [url, ready, nonce])
+  }, [url, ready, nonce, reloadKey])
   return (
     <div className="preview-pane">
       <div className="preview-toolbar">
@@ -674,7 +681,7 @@ function PreviewPane({ sb }: { sb: Sandbox | null }) {
       </div>
       <div className={`preview-canvas preview-${size}`}>
         {ready && !blocked ? (
-          <iframe key={`${url}-${nonce}`} title="App preview" src={url} data-testid="preview" />
+          <iframe key={`${url}-${nonce}-${reloadKey}`} title="App preview" src={url} data-testid="preview" />
         ) : (
           <div
             className="preview-placeholder"

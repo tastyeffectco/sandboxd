@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { AppView } from './AppView'
+import { api, type Agent } from './api'
 
 vi.mock('./api', () => ({ api: {
   getApp: vi.fn().mockResolvedValue({ id: 'app', name: 'Model picker', created_at: '' }),
@@ -12,11 +13,28 @@ vi.mock('./api', () => ({ api: {
 
 afterEach(cleanup)
 
+const connected = (id: string): Agent => ({
+  id, label: id, installed_state: 'installed', status: 'connected', method: 'api_key',
+  supports_oauth: false, supports_api_key: true, runnable: id !== 'minimax',
+})
+const renderPicker = async () => {
+  const noop = () => {}
+  render(<AppView appId="app" onError={noop} toast={noop} goApps={noop} goSettings={noop} />)
+  return (await screen.findByTestId('task-model')) as HTMLSelectElement
+}
+
 describe('OpenCode model picker', () => {
-  it('offers Flash before M3, preserves other choices, and leaves the saved default in control', async () => {
-    const noop = () => {}
-    render(<AppView appId="app" onError={noop} toast={noop} goApps={noop} goSettings={noop} />)
-    const picker = await screen.findByTestId('task-model') as HTMLSelectElement
+  it('offers only the free model when nothing is connected', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([])
+    const picker = await renderPicker()
+    await screen.findByText('Free to use. No account needed.')
+    expect(Array.from(picker.options).map((o) => [o.value, o.text])).toEqual([['', 'Free model']])
+  })
+
+  it('offers paid models once accounts are connected, Flash before M3', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([connected('opencode'), connected('minimax')])
+    const picker = await renderPicker()
+    await screen.findByRole('option', { name: 'glm-5' })
     expect(picker.value).toBe('')
     expect(Array.from(picker.options).map((o) => o.value)).toEqual([
       '', 'opencode/glm-5', 'opencode/kimi-k2.6', 'opencode/deepseek-v4-pro',

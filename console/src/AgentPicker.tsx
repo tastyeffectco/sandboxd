@@ -18,6 +18,14 @@ export function AgentPicker({
   disabled?: boolean
 }) {
   const selected = providers.find((p) => p.id === value.provider)
+  const connected = (id: string) => agents.some((a) => a.id === id && a.status === 'connected')
+  // With nothing connected, OpenCode runs on its built-in free model; paid models
+  // appear once an account (or a MiniMax key) is connected.
+  const opencodeModels = [
+    ...(connected('opencode') ? ['glm-5', 'kimi-k2.6', 'deepseek-v4-pro'] : []),
+    ...(connected('minimax') ? ['MiniMax-M3.1-Flash', 'MiniMax-M3'] : []),
+  ]
+  const freeOpencode = value.agent === 'opencode' && !value.provider && !connected('opencode')
   return (
     <div className="agent-picker">
       <label>
@@ -66,13 +74,15 @@ export function AgentPicker({
           value={value.model}
           onChange={(e) => onChange({ ...value, model: e.target.value })}
         >
-          <option value="">{selected ? `${selected.models[0].id} (default)` : 'Default model'}</option>
+          <option value="">
+            {selected ? `${selected.models[0].id} (default)` : freeOpencode ? 'Free model' : 'Default model'}
+          </option>
           {selected?.models.slice(1).map((m) => (
             <option key={m.id}>{m.id}</option>
           ))}
           {!value.provider &&
             value.agent === 'opencode' &&
-            ['glm-5', 'kimi-k2.6', 'deepseek-v4-pro', 'MiniMax-M3.1-Flash', 'MiniMax-M3'].map((m) => (
+            opencodeModels.map((m) => (
               <option value={`opencode/${m}`} key={m}>
                 {m}
               </option>
@@ -86,9 +96,8 @@ export function AgentPicker({
           ? 'Pi uses your model connection.'
           : value.provider
             ? 'Your model endpoint. Your API key stays on the control plane.'
-            : value.agent === 'opencode' &&
-                !agents.some((a) => a.id === 'opencode' && a.status === 'connected')
-              ? 'OpenCode can start with its built-in free tier.'
+            : freeOpencode
+              ? 'Free to use. No account needed.'
               : 'Uses the account connected in Settings.'}
       </p>
     </div>

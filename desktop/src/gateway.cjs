@@ -25,7 +25,13 @@ const equal = (a, b) =>
 // A private transport for the packaged UI. Only the engine API is proxied;
 // engines can never supply desktop scripts. Each app process has a random
 // capability header injected by Electron, and upstream login cookies stay here.
-async function createGateway({ uiRoot, engine = '', session = '', onSession = () => {} }) {
+async function createGateway({
+  uiRoot,
+  engine = '',
+  session = '',
+  onSession = () => {},
+  idleTimeout = 120000,
+}) {
   const token = randomBytes(32).toString('hex')
   let origin = '',
     host = '',
@@ -143,7 +149,10 @@ async function createGateway({ uiRoot, engine = '', session = '', onSession = ()
       proxy.on('error', () =>
         error(response, 502, 'Cannot reach the engine. Check the address and whether sandboxd is running.'),
       )
-      proxy.setTimeout(120000, () => proxy.destroy())
+      // Task event streams stay open through quiet agent steps (a long install
+      // sends nothing for minutes); they end with the task, page or engine.
+      if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
+        proxy.setTimeout(idleTimeout, () => proxy.destroy())
       request.on('aborted', () => proxy.destroy())
       response.on('close', () => proxy.destroy())
       request.pipe(proxy)

@@ -17,6 +17,7 @@ export default function DesktopHost() {
   const [revision, setRevision] = useState(0)
   const [online, setOnline] = useState(true)
   const [error, setError] = useState('')
+  const signIn = useCallback(() => bridge!.signIn(), [])
   const probe = useCallback(async () => {
     try {
       const response = await fetch('/v1/auth/status', { signal: AbortSignal.timeout(5000) })
@@ -116,7 +117,11 @@ export default function DesktopHost() {
             Opening your studio…
           </div>
         ) : state.selected ? (
-          <App key={`${state.selected}:${revision}`} />
+          <App
+            key={`${state.selected}:${revision}`}
+            signIn={state.selected === local.url && state.localEngine?.installed ? signIn : undefined}
+            localEngine={state.selected === local.url}
+          />
         ) : (
           <div className="desktop-welcome">
             <aside className="desktop-welcome-story">
@@ -151,27 +156,38 @@ export default function DesktopHost() {
             </aside>
             <main className="desktop-connect-page">
               <div className="eyebrow">WELCOME TO SANDBOXD</div>
-              <h2>Connect your engine.</h2>
-              <p>Your desktop is ready. Choose where your apps will run.</p>
+              {state.platform === 'win32' ? (
+                <>
+                  <h2>Let’s set up your studio.</h2>
+                  <p>Your apps and AI agent run privately on this computer.</p>
+                </>
+              ) : (
+                <>
+                  <h2>Connect your engine.</h2>
+                  <p>Your desktop is ready. Choose where your apps will run.</p>
+                </>
+              )}
               <ConnectionForm state={state} onConnected={connected} onBusy={setConnecting} />
-              <div className="desktop-setup-help">
-                <strong>New to sandboxd?</strong>
-                <p>
-                  {state.platform === 'win32'
-                    ? 'Choose Install & open workspace to set up an engine on this computer. No terminal needed.'
-                    : 'The engine runs your apps and agents. Connect an existing engine, or follow the local setup guide.'}
-                </p>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    void bridge?.openExternal(
-                      'https://github.com/tastyeffectco/sandboxd/blob/main/docs/desktop.md',
-                    )
-                  }
-                >
-                  Set up an engine <Icon name="external" size={13} />
-                </button>
-              </div>
+              {state.platform !== 'win32' && (
+                <div className="desktop-setup-help">
+                  <strong>New to sandboxd?</strong>
+                  <p>
+                    {state.platform === 'win32'
+                      ? 'Choose Install & open workspace to set up an engine on this computer. No terminal needed.'
+                      : 'The engine runs your apps and agents. Connect an existing engine, or follow the local setup guide.'}
+                  </p>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      void bridge?.openExternal(
+                        'https://github.com/tastyeffectco/sandboxd/blob/main/docs/desktop.md',
+                      )
+                    }
+                  >
+                    Set up an engine <Icon name="external" size={13} />
+                  </button>
+                </div>
+              )}
             </main>
           </div>
         )}
@@ -281,169 +297,194 @@ function ConnectionForm({
       onBusy(false)
     }
   }
-  return (
-    <div className="desktop-connection-form">
-      <div className="desktop-connection-modes">
-        <button
-          aria-pressed={mode === 'local'}
-          disabled={working}
-          onClick={() => {
-            setMode('local')
-            setChoice(local)
-          }}
-        >
-          <Icon name="monitor" />
-          <strong>This computer</strong>
-          <span>A local sandboxd engine</span>
-        </button>
-        <button
-          aria-pressed={mode === 'remote'}
-          disabled={working}
-          onClick={() => {
-            setMode('remote')
-            setChoice({ name: '', url: '', allowInsecure: false })
-          }}
-        >
-          <Icon name="external" />
-          <strong>Remote engine</strong>
-          <span>Your server or team instance</span>
-        </button>
-      </div>
-      {mode === 'local' && state.platform === 'win32' && (
-        <section className="desktop-local-setup" aria-label="Local engine setup">
-          <strong>
-            {state.localEngine?.installed
-              ? 'Your engine on this computer'
-              : 'Everything you need, installed for you.'}
-          </strong>
-          <p>
-            Sets up a private Linux environment and the sandboxd engine. First setup downloads several GB and
-            can take 15–30 minutes. Windows may ask for administrator permission or a restart.
-          </p>
-          {state.localEngine?.message && (
-            <p
-              role={state.localEngine.phase === 'error' ? 'alert' : 'status'}
-              className={state.localEngine.phase === 'error' ? 'inline-error' : 'desktop-setup-progress'}
-            >
-              {state.localEngine.message}
-            </p>
-          )}
-          <Btn
-            variant="primary"
-            disabled={working}
-            onClick={() => void install()}
-            data-testid="desktop-install-engine"
-          >
-            {working
-              ? 'Setting up your engine…'
-              : state.localEngine?.phase === 'restart'
-                ? 'Continue setup'
-                : state.localEngine?.phase === 'error'
-                  ? 'Retry setup'
-                  : state.localEngine?.installed
-                    ? 'Start & open workspace'
-                    : 'Install & open workspace'}
-            {!working && <Icon name="arrow" size={16} />}
-          </Btn>
-          <small>
-            {working
-              ? 'Keep this window open. Your progress is saved if setup needs to restart.'
-              : 'Already have an engine? Connect using its address below.'}
-          </small>
-        </section>
-      )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void connect()
+  const modes = (
+    <div className="desktop-connection-modes">
+      <button
+        aria-pressed={mode === 'local'}
+        disabled={working}
+        onClick={() => {
+          setMode('local')
+          setChoice(local)
         }}
       >
-        {mode === 'remote' && (
-          <label className="form-field">
-            Connection name
-            <Input
-              value={choice.name}
-              onChange={(e) => setChoice({ ...choice, name: e.target.value })}
-              placeholder="My studio"
-              maxLength={80}
-              disabled={working}
-            />
-          </label>
-        )}
+        <Icon name="monitor" />
+        <strong>This computer</strong>
+        <span>A local sandboxd engine</span>
+      </button>
+      <button
+        aria-pressed={mode === 'remote'}
+        disabled={working}
+        onClick={() => {
+          setMode('remote')
+          setChoice({ name: '', url: '', allowInsecure: false })
+        }}
+      >
+        <Icon name="external" />
+        <strong>Remote engine</strong>
+        <span>Your server or team instance</span>
+      </button>
+    </div>
+  )
+  const setup = state.platform === 'win32' && (
+    <section className="desktop-local-setup" aria-label="Local engine setup">
+      <strong>
+        {state.localEngine?.installed
+          ? 'Your engine on this computer'
+          : 'Everything you need, installed for you.'}
+      </strong>
+      <p>
+        One click sets up everything on this computer. Start building right away with a free AI agent, no
+        account or subscription needed.
+      </p>
+      <p className="field-help">
+        The first setup downloads a few GB and takes 15–30 minutes. Windows may ask for permission or a
+        restart.
+      </p>
+      {state.localEngine?.message && (
+        <p
+          role={state.localEngine.phase === 'error' ? 'alert' : 'status'}
+          className={state.localEngine.phase === 'error' ? 'inline-error' : 'desktop-setup-progress'}
+        >
+          {state.localEngine.message}
+        </p>
+      )}
+      <Btn
+        variant="primary"
+        disabled={working}
+        onClick={() => void install()}
+        data-testid="desktop-install-engine"
+      >
+        {working
+          ? 'Setting up your engine…'
+          : state.localEngine?.phase === 'restart'
+            ? 'Continue setup'
+            : state.localEngine?.phase === 'error'
+              ? 'Retry setup'
+              : state.localEngine?.installed
+                ? 'Start & open workspace'
+                : 'Install & open workspace'}
+        {!working && <Icon name="arrow" size={16} />}
+      </Btn>
+      <small>
+        {working
+          ? 'Keep this window open. Your progress is saved if setup needs to restart.'
+          : 'No terminal or technical setup needed.'}
+      </small>
+    </section>
+  )
+  const form = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        void connect()
+      }}
+    >
+      {mode === 'remote' && (
         <label className="form-field">
-          Engine API address
+          Connection name
           <Input
-            autoFocus
-            type="url"
-            required
-            value={choice.url}
-            onChange={(e) => setChoice({ ...choice, url: e.target.value })}
-            placeholder="https://sandboxd.example.com"
+            value={choice.name}
+            onChange={(e) => setChoice({ ...choice, name: e.target.value })}
+            placeholder="My studio"
+            maxLength={80}
             disabled={working}
-            data-testid="desktop-engine-url"
           />
         </label>
-        {mode === 'local' && (
-          <p className="field-help">
-            {state.platform === 'win32'
-              ? 'Use the address of an existing engine, or install one above.'
-              : 'Usually http://127.0.0.1:9090. The engine needs to be running before you connect.'}
-          </p>
-        )}
-        {mode === 'remote' && (
-          <details className="desktop-advanced">
-            <summary>Connection options</summary>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={choice.allowInsecure}
-                onChange={(e) => setChoice({ ...choice, allowInsecure: e.target.checked })}
-                disabled={working}
-              />{' '}
-              Allow unencrypted HTTP
-            </label>
-            {choice.allowInsecure && (
-              <p className="field-help">
-                HTTP sends your password and workspace data without transport encryption. Use only on a
-                network you trust.
-              </p>
-            )}
-          </details>
-        )}
-        {error && (
-          <p role="alert" className="inline-error">
-            {error}
-          </p>
-        )}
-        <Btn
-          type="submit"
-          variant="primary"
-          disabled={working || !choice.url.trim()}
-          data-testid="desktop-connect"
-        >
-          {busy ? 'Connecting…' : 'Open workspace'}
-          <Icon name="arrow" size={16} />
-        </Btn>
-        <p className="desktop-login-note">
-          <Icon name="lock" size={12} /> Sign in with your engine’s console password after connecting.
-          {!state.canRemember && ' You will need to sign in again after closing the app.'}
-        </p>
-      </form>
-      {state.connections.length > 0 && (
-        <div className="desktop-recent">
-          <h3>Recent engines</h3>
-          {state.connections.map((connection) => (
-            <button key={connection.url} disabled={working} onClick={() => void connect(connection)}>
-              <Icon name="box" size={17} />
-              <span>
-                <strong>{connection.name}</strong>
-                <small>{connection.url}</small>
-              </span>
-              <Icon name="arrow" size={15} />
-            </button>
-          ))}
-        </div>
       )}
+      <label className="form-field">
+        Engine API address
+        <Input
+          autoFocus
+          type="url"
+          required
+          value={choice.url}
+          onChange={(e) => setChoice({ ...choice, url: e.target.value })}
+          placeholder="https://sandboxd.example.com"
+          disabled={working}
+          data-testid="desktop-engine-url"
+        />
+      </label>
+      {mode === 'local' && (
+        <p className="field-help">
+          {state.platform === 'win32'
+            ? 'Use the address of an existing engine, or install one above.'
+            : 'Usually http://127.0.0.1:9090. The engine needs to be running before you connect.'}
+        </p>
+      )}
+      {mode === 'remote' && (
+        <details className="desktop-advanced">
+          <summary>Connection options</summary>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={choice.allowInsecure}
+              onChange={(e) => setChoice({ ...choice, allowInsecure: e.target.checked })}
+              disabled={working}
+            />{' '}
+            Allow unencrypted HTTP
+          </label>
+          {choice.allowInsecure && (
+            <p className="field-help">
+              HTTP sends your password and workspace data without transport encryption. Use only on a network
+              you trust.
+            </p>
+          )}
+        </details>
+      )}
+      {error && (
+        <p role="alert" className="inline-error">
+          {error}
+        </p>
+      )}
+      <Btn
+        type="submit"
+        variant="primary"
+        disabled={working || !choice.url.trim()}
+        data-testid="desktop-connect"
+      >
+        {busy ? 'Connecting…' : 'Open workspace'}
+        <Icon name="arrow" size={16} />
+      </Btn>
+      <p className="desktop-login-note">
+        <Icon name="lock" size={12} /> Sign in with your engine’s console password after connecting.
+        {!state.canRemember && ' You will need to sign in again after closing the app.'}
+      </p>
+    </form>
+  )
+  const recent = state.connections.length > 0 && (
+    <div className="desktop-recent">
+      <h3>Recent engines</h3>
+      {state.connections.map((connection) => (
+        <button key={connection.url} disabled={working} onClick={() => void connect(connection)}>
+          <Icon name="box" size={17} />
+          <span>
+            <strong>{connection.name}</strong>
+            <small>{connection.url}</small>
+          </span>
+          <Icon name="arrow" size={15} />
+        </button>
+      ))}
+    </div>
+  )
+  // Windows installs its own engine, so a first-time user sees one action;
+  // connecting to an existing engine stays one click away.
+  if (setup)
+    return (
+      <div className="desktop-connection-form">
+        {setup}
+        <details className="desktop-advanced" open={state.connections.length > 0 || mode === 'remote'}>
+          <summary>I already have an engine</summary>
+          {modes}
+          {form}
+          {recent}
+        </details>
+      </div>
+    )
+  return (
+    <div className="desktop-connection-form">
+      {modes}
+      {form}
+      {recent}
     </div>
   )
 }

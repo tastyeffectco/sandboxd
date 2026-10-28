@@ -20,6 +20,8 @@ export interface DesktopBridge {
   disconnect(forget?: boolean): Promise<DesktopState>
   openExternal(url: string): Promise<void>
   installEngine(): Promise<LocalEngineState>
+  // Restores the session for the engine this app installed (no password prompt).
+  signIn(): Promise<void>
   onEngineProgress(callback: (state: LocalEngineState) => void): () => void
   onConnections(callback: () => void): () => void
   onNavigate(callback: (route: string) => void): () => void

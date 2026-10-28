@@ -8,7 +8,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { createGateway } = require('../src/gateway.cjs')
 
-async function fixture(t, handler = (_req, res) => res.end('{}')) {
+async function fixture(t, handler = (_req, res) => res.end('{}'), options = {}) {
   const uiRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-gateway-'))
   await fs.writeFile(path.join(uiRoot, 'index.html'), '<h1>Packaged UI</h1>')
   const engine = http.createServer(handler)
@@ -21,7 +21,12 @@ async function fixture(t, handler = (_req, res) => res.end('{}')) {
   await once(engine, 'listening')
   const origin = `http://127.0.0.1:${engine.address().port}`
   const saved = []
-  const gateway = await createGateway({ uiRoot, engine: origin, onSession: (...args) => saved.push(args) })
+  const gateway = await createGateway({
+    uiRoot,
+    engine: origin,
+    onSession: (...args) => saved.push(args),
+    ...options,
+  })
   t.after(async () => {
     await gateway.close()
     for (const socket of sockets) socket.destroy()
@@ -37,6 +42,7 @@ async function fixture(t, handler = (_req, res) => res.end('{}')) {
           let body = ''
           response.on('data', (data) => (body += data))
           response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body }))
+          response.on('close', () => response.complete || reject(new Error(`response cut: ${body}`)))
         },
       )
       req.on('error', reject)
@@ -170,4 +176,26 @@ test('terminal upgrade preserves private engine auth and closes on switching eng
   const closed = once(socket, 'close')
   gateway.setEngine('')
   await closed
+})
+
+test('task event streams survive quiet agent steps while other requests still time out', async (t) => {
+  const { request } = await fixture(
+    t,
+    (req, res) => {
+      if (req.url.endsWith('/events')) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write('event: status\ndata: {}\n\n')
+        // Silent for longer than the gateway's idle limit, like a long install.
+        setTimeout(() => res.end('event: done\ndata: {}\n\n'), 400)
+        return
+      }
+      // A normal API call that never answers.
+    },
+    { idleTimeout: 150 },
+  )
+  const events = await request('/v1/sandboxes/sb/tasks/task/events', { accept: 'text/event-stream' })
+  assert.equal(events.status, 200)
+  assert.match(events.body, /event: status/)
+  assert.match(events.body, /event: done/)
+  assert.equal((await request('/v1/apps')).status, 502)
 })
