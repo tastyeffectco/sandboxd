@@ -90,9 +90,16 @@ export function ClaudeSignIn({
             e.preventDefault()
             if (code.trim())
               void act(async () => {
-                const s = await api.finishClaudeSignIn(sandboxId, code.trim())
-                setCode('')
-                report(s.logged_in)
+                try {
+                  const s = await api.finishClaudeSignIn(sandboxId, code.trim())
+                  report(s.logged_in)
+                } catch (e) {
+                  // An expired or rejected sign-in starts over with a fresh link.
+                  setURL('')
+                  throw e
+                } finally {
+                  setCode('')
+                }
               })
           }}
         >

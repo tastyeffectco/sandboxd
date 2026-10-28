@@ -51,4 +51,18 @@ describe('ClaudeSignIn', () => {
       'start the project to sign in with Claude',
     )
   })
+
+  it('starts over with a fresh link when a sign-in expired', async () => {
+    vi.mocked(api.claudeSignInStatus).mockResolvedValue({ logged_in: false })
+    vi.mocked(api.startClaudeSignIn).mockResolvedValue({ url: 'https://claude.com/cai/oauth/authorize?x=1' })
+    vi.mocked(api.finishClaudeSignIn).mockRejectedValue(
+      new Error('the sign-in session has ended; start again'),
+    )
+    render(<ClaudeSignIn sandboxId="sb" onSignedIn={() => {}} />)
+    fireEvent.click(await screen.findByTestId('claude-sign-in-start'))
+    fireEvent.change(await screen.findByTestId('claude-sign-in-code'), { target: { value: 'late-code' } })
+    fireEvent.click(screen.getByTestId('claude-sign-in-finish'))
+    expect((await screen.findByRole('alert')).textContent).toContain('start again')
+    expect(screen.getByTestId('claude-sign-in-start')).toBeTruthy()
+  })
 })
