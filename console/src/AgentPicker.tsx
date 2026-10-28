@@ -25,6 +25,10 @@ export function AgentPicker({
     value.agent === 'opencode' &&
     !value.provider &&
     !agents.some((a) => a.id === 'opencode' && a.status === 'connected')
+  // Claude Code without an API key uses the Claude sign-in inside the project.
+  const claudeSignIn =
+    value.agent === 'claude-code' &&
+    !agents.some((a) => a.id === 'claude-code' && a.status === 'connected' && a.method === 'api_key')
   const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([])
   const [catalogError, setCatalogError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -108,9 +112,11 @@ export function AgentPicker({
               ? `${selected.models[0].id} (default)`
               : freeOpencode
                 ? 'Free model'
-                : catalog.length
-                  ? 'Account default'
-                  : 'No account models loaded'}
+                : claudeSignIn
+                  ? 'Claude Code default'
+                  : catalog.length
+                    ? 'Account default'
+                    : 'No account models loaded'}
           </option>
           {selected?.models.slice(1).map((m) => (
             <option key={m.id}>{m.id}</option>
@@ -145,7 +151,9 @@ export function AgentPicker({
             ? 'Your model endpoint. Your API key stays on the control plane.'
             : freeOpencode
               ? 'Free to use. No account needed.'
-              : 'Uses the account connected in Settings.'}
+              : claudeSignIn
+                ? 'Uses your Claude sign-in in this project.'
+                : 'Uses the account connected in Settings.'}
       </p>
     </div>
   )

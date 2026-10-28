@@ -65,6 +65,8 @@ export function AgentChat({
     setTool('')
   }, [sbID])
   const sandboxRunning = sb?.status === 'running' && ready
+  // A resting project wakes when a task is sent, so sending stays available.
+  const canSend = sandboxRunning || sb?.status === 'stopped'
   // Without a Claude API key, Claude Code uses a Claude subscription signed in
   // inside this project.
   const claudeSignIn =
@@ -153,7 +155,7 @@ export function AgentChat({
     scroll.current?.scrollTo?.({ top: scroll.current.scrollHeight, behavior: 'smooth' })
   }, [response, history.length, active?.id])
   const send = async (auto = false) => {
-    if (!sbID || !sandboxRunning || !text.trim() || active || blocked || !loaded || submitting.current) return
+    if (!sbID || !canSend || !text.trim() || active || blocked || !loaded || submitting.current) return
     submitting.current = true
     const prompt = text.trim()
     if (auto) {
@@ -370,7 +372,7 @@ export function AgentChat({
             : !sb
               ? 'Create a workspace to start building. Your prompt is kept here.'
               : sb.status === 'stopped'
-                ? 'Start the workspace to continue building.'
+                ? 'Your workspace is resting. Send a message to wake it.'
                 : 'Your workspace is starting…'}
         </div>
       )}
@@ -405,7 +407,7 @@ export function AgentChat({
             <button
               className="send-button"
               type="submit"
-              disabled={!sandboxRunning || !text.trim() || blocked || !loaded}
+              disabled={!canSend || !text.trim() || blocked || !loaded}
               data-testid="task-send"
               aria-label="Send message"
             >

@@ -366,14 +366,20 @@ async function start() {
       throw new Error('Unsupported coding agent.')
     const engine = gateway.engine
     if (!engine) throw new Error('Connect an engine first.')
+    const account = { codex: 'ChatGPT account (Codex)', opencode: 'OpenCode account', pi: 'Pi account' }[agent]
+    const local = engine === ENGINE_URL
     const answer = await dialog.showMessageBox(window, {
       type: 'question',
-      buttons: ['Cancel', 'Use this login'],
+      buttons: ['Cancel', 'Use this account'],
       defaultId: 0,
       cancelId: 0,
-      title: 'Connect existing account',
-      message: `Send your existing ${agent} login to ${engine}?`,
-      detail: 'This engine will store your account credentials and use your subscription for coding tasks.',
+      title: 'Use your account',
+      message: local
+        ? `Use your ${account} in sandboxd on this computer?`
+        : `Use your ${account} on ${new URL(engine).hostname}?`,
+      detail: local
+        ? 'sandboxd keeps your sign-in on this computer, outside your projects, and uses it for your coding tasks. You can disconnect it anytime in Settings.'
+        : 'That server will keep your sign-in and use it for your coding tasks. You can disconnect it anytime in Settings.',
     })
     if (answer.response !== 1) return { imported: false }
     await gateway.importAgentLogin(agent, await agentLogins.credential(agent), engine)

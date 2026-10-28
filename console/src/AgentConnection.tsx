@@ -49,6 +49,56 @@ export function AgentConnection({
       setBusy(false)
     }
   }
+  // When a login was found on this computer, pasting one is a secondary option.
+  const form = (
+    <form
+      className="settings-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (value.trim())
+          void act(() =>
+            mode === 'key'
+              ? api.setAgentApiKey(agent.id, value.trim())
+              : api.importAgentCredential(agent.id, value.trim()),
+          )
+      }}
+    >
+      <label className="form-field">
+        {mode === 'key' ? `${agent.label} API key` : 'Import subscription credential'}
+        <Input
+          autoFocus
+          required
+          type="password"
+          autoComplete="new-password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={
+            mode === 'key' ? 'Paste your API key' : 'Paste the credential from your provider login'
+          }
+        />
+      </label>
+      {mode === 'oauth' && (
+        <p className="field-help">
+          Use the credential from an existing {agent.label} login.{' '}
+          <a
+            href="https://github.com/tastyeffectco/sandboxd/blob/main/docs/agent-auth.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Connection guide ↗
+          </a>
+        </p>
+      )}
+      <div className="dialog-actions">
+        <Btn type="button" disabled={busy} onClick={close}>
+          Cancel
+        </Btn>
+        <Btn type="submit" variant="primary" disabled={busy || !value.trim()}>
+          {busy ? 'Connecting…' : 'Connect account'}
+        </Btn>
+      </div>
+    </form>
+  )
   return (
     <Dialog
       title={`${mode === 'disconnect' ? 'Disconnect' : 'Connect'} ${agent.label}`}
@@ -100,55 +150,14 @@ export function AgentConnection({
                 </div>
               </div>
             )}
-            {
-              <form
-                className="settings-form"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (value.trim())
-                    void act(() =>
-                      mode === 'key'
-                        ? api.setAgentApiKey(agent.id, value.trim())
-                        : api.importAgentCredential(agent.id, value.trim()),
-                    )
-                }}
-              >
-                <label className="form-field">
-                  {mode === 'key' ? `${agent.label} API key` : 'Import subscription credential'}
-                  <Input
-                    autoFocus
-                    required
-                    type="password"
-                    autoComplete="new-password"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder={
-                      mode === 'key' ? 'Paste your API key' : 'Paste the credential from your provider login'
-                    }
-                  />
-                </label>
-                {mode === 'oauth' && (
-                  <p className="field-help">
-                    Use the credential from an existing {agent.label} login.{' '}
-                    <a
-                      href="https://github.com/tastyeffectco/sandboxd/blob/main/docs/agent-auth.md"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Connection guide ↗
-                    </a>
-                  </p>
-                )}
-                <div className="dialog-actions">
-                  <Btn type="button" disabled={busy} onClick={close}>
-                    Cancel
-                  </Btn>
-                  <Btn type="submit" variant="primary" disabled={busy || !value.trim()}>
-                    {busy ? 'Connecting…' : 'Connect account'}
-                  </Btn>
-                </div>
-              </form>
-            }
+            {mode === 'oauth' && localLogin ? (
+              <details className="desktop-advanced">
+                <summary>Other ways to connect</summary>
+                {form}
+              </details>
+            ) : (
+              form
+            )}
           </>
         )}
         {error && (
