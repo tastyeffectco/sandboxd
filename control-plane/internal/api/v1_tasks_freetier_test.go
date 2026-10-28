@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
@@ -69,18 +68,24 @@ func TestOpencodeFreeTierRunsWithoutProxy(t *testing.T) {
 	}
 }
 
-// A connected OpenCode account always goes through the credential proxy.
-func TestOpencodeConnectedAccountKeepsProxy(t *testing.T) {
-	s, id, mnt := newProcLogsServer(t)
-	st := agentauth.NewStore(t.TempDir())
-	if err := st.EnsureRoot(); err != nil {
-		t.Fatal(err)
-	}
-	connect(t, st, "opencode")
-	s.AgentAuth = st
-	got := dispatchTask(t, s, id, mnt, `{"prompt":"x","agent":"opencode","model":"opencode/big-pickle"}`)
-	if got.FreeTier {
-		t.Fatal("a connected account must not use the free tier")
+// Connected accounts, model connections, other agents and paid models never
+// use the free tier.
+func TestIsFreeTier(t *testing.T) {
+	free := opencodeFreeModel()
+	for _, tc := range []struct {
+		agent, provider, model string
+		connected, want        bool
+	}{
+		{"opencode", "", free, false, true},
+		{"opencode", "", "opencode/" + free, false, true},
+		{"opencode", "", free, true, false},
+		{"opencode", "conn", free, false, false},
+		{"opencode", "", "opencode/glm-5", false, false},
+		{"pi", "", free, false, false},
+	} {
+		if got := isFreeTier(tc.agent, tc.provider, tc.model, tc.connected); got != tc.want {
+			t.Errorf("isFreeTier(%+v) = %v; want %v", tc, got, tc.want)
+		}
 	}
 }
 

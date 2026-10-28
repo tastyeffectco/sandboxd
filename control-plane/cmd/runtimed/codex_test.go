@@ -27,13 +27,13 @@ func TestParseCodex_HappyPath(t *testing.T) {
 	if pr.FinalMessage != "Done — created the todo app." {
 		t.Fatalf("final message = %q", pr.FinalMessage)
 	}
-	if got := pr.Usage.Input; got != 1200 {
+	if got := pr.Usage.Input; got != 1000 {
 		t.Errorf("input tokens = %d", got)
 	}
 	if got := pr.Usage.Output; got != 340 {
 		t.Errorf("output tokens = %d", got)
 	}
-	if pr.Usage.Total != 1200+340+200 {
+	if pr.Usage.Total != 1000+340+200 {
 		t.Errorf("total tokens = %d", pr.Usage.Total)
 	}
 	// thread.started → a session status event carrying the thread id.
@@ -77,5 +77,15 @@ func TestParseCodex_FatalNoOutput(t *testing.T) {
 	}
 	if pr.ErrMsg == "" {
 		t.Fatal("expected a captured top-level error")
+	}
+}
+
+func TestParseCodex_TerminalFailureAfterPartialOutput(t *testing.T) {
+	const stream = `{"type":"item.completed","item":{"type":"agent_message","text":"I will edit the file."}}
+{"type":"turn.failed","error":{"message":"The selected model is unavailable for this account"}}
+`
+	pr := parseCodexStream(strings.NewReader(stream), func(string, any) {})
+	if !pr.Failed || !pr.SawText || !strings.Contains(pr.ErrMsg, "unavailable") {
+		t.Fatalf("partial text hid terminal failure: %+v", pr)
 	}
 }

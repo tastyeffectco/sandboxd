@@ -1,4 +1,5 @@
-import type { Agent, ModelProvider } from './api'
+import { useEffect, useState } from 'react'
+import { api, type Agent, type ModelProvider } from './api'
 
 export type AgentChoice = { agent: string; provider: string; model: string }
 export const defaultChoice: AgentChoice = { agent: 'opencode', provider: '', model: '' }
@@ -17,15 +18,42 @@ export function AgentPicker({
   agents: Agent[]
   disabled?: boolean
 }) {
+  const account = agents.find((agent) => agent.id === value.agent)
+  // With no OpenCode account, OpenCode runs its built-in free model: there is no
+  // catalog to load and paid models would fail.
+  const freeOpencode =
+    value.agent === 'opencode' &&
+    !value.provider &&
+    !agents.some((a) => a.id === 'opencode' && a.status === 'connected')
+  const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([])
+  const [catalogError, setCatalogError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [reload, setReload] = useState(0)
+  useEffect(() => {
+    let active = true
+    setCatalog([])
+    setCatalogError('')
+    if (value.provider || freeOpencode) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    Promise.resolve()
+      .then(() => api.getAgentModels(value.agent))
+      .then((result) => {
+        if (active) setCatalog(result.models)
+      })
+      .catch((error) => {
+        if (active) setCatalogError(error.message)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [value.agent, value.provider, reload, account?.status, account?.method, freeOpencode])
   const selected = providers.find((p) => p.id === value.provider)
-  const connected = (id: string) => agents.some((a) => a.id === id && a.status === 'connected')
-  // With nothing connected, OpenCode runs on its built-in free model; paid models
-  // appear once an account (or a MiniMax key) is connected.
-  const opencodeModels = [
-    ...(connected('opencode') ? ['glm-5', 'kimi-k2.6', 'deepseek-v4-pro'] : []),
-    ...(connected('minimax') ? ['MiniMax-M3.1-Flash', 'MiniMax-M3'] : []),
-  ]
-  const freeOpencode = value.agent === 'opencode' && !value.provider && !connected('opencode')
   return (
     <div className="agent-picker">
       <label>
@@ -38,16 +66,17 @@ export function AgentPicker({
             onChange({
               agent: e.target.value,
               model: '',
-              provider: e.target.value === 'claude-code' ? '' : value.provider,
+              provider: ['claude-code', 'codex'].includes(e.target.value) ? '' : value.provider,
             })
           }
         >
           <option value="opencode">OpenCode</option>
           <option value="pi">Pi</option>
           <option value="claude-code">Claude Code</option>
+          <option value="codex">Codex</option>
         </select>
       </label>
-      {value.agent !== 'claude-code' && (
+      {!['claude-code', 'codex'].includes(value.agent) && (
         <label>
           Connection
           <select
@@ -57,7 +86,7 @@ export function AgentPicker({
             value={value.provider}
             onChange={(e) => onChange({ ...value, provider: e.target.value, model: '' })}
           >
-            <option value="">{value.agent === 'pi' ? 'Select a connection…' : 'Built-in provider'}</option>
+            <option value="">Connected account</option>
             {providers.map((p) => (
               <option value={p.id} key={p.id}>
                 {p.name}
@@ -69,31 +98,49 @@ export function AgentPicker({
       <label className="full-width">
         Model
         <select
-          disabled={disabled}
+          disabled={disabled || (!value.provider && loading)}
           data-testid="task-model"
           value={value.model}
           onChange={(e) => onChange({ ...value, model: e.target.value })}
         >
           <option value="">
-            {selected ? `${selected.models[0].id} (default)` : freeOpencode ? 'Free model' : 'Default model'}
+            {selected
+              ? `${selected.models[0].id} (default)`
+              : freeOpencode
+                ? 'Free model'
+                : catalog.length
+                  ? 'Account default'
+                  : 'No account models loaded'}
           </option>
           {selected?.models.slice(1).map((m) => (
             <option key={m.id}>{m.id}</option>
           ))}
           {!value.provider &&
-            value.agent === 'opencode' &&
-            opencodeModels.map((m) => (
-              <option value={`opencode/${m}`} key={m}>
-                {m}
+            catalog.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
-          {value.agent === 'claude-code' &&
-            ['sonnet', 'opus', 'haiku'].map((m) => <option key={m}>{m}</option>)}
         </select>
       </label>
+      {!value.provider && loading && (
+        <p role="status" className="field-help full-width">
+          Loading models from your provider…
+        </p>
+      )}
+      {!value.provider && catalogError && (
+        <p role="alert" className="field-help full-width">
+          {catalogError}{' '}
+          <button type="button" onClick={() => setReload((n) => n + 1)}>
+            Retry model discovery
+          </button>
+        </p>
+      )}
       <p className="field-help full-width">
         {value.agent === 'pi'
-          ? 'Pi uses your model connection.'
+          ? value.provider
+            ? 'Pi uses your model connection.'
+            : 'Pi uses the account connected in Settings.'
           : value.provider
             ? 'Your model endpoint. Your API key stays on the control plane.'
             : freeOpencode
@@ -106,8 +153,9 @@ export function AgentPicker({
 
 export function choiceBlocked(choice: AgentChoice, providers: ModelProvider[], agents: Agent[]) {
   if (choice.provider) return !providers.some((p) => p.id === choice.provider)
-  if (choice.agent === 'pi') return true
+  if (choice.agent === 'pi') return !agents.some((a) => a.id === 'pi' && a.status === 'connected')
   return (
-    choice.agent === 'claude-code' && !agents.some((a) => a.id === 'claude-code' && a.status === 'connected')
+    ['claude-code', 'codex'].includes(choice.agent) &&
+    !agents.some((a) => a.id === choice.agent && a.status === 'connected')
   )
 }

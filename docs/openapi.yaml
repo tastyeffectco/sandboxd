@@ -448,13 +448,44 @@ paths:
                         supports_api_key: { type: boolean }
                         runnable: { type: boolean, description: runtimed has a task adapter for this provider }
 
+  /v1/agents/{provider}/models:
+    get:
+      operationId: getAgentModels
+      tags: [apps]
+      summary: Discover models from the connected account (no guessed fallback)
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, pi, claude-code, codex] } }
+      responses:
+        "200":
+          description: Provider catalog; availability remains subject to quota and account policy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models, source]
+                properties:
+                  source: { type: string, enum: [provider] }
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        context_window: { type: integer }
+                        provider: { type: string }
+        "502": { description: Account catalog unavailable; no fallback models returned }
+        "404": { description: Unknown provider }
+        "503": { description: Agent auth not configured }
+
   /v1/agents/{provider}/import:
     post:
       operationId: importAgentCredential
       tags: [apps]
-      summary: Connect a provider by subscription — import the credential bundle its `<cli> login` produced (opaque, never parsed).
+      summary: Connect a provider by subscription — import the credential bundle its CLI login produced.
       parameters:
-        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, claude-code, codex] } }
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, pi, claude-code, codex] } }
       requestBody:
         required: true
         content:
@@ -474,7 +505,7 @@ paths:
       tags: [apps]
       summary: Connect a provider by API key (opaque). Injected as the provider's key env var at task time only.
       parameters:
-        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, claude-code, codex] } }
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, pi, claude-code, codex] } }
       requestBody:
         required: true
         content:
@@ -494,7 +525,7 @@ paths:
       tags: [apps]
       summary: Disconnect a provider — deletes the stored auth dir.
       parameters:
-        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, claude-code, codex] } }
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [opencode, pi, claude-code, codex] } }
       responses:
         "204": { description: Disconnected }
         "404": { description: Unknown provider }

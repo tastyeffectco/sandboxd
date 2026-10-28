@@ -37,6 +37,10 @@ jobs:
       - name: test
         run: go test ./...
 
+      - name: LiteLLM Codex instruction preservation
+        working-directory: .
+        run: python3 -m unittest discover -s examples/litellm-codex -p "test_*.py"
+
   agent-providers:
     permissions:
       contents: read

@@ -2,6 +2,8 @@ const { app, BrowserWindow, Menu, ipcMain, shell, session, safeStorage, dialog }
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
+const { createAgentLogins } = require('./agent-login.cjs')
+const agentLogins = createAgentLogins()
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
 const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 const { signInManagedEngine } = require('./local-auth.cjs')
@@ -353,6 +355,29 @@ async function start() {
     if (forget === true) memorySessions.delete(previous.selected)
     gateway.setEngine('')
     return publicState()
+  })
+  ipcMain.handle('desktop:agent-login', async (event, agent) => {
+    trusted(event)
+    return agentLogins.available(agent)
+  })
+  ipcMain.handle('desktop:import-agent-login', async (event, agent) => {
+    trusted(event)
+    if (!['claude-code', 'codex', 'opencode', 'pi'].includes(agent))
+      throw new Error('Unsupported coding agent.')
+    const engine = gateway.engine
+    if (!engine) throw new Error('Connect an engine first.')
+    const answer = await dialog.showMessageBox(window, {
+      type: 'question',
+      buttons: ['Cancel', 'Use this login'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Connect existing account',
+      message: `Send your existing ${agent} login to ${engine}?`,
+      detail: 'This engine will store your account credentials and use your subscription for coding tasks.',
+    })
+    if (answer.response !== 1) return { imported: false }
+    await gateway.importAgentLogin(agent, await agentLogins.credential(agent), engine)
+    return { imported: true }
   })
   ipcMain.handle('desktop:external', async (event, url) => {
     trusted(event)

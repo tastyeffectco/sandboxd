@@ -1,0 +1,16 @@
+# See docs/model-providers.md, "LiteLLM with a Codex subscription".
+# Run with LiteLLM 1.106.0 and an existing CHATGPT_TOKEN_DIR login.
+model_list:
+  - model_name: subscription-coder
+    litellm_params:
+      # Set to chatgpt/<an exact model ID from your account's catalog>.
+      model: os.environ/SANDBOXD_CODEX_LITELLM_MODEL
+litellm_settings:
+  callbacks: codex_system_blocks.proxy_handler_instance
+  drop_params: true
+  telemetry: false
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+router_settings:
+  num_retries: 0
+  timeout: 120

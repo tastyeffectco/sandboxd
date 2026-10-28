@@ -1,16 +1,20 @@
 package agentauth
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // Store is the host-side auth store: one opaque directory per connected
 // provider under <DataDir>/agent-auth/<provider>. A0 only reads it (existence +
 // non-empty); provider dirs are created later by the Connect/import flow.
 type Store struct {
-	root string // <DataDir>/agent-auth
+	root      string // <DataDir>/agent-auth
+	mu        sync.Mutex
+	refreshMu sync.Mutex
 }
 
 // NewStore roots the auth store under the sandboxd data dir. It is deliberately
@@ -37,6 +41,8 @@ func (s *Store) EnsureRoot() error {
 // Connected reports whether a provider's auth dir exists AND is non-empty. It
 // treats the contents as opaque — it never opens or parses any file.
 func (s *Store) Connected(provider string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	entries, err := os.ReadDir(s.Dir(provider))
 	if err != nil {
 		return false // absent (or unreadable) => not connected
@@ -46,6 +52,8 @@ func (s *Store) Connected(provider string) bool {
 
 // Delete removes a provider's auth dir (Disconnect). Opaque; no parsing.
 func (s *Store) Delete(provider string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return os.RemoveAll(s.Dir(provider))
 }
 
@@ -68,9 +76,39 @@ func (s *Store) NewStaging() (string, error) {
 // Promote atomically replaces a provider's auth dir with the staging dir. Same
 // filesystem (both under the store root), so the rename is atomic.
 func (s *Store) Promote(staging, provider string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	final := s.Dir(provider)
 	_ = os.RemoveAll(final)
 	return os.Rename(staging, final)
+}
+
+// Replace only the credential that was refreshed. A concurrent disconnect or
+// account replacement must never be undone by an older in-flight refresh.
+func (s *Store) replaceCredential(provider, rel string, before, after []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	path := filepath.Join(s.Dir(provider), rel)
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(current, before) {
+		return errors.New("account changed during refresh; retry")
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".refresh-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(after); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 // HasFile reports whether a non-empty HOME-relative file exists in a provider's
@@ -84,6 +122,8 @@ func (s *Store) HasFile(provider, rel string) bool {
 // credential file is present), "api_key" (the API-key file is present), or ""
 // (not connected). Each connect fully replaces the dir, so at most one applies.
 func (s *Store) Method(provider string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.HasFile(provider, APIKeyFile) {
 		return "api_key"
 	}

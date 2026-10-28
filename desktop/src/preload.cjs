@@ -8,6 +8,8 @@ if (process.isMainFrame) {
   contextBridge.exposeInMainWorld(
     'sandboxdDesktop',
     Object.freeze({
+      agentLogin: (agent) => ipcRenderer.invoke('desktop:agent-login', agent),
+      importAgentLogin: (agent) => ipcRenderer.invoke('desktop:import-agent-login', agent),
       state: () => ipcRenderer.invoke('desktop:state'),
       connect: (connection) => ipcRenderer.invoke('desktop:connect', connection),
       disconnect: (forget = false) => ipcRenderer.invoke('desktop:disconnect', forget),

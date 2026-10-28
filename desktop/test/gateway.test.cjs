@@ -199,3 +199,35 @@ test('task event streams survive quiet agent steps while other requests still ti
   assert.match(events.body, /event: done/)
   assert.equal((await request('/v1/apps')).status, 502)
 })
+
+test('native account import is bound to the chosen engine and never follows redirects', async (t) => {
+  let received
+  const { gateway, origin } = await fixture(t, (req, res) => {
+    let body = ''
+    req.on('data', (chunk) => {
+      body += chunk
+    })
+    req.on('end', () => {
+      received = { url: req.url, headers: req.headers, body }
+      res.end('{}')
+    })
+  })
+  gateway.setEngine(origin, 'engine-session')
+  await gateway.importAgentLogin('codex', 'private-login', origin)
+  assert.equal(received.url, '/v1/agents/codex/import')
+  assert.equal(received.headers.cookie, 'sbx_session=engine-session')
+  assert.equal(received.headers.origin, origin)
+  assert.deepEqual(JSON.parse(received.body), { credentials: 'private-login' })
+  await assert.rejects(gateway.importAgentLogin('../elsewhere', 'private-login', origin), /Unsupported/)
+  await assert.rejects(
+    gateway.importAgentLogin('codex', 'private-login', 'https://another.example'),
+    /changed/,
+  )
+  gateway.setEngine('http://remote.example', '', true)
+  await assert.rejects(gateway.importAgentLogin('codex', 'private-login', 'http://remote.example'), /HTTPS/)
+  const redirected = await fixture(t, (_req, res) => {
+    res.writeHead(307, { location: origin })
+    res.end()
+  })
+  await assert.rejects(redirected.gateway.importAgentLogin('codex', 'private-login', redirected.origin))
+})
