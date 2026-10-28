@@ -3,7 +3,14 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
-const { createWindowsEngine, decode, download, ROOTFS, ENGINE_COMMIT } = require('../src/windows-engine.cjs')
+const {
+  createWindowsEngine,
+  decode,
+  download,
+  ROOTFS,
+  ENGINE_TAG,
+  ENGINE_COMMIT,
+} = require('../src/windows-engine.cjs')
 
 async function fixture(t, overrides = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-setup-test-'))
@@ -11,7 +18,8 @@ async function fixture(t, overrides = {}) {
   const commands = [],
     events = [],
     downloads = [],
-    keepalives = []
+    keepalives = [],
+    shortcuts = []
   let probes = 0
   const manager = createWindowsEngine({
     dataDir: directory,
@@ -26,11 +34,12 @@ async function fixture(t, overrides = {}) {
     fetchRootfs: async (...args) => downloads.push(args),
     isPortOpen: async () => false,
     keepAlive: (...args) => keepalives.push(args),
+    removeShortcut: async (distro) => shortcuts.push(distro),
     onChange: (value) => events.push(value),
     sleep: async () => {},
     ...overrides,
   })
-  return { manager, directory, commands, events, downloads, keepalives }
+  return { manager, directory, commands, events, downloads, keepalives, shortcuts }
 }
 
 test('new setup pins downloads, imports an isolated distro, streams stages and verifies Windows connectivity', async (t) => {
@@ -48,10 +57,21 @@ test('new setup pins downloads, imports an isolated distro, streams stages and v
   assert.match(imported.args[1], /^sandboxd-desktop-[a-f0-9]{16}$/)
   assert.deepEqual(imported.args.slice(-2), ['--version', '2'])
   const bootstrap = f.commands.find((c) => c.args.includes('bash'))
-  assert.equal(bootstrap.args.at(-1), ENGINE_COMMIT)
+  assert.deepEqual(bootstrap.args.slice(-2), [ENGINE_TAG, ENGINE_COMMIT])
+  assert.match(ENGINE_TAG, /^v\d+\.\d+\.\d+$/)
   assert.equal(bootstrap.args[bootstrap.args.indexOf('--cd') + 1], '/')
-  assert.match(bootstrap.options.input, /bash install.sh --build --no-desktop --no-console/)
-  assert(f.events.some((e) => e.message.includes('15–30 minutes')))
+  // Signed release images only: never fall back to a long source build.
+  assert.match(bootstrap.options.input, /bash install.sh --pull --no-desktop --no-console/)
+  assert.doesNotMatch(bootstrap.options.input, /--build/)
+  assert.match(bootstrap.options.input, /sha256sum -c/)
+  // The engine must come back after a Windows restart: WSL boot commands run without PATH.
+  assert.match(bootstrap.options.input, /START'\n#!\/bin\/sh\n(#.*\n)*export PATH=\/usr\/local\/sbin:/)
+  assert(f.events.some((e) => e.message === 'Downloading your engine and coding tools…'))
+  assert.deepEqual(
+    f.shortcuts,
+    [imported.args[1], imported.args[1]],
+    'the engine is not listed as an app in Start, after import or first boot',
+  )
   assert.equal(f.keepalives.length, 1)
   assert(f.keepalives[0][1].includes('flock'))
   assert(f.commands.every((c) => !c.args.includes('--unregister') && !c.args.includes('--shutdown')))

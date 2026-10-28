@@ -5,6 +5,8 @@ const { randomBytes, createHash } = require('node:crypto')
 const net = require('node:net')
 
 const ENGINE_URL = 'http://127.0.0.1:9090'
+// The engine release to install: its signed images are pulled, never built.
+const ENGINE_TAG = 'v0.3.23'
 const ENGINE_COMMIT = '1a860a57b4d0ca27bcebbfd712a7e45e6fa4a6c9'
 // Canonical's versioned Ubuntu Base images; hashes from its published SHA256SUMS.
 const ROOTFS = {
@@ -15,7 +17,7 @@ const STAGES = {
   packages: 'Installing engine prerequisites…',
   docker: 'Starting the container runtime…',
   source: 'Downloading sandboxd…',
-  engine: 'Building your engine and coding tools. The first setup can take 15–30 minutes…',
+  engine: 'Downloading your engine and coding tools…',
   starting: 'Starting your engine…',
   health: 'Waiting for the engine to be ready…',
   ready: 'Checking the connection from Windows…',
@@ -115,6 +117,13 @@ function createWindowsEngine({
     child.unref()
   },
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  // WSL lists imported distributions in the Start menu; the engine is not an
+  // app users should open, so its entry is removed.
+  removeShortcut = (distro) =>
+    fs.rm(path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', distro), {
+      recursive: true,
+      force: true,
+    }),
 }) {
   const directory = path.join(dataDir, 'local-engine')
   const manifestPath = path.join(directory, 'engine.json')
@@ -239,6 +248,7 @@ function createWindowsEngine({
             throw new Error(
               'WSL could not create the engine environment. Restart Windows and retry. Check that hardware virtualization is enabled and disk space is available.',
             )
+          await removeShortcut(manifest.distro).catch(() => {})
         } finally {
           await fs.rm(archive, { force: true })
         }
@@ -262,6 +272,7 @@ function createWindowsEngine({
           'bash',
           '-s',
           '--',
+          ENGINE_TAG,
           ENGINE_COMMIT,
         ],
         {
@@ -299,6 +310,8 @@ function createWindowsEngine({
       set({ phase: 'starting', message: 'Connecting to your engine…' })
       for (let attempt = 0; attempt < 45; attempt++) {
         if (await probe()) {
+          // WSL can recreate its Start menu folder on the distro's first boot.
+          await removeShortcut(manifest.distro).catch(() => {})
           set({ phase: 'ready', installed: true, message: 'Your local engine is ready.' })
           return { ...state }
         }
@@ -328,4 +341,4 @@ function createWindowsEngine({
     },
   }
 }
-module.exports = { createWindowsEngine, download, decode, ROOTFS, ENGINE_COMMIT, ENGINE_URL }
+module.exports = { createWindowsEngine, download, decode, ROOTFS, ENGINE_TAG, ENGINE_COMMIT, ENGINE_URL }
