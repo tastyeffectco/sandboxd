@@ -7,7 +7,7 @@ const net = require('node:net')
 const ENGINE_URL = 'http://127.0.0.1:9090'
 // The engine release to install: its signed images are pulled, never built.
 const ENGINE_TAG = 'v0.3.23'
-const ENGINE_COMMIT = '1a860a57b4d0ca27bcebbfd712a7e45e6fa4a6c9'
+const ENGINE_COMMIT = '3e8d56f0970c1d79aa67b0b1cb58e900306ee9f9'
 // Canonical's versioned Ubuntu Base images; hashes from its published SHA256SUMS.
 const ROOTFS = {
   x64: { arch: 'amd64', sha256: 'e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86' },
