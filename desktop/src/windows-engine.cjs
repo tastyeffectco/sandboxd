@@ -286,7 +286,7 @@ function createWindowsEngine({
       )
       if (result.code !== 0)
         throw new Error(
-          'Engine setup did not finish. Retry to continue. Details: /var/log/sandboxd-setup.log in your managed WSL environment.',
+          'Setup stopped before it finished. This can happen when the computer is low on memory: close some apps, then click Retry setup. Your progress is saved.',
         )
       manifest.installed = true
       await save()

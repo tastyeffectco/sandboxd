@@ -57,6 +57,12 @@ enabled=false
 enabled=false
 appendWindowsPath=false
 CONFIG
+# Keep the engine's file cache small while images download and unpack. WSL
+# hands freed memory back to Windows but keeps cached files, and on a busy
+# 16 GB laptop that cache ran Windows out of memory and stopped the engine.
+( while sleep 3; do sync; echo 1 > /proc/sys/vm/drop_caches; done ) 9>&- >/dev/null 2>&1 &
+trim=$!
+trap 'kill "$trim" 2>/dev/null || true' EXIT
 stage docker
 /usr/local/sbin/sandboxd-start-docker
 for attempt in $(seq 1 90); do
@@ -86,9 +92,26 @@ if [ ! -f /var/lib/sandboxd-desktop/ready ]; then
     chmod 600 .env
   fi
   stage engine
+  # A setup stopped mid-download (Windows out of memory, sleep, a restart) can
+  # leave image layers Docker treats as complete although their files never
+  # reached the disk. Nothing of the user's exists before the first ready, so
+  # start the images over instead of reusing them.
+  if [ -f /var/lib/sandboxd-desktop/images-started ]; then
+    docker compose down --remove-orphans >> /var/log/sandboxd-setup.log 2>&1 || true
+    docker system prune -af >> /var/log/sandboxd-setup.log 2>&1
+  fi
+  touch /var/lib/sandboxd-desktop/images-started
+  sync
   # Signed release images only, no source build. Keep bootstrap keys and
   # verbose output out of renderer progress events.
   bash install.sh --pull --no-desktop --no-console >> /var/log/sandboxd-setup.log 2>&1
+  # Projects need the base image's tools; empty files mean a damaged download.
+  image="$(sed -n 's/^SANDBOXD_IMAGE=//p' .env)"
+  if ! docker run --rm --network none --entrypoint sh "$image" -c 'test -s /usr/bin/node && test -s /usr/bin/git' \
+      >> /var/log/sandboxd-setup.log 2>&1; then
+    echo 'The engine download was damaged; retry setup to download it again.'
+    exit 1
+  fi
 else
   stage starting
   cd /opt/sandboxd
@@ -97,7 +120,9 @@ fi
 stage health
 for attempt in $(seq 1 90); do
   if curl -fsS --max-time 2 http://127.0.0.1:9090/readyz >/dev/null; then
+    sync
     touch /var/lib/sandboxd-desktop/ready
+    sync
     stage ready
     exit 0
   fi

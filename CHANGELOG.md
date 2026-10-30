@@ -15,6 +15,14 @@ patch** — each lands the meaningful changes merged since the last one — and 
   Blank project from the home screen; the engine API still supports Git import
   and empty apps.
 
+### Fixed
+
+- **Desktop setup no longer runs Windows out of memory.** On a busy 16 GB
+  laptop, unpacking the engine images filled the engine's file cache until
+  Windows ran out of memory and stopped the engine mid-download. Setup now keeps
+  that cache small, and a stopped setup says in plain words to close some apps
+  and click Retry setup (progress is kept).
+
 ## [0.3.23] — 2026-10-28
 
 ### Breaking changes

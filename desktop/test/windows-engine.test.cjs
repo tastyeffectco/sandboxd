@@ -66,6 +66,11 @@ test('new setup pins downloads, imports an isolated distro, streams stages and v
   assert.match(bootstrap.options.input, /sha256sum -c/)
   // The engine must come back after a Windows restart: WSL boot commands run without PATH.
   assert.match(bootstrap.options.input, /START'\n#!\/bin\/sh\n(#.*\n)*export PATH=\/usr\/local\/sbin:/)
+  // An interrupted download is started over, and a damaged base image fails setup.
+  assert.match(bootstrap.options.input, /images-started \]; then\n(.*\n){1,2}\s+docker system prune -af/)
+  assert.match(bootstrap.options.input, /test -s \/usr\/bin\/node/)
+  // Unpacking images must not fill the VM's file cache, which Windows cannot reclaim.
+  assert.match(bootstrap.options.input, /echo 1 > \/proc\/sys\/vm\/drop_caches; done \) 9>&- >\/dev\/null 2>&1 &/)
   assert(f.events.some((e) => e.message === 'Downloading your engine and coding tools…'))
   assert.deepEqual(
     f.shortcuts,
@@ -141,7 +146,11 @@ test('a failed bootstrap retries the same distro and ignores unrecognized progre
       return { code: 0, output: '' }
     },
   })
-  assert.equal((await f.manager.start()).phase, 'error')
+  const failed = await f.manager.start()
+  assert.equal(failed.phase, 'error')
+  // Plain language: what to do next, no Linux paths.
+  assert.match(failed.message, /close some apps, then click Retry setup/)
+  assert.doesNotMatch(failed.message, /\/var\/log|WSL/)
   assert.equal((await f.manager.start()).phase, 'ready')
   assert.equal(f.downloads.length, 1)
   assert.doesNotMatch(JSON.stringify(f.events), /sk_secret|arbitrary injected/)
