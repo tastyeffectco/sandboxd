@@ -145,3 +145,47 @@ func sameWorkers(running []*process, declared []Worker) bool {
 	}
 	return true
 }
+
+// dependencyFiles lists, per installed-dependency directory, the files that
+// decide what goes in it.
+var dependencyFiles = map[string][]string{
+	"node_modules": {"package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb", "bun.lock"},
+	".venv":        {"requirements.txt", "pyproject.toml", "uv.lock", "poetry.lock"},
+}
+
+// dependencyFingerprints records the dependency files' contents ("" when absent).
+func dependencyFingerprints(appDir string) map[string]string {
+	out := map[string]string{}
+	for _, files := range dependencyFiles {
+		for _, f := range files {
+			b, _ := os.ReadFile(filepath.Join(appDir, f))
+			out[f] = string(b)
+		}
+	}
+	return out
+}
+
+// resetStaleDependencies removes an installed-dependency directory whose
+// dependency files changed since before (e.g. a Restore across a framework
+// switch), so the start command's "install when missing" step reinstalls
+// them. Reports whether anything was removed.
+func resetStaleDependencies(appDir string, before map[string]string, log interface{ Info(string, ...any) }) bool {
+	after := dependencyFingerprints(appDir)
+	removed := false
+	for dir, files := range dependencyFiles {
+		for _, f := range files {
+			if before[f] == after[f] {
+				continue
+			}
+			path := filepath.Join(appDir, dir)
+			if _, err := os.Stat(path); err == nil {
+				if err := os.RemoveAll(path); err == nil {
+					log.Info("dependencies changed; removed installed ones to reinstall", "dir", dir, "file", f)
+					removed = true
+				}
+			}
+			break
+		}
+	}
+	return removed
+}

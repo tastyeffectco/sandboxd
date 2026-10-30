@@ -263,3 +263,34 @@ func TestRestartedWorkerIsRunningBeforeHealth(t *testing.T) {
 		t.Fatal("worker-only app unhealthy right after the worker restarted")
 	}
 }
+
+// A Restore across a dependency change must not keep the other project's
+// installed packages (they made Vite crash after restoring from Astro).
+func TestResetStaleDependencies(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("package.json", `{"dependencies":{"astro":"5"}}`)
+	write("node_modules/.bin/vite", "#!/bin/sh")
+	write("requirements.txt", "fastapi\n")
+	write(".venv/bin/python", "")
+	before := dependencyFingerprints(dir)
+
+	if resetStaleDependencies(dir, before, quietLog()) {
+		t.Fatal("nothing changed but dependencies were removed")
+	}
+	write("package.json", `{"devDependencies":{"vite":"5"}}`)
+	if !resetStaleDependencies(dir, before, quietLog()) {
+		t.Fatal("changed package.json did not reset node_modules")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "node_modules")); !os.IsNotExist(err) {
+		t.Error("node_modules still present")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".venv")); err != nil {
+		t.Error(".venv removed although Python dependencies did not change")
+	}
+}

@@ -568,17 +568,27 @@ func (a *app) handleRevertTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "task has no checkpoint to revert to"})
 		return
 	}
+	depsBefore := dependencyFingerprints(a.appDir)
 	if err := restoreCheckpoint(a.appDir, res.CheckpointID); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "revert failed (the checkpoint may have expired): " + err.Error()})
 		return
 	}
 	a.log.Info("reverted workspace to task checkpoint", "task", id, "checkpoint", res.CheckpointID)
 	// A restore can bring back the earlier run settings; start the app with them.
+	// Installed dependencies are not part of a checkpoint. When the restore
+	// changed what the project depends on, drop them so the start command
+	// installs what the restored files need.
+	reset := resetStaleDependencies(a.appDir, depsBefore, a.log)
 	// Bounded: the restart continues in the background if the app is slow to start.
 	rctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if rs := a.reloadRunSettings(rctx); rs != nil {
 		a.log.Info("run settings after restore", "status", rs.Status)
+	} else if reset && a.web != nil {
+		a.web.mu.Lock()
+		command, restart := a.web.command, a.web.restartAfterTask
+		a.web.mu.Unlock()
+		a.web.replace(a.supervisorContext(), command, restart)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"task_id": id, "checkpoint_id": res.CheckpointID, "status": "reverted"})
 }
