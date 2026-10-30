@@ -1522,6 +1522,10 @@ hr {
   color: var(--muted);
   border-top: 1px solid var(--border);
 }
+.chat-notice.warn {
+  background: #fff8eb;
+  color: var(--warn);
+}
 .chat-notice.error {
   background: #fff2ed;
   color: var(--bad);
@@ -2225,6 +2229,16 @@ hr {
 }
 .auth-mobile-brand {
   display: none;
+}
+.stack-note {
+  margin: 10px auto 0;
+  max-width: 680px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.stack-note.warn {
+  color: var(--warn);
 }
 .build-status {
   font-size: 12px !important;

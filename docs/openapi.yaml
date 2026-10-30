@@ -1332,6 +1332,7 @@ paths:
                         checkpoint_id: { type: string }
                         can_revert: { type: boolean }
                         created_at: { type: string, format: date-time }
+                        run_settings: { $ref: '#/components/schemas/RunSettings' }
     post:
       operationId: submitTask
       tags: [tasks]
@@ -1935,6 +1936,21 @@ components:
             alias/id (e.g. sonnet). Empty = the agent's default. Max 200 chars; validity
             is the agent's concern (an unknown model fails the task).
         timeout_s: { type: integer, description: "0/omitted = 10m default; max 86400." }
+    RunSettings:
+      type: object
+      description: >
+        Present when the task changed sandbox.yaml (how the app starts). runtimed
+        applies a valid change live (applied), defers worker-only changes to the
+        next start (next_start), or puts the previous file back when the change
+        would break the preview (kept_previous: invalid file, removed file,
+        another web port, or switching between a web app and a worker-only app).
+        message is plain language for the end user.
+      required: [status, message]
+      properties:
+        status: { type: string, enum: [applied, next_start, kept_previous] }
+        message: { type: string }
+        web_command: { type: string }
+        preview_ready: { type: boolean, description: whether the app answered on its health path after the new settings were applied }
     TaskResult:
       type: object
       properties:
@@ -1948,6 +1964,7 @@ components:
         build_status: { type: string, enum: [passed, failed, skipped] }
         build_error_message: { type: string }
         preview_status_after: { type: string }
+        run_settings: { $ref: '#/components/schemas/RunSettings' }
         preview_ok: { type: boolean, description: "Web apps only; omitted for worker-only." }
         app_healthy: { type: boolean }
         duration_ms: { type: integer }

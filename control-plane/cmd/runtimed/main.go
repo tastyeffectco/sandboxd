@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -32,9 +33,12 @@ type app struct {
 	web           *process   // the previewed process; nil for a worker-only app
 	workers       []*process // background processes, no preview
 	previewPort   int        // web process's HTTP port
-	webHealthPath string     // path probed for web readiness
-	defaultWeb    bool       // web is the built-in default => run the Vite asset deep-probe
+	webHealthPath string     // path probed for web readiness (guarded by mu: run settings can change)
+	defaultWeb    bool       // web is the built-in default => run the Vite asset deep-probe (guarded by mu)
 	build         *BuildSpec // post-task build check (from manifest)
+	defaults      Defaults   // built-in run settings, for reloading sandbox.yaml
+	manifestRaw   []byte     // the sandbox.yaml in effect (nil = none), to detect and undo changes
+	ctx           context.Context
 	appDir        string
 	runtimeDir    string
 	log           *slog.Logger
@@ -51,6 +55,12 @@ type app struct {
 }
 
 func main() {
+	// runtimed takes no arguments. A coding agent exploring the workspace may run
+	// `runtimed --help`; answer instead of starting a second supervisor.
+	if len(os.Args) > 1 {
+		fmt.Fprintln(os.Stderr, "runtimed is this workspace's supervisor. It is already running as the container's main process and takes no arguments; do not start or stop it.")
+		os.Exit(2)
+	}
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "runtimed")
 
 	appDir := envOr("RUNTIMED_APP_DIR", "/home/sandbox/workspace/app")
@@ -73,6 +83,13 @@ func main() {
 
 	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
 		log.Error("mkdir runtime dir", "dir", runtimeDir, "err", err.Error())
+		os.Exit(1)
+	}
+	// One supervisor per workspace. A second copy would mark the running task
+	// as interrupted and take over the control socket, cutting the control
+	// plane off from the real one. The lock is held until this process exits.
+	if !lockRuntimeDir(runtimeDir) {
+		log.Error("another runtimed is already running in this workspace; exiting")
 		os.Exit(1)
 	}
 	// Ensure the app working directory exists. A fresh workspace ships
@@ -125,6 +142,13 @@ func main() {
 		runtimeDir: runtimeDir,
 		log:        log,
 		bootedAt:   time.Now(),
+		defaults:   manifestDefaults,
+	}
+	// Remember the file in effect so a task that edits it can be detected, and
+	// undone when the new settings would break the preview. An invalid file at
+	// boot is not remembered: the defaults are in effect, not that file.
+	if err == nil {
+		a.manifestRaw, _ = os.ReadFile(filepath.Join(appDir, ManifestFile))
 	}
 	if m.Web != nil {
 		a.web = newProcess("web", "web", appDir, m.Web.Command, filepath.Join(runtimeDir, "web.log"), log)
@@ -145,6 +169,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+	a.ctx = ctx
 
 	if a.web != nil {
 		go a.web.supervise(ctx)
@@ -217,13 +242,14 @@ func (a *app) probe() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	code, _ := a.devGet(ctx, a.webHealthPath)
+	healthPath, defaultWeb := a.webSettings()
+	code, _ := a.devGet(ctx, healthPath)
 	// The HTML shell can serve 200 while the dev server fails to transform
 	// the real entry modules (a blank page). Probe the entry assets once the
 	// shell is up — but only for the DEFAULT Vite app; a custom app declares
 	// its own health_path and has no Vite entry modules to probe.
 	assetErr := ""
-	if code == 200 && a.defaultWeb {
+	if code == 200 && defaultWeb {
 		assetErr = a.probeEntryAssets(ctx)
 	}
 	a.mu.Lock()
@@ -231,6 +257,14 @@ func (a *app) probe() {
 	a.lastAssetErr = assetErr
 	a.lastChecked = time.Now()
 	a.mu.Unlock()
+}
+
+// webSettings returns the web health path and whether the web process is the
+// built-in default; both change when a task's sandbox.yaml edit is applied.
+func (a *app) webSettings() (healthPath string, defaultWeb bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.webHealthPath, a.defaultWeb
 }
 
 // status derives the runtime.Status snapshot from the supervised processes
@@ -304,3 +338,22 @@ func envOrInt(k string, def int) int {
 	}
 	return def
 }
+
+// lockRuntimeDir takes the workspace's single-supervisor lock; false when
+// another runtimed holds it. The descriptor is kept open for the process
+// lifetime (the kernel releases the lock on exit, including a crash).
+func lockRuntimeDir(runtimeDir string) bool {
+	f, err := os.OpenFile(filepath.Join(runtimeDir, "runtimed.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return true // cannot lock (e.g. read-only dir): keep the old behavior
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return false
+	}
+	runtimedLock = f
+	return true
+}
+
+// runtimedLock keeps the lock descriptor reachable so it is never closed.
+var runtimedLock *os.File

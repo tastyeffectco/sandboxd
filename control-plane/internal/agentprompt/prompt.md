@@ -30,7 +30,28 @@ expected — this sandbox exists for you to modify the app.
   must match.
 - Do not delete or rewrite `sandbox.yaml` unless the task is specifically about
   how the app is built or run.
+
+## Using a different framework
+
+The workspace starts from a starter app. If the request needs another framework
+(for example Vue, Svelte, Astro, Flask or Django), set it up and update
+`sandbox.yaml` so the platform starts it:
+
+- `web.command` must install dependencies when they are missing, then start the
+  dev server on `0.0.0.0:{{PORT}}` (for example
+  `[ -x node_modules/.bin/astro ] || pnpm install; pnpm exec astro dev --host 0.0.0.0 --port {{PORT}}`).
+- Keep `web.port: {{PORT}}` and keep the `web:` block. A different port, or
+  removing `web:`, is rejected and the previous settings are put back.
+- Set `build.command` to a quick check that the app still builds, or `""` when
+  there is nothing to build.
+- The current app keeps serving on port {{PORT}} while you work. Test your new
+  command on a spare port (for example 3001), then stop it before you finish.
+- When your task finishes, the platform applies the new settings, restarts the
+  app on port {{PORT}} and tells the user whether the preview came up.
 - Do not read, print, or exfiltrate secrets, and do not touch `/run/agent-auth`.
+- Do not run, stop or kill `runtimed` (the supervisor) or anything under
+  `~/.runtimed`. To restart the app, stop only its own dev-server process; the
+  supervisor starts it again.
 - Do not run destructive Git operations on the main branch — your work is
   reviewed before it is applied.
 - Prefer small, reviewable changes. Verify the app still responds on

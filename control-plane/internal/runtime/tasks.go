@@ -32,7 +32,10 @@ const (
 	EventMessage = "message"
 	EventTool    = "tool"
 	EventBuild   = "build"
-	EventDone    = "done"
+	// EventRunSettings reports how a sandbox.yaml change made during the task
+	// was handled; its payload is a RunSettings.
+	EventRunSettings = "run_settings"
+	EventDone        = "done"
 )
 
 // StartTaskRequest is the POST /tasks body.
@@ -108,13 +111,38 @@ type TaskResult struct {
 	// when the preview renders. Distinct from BuildErrorMessage, which
 	// is the `pnpm build` output — build_ok can be true while this is
 	// set. See cmd/runtimed/health.go.
-	PreviewErrorMessage string     `json:"preview_error_message,omitempty"`
-	CheckpointID        string     `json:"checkpoint_id,omitempty"`
-	DurationMS          int64      `json:"duration_ms"`
-	Tokens              TokenUsage `json:"tokens"`
-	CreatedAt           time.Time  `json:"created_at"`
-	StartedAt           time.Time  `json:"started_at"`
-	FinishedAt          time.Time  `json:"finished_at"`
+	PreviewErrorMessage string `json:"preview_error_message,omitempty"`
+	CheckpointID        string `json:"checkpoint_id,omitempty"`
+	// RunSettings is set when the task changed sandbox.yaml (how the app is
+	// started); nil when the run settings were left alone.
+	RunSettings *RunSettings `json:"run_settings,omitempty"`
+	DurationMS  int64        `json:"duration_ms"`
+	Tokens      TokenUsage   `json:"tokens"`
+	CreatedAt   time.Time    `json:"created_at"`
+	StartedAt   time.Time    `json:"started_at"`
+	FinishedAt  time.Time    `json:"finished_at"`
+}
+
+// Run-settings outcomes after a task edits sandbox.yaml.
+const (
+	// RunSettingsApplied: the new settings are live; the app was restarted with them.
+	RunSettingsApplied = "applied"
+	// RunSettingsNextStart: the change is valid but only takes effect the next
+	// time the workspace starts (e.g. background workers changed).
+	RunSettingsNextStart = "next_start"
+	// RunSettingsKeptPrevious: the change would break the preview, so the
+	// previous sandbox.yaml was put back and the app keeps running as before.
+	RunSettingsKeptPrevious = "kept_previous"
+)
+
+// RunSettings tells the user how a change to the app's run settings
+// (sandbox.yaml) was handled. Message is plain language for the end user.
+type RunSettings struct {
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+	WebCommand string `json:"web_command,omitempty"`
+	// PreviewReady is whether the app answered after the new settings were applied.
+	PreviewReady bool `json:"preview_ready,omitempty"`
 }
 
 // TokenUsage is the model-token accounting for one task — one

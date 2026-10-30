@@ -252,8 +252,9 @@ func (a *app) runTask(t *task) {
 	}
 	// Render the platform briefing with THIS sandbox's real values (no hard-coded
 	// loopback address or port) and hand it to the adapter.
+	healthPath, _ := a.webSettings()
 	sysPrompt := agentprompt.Render(agentprompt.Vars{
-		AppDir: a.appDir, Port: a.previewPort, HealthPath: a.webHealthPath,
+		AppDir: a.appDir, Port: a.previewPort, HealthPath: healthPath,
 	})
 	sawConversation := false
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
@@ -295,6 +296,18 @@ func (a *app) runTask(t *task) {
 		res.FilesChanged = files
 	} else if checkpointID != "" {
 		a.log.Warn("files-changed diff failed", "task", t.id, "err", ferr.Error())
+	}
+
+	// 4.5 run settings: when the task changed sandbox.yaml (e.g. switched the
+	// app to another framework), apply it now so the build check, health check
+	// and preview below use the new settings — or put the old file back when the
+	// change would break the preview. Skipped on cancel.
+	if status != runtime.TaskCancelled {
+		if rs := a.reloadRunSettings(ctx); rs != nil {
+			t.setPhase("run_settings")
+			res.RunSettings = rs
+			t.emit(runtime.EventRunSettings, rs)
+		}
 	}
 
 	// 5. post-task build check (skipped on cancel — keep cancel fast).
@@ -359,13 +372,29 @@ func (a *app) runTask(t *task) {
 // otherwise keeps the old behavior). Workers have no readiness probe, so we
 // just stop() them — the supervisor re-runs the command after its backoff.
 func (a *app) restartWorkersAfterTask() {
+	var bounced []*process
 	for _, wp := range a.workers {
 		if wp.restartAfterTask {
 			a.log.Info("restarting worker after task (restart_after_task)", "worker", wp.name)
 			wp.stop()
+			bounced = append(bounced, wp)
+		}
+	}
+	// Health is judged right after this; wait out the supervisor's restart
+	// backoff so a worker that is coming back is not reported as down.
+	deadline := time.Now().Add(workerRestartWait)
+	for _, wp := range bounced {
+		for time.Now().Before(deadline) {
+			if _, _, running := wp.snapshot(); running {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 }
+
+// workerRestartWait bounds the wait for bounced workers to run again.
+const workerRestartWait = 10 * time.Second
 
 // webRestartReadyTimeout bounds how long restartWebAndWait waits for the
 // bounced web process to serve again (a Next.js dev recompile can take a while).
@@ -380,6 +409,7 @@ func (a *app) restartWebAndWait(ctx context.Context) {
 		return
 	}
 	a.log.Info("restarting web process after task (restart_after_task)")
+	healthPath, _ := a.webSettings()
 	a.web.stop() // blocks until the child is dead; supervisor re-runs the start cmd
 	deadline := time.Now().Add(webRestartReadyTimeout)
 	for {
@@ -388,7 +418,7 @@ func (a *app) restartWebAndWait(ctx context.Context) {
 			return
 		case <-time.After(2 * time.Second):
 		}
-		if code, _ := a.devGet(ctx, a.webHealthPath); code == 200 {
+		if code, _ := a.devGet(ctx, healthPath); code == 200 {
 			a.log.Info("web process restarted and serving")
 			return
 		}
@@ -543,6 +573,13 @@ func (a *app) handleRevertTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("reverted workspace to task checkpoint", "task", id, "checkpoint", res.CheckpointID)
+	// A restore can bring back the earlier run settings; start the app with them.
+	// Bounded: the restart continues in the background if the app is slow to start.
+	rctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if rs := a.reloadRunSettings(rctx); rs != nil {
+		a.log.Info("run settings after restore", "status", rs.Status)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"task_id": id, "checkpoint_id": res.CheckpointID, "status": "reverted"})
 }
 

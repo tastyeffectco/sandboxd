@@ -148,6 +148,16 @@ export interface TaskSummary {
   checkpoint_id?: string
   can_revert: boolean
   created_at?: string
+  run_settings?: RunSettings
+}
+
+// How a task's change to the app's start settings (sandbox.yaml) was handled.
+// message is plain language for the user.
+export interface RunSettings {
+  status: 'applied' | 'next_start' | 'kept_previous'
+  message: string
+  web_command?: string
+  preview_ready?: boolean
 }
 
 // Workspace file entry (GET /v1/sandboxes/{id}/files). Paths are relative to the

@@ -306,6 +306,9 @@ type v1TaskSummary struct {
 	CheckpointID string   `json:"checkpoint_id,omitempty"`
 	CanRevert    bool     `json:"can_revert"` // a checkpoint exists to go back to
 	CreatedAt    string   `json:"created_at,omitempty"`
+	// RunSettings tells the user how the task's change to how the app starts
+	// (sandbox.yaml) was handled; omitted when it was not changed.
+	RunSettings *runtime.RunSettings `json:"run_settings,omitempty"`
 }
 
 // v1ListTasks returns a sandbox's task history (newest first) from the durable
@@ -334,6 +337,7 @@ func (s *Server) v1ListTasks(w http.ResponseWriter, r *http.Request) {
 				sum.FilesChanged = tr.FilesChanged
 				sum.CheckpointID = tr.CheckpointID
 				sum.CanRevert = tr.CheckpointID != ""
+				sum.RunSettings = tr.RunSettings
 			}
 		}
 		out = append(out, sum)

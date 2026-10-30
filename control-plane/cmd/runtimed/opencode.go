@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -407,7 +408,9 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	if gatewayModel != "" {
 		model = gatewayModel
 	}
-	args := []string{"run", "--format", "json", "--auto", "--pure"}
+	// --print-logs: OpenCode reports some provider failures (a used-up free
+	// tier) only in its log and then waits; on stderr runtimed can see them.
+	args := []string{"run", "--format", "json", "--auto", "--pure", "--print-logs", "--log-level", "WARN"}
 	if spec.workDir != "" {
 		args = append(args, "--dir", spec.workDir)
 	}
@@ -483,11 +486,23 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	}()
 	defer close(finished)
 
-	// stderr → the per-task agent log.
+	// stderr → the per-task agent log, watched for failures OpenCode does not
+	// end the run on: stop the agent and say why instead of waiting for the
+	// task timeout.
 	stderrDone := make(chan struct{})
+	var fatal string
 	go func() {
-		_, _ = io.Copy(spec.rawLog, stderr)
-		close(stderrDone)
+		defer close(stderrDone)
+		sc := bufio.NewScanner(stderr)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			line := sc.Text()
+			_, _ = io.WriteString(spec.rawLog, line+"\n")
+			if msg := opencodeFatalLog(line); msg != "" && fatal == "" {
+				fatal = msg
+				_ = syscall.Kill(-pgid, syscall.SIGTERM)
+			}
+		}
 	}()
 
 	// Parse stdout (one JSON event per line) — pure function so it can
@@ -509,6 +524,8 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	switch {
 	case ctx.Err() != nil:
 		return pr.FinalMessage, pr.Usage, nil
+	case fatal != "":
+		return pr.FinalMessage, pr.Usage, errors.New(fatal)
 	case pr.APIErr != "":
 		return pr.FinalMessage, pr.Usage, fmt.Errorf("agent error: %s", pr.APIErr)
 	case waitErr != nil:
@@ -518,4 +535,13 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 			fmt.Errorf("agent produced no output (opencode exited 0 with zero events)")
 	}
 	return pr.FinalMessage, pr.Usage, nil
+}
+
+// opencodeFatalLog returns a plain-language reason when an OpenCode log line
+// reports a failure it will not recover from on its own, or "".
+func opencodeFatalLog(line string) string {
+	if strings.Contains(line, "Free usage limit reached") {
+		return "The free AI model has reached its usage limit for now. Try again later, or connect your own account in Settings to keep building."
+	}
+	return ""
 }

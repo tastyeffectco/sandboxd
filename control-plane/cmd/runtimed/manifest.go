@@ -140,6 +140,12 @@ func LoadManifest(appDir string, def Defaults) (*Manifest, error) {
 		}
 		return defaultManifest(def), fmt.Errorf("read %s: %w", ManifestFile, err)
 	}
+	return parseManifest(raw, def)
+}
+
+// parseManifest turns sandbox.yaml bytes into a defaulted, validated manifest
+// (see LoadManifest for the rules and the fallback on error).
+func parseManifest(raw []byte, def Defaults) (*Manifest, error) {
 	var m Manifest
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		return defaultManifest(def), fmt.Errorf("parse %s: %w", ManifestFile, err)
