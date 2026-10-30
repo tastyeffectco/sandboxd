@@ -6,7 +6,7 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
-## [Unreleased]
+## [0.3.24] — 2026-10-30
 
 ### Added
 
@@ -39,6 +39,18 @@ patch** — each lands the meaningful changes merged since the last one — and 
   that cache small, starts the download over if a previous one was cut off
   (which left empty files and no app preview), and a stopped setup says in
   plain words to check the connection, close some apps and click Retry setup.
+- **Restore after a change of framework or dependencies brings the app back.**
+  Installed packages are not part of a restore point, so restoring a React app
+  after a switch to Astro left Astro's packages and the preview stayed down.
+  Restore now reinstalls dependencies when the files that define them changed.
+- **A used-up free model no longer leaves the agent stuck.** OpenCode only logged
+  its free usage limit and waited until the task timed out. The task now ends
+  right away with: "The free AI model has reached its usage limit for now. Try
+  again later, or connect your own account in Settings to keep building."
+- **An agent can no longer take over its own workspace.** A coding agent that ran
+  `runtimed --help` started a second supervisor, which failed the running task
+  and cut the workspace off. runtimed now refuses arguments and runs only once.
+- A background worker restarted after a task is no longer reported as down.
 
 ## [0.3.23] — 2026-10-28
 
