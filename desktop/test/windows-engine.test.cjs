@@ -149,7 +149,7 @@ test('a failed bootstrap retries the same distro and ignores unrecognized progre
   const failed = await f.manager.start()
   assert.equal(failed.phase, 'error')
   // Plain language: what to do next, no Linux paths.
-  assert.match(failed.message, /close some apps, then click Retry setup/)
+  assert.match(failed.message, /close some apps you are not using, then click Retry setup/)
   assert.doesNotMatch(failed.message, /\/var\/log|WSL/)
   assert.equal((await f.manager.start()).phase, 'ready')
   assert.equal(f.downloads.length, 1)

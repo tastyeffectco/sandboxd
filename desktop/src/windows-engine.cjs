@@ -286,7 +286,7 @@ function createWindowsEngine({
       )
       if (result.code !== 0)
         throw new Error(
-          'Setup stopped before it finished. This can happen when the computer is low on memory: close some apps, then click Retry setup. Your progress is saved.',
+          'Setup stopped before it finished. Check that you are online and close some apps you are not using, then click Retry setup. Your progress is saved.',
         )
       manifest.installed = true
       await save()
