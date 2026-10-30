@@ -1,5 +1,9 @@
 # App Catalog Contract (v1)
 
+> **Status:** the console no longer ships an app catalog; it focuses on building
+> new apps from a prompt. This contract still describes how any `/v1` client can
+> run existing open-source apps on sandboxd, since core is unchanged.
+
 **Goal.** Let the console (or any client) install curated open-source apps into sandboxd with one click —
 **without adding a single endpoint or concept to the core engine.** The catalog is a *data layer* that
 speaks only the public `/v1` API. Core stays a generic "run a manifest in a hardened sandbox behind a

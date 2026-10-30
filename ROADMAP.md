@@ -27,7 +27,7 @@ The full platform, self-hostable on one Docker host today:
 - **Live preview URLs** + **sleep & wake**.
 - **Git import + commit + push**, **config & secrets** (encrypted, write-only),
   **snapshots / fork / restore**, **activity timeline**, **per-process logs**.
-- **Runtime detection** (40+ recipes) & **App Store recipes**.
+- **Runtime detection** (40+ recipes).
 - **Hardened container isolation** + encrypted credentials at rest.
 
 Full detail in [CHANGELOG.md](CHANGELOG.md).
@@ -53,7 +53,7 @@ Bigger bets, roughly by demand:
 - **Managed databases & sidecars** — attach a Postgres/Redis to an app.
 - **Beyond one server** — multi-host scheduling and workspace sharding.
 - **Per-workspace disk quotas** and richer resource governance.
-- **App Store expansion** — more curated one-click open-source recipes.
+- **More coding agents** — new agents alongside OpenCode, Pi, Claude Code and Codex.
 
 ## Versioning & stability
 

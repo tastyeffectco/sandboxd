@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, App, Agent, Preset, GitCredential, ModelProvider } from './api'
+import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
 import { Icon } from './design/Icon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
-import { STARTERS } from './design/starters'
 
 const ideas = [
   {
@@ -29,17 +28,12 @@ export type BuilderDraft = {
   name: string
   choice: typeof defaultChoice
   preset: string
-  repo: string
-  branch: string
-  credential: string
-  starter: string
 }
 export function BuilderHome({
   apps,
   reload,
   onOpen,
   onCreated,
-  goStore,
   goSettings,
   draft,
   saveDraft,
@@ -48,7 +42,6 @@ export function BuilderHome({
   reload: () => void
   onOpen: (id: string) => void
   onCreated: (id: string, intent?: BuildIntent) => void
-  goStore: () => void
   goSettings: () => void
   draft?: BuilderDraft
   saveDraft: (draft?: BuilderDraft) => void
@@ -59,13 +52,8 @@ export function BuilderHome({
   const [presets, setPresets] = useState<Preset[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [providers, setProviders] = useState<ModelProvider[]>([])
-  const [creds, setCreds] = useState<GitCredential[]>([])
   const [preset, setPreset] = useState(draft?.preset || '')
-  const [repo, setRepo] = useState(draft?.repo || '')
-  const [branch, setBranch] = useState(draft?.branch || 'main')
-  const [credential, setCredential] = useState(draft?.credential || '')
-  const [starter, setStarter] = useState(draft?.starter || '')
-  const [panel, setPanel] = useState<'stack' | 'agent' | 'git' | 'project' | 'starter' | null>(null)
+  const [panel, setPanel] = useState<'stack' | 'agent' | 'project' | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -73,18 +61,17 @@ export function BuilderHome({
   const creating = useRef(false)
   const composer = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
-    saveDraft({ prompt, name, choice, preset, repo, branch, credential, starter })
-  }, [prompt, name, choice, preset, repo, branch, credential, starter, saveDraft])
+    saveDraft({ prompt, name, choice, preset })
+  }, [prompt, name, choice, preset, saveDraft])
 
   useEffect(() => {
     let alive = true
-    Promise.all([api.listPresets(), api.getAgents(), api.listModelProviders(), api.listGitCredentials()])
-      .then(([p, a, m, g]) => {
+    Promise.all([api.listPresets(), api.getAgents(), api.listModelProviders()])
+      .then(([p, a, m]) => {
         if (alive) {
           setPresets(p)
           setAgents(a)
           setProviders(m)
-          setCreds(g)
         }
       })
       .catch(() => {
@@ -114,39 +101,18 @@ export function BuilderHome({
     }
   }, [apps])
 
-  const create = async (build = true) => {
-    if (creating.current || (build && choiceBlocked(choice, providers, agents))) return
-    if (panel === 'git' && !repo.trim()) {
-      setError('Enter a repository URL to import.')
-      return
-    }
+  // Every new app starts from an idea: create it, then the agent builds the prompt.
+  const create = async () => {
+    if (creating.current || !prompt.trim() || choiceBlocked(choice, providers, agents)) return
     creating.current = true
     setError('')
     setBusy('Creating your app…')
-    const selectedStarter = STARTERS.find((s) => s.id === starter)
-    const fromRepo = repo.trim() || (selectedStarter ? `https://github.com/${selectedStarter.repo}` : '')
-    const title =
-      name.trim() ||
-      (fromRepo
-        ? fromRepo
-            .split('/')
-            .pop()
-            ?.replace(/\.git$/, '')
-        : '') ||
-      prompt.trim().split(/\s+/).slice(0, 6).join(' ') ||
-      'Untitled app'
+    const title = name.trim() || prompt.trim().split(/\s+/).slice(0, 6).join(' ') || 'Untitled app'
     try {
       const app = await api.createApp({
         name: title.slice(0, 80),
         description: prompt.trim().slice(0, 2000),
-        runtime_preset: fromRepo ? undefined : preset || undefined,
-        git: fromRepo
-          ? {
-              repo_url: fromRepo,
-              branch: selectedStarter?.branch || branch.trim() || 'main',
-              ...(credential && !selectedStarter ? { credential_id: credential } : {}),
-            }
-          : undefined,
+        runtime_preset: preset || undefined,
       })
       setBusy('Preparing the workspace…')
       // The app exists even when boot fails. Open it with the draft intact so
@@ -158,7 +124,7 @@ export function BuilderHome({
       }
       reload()
       saveDraft(undefined)
-      onCreated(app.id, build && prompt.trim() ? { ...choice, prompt: prompt.trim() } : undefined)
+      onCreated(app.id, { ...choice, prompt: prompt.trim() })
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -207,7 +173,7 @@ export function BuilderHome({
               <button
                 className={panel === 'stack' ? 'chip selected' : 'chip'}
                 aria-expanded={panel === 'stack'}
-                disabled={!!repo || !!starter || !!busy}
+                disabled={!!busy}
                 onClick={() => toggle('stack')}
                 data-testid="stack-toggle"
               >
@@ -244,10 +210,10 @@ export function BuilderHome({
             <button
               className="build-button"
               onClick={() => void create()}
-              disabled={!!busy || blocked || (!prompt.trim() && !repo && !starter)}
+              disabled={!!busy || blocked || !prompt.trim()}
               data-testid="build-app"
             >
-              {busy || (prompt.trim() || (!repo && !starter) ? 'Build app' : 'Create app')}
+              {busy || 'Build app'}
               <Icon name="arrow" size={18} />
             </button>
           </div>
@@ -259,9 +225,7 @@ export function BuilderHome({
                     {
                       stack: 'Start with the right foundation',
                       agent: 'Your coding agent & model',
-                      git: 'Import a repository',
                       project: 'Project details',
-                      starter: 'Start from a template',
                     }[panel]
                   }
                 </strong>
@@ -321,86 +285,6 @@ export function BuilderHome({
                   />
                 </label>
               )}
-              {panel === 'git' && (
-                <div className="form-grid">
-                  <label className="form-field full-width">
-                    Repository URL
-                    <Input
-                      type="url"
-                      value={repo}
-                      onChange={(e) => {
-                        setRepo(e.target.value)
-                        setStarter('')
-                      }}
-                      placeholder="https://github.com/you/project"
-                      data-testid="git-repo-url"
-                    />
-                  </label>
-                  <label className="form-field">
-                    Branch
-                    <Input
-                      value={branch}
-                      onChange={(e) => setBranch(e.target.value)}
-                      data-testid="git-branch"
-                    />
-                  </label>
-                  <label className="form-field">
-                    Git credential
-                    <select
-                      value={credential}
-                      onChange={(e) => setCredential(e.target.value)}
-                      data-testid="git-cred"
-                    >
-                      <option value="">Public repository</option>
-                      {creds.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="field-help full-width">
-                    Private repository?{' '}
-                    <button className="text-button" onClick={goSettings}>
-                      Add a credential in Settings
-                    </button>
-                    . The runtime is detected from your repository.
-                  </p>
-                </div>
-              )}
-              {panel === 'starter' && (
-                <div className="starter-options">
-                  {STARTERS.map((s) => (
-                    <button
-                      key={s.id}
-                      className={s.id === starter ? 'stack-option selected' : 'stack-option'}
-                      onClick={() => {
-                        setStarter(s.id)
-                        setRepo('')
-                      }}
-                    >
-                      <strong>{s.name}</strong>
-                      <span>{s.blurb}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {(repo || starter) && (
-            <div className="import-summary">
-              <Icon name="git" size={15} />
-              <span>{repo || STARTERS.find((s) => s.id === starter)?.name}</span>
-              <button
-                className="text-button"
-                onClick={() => {
-                  setRepo('')
-                  setStarter('')
-                  setCredential('')
-                }}
-              >
-                Clear import
-              </button>
             </div>
           )}
         </div>
@@ -422,17 +306,6 @@ export function BuilderHome({
             </button>
           </p>
         )}
-        <div className="start-paths">
-          <button onClick={() => toggle('git')} disabled={!!busy}>
-            <Icon name="git" size={16} /> Import from Git
-          </button>
-          <button onClick={() => toggle('starter')} disabled={!!busy}>
-            <Icon name="box" size={16} /> Use a starter
-          </button>
-          <button onClick={() => void create(false)} disabled={!!busy}>
-            <Icon name="plus" size={16} /> Blank project
-          </button>
-        </div>
         <div className="idea-chips">
           {ideas.map((i) => (
             <button
@@ -472,7 +345,7 @@ export function BuilderHome({
             <Icon name="grid" size={26} />
             <h3>A home for everything you build</h3>
             <p>Your projects, live previews and conversations will appear here.</p>
-            <Btn onClick={goStore}>Explore the app library</Btn>
+            <Btn onClick={() => composer.current?.focus()}>Start your first app</Btn>
           </div>
         ) : filtered.length === 0 ? (
           <p className="empty-state">No projects match “{query}”.</p>

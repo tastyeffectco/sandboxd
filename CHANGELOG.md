@@ -6,6 +6,15 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
+## [Unreleased]
+
+### Changed
+
+- The console and desktop focus on building new apps from a prompt. Removed the
+  App library of ready-made apps, the starter templates, Import from Git and
+  Blank project from the home screen; the engine API still supports Git import
+  and empty apps.
+
 ## [0.3.23] — 2026-10-28
 
 ### Breaking changes
