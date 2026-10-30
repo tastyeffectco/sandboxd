@@ -5,7 +5,6 @@ import { c, font, mono, Card, Input } from './design/kit'
 import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { BrainGraph } from './BrainGraph'
-import { StoreView } from './StoreView'
 import { SettingsView } from './SettingsView'
 import { BuilderHome, BuilderDraft } from './BuilderHome'
 import { BuildIntent } from './AgentPicker'
@@ -26,13 +25,12 @@ function readRoute(): Route {
     }
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
-  return { name: ['brain', 'store', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
+  return { name: ['brain', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
 }
 
 type Route =
   | { name: 'apps' }
   | { name: 'brain' }
-  | { name: 'store' }
   | { name: 'settings'; section?: string }
   | { name: 'app'; id: string; tab?: string; task?: string }
 
@@ -243,7 +241,6 @@ export default function App({
   const nav = [
     { key: 'apps', label: 'Build & projects', icon: 'grid' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
-    { key: 'store', label: 'App library', icon: 'box' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
   ]
 
@@ -421,7 +418,6 @@ export default function App({
               apps={apps}
               reload={loadApps}
               onOpen={(id) => goApp(id)}
-              goStore={() => setRoute({ name: 'store' })}
               goSettings={() => setRoute({ name: 'settings' })}
               onCreated={(id, intent) => {
                 if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
@@ -430,9 +426,6 @@ export default function App({
             />
           )}
           {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}
-          {route.name === 'store' && (
-            <StoreView onError={onError} toast={toast} onOpen={(id) => goApp(id)} reloadApps={loadApps} />
-          )}
           {route.name === 'settings' && (
             <SettingsView initialSection={route.section} onError={onError} toast={toast} />
           )}
@@ -705,7 +698,6 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
   const [selected, setSelected] = useState(0)
   const commands: { label: string; route: Route }[] = [
     { label: 'Build a new project', route: { name: 'apps' } },
-    { label: 'Explore the app library', route: { name: 'store' } },
     { label: 'Project memory', route: { name: 'brain' } },
     { label: 'Model connections', route: { name: 'settings', section: 'models' } },
     { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },

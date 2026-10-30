@@ -460,18 +460,19 @@ test('versions capture, restore and duplicate through explicit dialogs', async (
   expect(s.errors).toEqual([])
 })
 
-test('Git import preserves repository and branch without submitting an empty prompt', async ({ page }) => {
+test('the home screen builds new apps from an idea only', async ({ page }) => {
   const s = await fixture(page, { empty: true })
   await page.goto('/')
-  await page.getByRole('button', { name: 'Import from Git' }).click()
-  await page.getByTestId('git-repo-url').fill('https://github.com/example/studio.git')
-  await page.getByTestId('git-branch').fill('design')
-  await page.getByTestId('build-app').click()
-  await expect(page.getByTestId('task-prompt')).toBeVisible()
-  const app = s.calls.find((c) => c.path === '/v1/apps')?.body
-  expect(app.git).toEqual({ repo_url: 'https://github.com/example/studio.git', branch: 'design' })
-  expect(app.runtime_preset).toBeUndefined()
-  expect(s.calls.filter((c) => c.path.endsWith('/tasks'))).toHaveLength(0)
+  for (const removed of ['Import from Git', 'Use a starter', 'Blank project', 'App library']) {
+    await expect(page.getByRole('button', { name: removed })).toHaveCount(0)
+  }
+  await expect(page.getByRole('link', { name: 'App library' })).toHaveCount(0)
+  await expect(page.getByTestId('build-app')).toBeDisabled()
+  await page.getByRole('button', { name: 'Start your first app' }).click()
+  await expect(page.getByTestId('build-prompt')).toBeFocused()
+  await page.getByTestId('build-prompt').fill('A tiny habit tracker')
+  await expect(page.getByTestId('build-app')).toBeEnabled()
+  expect(s.calls.filter((c) => c.path === '/v1/apps' && c.method === 'POST')).toHaveLength(0)
 })
 
 test('API keys show once, preserve scopes and require confirmation to revoke', async ({ page }) => {
@@ -542,7 +543,7 @@ test('sign-in is responsive and submits the console password through the API', a
   await expect(page.getByTestId('build-prompt')).toBeVisible()
 })
 
-test('workspace tools, settings and the app library remain usable on mobile', async ({ page }) => {
+test('workspace tools and settings remain usable on mobile', async ({ page }) => {
   const s = await fixture(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/#/app/app1/runtime')
@@ -560,9 +561,9 @@ test('workspace tools, settings and the app library remain usable on mobile', as
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
+  // The former app library address now opens the home screen.
   await page.goto('/#/store')
-  await page.getByLabel('Search app library').fill('ghost')
-  await expect(page.getByText('Ghost', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('build-prompt')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   expect(s.errors).toEqual([])
 })

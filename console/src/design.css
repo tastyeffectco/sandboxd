@@ -648,28 +648,6 @@ hr {
   width: 22px;
   height: 22px;
 }
-.starter-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  max-height: 290px;
-  overflow: auto;
-  gap: 8px;
-}
-.start-paths {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  margin: 20px 0;
-}
-.start-paths > button {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  background: none;
-  border: 0;
-  color: var(--muted);
-  font-size: 11.5px;
-}
 .idea-chips {
   display: flex;
   justify-content: center;
@@ -687,20 +665,6 @@ hr {
   border-radius: 20px;
   font-size: 10.5px;
   color: #65725f;
-}
-.import-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-}
-.import-summary > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
 }
 .section-heading {
   display: flex;
@@ -1926,13 +1890,6 @@ hr {
   .stack-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .start-paths {
-    gap: 13px;
-    flex-wrap: wrap;
-  }
-  .start-paths > button {
-    font-size: 10px;
-  }
   .idea-chips {
     gap: 6px;
     margin-top: 20px;
@@ -2311,9 +2268,6 @@ hr {
 .project-card p {
   font-size: 12px;
 }
-.start-paths > button {
-  font-size: 12px;
-}
 .sidebar-link {
   font-size: 13px;
 }
@@ -2359,9 +2313,6 @@ hr {
   }
   .idea-chips button {
     font-size: 10px;
-  }
-  .start-paths > button {
-    font-size: 11px;
   }
 }
 .reachability-hint {

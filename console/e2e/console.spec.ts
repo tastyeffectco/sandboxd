@@ -22,15 +22,15 @@ test.afterEach(async ({ page }) => {
   if (createdApp) expect((await page.request.delete(`/v1/apps/${createdApp}`)).ok()).toBe(true)
 })
 
+// An empty project, made through the API (the UI only creates apps from an idea),
+// so the workspace tests don't depend on an agent run.
 async function createBlank(page: Page) {
   const name = `e2e-${Date.now()}`
-  await page.getByRole('button', { name: 'Project options' }).click()
-  await page.getByTestId('app-name').fill(name)
-  const created = page.waitForResponse(
-    (response) => response.url().endsWith('/v1/apps') && response.request().method() === 'POST',
-  )
-  await page.getByRole('button', { name: 'Blank project' }).click()
-  createdApp = (await (await created).json()).id
+  const created = await page.request.post('/v1/apps', { data: { name } })
+  expect(created.ok()).toBe(true)
+  createdApp = (await created.json()).id
+  expect((await page.request.post(`/v1/apps/${createdApp}/sandbox`, { data: {} })).ok()).toBe(true)
+  await page.goto(`/#/app/${createdApp}`)
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
 }
 

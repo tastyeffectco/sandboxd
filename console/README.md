@@ -30,8 +30,7 @@ profile runs sandboxd without this UI.
 ## Build an app
 
 1. Describe the app on **Build & projects**. Choose a runtime preset, or keep
-   **Automatic** to use the default starter. You can also import a Git repository,
-   choose a template, or create an empty project.
+   **Automatic** to use the default starter. Every new app starts from your idea.
 2. Choose **OpenCode**, **Pi**, or **Claude Code**, then a connection and model.
    OpenCode offers its built-in free tier. Pi needs a model connection; Claude
    Code needs a connected account. The selected stack and model are sent to the
@@ -87,7 +86,7 @@ current sandbox and workspace and requires explicit confirmation.
 
 **Project memory** edits `BRAIN.md` and focused notes under `brain/`. **Runtime**
 exposes detected presets, processes and logs. **Activity** shows durable app
-events. **App library** retains the existing one-click application installers.
+events.
 
 **Share & deploy** provides the current preview link and deployment guidance.
 Sharing depends on the configured network and preview access; the console does
