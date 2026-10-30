@@ -193,3 +193,20 @@ func TestParse_PartialTextThenError(t *testing.T) {
 		t.Errorf("FinalMessage = %q, want 'partial...'", pr.FinalMessage)
 	}
 }
+
+// A used-up free tier is only in OpenCode's log; it must end the task with a
+// plain reason instead of hanging until the timeout.
+func TestOpencodeFatalLogFreeLimit(t *testing.T) {
+	line := `timestamp=2026-10-30T20:43:32.016Z level=ERROR message="stream error" providerID=opencode modelID=big-pickle error.error="AI_APICallError: Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going"`
+	if got := opencodeFatalLog(line); !strings.Contains(got, "usage limit") || !strings.Contains(got, "Settings") {
+		t.Fatalf("free limit not recognized: %q", got)
+	}
+	for _, ok := range []string{
+		`level=WARN message="retrying" status=429`,
+		`level=INFO message=tracking hash=abc`,
+	} {
+		if got := opencodeFatalLog(ok); got != "" {
+			t.Errorf("%q treated as fatal: %q", ok, got)
+		}
+	}
+}

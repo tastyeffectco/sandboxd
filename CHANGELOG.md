@@ -8,6 +8,22 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Added
+
+- **The stack follows the idea.** With "Choose stack" on Automatic, the home
+  screen picks Next.js, Express, FastAPI or a background worker when the idea
+  mentions them (React / Vite otherwise) and says why under the prompt. Ideas
+  that name a framework without a ready-made stack (Vue, Svelte, Astro, Flask,
+  Django…) or a language the workspace does not have (PHP, Ruby, Java, .NET,
+  Go, Rust, native mobile) get a plain warning before anything is built.
+- **The preview follows a change of framework.** When a task edits
+  `sandbox.yaml`, runtimed applies it right away (new start command, health and
+  build check) instead of at the next workspace start, and the chat says what
+  happened. Changes that would break the preview — an invalid or removed file,
+  another port, switching between a web app and a background worker — are
+  undone and the app keeps running. A Restore applies the restored settings too.
+  The agent is told how to change frameworks safely.
+
 ### Changed
 
 - The console and desktop focus on building new apps from a prompt. Removed the

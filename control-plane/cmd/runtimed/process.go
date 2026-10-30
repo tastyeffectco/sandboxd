@@ -35,10 +35,11 @@ type process struct {
 
 	restartAfterTask bool // bounce this process after each task (manifest restart_after_task)
 
-	mu       sync.Mutex
-	proc     *os.Process
-	running  bool
-	restarts int
+	mu          sync.Mutex
+	proc        *os.Process
+	running     bool
+	restarts    int
+	supervising bool // a supervise loop owns this process
 }
 
 func newProcess(name, kind, appDir, command, logPath string, log *slog.Logger) *process {
@@ -49,6 +50,14 @@ func newProcess(name, kind, appDir, command, logPath string, log *slog.Logger) *
 // supervise is the process's whole lifecycle; it runs until ctx is cancelled
 // (runtimed shutdown).
 func (p *process) supervise(ctx context.Context) {
+	p.mu.Lock()
+	p.supervising = true
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.supervising = false
+		p.mu.Unlock()
+	}()
 	fastFails := 0
 	for {
 		if ctx.Err() != nil {
@@ -85,7 +94,10 @@ func (p *process) supervise(ctx context.Context) {
 // runOnce starts the child, records it live, and blocks until it exits.
 func (p *process) runOnce() {
 	// `bash -lc` so the login PATH (pnpm, node, …) is in scope.
-	cmd := exec.Command("bash", "-lc", p.command)
+	p.mu.Lock()
+	command := p.command
+	p.mu.Unlock()
+	cmd := exec.Command("bash", "-lc", command)
 	cmd.Dir = p.appDir
 	// Own process group so the whole `bash → … ` tree can be signalled as a unit.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -136,6 +148,22 @@ func (p *process) stop() {
 	}
 	p.log.Warn("process did not exit on SIGTERM; sending SIGKILL")
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
+}
+
+// replace swaps the start command and restarts the child with it. A supervisor
+// that gave up after repeated fast failures is started again, so a fixed
+// command gets a fresh chance.
+func (p *process) replace(ctx context.Context, command string, restartAfterTask bool) {
+	p.mu.Lock()
+	p.command = command
+	p.restartAfterTask = restartAfterTask
+	supervising := p.supervising
+	p.mu.Unlock()
+	if supervising {
+		p.stop() // the supervisor re-runs the (new) command after its backoff
+		return
+	}
+	go p.supervise(ctx)
 }
 
 // snapshot returns the current process state for GET /status.

@@ -300,6 +300,20 @@ export function AgentChat({
                 </span>
                 <AgentMessage text={t.agent_message || t.error_message || `Task ${t.status}`} />
               </div>
+              {t.run_settings && (
+                <p
+                  className={
+                    t.run_settings.status === 'applied' && t.run_settings.preview_ready
+                      ? 'chat-notice'
+                      : 'chat-notice warn'
+                  }
+                  role="status"
+                  data-testid="run-settings"
+                >
+                  <Icon name={t.run_settings.status === 'kept_previous' ? 'history' : 'refresh'} size={14} />{' '}
+                  {t.run_settings.message}
+                </p>
+              )}
               <div className="turn-meta">
                 <span className={`task-status status-${t.status}`}>{t.status}</span>
                 {!!t.files_changed?.length && (

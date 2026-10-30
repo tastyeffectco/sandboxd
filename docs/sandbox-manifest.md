@@ -6,7 +6,9 @@ sandboxd works beyond the default Vite/React app. The coding agent can write or
 edit it like any workspace file.
 
 **No manifest = the built-in defaults** (a Vite/React web app on port 3000), so
-existing apps keep working unchanged. runtimed reads the manifest on (re)start.
+existing apps keep working unchanged. runtimed reads the manifest on (re)start,
+and again after every coding task and every Restore (see "Changes made during a
+task").
 
 > **`sandbox.yaml` is NOT Docker Compose.** It declares **one** previewed web
 > process (`web:`) and optional background `workers:` — there are no `services:`,
@@ -135,6 +137,25 @@ It is **opt-in**, used only where the runtime has no live reload of its own:
 | Next.js | `web.restart_after_task: true` (also heals agent `next build` poison) |
 | Node/Express | `web.restart_after_task: true` (`node server.js` has no reload) |
 | Worker | worker `restart_after_task: true` (re-runs the editable `worker.sh`) |
+
+### Changes made during a task
+
+The agent may switch the app to another framework (Vue, Astro, Flask, Django…)
+and update `sandbox.yaml` to start it. When a task finishes (and after a
+Restore), runtimed compares the file with the settings in effect and reports the
+outcome on the task as `run_settings`:
+
+| Change | Outcome |
+|---|---|
+| valid, same web port | **applied**: the web process restarts with the new command, health path and build check; runtimed waits up to 4 minutes for a 200 (`preview_ready`) |
+| workers changed | valid, but workers start with it on the **next start** |
+| does not parse or validate, or the file was removed | **kept_previous**: the previous file is put back |
+| another `web.port` | **kept_previous**: the preview address is fixed to the port the sandbox was created with |
+| web app ↔ worker-only | **kept_previous**: needs a new project |
+
+The build check and post-task health checks of that same task already use the
+new settings. A process that gave up after repeated failures is started again
+with the new command.
 
 ### JavaScript projects that do not use pnpm
 

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
 import { Icon } from './design/Icon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
+import { STACK_LABELS, stackFromIdea } from './stackFromIdea'
 
 const ideas = [
   {
@@ -58,6 +59,8 @@ export function BuilderHome({
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<Record<string, string>>({})
+  // Automatic picks the stack from the idea; a stack chosen by hand wins.
+  const guess = useMemo(() => stackFromIdea(prompt), [prompt])
   const creating = useRef(false)
   const composer = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -112,7 +115,9 @@ export function BuilderHome({
       const app = await api.createApp({
         name: title.slice(0, 80),
         description: prompt.trim().slice(0, 2000),
-        runtime_preset: preset || undefined,
+        // React / Vite is the default starter, so Automatic only sends a stack
+        // the idea asks for.
+        runtime_preset: preset || (guess.preset !== 'react-vite' ? guess.preset : undefined),
       })
       setBusy('Preparing the workspace…')
       // The app exists even when boot fails. Open it with the draft intact so
@@ -178,7 +183,8 @@ export function BuilderHome({
                 data-testid="stack-toggle"
               >
                 <Icon name="box" size={15} />
-                {presets.find((p) => p.id === preset)?.label || 'Choose stack'}
+                {presets.find((p) => p.id === preset)?.label ||
+                  (prompt.trim() ? `${STACK_LABELS[guess.preset]} · Auto` : 'Choose stack')}
                 <Icon name="chevron" size={13} />
               </button>
               <button
@@ -245,7 +251,10 @@ export function BuilderHome({
                   >
                     <Icon name="spark" />
                     <strong>Automatic</strong>
-                    <span>Use the default starter. Detect the runtime as you build.</span>
+                    <span>
+                      Picked from your idea: Next.js, Express, FastAPI or a background worker when you mention them,
+                      otherwise React / Vite.
+                    </span>
                   </button>
                   {presets.map((p) => (
                     <button
@@ -288,6 +297,11 @@ export function BuilderHome({
             </div>
           )}
         </div>
+        {!preset && guess.note && !busy && (
+          <p role="status" className={guess.tone === 'warn' ? 'stack-note warn' : 'stack-note'} data-testid="stack-note">
+            {guess.note}
+          </p>
+        )}
         {busy && (
           <p role="status" className="build-status">
             {busy} Your prompt will run when the workspace is ready.
