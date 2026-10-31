@@ -89,8 +89,14 @@ type mcpTool struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
+// obj is a JSON Schema object. "required" is left out when empty: strict MCP
+// clients (OpenClaw) reject a null there.
 func obj(props map[string]any, required ...string) map[string]any {
-	return map[string]any{"type": "object", "properties": props, "required": required}
+	o := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		o["required"] = required
+	}
+	return o
 }
 
 var agentTools = []mcpTool{

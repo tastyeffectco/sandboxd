@@ -82,6 +82,12 @@ func TestAgentMCPHandshakeAndTools(t *testing.T) {
 	for _, tl := range tools {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
+	for _, tl := range tools {
+		schema := tl.(map[string]any)["inputSchema"].(map[string]any)
+		if r, present := schema["required"]; present && r == nil {
+			t.Errorf("%v: required is null (strict MCP clients reject the tool list)", tl.(map[string]any)["name"])
+		}
+	}
 	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status" {
 		t.Fatalf("tools: %v (an agent must not get delete or other tools)", names)
 	}
