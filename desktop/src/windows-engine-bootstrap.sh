@@ -148,7 +148,21 @@ else
     printf '%s\n' "$previous" > "$backup/commit"
     echo "$backup" > /var/lib/sandboxd-desktop/upgrade-backup
     git checkout -q --detach "$tag"
-    if ! bash install.sh --pull --no-desktop --no-console >> /var/log/sandboxd-setup.log 2>&1; then
+    # .env pins the previous release's image names; install.sh only pulls the
+    # official images of the checked-out release when none are pinned (it
+    # writes the new ones itself). The backup above keeps the old .env.
+    sed -i '/^SANDBOXD_\(IMAGE\|CONTROL_PLANE_IMAGE\|CONSOLE_IMAGE\)=/d' .env
+    # A flaky route to the registry fails a single pull or signature check;
+    # images already pulled stay cached, so retrying is cheap.
+    installed=0
+    for attempt in 1 2 3; do
+      if bash install.sh --pull --no-desktop --no-console >> /var/log/sandboxd-setup.log 2>&1; then
+        installed=1
+        break
+      fi
+      sleep 10
+    done
+    if [ "$installed" != 1 ]; then
       rollback_upgrade
       echo 'The engine update did not finish; your previous engine is running again.'
       exit 1

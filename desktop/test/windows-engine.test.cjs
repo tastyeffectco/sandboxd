@@ -254,6 +254,13 @@ test('an app update brings its engine to the pinned release', async (t) => {
   // Backup, verified release before anything stops, and a way back.
   assert.match(bootstrap.options.input, /git fetch -q --depth 1 origin "refs\/tags\/\$tag:refs\/tags\/\$tag"[^\n]*&&\n\s+\[ "\$\(git rev-parse "refs\/tags\/\$tag\^\{commit\}"\)" = "\$commit" \]; then\n\s+stage upgrade/)
   assert.match(bootstrap.options.input, /cp -a "\$data_dir\/state" "\$backup\/"/)
+  // The previous release's pinned image names would make install.sh refuse to pull.
+  assert.match(
+    bootstrap.options.input,
+    /git checkout -q --detach "\$tag"\n(\s*#.*\n)*\s*sed -i '\/\^SANDBOXD_\\\(IMAGE\\\|CONTROL_PLANE_IMAGE\\\|CONSOLE_IMAGE\\\)=\/d' \.env\n/,
+  )
+  // A flaky registry route is retried before rolling back.
+  assert.match(bootstrap.options.input, /for attempt in 1 2 3; do\n\s+if bash install\.sh --pull/)
   assert.match(bootstrap.options.input, /rollback_upgrade\n\s+echo 'The engine update did not finish; your previous engine is running again.'/)
 })
 
