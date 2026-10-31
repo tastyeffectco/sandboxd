@@ -356,14 +356,14 @@ export interface ModelProvider extends Omit<ModelProviderInput, 'api_key'> {
   has_api_key: boolean
 }
 
-// Helpers: operator agents such as Hermes, run by sandboxd as their own workloads.
-export interface HelperPackage {
+// Agents: operator agents such as Hermes, run by sandboxd as their own workloads.
+export interface AgentCatalogEntry {
   id: string
   label: string
   description: string
   download: string
 }
-export interface Helper {
+export interface AgentInstance {
   id: string
   package: string
   name: string
@@ -375,7 +375,7 @@ export interface Helper {
   apps_per_day: number
   created_at: string
 }
-export interface HelperInput {
+export interface AgentInstanceInput {
   package: string
   connection_id: string
   model?: string
@@ -384,16 +384,16 @@ export interface HelperInput {
 }
 
 export const api = {
-  listHelperPackages: () =>
-    req<{ packages: HelperPackage[] }>('GET', '/v1/helper-packages').then((r) => r.packages || []),
-  listHelpers: () => req<{ helpers: Helper[] }>('GET', '/v1/helpers').then((r) => r.helpers || []),
-  createHelper: (input: HelperInput) =>
-    req<{ helper: Helper; warning?: string }>('POST', '/v1/helpers', input),
-  startHelper: (id: string) => req<Helper>('POST', `/v1/helpers/${encodeURIComponent(id)}/start`),
-  stopHelper: (id: string) => req<Helper>('POST', `/v1/helpers/${encodeURIComponent(id)}/stop`),
-  deleteHelper: (id: string) => req<void>('DELETE', `/v1/helpers/${encodeURIComponent(id)}`),
-  chatWithHelper: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
-    req<{ reply: string }>('POST', `/v1/helpers/${encodeURIComponent(id)}/chat`, { messages }),
+  listAgentCatalogEntrys: () =>
+    req<{ packages: AgentCatalogEntry[] }>('GET', '/v1/agent-catalog').then((r) => r.packages || []),
+  listAgentInstances: () => req<{ agents: AgentInstance[] }>('GET', '/v1/agent-instances').then((r) => r.agents || []),
+  createAgentInstance: (input: AgentInstanceInput) =>
+    req<{ agent: AgentInstance; warning?: string }>('POST', '/v1/agent-instances', input),
+  startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
+  stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
+  deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
+    req<{ reply: string }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/chat`, { messages }),
   listModelProviders: () =>
     req<{ providers: ModelProvider[] }>('GET', '/v1/model-providers').then((r) => r.providers || []),
   saveModelProvider: (id: string | undefined, input: ModelProviderInput) =>

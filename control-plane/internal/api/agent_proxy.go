@@ -17,53 +17,53 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
-// HelperProxy serves helpers on the credential proxy's port, authenticated by
-// the helper secret:
+// AgentProxy serves agents on the credential proxy's port, authenticated by
+// the agent secret:
 //
-//	POST /helpers/{id}/v1/chat/completions  the helper's model, through its model connection
-//	GET  /helpers/{id}/v1/models            that one model
-//	POST /helpers/{id}/mcp                  sandboxd's app tools (MCP, JSON responses)
+//	POST /agents/{id}/v1/chat/completions  the agent's model, through its model connection
+//	GET  /agents/{id}/v1/models            that one model
+//	POST /agents/{id}/mcp                  sandboxd's app tools (MCP, JSON responses)
 //
 // The secret grants nothing else: no other route, no upstream key, no other
 // connection or model.
-func (s *Server) HelperProxy() http.Handler {
+func (s *Server) AgentProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rest, ok := strings.CutPrefix(r.URL.Path, "/helpers/")
+		rest, ok := strings.CutPrefix(r.URL.Path, "/agents/")
 		id, op, _ := strings.Cut(rest, "/")
 		if !ok || id == "" {
 			http.NotFound(w, r)
 			return
 		}
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		h, err := s.Store.GetHelperBySecretHash(r.Context(), hashSecret(token))
+		h, err := s.Store.GetAgentInstanceBySecretHash(r.Context(), hashSecret(token))
 		if token == "" || err != nil || h.ID != id {
-			http.Error(w, "invalid helper credentials", http.StatusUnauthorized)
+			http.Error(w, "invalid agent credentials", http.StatusUnauthorized)
 			return
 		}
 		switch {
 		case op == "v1/chat/completions" && r.Method == http.MethodPost:
-			s.helperModelRequest(w, r, h)
+			s.agentModelRequest(w, r, h)
 		case op == "v1/models" && r.Method == http.MethodGet:
 			writeJSON(w, http.StatusOK, map[string]any{"object": "list",
 				"data": []map[string]string{{"id": h.Model, "object": "model", "owned_by": "sandboxd"}}})
 		case op == "mcp" && r.Method == http.MethodPost:
-			s.helperMCP(w, r, h)
+			s.agentMCP(w, r, h)
 		case op == "mcp":
 			// No server-initiated stream: clients fall back to plain POSTs.
 			w.Header().Set("Allow", http.MethodPost)
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		default:
-			http.Error(w, "unsupported helper operation", http.StatusNotFound)
+			http.Error(w, "unsupported agent operation", http.StatusNotFound)
 		}
 	})
 }
 
-// helperModelRequest forwards a chat completion through the model connection
+// agentModelRequest forwards a chat completion through the model connection
 // with a fresh short-lived capability, so the real key never leaves sandboxd.
-func (s *Server) helperModelRequest(w http.ResponseWriter, r *http.Request, h *store.Helper) {
+func (s *Server) agentModelRequest(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
 	conn, err := s.ModelProviders.Connection(r.Context(), h.ConnectionID, h.Model, s.AgentProxyURL, 15*time.Minute)
 	if err != nil {
-		http.Error(w, "the helper's model connection is unavailable: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "the agent's model connection is unavailable: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	r2 := r.Clone(r.Context())
@@ -93,7 +93,7 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return map[string]any{"type": "object", "properties": props, "required": required}
 }
 
-var helperTools = []mcpTool{
+var agentTools = []mcpTool{
 	{"list_apps", "List the user's sandboxd apps with their status and preview links.", obj(map[string]any{})},
 	{"create_app", "Create a new web app on sandboxd from an idea. A coding agent builds it in its own workspace; " +
 		"check progress with app_status. Limited per day.",
@@ -112,7 +112,7 @@ var helperTools = []mcpTool{
 		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
 }
 
-func (s *Server) helperMCP(w http.ResponseWriter, r *http.Request, h *store.Helper) {
+func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
 	var req mcpRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusOK, mcpError(nil, -32700, "invalid JSON"))
@@ -139,7 +139,7 @@ func (s *Server) helperMCP(w http.ResponseWriter, r *http.Request, h *store.Help
 	case "ping":
 		result = map[string]any{}
 	case "tools/list":
-		result = map[string]any{"tools": helperTools}
+		result = map[string]any{"tools": agentTools}
 	case "tools/call":
 		var p struct {
 			Name      string            `json:"name"`
@@ -149,7 +149,7 @@ func (s *Server) helperMCP(w http.ResponseWriter, r *http.Request, h *store.Help
 			writeJSON(w, http.StatusOK, mcpError(req.ID, -32602, "invalid tool arguments"))
 			return
 		}
-		text, err := s.helperTool(r.Context(), h, p.Name, p.Arguments)
+		text, err := s.agentTool(r.Context(), h, p.Name, p.Arguments)
 		if err != nil {
 			result = map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": err.Error()}}}
 		} else {
@@ -166,9 +166,9 @@ func mcpError(id json.RawMessage, code int, msg string) map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": code, "message": msg}}
 }
 
-// helperTool runs one tool as the helper's owner, through sandboxd's own /v1
+// agentTool runs one tool as the agent's owner, through sandboxd's own /v1
 // routes (same validation and records as the console), and records it.
-func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, args map[string]string) (string, error) {
+func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name string, args map[string]string) (string, error) {
 	switch name {
 	case "list_apps":
 		var out struct {
@@ -178,7 +178,7 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 				CurrentSandboxID string `json:"current_sandbox_id"`
 			} `json:"apps"`
 		}
-		if err := s.helperCall(ctx, h, http.MethodGet, "/v1/apps", nil, &out); err != nil {
+		if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps", nil, &out); err != nil {
 			return "", err
 		}
 		if len(out.Apps) == 0 {
@@ -186,7 +186,7 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 		}
 		var b strings.Builder
 		for _, a := range out.Apps {
-			status, preview := s.helperSandboxInfo(ctx, h, a.CurrentSandboxID)
+			status, preview := s.agentSandboxInfo(ctx, h, a.CurrentSandboxID)
 			fmt.Fprintf(&b, "- %s (id %s): %s %s\n", a.Name, a.ID, status, preview)
 		}
 		return b.String(), nil
@@ -197,10 +197,10 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 			return "", errors.New("describe the app in idea")
 		}
 		day := time.Now().UTC().Format("2006-01-02")
-		if ok, err := s.Store.TakeHelperAppSlot(ctx, h.ID, day, helperAppsPerDay); err != nil {
+		if ok, err := s.Store.TakeAgentAppSlot(ctx, h.ID, day, agentAppsPerDay); err != nil {
 			return "", err
 		} else if !ok {
-			return "", fmt.Errorf("the daily limit of %d new apps is reached; the user can create more in sandboxd", helperAppsPerDay)
+			return "", fmt.Errorf("the daily limit of %d new apps is reached; the user can create more in sandboxd", agentAppsPerDay)
 		}
 		appName := strings.TrimSpace(args["name"])
 		if appName == "" {
@@ -209,7 +209,7 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 		var app struct {
 			ID string `json:"id"`
 		}
-		if err := s.helperCall(ctx, h, http.MethodPost, "/v1/apps", map[string]any{
+		if err := s.agentCall(ctx, h, http.MethodPost, "/v1/apps", map[string]any{
 			"name": truncate(appName, 80), "description": truncate(idea, 2000), "runtime_preset": args["stack"],
 			"tags": []string{"created-by:" + h.Name},
 		}, &app); err != nil {
@@ -218,19 +218,19 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 		var sb struct {
 			ID string `json:"id"`
 		}
-		if err := s.helperCall(ctx, h, http.MethodPost, "/v1/apps/"+app.ID+"/sandbox", map[string]any{}, &sb); err != nil {
+		if err := s.agentCall(ctx, h, http.MethodPost, "/v1/apps/"+app.ID+"/sandbox", map[string]any{}, &sb); err != nil {
 			return "", err
 		}
-		s.helperRecord(ctx, h, app.ID, "helper.app_created", h.Name+" created this app")
-		if err := s.helperBuild(ctx, h, sb.ID, idea); err != nil {
+		s.agentRecord(ctx, h, app.ID, "agent.app_created", h.Name+" created this app")
+		if err := s.agentBuild(ctx, h, sb.ID, idea); err != nil {
 			return "", fmt.Errorf("the app %s (id %s) was created, but its build could not start: %w", appName, app.ID, err)
 		}
-		_, preview := s.helperSandboxInfo(ctx, h, sb.ID)
+		_, preview := s.agentSandboxInfo(ctx, h, sb.ID)
 		return fmt.Sprintf("Created %q (id %s). Its coding agent is building it now; this takes a few minutes. "+
 			"Check progress with app_status. Preview: %s", appName, app.ID, preview), nil
 
 	case "ask_app":
-		sbID, err := s.helperAppSandbox(ctx, h, args["app_id"])
+		sbID, err := s.agentAppSandbox(ctx, h, args["app_id"])
 		if err != nil {
 			return "", err
 		}
@@ -238,25 +238,25 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 		if request == "" {
 			return "", errors.New("describe the change in request")
 		}
-		if err := s.helperBuild(ctx, h, sbID, request); err != nil {
+		if err := s.agentBuild(ctx, h, sbID, request); err != nil {
 			return "", err
 		}
-		s.helperRecord(ctx, h, args["app_id"], "helper.app_changed", h.Name+" asked for a change")
+		s.agentRecord(ctx, h, args["app_id"], "agent.app_changed", h.Name+" asked for a change")
 		return "The app's coding agent is working on it. Check progress with app_status.", nil
 
 	case "app_status":
-		sbID, err := s.helperAppSandbox(ctx, h, args["app_id"])
+		sbID, err := s.agentAppSandbox(ctx, h, args["app_id"])
 		if err != nil {
 			return "", err
 		}
-		status, preview := s.helperSandboxInfo(ctx, h, sbID)
+		status, preview := s.agentSandboxInfo(ctx, h, sbID)
 		var tasks struct {
 			Tasks []struct {
 				Status       string `json:"status"`
 				AgentMessage string `json:"agent_message"`
 			} `json:"tasks"`
 		}
-		_ = s.helperCall(ctx, h, http.MethodGet, "/v1/sandboxes/"+sbID+"/tasks", nil, &tasks)
+		_ = s.agentCall(ctx, h, http.MethodGet, "/v1/sandboxes/"+sbID+"/tasks", nil, &tasks)
 		last := "no build yet"
 		if len(tasks.Tasks) > 0 {
 			t := tasks.Tasks[0]
@@ -270,12 +270,12 @@ func (s *Server) helperTool(ctx context.Context, h *store.Helper, name string, a
 	return "", fmt.Errorf("unknown tool %q", name)
 }
 
-// helperBuild starts a coding task with the default agent (OpenCode's free
+// agentBuild starts a coding task with the default agent (OpenCode's free
 // model when nothing is connected), waiting briefly for a new workspace.
-func (s *Server) helperBuild(ctx context.Context, h *store.Helper, sandboxID, prompt string) error {
+func (s *Server) agentBuild(ctx context.Context, h *store.AgentInstance, sandboxID, prompt string) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		err := s.helperCall(ctx, h, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/tasks",
+		err := s.agentCall(ctx, h, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/tasks",
 			map[string]any{"prompt": prompt, "agent": "opencode"}, nil)
 		// A new workspace is still starting: "sandbox is creating — cannot run a
 		// task", or its supervisor's socket is not up yet ("runtimed: …").
@@ -287,11 +287,11 @@ func (s *Server) helperBuild(ctx context.Context, h *store.Helper, sandboxID, pr
 	}
 }
 
-func (s *Server) helperAppSandbox(ctx context.Context, h *store.Helper, appID string) (string, error) {
+func (s *Server) agentAppSandbox(ctx context.Context, h *store.AgentInstance, appID string) (string, error) {
 	var app struct {
 		CurrentSandboxID string `json:"current_sandbox_id"`
 	}
-	if err := s.helperCall(ctx, h, http.MethodGet, "/v1/apps/"+appID, nil, &app); err != nil {
+	if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+appID, nil, &app); err != nil {
 		return "", err
 	}
 	if app.CurrentSandboxID == "" {
@@ -300,7 +300,7 @@ func (s *Server) helperAppSandbox(ctx context.Context, h *store.Helper, appID st
 	return app.CurrentSandboxID, nil
 }
 
-func (s *Server) helperSandboxInfo(ctx context.Context, h *store.Helper, sandboxID string) (status, preview string) {
+func (s *Server) agentSandboxInfo(ctx context.Context, h *store.AgentInstance, sandboxID string) (status, preview string) {
 	if sandboxID == "" {
 		return "no workspace", ""
 	}
@@ -310,15 +310,15 @@ func (s *Server) helperSandboxInfo(ctx context.Context, h *store.Helper, sandbox
 			URL string `json:"url"`
 		} `json:"preview"`
 	}
-	if err := s.helperCall(ctx, h, http.MethodGet, "/v1/sandboxes/"+sandboxID, nil, &sb); err != nil {
+	if err := s.agentCall(ctx, h, http.MethodGet, "/v1/sandboxes/"+sandboxID, nil, &sb); err != nil {
 		return "unknown", ""
 	}
 	return sb.Status, sb.Preview.URL
 }
 
-// helperCall runs a /v1 request in-process as the helper's owner. The tool
+// agentCall runs a /v1 request in-process as the agent's owner. The tool
 // list above is the permission boundary; this reuses the routes' validation.
-func (s *Server) helperCall(ctx context.Context, h *store.Helper, method, path string, body, out any) error {
+func (s *Server) agentCall(ctx context.Context, h *store.AgentInstance, method, path string, body, out any) error {
 	if s.inner == nil {
 		return errors.New("sandboxd is not ready")
 	}
@@ -350,12 +350,12 @@ func (s *Server) helperCall(ctx context.Context, h *store.Helper, method, path s
 	return nil
 }
 
-func (s *Server) helperRecord(ctx context.Context, h *store.Helper, appID, typ, msg string) {
+func (s *Server) agentRecord(ctx context.Context, h *store.AgentInstance, appID, typ, msg string) {
 	if s.Events == nil {
 		return
 	}
 	s.Events.Record(ctx, events.Event{OwnerToken: h.OwnerToken, AppID: appID, Type: typ,
-		Severity: events.SeverityInfo, Message: msg, Payload: map[string]any{"helper_id": h.ID, "helper": h.Name}})
+		Severity: events.SeverityInfo, Message: msg, Payload: map[string]any{"agent_id": h.ID, "agent": h.Name}})
 }
 
 func truncate(s string, n int) string {

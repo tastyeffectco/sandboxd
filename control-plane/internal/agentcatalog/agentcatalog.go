@@ -1,7 +1,7 @@
-// Package helpers defines the operator agents ("helpers") sandboxd can run and
-// renders their configuration. Core runs a helper as a hardened container from
+// Package agentcatalog defines the operator agents sandboxd can run and
+// renders their configuration. Core runs an agent as a hardened container from
 // a pinned image; everything agent-specific lives in its Package, as data.
-package helpers
+package agentcatalog
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Package describes one kind of helper.
+// Package describes one kind of agent.
 type Package struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
@@ -21,9 +21,9 @@ type Package struct {
 	Cmd []string `json:"-"`
 	// User is the non-root uid:gid the image runs as; state is owned by it.
 	User string `json:"-"`
-	// StatePath is where the helper keeps memory, skills and sessions.
+	// StatePath is where the agent keeps memory, skills and sessions.
 	StatePath string `json:"-"`
-	// APIPort serves the helper's OpenAI-compatible chat API (console chat).
+	// APIPort serves the agent's OpenAI-compatible chat API (console chat).
 	APIPort  int    `json:"-"`
 	Memory   string `json:"-"`
 	ShmSize  string `json:"-"`
@@ -68,24 +68,24 @@ func List() []Package {
 // HermesConfig is what sandboxd writes into Hermes's config.yaml.
 type HermesConfig struct {
 	ProxyURL string // sandboxd's in-network proxy, e.g. http://sandboxd:9100
-	HelperID string
-	Secret   string // the helper secret: model access and app tools
+	AgentID  string
+	Secret   string // the agent secret: model access and app tools
 	Model    string // the model id of the chosen connection
 }
 
 // RenderHermesConfig returns config.yaml: the model goes through sandboxd's
 // proxy (the real key never enters the container), sandboxd's app tools are an
-// MCP server, and commands run inside the helper's own container.
+// MCP server, and commands run inside the agent's own container.
 func RenderHermesConfig(c HermesConfig) (string, error) {
-	base := strings.TrimRight(c.ProxyURL, "/") + "/helpers/" + c.HelperID
-	for name, v := range map[string]string{"proxy URL": c.ProxyURL, "helper id": c.HelperID, "secret": c.Secret, "model": c.Model} {
+	base := strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID
+	for name, v := range map[string]string{"proxy URL": c.ProxyURL, "agent id": c.AgentID, "secret": c.Secret, "model": c.Model} {
 		if v == "" {
 			return "", fmt.Errorf("hermes config: %s is required", name)
 		}
 	}
 	q := strconv.Quote // YAML accepts JSON-style double-quoted strings
 	return "# Written by sandboxd. Changes to model, terminal and mcp_servers are\n" +
-		"# replaced when the helper is re-created.\n" +
+		"# replaced when the agent is re-created.\n" +
 		"model:\n" +
 		"  provider: custom\n" +
 		"  default: " + q(c.Model) + "\n" +

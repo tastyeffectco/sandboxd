@@ -20,7 +20,7 @@ tags:
   - name: sandboxes
   - name: tasks
   - name: snapshots
-  - name: helpers
+  - name: agents
 
 paths:
   /version:
@@ -1644,11 +1644,11 @@ paths:
       responses:
         "204": { description: Deleted }
 
-  /v1/helper-packages:
+  /v1/agent-catalog:
     get:
-      operationId: listHelperPackages
-      tags: [helpers]
-      summary: Helpers sandboxd can run (operator agents such as Hermes)
+      operationId: listAgentCatalogEntrys
+      tags: [agents]
+      summary: Agents sandboxd can run (operator agents such as Hermes)
       responses:
         "200":
           description: OK
@@ -1666,11 +1666,11 @@ paths:
                         label: { type: string }
                         description: { type: string }
                         download: { type: string, description: approximate image size }
-  /v1/helpers:
+  /v1/agent-instances:
     get:
-      operationId: listHelpers
-      tags: [helpers]
-      summary: The owner's helpers
+      operationId: listAgentInstances
+      tags: [agents]
+      summary: The owner's agents
       responses:
         "200":
           description: OK
@@ -1679,18 +1679,18 @@ paths:
               schema:
                 type: object
                 properties:
-                  helpers: { type: array, items: { $ref: "#/components/schemas/Helper" } }
+                  agents: { type: array, items: { $ref: "#/components/schemas/AgentInstance" } }
     post:
-      operationId: createHelper
-      tags: [helpers]
-      summary: Add a helper and start it
+      operationId: createAgentInstance
+      tags: [agents]
+      summary: Add an agent and start it
       description: >
         Runs the package's pinned image as a hardened container (non-root, all
-        capabilities dropped, read-only root, no-new-privileges). The helper
+        capabilities dropped, read-only root, no-new-privileges). The agent
         reaches its model only through the chosen OpenAI-compatible model
         connection (the key never enters the container) and sandboxd's app
         tools (list_apps, create_app, ask_app, app_status) over MCP on the
-        proxy port, both with its own helper secret. A Telegram bot token
+        proxy port, both with its own agent secret. A Telegram bot token
         requires the allowed Telegram user IDs.
       requestBody:
         required: true
@@ -1711,63 +1711,63 @@ paths:
           description: Added and started
           content:
             application/json:
-              schema: { type: object, properties: { helper: { $ref: "#/components/schemas/Helper" } } }
+              schema: { type: object, properties: { agent: { $ref: "#/components/schemas/AgentInstance" } } }
         "202":
           description: Added, but it could not start (warning explains why)
         "400": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
-  /v1/helpers/{id}:
+  /v1/agent-instances/{id}:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     get:
-      operationId: getHelper
-      tags: [helpers]
-      summary: Get a helper
+      operationId: getAgent
+      tags: [agents]
+      summary: Get an agent
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Helper" }
+              schema: { $ref: "#/components/schemas/AgentInstance" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
-      operationId: deleteHelper
-      tags: [helpers]
-      summary: Remove a helper, its container and its memory
+      operationId: deleteAgentInstance
+      tags: [agents]
+      summary: Remove an agent, its container and its memory
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/Error" }
-  /v1/helpers/{id}/start:
+  /v1/agent-instances/{id}/start:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
-      operationId: startHelper
-      tags: [helpers]
-      summary: Start a helper (re-created with a fresh helper secret when its container is missing)
+      operationId: startAgentInstance
+      tags: [agents]
+      summary: Start an agent (re-created with a fresh agent secret when its container is missing)
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Helper" }
+              schema: { $ref: "#/components/schemas/AgentInstance" }
         "404": { $ref: "#/components/responses/Error" }
-  /v1/helpers/{id}/stop:
+  /v1/agent-instances/{id}/stop:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
-      operationId: stopHelper
-      tags: [helpers]
-      summary: Stop a helper
+      operationId: stopAgentInstance
+      tags: [agents]
+      summary: Stop an agent
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Helper" }
+              schema: { $ref: "#/components/schemas/AgentInstance" }
         "404": { $ref: "#/components/responses/Error" }
-  /v1/helpers/{id}/chat:
+  /v1/agent-instances/{id}/chat:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
-      operationId: chatWithHelper
-      tags: [helpers]
-      summary: One chat turn with the helper (through its own API; sandboxd holds its key)
+      operationId: chatWithAgent
+      tags: [agents]
+      summary: One chat turn with the agent (through its own API; sandboxd holds its key)
       requestBody:
         required: true
         content:
@@ -1785,7 +1785,7 @@ paths:
                       content: { type: string }
       responses:
         "200":
-          description: The helper's reply
+          description: The agent's reply
           content:
             application/json:
               schema: { type: object, properties: { reply: { type: string } } }
@@ -1809,7 +1809,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
-    Helper:
+    AgentInstance:
       type: object
       properties:
         id: { type: string }

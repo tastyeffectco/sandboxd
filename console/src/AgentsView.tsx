@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, Helper, HelperPackage, ModelProvider } from './api'
+import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
 import { AgentMessage } from './AgentMessage'
 import { c, font, Btn, Card, Input, StatusPill } from './design/kit'
 
-// Helpers are assistants (Hermes first) that sandboxd runs for you. They talk
+// Agents are assistants (Hermes first) that sandboxd runs for you. They talk
 // to you here or on Telegram and can create and change apps on this sandboxd.
-export function HelpersView({
+export function AgentsView({
   onError,
   reloadApps,
   goModels,
@@ -14,15 +14,15 @@ export function HelpersView({
   reloadApps: () => void
   goModels: () => void
 }) {
-  const [packages, setPackages] = useState<HelperPackage[]>([])
-  const [helpers, setHelpers] = useState<Helper[] | null>(null)
+  const [packages, setPackages] = useState<AgentCatalogEntry[]>([])
+  const [agents, setAgents] = useState<AgentInstance[] | null>(null)
   const [models, setModels] = useState<ModelProvider[]>([])
   const load = useCallback(() => {
-    Promise.all([api.listHelperPackages(), api.listHelpers(), api.listModelProviders()])
+    Promise.all([api.listAgentCatalogEntrys(), api.listAgentInstances(), api.listModelProviders()])
       .then(([p, h, m]) => {
         setPackages(p)
-        setHelpers(h)
-        // Helpers speak the OpenAI chat protocol.
+        setAgents(h)
+        // Agents speak the OpenAI chat protocol.
         setModels(m.filter((x) => x.protocol === 'openai-completions' && x.models.length > 0))
       })
       .catch((e) => onError((e as Error).message))
@@ -31,33 +31,33 @@ export function HelpersView({
 
   return (
     <div className="content-page">
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Helpers</h1>
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Agents</h1>
       <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 620 }}>
         Assistants that work for you around the clock. Chat with them here or on Telegram; they remember what
         you tell them and can create and change apps on this sandboxd.
       </p>
-      {helpers === null && <p style={{ color: c.muted2 }}>Loading…</p>}
-      {helpers?.map((h) => (
-        <HelperCard key={h.id} helper={h} onChange={load} onError={onError} reloadApps={reloadApps} />
+      {agents === null && <p style={{ color: c.muted2 }}>Loading…</p>}
+      {agents?.map((h) => (
+        <AgentInstanceCard key={h.id} agent={h} onChange={load} onError={onError} reloadApps={reloadApps} />
       ))}
-      {helpers !== null &&
+      {agents !== null &&
         packages
-          .filter((p) => !helpers.some((h) => h.package === p.id))
+          .filter((p) => !agents.some((h) => h.package === p.id))
           .map((p) => (
-            <AddHelper key={p.id} pkg={p} models={models} goModels={goModels} onAdded={load} onError={onError} />
+            <AddAgent key={p.id} pkg={p} models={models} goModels={goModels} onAdded={load} onError={onError} />
           ))}
     </div>
   )
 }
 
-function AddHelper({
+function AddAgent({
   pkg,
   models,
   goModels,
   onAdded,
   onError,
 }: {
-  pkg: HelperPackage
+  pkg: AgentCatalogEntry
   models: ModelProvider[]
   goModels: () => void
   onAdded: () => void
@@ -73,7 +73,7 @@ function AddHelper({
     setBusy(true)
     setWarning('')
     try {
-      const res = await api.createHelper({
+      const res = await api.createAgentInstance({
         package: pkg.id,
         connection_id: chosen,
         telegram_bot_token: token.trim() || undefined,
@@ -88,7 +88,7 @@ function AddHelper({
     }
   }
   return (
-    <Card pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`add-helper-${pkg.id}`}>
+    <Card pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`add-agent-${pkg.id}`}>
       <strong style={{ fontSize: 16 }}>{pkg.label}</strong>
       <p style={{ color: c.muted, margin: '6px 0 14px' }}>{pkg.description}</p>
       {models.length === 0 ? (
@@ -104,7 +104,7 @@ function AddHelper({
           {models.length > 1 && (
             <label className="form-field">
               AI model
-              <select value={chosen} onChange={(e) => setConnection(e.target.value)} data-testid="helper-model">
+              <select value={chosen} onChange={(e) => setConnection(e.target.value)} data-testid="agent-model">
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name} · {m.models[0].id}
@@ -128,7 +128,7 @@ function AddHelper({
               <Input value={users} onChange={(e) => setUsers(e.target.value)} />
             </label>
           </details>
-          <Btn variant="primary" disabled={busy || !chosen} onClick={() => void add()} data-testid="add-helper">
+          <Btn variant="primary" disabled={busy || !chosen} onClick={() => void add()} data-testid="add-agent">
             {busy ? `Setting up ${pkg.label}…` : `Add ${pkg.label}`}
           </Btn>
           <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
@@ -148,13 +148,13 @@ function AddHelper({
 
 type Turn = { role: 'user' | 'assistant'; content: string }
 
-function HelperCard({
-  helper,
+function AgentInstanceCard({
+  agent,
   onChange,
   onError,
   reloadApps,
 }: {
-  helper: Helper
+  agent: AgentInstance
   onChange: () => void
   onError: (message: string) => void
   reloadApps: () => void
@@ -182,7 +182,7 @@ function HelperCard({
     setText('')
     setThinking(true)
     try {
-      const { reply } = await api.chatWithHelper(helper.id, next)
+      const { reply } = await api.chatWithAgent(agent.id, next)
       setTurns([...next, { role: 'assistant', content: reply }])
       reloadApps() // it may have created an app
     } catch (e) {
@@ -193,22 +193,22 @@ function HelperCard({
       setThinking(false)
     }
   }
-  const running = helper.status === 'running'
+  const running = agent.status === 'running'
   return (
-    <Card pad={20} style={{ marginBottom: 16, maxWidth: 820 }} data-testid={`helper-${helper.id}`}>
+    <Card pad={20} style={{ marginBottom: 16, maxWidth: 820 }} data-testid={`agent-${agent.id}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 16 }}>{helper.name}</strong>
-        <StatusPill status={helper.status === 'missing' ? 'not started' : helper.status} />
+        <strong style={{ fontSize: 16 }}>{agent.name}</strong>
+        <StatusPill status={agent.status === 'missing' ? 'not started' : agent.status} />
         <span style={{ color: c.muted2, fontSize: 12 }}>
-          {helper.apps_today}/{helper.apps_per_day} new apps today{helper.telegram ? ' · on Telegram' : ''}
+          {agent.apps_today}/{agent.apps_per_day} new apps today{agent.telegram ? ' · on Telegram' : ''}
         </span>
         <span style={{ flex: 1 }} />
         {running ? (
-          <Btn sm disabled={busy} onClick={() => void act(() => api.stopHelper(helper.id))}>
+          <Btn sm disabled={busy} onClick={() => void act(() => api.stopAgentInstance(agent.id))}>
             Pause
           </Btn>
         ) : (
-          <Btn sm disabled={busy} onClick={() => void act(() => api.startHelper(helper.id))}>
+          <Btn sm disabled={busy} onClick={() => void act(() => api.startAgentInstance(agent.id))}>
             Start
           </Btn>
         )}
@@ -216,14 +216,14 @@ function HelperCard({
           sm
           disabled={busy}
           onClick={() => {
-            if (window.confirm(`Remove ${helper.name}? Its memory and skills are deleted. Your apps stay.`))
-              void act(() => api.deleteHelper(helper.id))
+            if (window.confirm(`Remove ${agent.name}? Its memory and skills are deleted. Your apps stay.`))
+              void act(() => api.deleteAgentInstance(agent.id))
           }}
         >
           Remove
         </Btn>
       </div>
-      <div style={{ margin: '16px 0', display: 'grid', gap: 10 }} data-testid="helper-chat">
+      <div style={{ margin: '16px 0', display: 'grid', gap: 10 }} data-testid="agent-chat">
         {turns.length === 0 && (
           <p style={{ color: c.muted, margin: 0 }}>
             Try: “Build me a recipe app with a shopping list” or “What can you do?”
@@ -242,7 +242,7 @@ function HelperCard({
         )}
         {thinking && (
           <p role="status" style={{ color: c.muted, margin: 0 }}>
-            {helper.name} is working… building an app can take a few minutes.
+            {agent.name} is working… building an app can take a few minutes.
           </p>
         )}
       </div>
@@ -256,9 +256,9 @@ function HelperCard({
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={running ? `Message ${helper.name}` : `Start ${helper.name} to chat`}
+          placeholder={running ? `Message ${agent.name}` : `Start ${agent.name} to chat`}
           disabled={!running || thinking}
-          data-testid="helper-message"
+          data-testid="agent-chat-input"
           style={{ flex: 1 }}
         />
         <Btn type="submit" variant="primary" disabled={!running || thinking || !text.trim()}>

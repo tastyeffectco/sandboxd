@@ -1,26 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { HelpersView } from './HelpersView'
+import { AgentsView } from './AgentsView'
 import { api } from './api'
 
 vi.mock('./api', () => ({
   api: {
-    listHelperPackages: vi.fn().mockResolvedValue([
+    listAgentCatalogEntrys: vi.fn().mockResolvedValue([
       { id: 'hermes', label: 'Hermes', description: 'A personal assistant.', download: 'about 3 GB' },
     ]),
-    listHelpers: vi.fn(),
+    listAgentInstances: vi.fn(),
     listModelProviders: vi.fn(),
-    createHelper: vi.fn(),
-    chatWithHelper: vi.fn(),
-    startHelper: vi.fn(),
-    stopHelper: vi.fn(),
-    deleteHelper: vi.fn(),
+    createAgentInstance: vi.fn(),
+    chatWithAgent: vi.fn(),
+    startAgentInstance: vi.fn(),
+    stopAgentInstance: vi.fn(),
+    deleteAgentInstance: vi.fn(),
   },
 }))
 
 afterEach(cleanup)
 
-const view = () => render(<HelpersView onError={() => {}} reloadApps={() => {}} goModels={() => {}} />)
+const view = () => render(<AgentsView onError={() => {}} reloadApps={() => {}} goModels={() => {}} />)
 const connection = {
   id: 'c1',
   name: 'OpenRouter',
@@ -30,23 +30,23 @@ const connection = {
   has_api_key: true,
 }
 
-describe('HelpersView', () => {
+describe('AgentsView', () => {
   it('asks for an AI model before Hermes can be added', async () => {
-    vi.mocked(api.listHelpers).mockResolvedValue([])
+    vi.mocked(api.listAgentInstances).mockResolvedValue([])
     vi.mocked(api.listModelProviders).mockResolvedValue([])
     view()
     expect(await screen.findByText(/needs an AI model to think with/)).toBeTruthy()
-    expect(screen.queryByTestId('add-helper')).toBeNull()
+    expect(screen.queryByTestId('add-agent')).toBeNull()
   })
 
   it('adds Hermes with the model connection and an optional Telegram bot', async () => {
-    vi.mocked(api.listHelpers).mockResolvedValue([])
+    vi.mocked(api.listAgentInstances).mockResolvedValue([])
     vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
-    vi.mocked(api.createHelper).mockResolvedValue({ helper: {} as never })
+    vi.mocked(api.createAgentInstance).mockResolvedValue({ agent: {} as never })
     view()
-    fireEvent.click(await screen.findByTestId('add-helper'))
+    fireEvent.click(await screen.findByTestId('add-agent'))
     await waitFor(() =>
-      expect(api.createHelper).toHaveBeenCalledWith({
+      expect(api.createAgentInstance).toHaveBeenCalledWith({
         package: 'hermes',
         connection_id: 'c1',
         telegram_bot_token: undefined,
@@ -55,8 +55,8 @@ describe('HelpersView', () => {
     )
   })
 
-  it('chats with a running helper', async () => {
-    vi.mocked(api.listHelpers).mockResolvedValue([
+  it('chats with a running agent', async () => {
+    vi.mocked(api.listAgentInstances).mockResolvedValue([
       {
         id: 'h1',
         package: 'hermes',
@@ -71,11 +71,11 @@ describe('HelpersView', () => {
       },
     ])
     vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
-    vi.mocked(api.chatWithHelper).mockResolvedValue({ reply: 'Created **Recipe Box**.' })
+    vi.mocked(api.chatWithAgent).mockResolvedValue({ reply: 'Created **Recipe Box**.' })
     view()
-    fireEvent.change(await screen.findByTestId('helper-message'), { target: { value: 'Build a recipe app' } })
-    fireEvent.submit(screen.getByTestId('helper-message').closest('form')!)
+    fireEvent.change(await screen.findByTestId('agent-chat-input'), { target: { value: 'Build a recipe app' } })
+    fireEvent.submit(screen.getByTestId('agent-chat-input').closest('form')!)
     expect(await screen.findByText('Recipe Box')).toBeTruthy()
-    expect(api.chatWithHelper).toHaveBeenCalledWith('h1', [{ role: 'user', content: 'Build a recipe app' }])
+    expect(api.chatWithAgent).toHaveBeenCalledWith('h1', [{ role: 'user', content: 'Build a recipe app' }])
   })
 })

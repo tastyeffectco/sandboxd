@@ -1,9 +1,9 @@
--- Helpers: operator agents (e.g. Hermes) run as their own workloads. The
--- helper secret authenticates the helper to sandboxd's proxy (model access and
+-- Agents: operator agents (e.g. Hermes) run as their own workloads. The
+-- agent secret authenticates the agent to sandboxd's proxy (model access and
 -- app tools); only its SHA-256 is stored. Channel tokens are encrypted with
--- the instance secrets key, as is the key sandboxd uses to call the helper's
+-- the instance secrets key, as is the key sandboxd uses to call the agent's
 -- own API (console chat).
-CREATE TABLE helper (
+CREATE TABLE agent_instance (
     id TEXT PRIMARY KEY,
     owner_token TEXT NOT NULL,
     package TEXT NOT NULL,
@@ -20,4 +20,4 @@ CREATE TABLE helper (
     apps_today INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
-CREATE INDEX helper_owner ON helper(owner_token);
+CREATE INDEX agent_instance_owner ON agent_instance(owner_token);
