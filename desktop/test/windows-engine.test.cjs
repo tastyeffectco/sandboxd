@@ -219,3 +219,46 @@ test('an installed engine can restart while WSL retains its localhost listener',
   assert.equal(bootstrapped, true)
   assert.equal(f.downloads.length, 0)
 })
+
+async function installedFixture(t, engineCommit, probe = async () => true) {
+  const distro = 'sandboxd-desktop-0123456789abcdef'
+  const f = await fixture(t, {
+    probe,
+    engineCommit,
+    execute: async (command, args, options) => {
+      f.commands.push({ command, args, options })
+      if (args.includes('--list')) return { code: 0, output: distro }
+      return { code: 0, output: '' }
+    },
+  })
+  await fs.mkdir(path.join(f.directory, 'local-engine'))
+  await fs.writeFile(path.join(f.directory, 'local-engine/engine.json'), JSON.stringify({ distro, installed: true }))
+  return f
+}
+
+test('a current engine starts without running setup', async (t) => {
+  const f = await installedFixture(t, async () => ENGINE_COMMIT.slice(0, 12))
+  assert.equal((await f.manager.start()).phase, 'ready')
+  assert(!f.commands.some((c) => c.args.includes('bash')), 'setup ran for a current engine')
+})
+
+test('an app update brings its engine to the pinned release', async (t) => {
+  let probes = 0
+  const f = await installedFixture(t, async () => 'a1b2c3d4e5f6', async () => ++probes !== 2)
+  const result = await f.manager.start()
+  assert.equal(result.phase, 'ready')
+  const bootstrap = f.commands.find((c) => c.args.includes('bash'))
+  assert(bootstrap, 'the update did not run')
+  assert.deepEqual(bootstrap.args.slice(-2), [ENGINE_TAG, ENGINE_COMMIT])
+  assert(f.events.some((e) => e.message === 'Updating your engine to the new version…'))
+  // Backup, verified release before anything stops, and a way back.
+  assert.match(bootstrap.options.input, /git fetch -q --depth 1 origin "refs\/tags\/\$tag:refs\/tags\/\$tag"[^\n]*&&\n\s+\[ "\$\(git rev-parse "refs\/tags\/\$tag\^\{commit\}"\)" = "\$commit" \]; then\n\s+stage upgrade/)
+  assert.match(bootstrap.options.input, /cp -a "\$data_dir\/state" "\$backup\/"/)
+  assert.match(bootstrap.options.input, /rollback_upgrade\n\s+echo 'The engine update did not finish; your previous engine is running again.'/)
+})
+
+test('an engine the user runs themselves is never updated', async (t) => {
+  const f = await fixture(t, { probe: async () => true, engineCommit: async () => 'a1b2c3d4e5f6' })
+  assert.equal((await f.manager.start()).phase, 'ready')
+  assert(!f.commands.some((c) => c.args.includes('bash')))
+})

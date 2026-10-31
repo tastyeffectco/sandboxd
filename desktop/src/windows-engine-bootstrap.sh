@@ -8,6 +8,21 @@ tag="$1" commit="$2"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
 [[ "$commit" =~ ^[a-f0-9]{40}$ ]] || exit 2
 stage() { printf 'SANDBOXD_SETUP:%s\n' "$1"; }
+data_dir=/var/lib/sandboxd
+# rollback_upgrade restores the engine an update replaced: its code, settings
+# and database, then starts it with the images it already has.
+rollback_upgrade() {
+  local backup
+  backup="$(cat /var/lib/sandboxd-desktop/upgrade-backup 2>/dev/null)" || return 0
+  [ -n "$backup" ] && [ -f "$backup/commit" ] || return 0
+  cd /opt/sandboxd
+  docker compose stop >> /var/log/sandboxd-setup.log 2>&1 || true
+  git checkout -q --detach "$(cat "$backup/commit")"
+  cp -a "$backup/.env" .env
+  if [ -d "$backup/state" ]; then rm -rf "$data_dir/state"; cp -a "$backup/state" "$data_dir/"; fi
+  docker compose up -d --no-build --pull never >> /var/log/sandboxd-setup.log 2>&1 || true
+  rm -f /var/lib/sandboxd-desktop/upgrade-backup
+}
 mkdir -p /var/lib/sandboxd-desktop
 exec 9>/var/lib/sandboxd-desktop/setup.lock
 flock -n 9 || { echo 'Setup is already running inside this engine.'; exit 1; }
@@ -113,20 +128,52 @@ if [ ! -f /var/lib/sandboxd-desktop/ready ]; then
     exit 1
   fi
 else
-  stage starting
   cd /opt/sandboxd
-  docker compose up -d --no-build --pull never >> /var/log/sandboxd-setup.log 2>&1
+  # The desktop app was updated: move the engine to the release it pins. Only
+  # when that release is reachable and matches (offline, the current engine
+  # just starts and the update waits for the next launch). Back up the
+  # database and settings first (stack stopped, so SQLite's write-ahead log is
+  # complete), then install the new signed images. A failed or unhealthy
+  # update goes back to the previous version.
+  if [ "$(git rev-parse HEAD)" != "$commit" ] &&
+    git fetch -q --depth 1 origin "refs/tags/$tag:refs/tags/$tag" >> /var/log/sandboxd-setup.log 2>&1 &&
+    [ "$(git rev-parse "refs/tags/$tag^{commit}")" = "$commit" ]; then
+    stage upgrade
+    previous="$(git rev-parse HEAD)"
+    backup="/var/lib/sandboxd-desktop/backups/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup"
+    docker compose stop >> /var/log/sandboxd-setup.log 2>&1 || true
+    cp -a .env "$backup/"
+    cp -a "$data_dir/state" "$backup/" 2>/dev/null || true
+    printf '%s\n' "$previous" > "$backup/commit"
+    echo "$backup" > /var/lib/sandboxd-desktop/upgrade-backup
+    git checkout -q --detach "$tag"
+    if ! bash install.sh --pull --no-desktop --no-console >> /var/log/sandboxd-setup.log 2>&1; then
+      rollback_upgrade
+      echo 'The engine update did not finish; your previous engine is running again.'
+      exit 1
+    fi
+  else
+    stage starting
+    docker compose up -d --no-build --pull never >> /var/log/sandboxd-setup.log 2>&1
+  fi
 fi
 stage health
 for attempt in $(seq 1 90); do
   if curl -fsS --max-time 2 http://127.0.0.1:9090/readyz >/dev/null; then
     sync
     touch /var/lib/sandboxd-desktop/ready
+    rm -f /var/lib/sandboxd-desktop/upgrade-backup
     sync
     stage ready
     exit 0
   fi
   sleep 2
 done
+if [ -f /var/lib/sandboxd-desktop/upgrade-backup ]; then
+  rollback_upgrade
+  echo 'The updated engine did not start; your previous engine is running again.'
+  exit 1
+fi
 echo 'The engine did not become ready. Check /var/log/sandboxd-setup.log.'
 exit 1

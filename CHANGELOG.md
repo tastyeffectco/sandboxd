@@ -6,6 +6,18 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
+## [Unreleased]
+
+### Fixed
+
+- **Updating the desktop app now updates its engine.** The app installs its
+  engine once; until now an app update kept the old engine, so new features
+  (like Agents) did not work. On the next launch after an update, the app
+  backs up the engine's database and settings, installs the new signed engine
+  release and goes back to the previous one if the update does not finish or
+  start. Offline, the current engine starts and the update waits for the next
+  launch.
+
 ## [0.3.25] — 2026-10-31
 
 ### Added
