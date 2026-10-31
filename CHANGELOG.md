@@ -6,7 +6,7 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
-## [Unreleased]
+## [0.3.25] — 2026-10-31
 
 ### Added
 
