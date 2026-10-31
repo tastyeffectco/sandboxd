@@ -6,7 +6,7 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
-## [Unreleased]
+## [0.3.26] — 2026-10-31
 
 ### Added
 
@@ -26,6 +26,8 @@ patch** — each lands the meaningful changes merged since the last one — and 
   release and goes back to the previous one if the update does not finish or
   start. Offline, the current engine starts and the update waits for the next
   launch.
+- Agents get all of sandboxd's app tools with strict tool clients: a tool with
+  no required inputs no longer sends an invalid schema (OpenClaw rejected it).
 
 ## [0.3.25] — 2026-10-31
 
