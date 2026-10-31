@@ -54,6 +54,9 @@ type RunSpec struct {
 	Env         []string // --env KEY=VAL   (one --env flag per entry)
 	Volumes     []string // -v <host>:<container>[:opts]
 	Labels      []string // --label key=value
+	User        string   // --user uid:gid ("" = the image's user)
+	ShmSize     string   // --shm-size (e.g. 1g for a browser); "" = docker default
+	Restart     string   // --restart policy ("" = none)
 	Image       string   // last positional
 	Cmd         []string // optional CMD override
 }
@@ -111,6 +114,15 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (string, error) {
 	}
 	for _, v := range spec.Labels {
 		args = append(args, "--label", v)
+	}
+	if spec.User != "" {
+		args = append(args, "--user", spec.User)
+	}
+	if spec.ShmSize != "" {
+		args = append(args, "--shm-size="+spec.ShmSize)
+	}
+	if spec.Restart != "" {
+		args = append(args, "--restart="+spec.Restart)
 	}
 	if spec.Image == "" {
 		return "", errors.New("docker.Run: spec.Image is required")

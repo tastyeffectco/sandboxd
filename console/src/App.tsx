@@ -4,6 +4,7 @@ import { previewReach, type PreviewReach } from './publicurl'
 import { c, font, mono, Card, Input } from './design/kit'
 import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
+import { AgentsView } from './AgentsView'
 import { BrainGraph } from './BrainGraph'
 import { SettingsView } from './SettingsView'
 import { BuilderHome, BuilderDraft } from './BuilderHome'
@@ -25,12 +26,13 @@ function readRoute(): Route {
     }
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
-  return { name: ['brain', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
+  return { name: ['brain', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
 }
 
 type Route =
   | { name: 'apps' }
   | { name: 'brain' }
+  | { name: 'agents' }
   | { name: 'settings'; section?: string }
   | { name: 'app'; id: string; tab?: string; task?: string }
 
@@ -240,6 +242,7 @@ export default function App({
 
   const nav = [
     { key: 'apps', label: 'Build & projects', icon: 'grid' },
+    { key: 'agents', label: 'Agents', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
   ]
@@ -426,6 +429,13 @@ export default function App({
             />
           )}
           {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}
+          {route.name === 'agents' && (
+            <AgentsView
+              onError={onError}
+              reloadApps={loadApps}
+              goModels={() => setRoute({ name: 'settings', section: 'models' })}
+            />
+          )}
           {route.name === 'settings' && (
             <SettingsView initialSection={route.section} onError={onError} toast={toast} />
           )}

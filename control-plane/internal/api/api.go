@@ -110,6 +110,14 @@ type Server struct {
 	// the /v1/snapshots endpoints (503).
 	LibraryRoot string
 
+	// AgentRoot holds each agent's state directory (<data>/agents). Empty
+	// disables agents.
+	AgentRoot string
+
+	// inner is the router behind the auth middleware; agent tools call /v1
+	// routes through it as the agent's owner.
+	inner http.Handler
+
 	// LLMTxtPath is the host file served at the public, tokenless
 	// GET /llm.txt (the API contract for integrators). Empty → 404.
 	LLMTxtPath string
@@ -301,6 +309,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/api-keys", s.observe("POST /v1/api-keys", s.v1CreateAPIKey))
 	mux.HandleFunc("DELETE /v1/api-keys/{id}", s.observe("DELETE /v1/api-keys/{id}", s.v1DeleteAPIKey))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
+	mux.HandleFunc("GET /v1/agent-catalog", s.observe("GET /v1/agent-catalog", s.v1ListAgentCatalog))
+	mux.HandleFunc("GET /v1/agent-instances", s.observe("GET /v1/agent-instances", s.v1ListAgentInstances))
+	mux.HandleFunc("POST /v1/agent-instances", s.observe("POST /v1/agent-instances", s.v1CreateAgentInstance))
+	mux.HandleFunc("GET /v1/agent-instances/{id}", s.observe("GET /v1/agent-instances/{id}", s.v1GetAgentInstance))
+	mux.HandleFunc("DELETE /v1/agent-instances/{id}", s.observe("DELETE /v1/agent-instances/{id}", s.v1DeleteAgentInstance))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/start", s.observe("POST /v1/agent-instances/{id}/start", s.v1StartAgentInstance))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/stop", s.observe("POST /v1/agent-instances/{id}/stop", s.v1StopAgentInstance))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/chat", s.observe("POST /v1/agent-instances/{id}/chat", s.v1AgentChat))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
@@ -330,6 +346,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/snapshots/{id}", s.observe("GET /v1/snapshots/{id}", s.v1GetSnapshot))
 	mux.HandleFunc("DELETE /v1/snapshots/{id}", s.observe("DELETE /v1/snapshots/{id}", s.v1DeleteSnapshot))
 
+	s.inner = mux
 	return mux
 }
 

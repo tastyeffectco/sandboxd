@@ -356,7 +356,44 @@ export interface ModelProvider extends Omit<ModelProviderInput, 'api_key'> {
   has_api_key: boolean
 }
 
+// Agents: operator agents such as Hermes, run by sandboxd as their own workloads.
+export interface AgentCatalogEntry {
+  id: string
+  label: string
+  description: string
+  download: string
+}
+export interface AgentInstance {
+  id: string
+  package: string
+  name: string
+  connection_id: string
+  model: string
+  status: 'running' | 'stopped' | 'missing'
+  telegram: boolean
+  apps_today: number
+  apps_per_day: number
+  created_at: string
+}
+export interface AgentInstanceInput {
+  package: string
+  connection_id: string
+  model?: string
+  telegram_bot_token?: string
+  telegram_allowed_users?: string
+}
+
 export const api = {
+  listAgentCatalogEntrys: () =>
+    req<{ packages: AgentCatalogEntry[] }>('GET', '/v1/agent-catalog').then((r) => r.packages || []),
+  listAgentInstances: () => req<{ agents: AgentInstance[] }>('GET', '/v1/agent-instances').then((r) => r.agents || []),
+  createAgentInstance: (input: AgentInstanceInput) =>
+    req<{ agent: AgentInstance; warning?: string }>('POST', '/v1/agent-instances', input),
+  startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
+  stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
+  deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
+    req<{ reply: string }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/chat`, { messages }),
   listModelProviders: () =>
     req<{ providers: ModelProvider[] }>('GET', '/v1/model-providers').then((r) => r.providers || []),
   saveModelProvider: (id: string | undefined, input: ModelProviderInput) =>

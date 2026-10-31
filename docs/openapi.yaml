@@ -20,6 +20,7 @@ tags:
   - name: sandboxes
   - name: tasks
   - name: snapshots
+  - name: agents
 
 paths:
   /version:
@@ -1643,6 +1644,153 @@ paths:
       responses:
         "204": { description: Deleted }
 
+  /v1/agent-catalog:
+    get:
+      operationId: listAgentCatalogEntrys
+      tags: [agents]
+      summary: Agents sandboxd can run (operator agents such as Hermes)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  packages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        description: { type: string }
+                        download: { type: string, description: approximate image size }
+  /v1/agent-instances:
+    get:
+      operationId: listAgentInstances
+      tags: [agents]
+      summary: The owner's agents
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents: { type: array, items: { $ref: "#/components/schemas/AgentInstance" } }
+    post:
+      operationId: createAgentInstance
+      tags: [agents]
+      summary: Add an agent and start it
+      description: >
+        Runs the package's pinned image as a hardened container (non-root, all
+        capabilities dropped, read-only root, no-new-privileges). The agent
+        reaches its model only through the chosen OpenAI-compatible model
+        connection (the key never enters the container) and sandboxd's app
+        tools (list_apps, create_app, ask_app, app_status) over MCP on the
+        proxy port, both with its own agent secret. A Telegram bot token
+        requires the allowed Telegram user IDs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package, connection_id]
+              properties:
+                package: { type: string, example: hermes }
+                name: { type: string }
+                connection_id: { type: string }
+                model: { type: string }
+                telegram_bot_token: { type: string, writeOnly: true }
+                telegram_allowed_users: { type: string }
+      responses:
+        "201":
+          description: Added and started
+          content:
+            application/json:
+              schema: { type: object, properties: { agent: { $ref: "#/components/schemas/AgentInstance" } } }
+        "202":
+          description: Added, but it could not start (warning explains why)
+        "400": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: getAgent
+      tags: [agents]
+      summary: Get an agent
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentInstance" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteAgentInstance
+      tags: [agents]
+      summary: Remove an agent, its container and its memory
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/start:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: startAgentInstance
+      tags: [agents]
+      summary: Start an agent (re-created with a fresh agent secret when its container is missing)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentInstance" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/stop:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: stopAgentInstance
+      tags: [agents]
+      summary: Stop an agent
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentInstance" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/chat:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: chatWithAgent
+      tags: [agents]
+      summary: One chat turn with the agent (through its own API; sandboxd holds its key)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role: { type: string, enum: [user, assistant, system] }
+                      content: { type: string }
+      responses:
+        "200":
+          description: The agent's reply
+          content:
+            application/json:
+              schema: { type: object, properties: { reply: { type: string } } }
+        "502": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1661,6 +1809,19 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    AgentInstance:
+      type: object
+      properties:
+        id: { type: string }
+        package: { type: string }
+        name: { type: string }
+        connection_id: { type: string }
+        model: { type: string }
+        status: { type: string, enum: [running, stopped, missing] }
+        telegram: { type: boolean }
+        apps_today: { type: integer }
+        apps_per_day: { type: integer }
+        created_at: { type: string, format: date-time }
     ClaudeSignIn:
       type: object
       properties:
