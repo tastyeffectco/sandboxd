@@ -6,6 +6,16 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
+## [Unreleased]
+
+### Fixed
+
+- **Desktop engine updates now go through.** Updating from 0.3.25 always
+  rolled back: the engine's settings still named the previous release's
+  images, so the installer refused to pull the new ones. The update now clears
+  them first, and retries up to three times when the connection to the image
+  registry drops, before going back to the previous engine.
+
 ## [0.3.26] — 2026-10-31
 
 ### Added
