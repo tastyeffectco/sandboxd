@@ -70,3 +70,47 @@ func TestEveryPackageCanStart(t *testing.T) {
 		}
 	}
 }
+
+func TestChannelsAreOffUntilLinked(t *testing.T) {
+	base := Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s", Model: "m"}
+	got, _ := RenderOpenClawConfig(base)
+	if strings.Contains(got, `"channels"`) || strings.Contains(got, `"plugins"`) {
+		t.Errorf("an agent with no channels linked has channel settings:\n%s", got)
+	}
+	if env := hermesChannelEnv(base); len(env) != 0 {
+		t.Errorf("hermes channel env without channels: %v", env)
+	}
+}
+
+func TestChannelsAnswerOnlyTheOwner(t *testing.T) {
+	c := Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s", Model: "m",
+		TelegramUsers: []string{"42"}, WhatsApp: true, WhatsAppNumber: "33612345678"}
+	got, _ := RenderOpenClawConfig(c)
+	for _, want := range []string{
+		`"whatsapp": {
+        "enabled": true`, // the plugin is loaded
+		`"selfChatMode": true`,
+		`"+33612345678"`,
+		`"groupAllowFrom"`,
+		`"wacli": {
+        "enabled": false`, // the plugin's skill this image cannot run
+		`"dmPolicy": "allowlist"`,
+		`"42"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("openclaw.json is missing %s:\n%s", want, got)
+		}
+	}
+	env := strings.Join(hermesChannelEnv(c), " ")
+	for _, want := range []string{"TELEGRAM_ALLOWED_USERS=42", "WHATSAPP_ENABLED=true", "WHATSAPP_MODE=self-chat",
+		"WHATSAPP_ALLOWED_USERS=33612345678"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("hermes env is missing %s: %s", want, env)
+		}
+	}
+	// While linking, only the plugin is loaded: nobody is answered yet.
+	linking, _ := RenderOpenClawConfig(Config{ProxyURL: "x", AgentID: "a1", Model: "m", WhatsApp: true})
+	if !strings.Contains(linking, `"plugins"`) || strings.Contains(linking, `"selfChatMode"`) {
+		t.Errorf("linking config:\n%s", linking)
+	}
+}

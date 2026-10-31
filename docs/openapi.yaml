@@ -1790,6 +1790,77 @@ paths:
             application/json:
               schema: { type: object, properties: { reply: { type: string } } }
         "502": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/channels:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: getAgentChannels
+      tags: [agents]
+      summary: Where the agent talks to its owner, and any link in progress (poll while linking)
+      responses:
+        "200":
+          description: Each channel's state; null when the agent cannot use it
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentChannels" }
+  /v1/agent-instances/{id}/channels/whatsapp:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: linkAgentWhatsApp
+      tags: [agents]
+      summary: Link the owner's WhatsApp by QR code (runs in the background; poll the channels)
+      description: >
+        The agent answers only the linked number, in the owner's "Message yourself" chat.
+        The agent must be running.
+      responses:
+        "202":
+          description: Linking started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentChannels" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: unlinkAgentWhatsApp
+      tags: [agents]
+      summary: Cancel linking, or unlink WhatsApp (the agent forgets the login)
+      responses:
+        "200":
+          description: Channels after unlinking
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentChannels" }
+  /v1/agent-instances/{id}/channels/telegram:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: linkAgentTelegram
+      tags: [agents]
+      summary: Connect the owner's Telegram bot; the owner's first message to it identifies them
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bot_token]
+              properties:
+                bot_token: { type: string, description: "From @BotFather" }
+      responses:
+        "202":
+          description: Token accepted; waiting for the owner's first message to the bot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentChannels" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: unlinkAgentTelegram
+      tags: [agents]
+      summary: Cancel connecting, or disconnect the bot
+      responses:
+        "200":
+          description: Channels after disconnecting
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentChannels" }
 
 components:
   securitySchemes:
@@ -1819,9 +1890,26 @@ components:
         model: { type: string }
         status: { type: string, enum: [running, stopped, missing] }
         telegram: { type: boolean }
+        telegram_bot: { type: string, description: "The connected Telegram bot's username" }
+        whatsapp: { type: string, description: "The linked WhatsApp number (digits)" }
         apps_today: { type: integer }
         apps_per_day: { type: integer }
         created_at: { type: string, format: date-time }
+    AgentChannel:
+      type: object
+      nullable: true
+      properties:
+        status: { type: string, enum: [off, preparing, scan, waiting, connecting, linked, failed] }
+        qr: { type: string, description: "Text to draw as a QR code (status scan)" }
+        qr_image: { type: string, description: "A ready QR image as a data URL (status scan)" }
+        bot: { type: string }
+        number: { type: string }
+        message: { type: string }
+    AgentChannels:
+      type: object
+      properties:
+        whatsapp: { $ref: "#/components/schemas/AgentChannel" }
+        telegram: { $ref: "#/components/schemas/AgentChannel" }
     ClaudeSignIn:
       type: object
       properties:
