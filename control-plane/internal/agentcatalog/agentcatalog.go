@@ -4,6 +4,7 @@
 package agentcatalog
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -24,10 +25,25 @@ type Package struct {
 	// StatePath is where the agent keeps memory, skills and sessions.
 	StatePath string `json:"-"`
 	// APIPort serves the agent's OpenAI-compatible chat API (console chat).
-	APIPort  int    `json:"-"`
+	APIPort int `json:"-"`
+	// ChatModel is the model name the agent's chat API expects.
+	ChatModel string `json:"-"`
+	// APIKeyEnv names the variable that sets the key for the agent's chat API.
+	APIKeyEnv string `json:"-"`
+	// Env is fixed environment for the agent's container.
+	Env []string `json:"-"`
+	// ExecRun mounts an executable /run (supervisors such as s6 run from it).
+	ExecRun bool `json:"-"`
+	// ConfigFile is written into StatePath by Render before every start.
+	ConfigFile string                       `json:"-"`
+	Render     func(Config) (string, error) `json:"-"`
+	// Telegram: the agent can talk on Telegram with an allow-list of users.
+	Telegram bool   `json:"telegram"`
 	Memory   string `json:"-"`
 	ShmSize  string `json:"-"`
 	DiskNote string `json:"download"`
+	// MemoryNote tells the user how much memory the agent can use.
+	MemoryNote string `json:"memory"`
 }
 
 // Hermes is Nous Research's Hermes Agent. Tested in its official image under
@@ -42,12 +58,48 @@ var Hermes = Package{
 	User:        "10000:10000",
 	StatePath:   "/opt/data",
 	APIPort:     8642,
+	ChatModel:   "hermes-agent",
+	APIKeyEnv:   "API_SERVER_KEY",
+	Env:         []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642"},
+	ExecRun:     true,
+	ConfigFile:  "config.yaml",
+	Render:      RenderHermesConfig,
+	Telegram:    true,
 	Memory:      "2g",
 	ShmSize:     "1g",
 	DiskNote:    "about 3 GB",
+	MemoryNote:  "up to 2 GB",
 }
 
-var packages = map[string]Package{Hermes.ID: Hermes}
+// OpenClaw is the OpenClaw personal assistant. Tested in its official image
+// under sandboxd's profile (non-root, no capabilities, read-only root,
+// no-new-privileges); its state lives under /state.
+var OpenClaw = Package{
+	ID:          "openclaw",
+	Label:       "OpenClaw",
+	Description: "An open-source personal assistant with skills and a memory of its own. Chat with it here and ask it to build apps for you.",
+	Image:       "ghcr.io/openclaw/openclaw@sha256:1a2a3ce113e435039dbeac5ae261759bb4759908563d91c81059e896b38c5d98",
+	Cmd:         []string{"node", "openclaw.mjs", "gateway"},
+	User:        "1000:1000",
+	StatePath:   "/state",
+	APIPort:     18789,
+	ChatModel:   "openclaw",
+	APIKeyEnv:   "OPENCLAW_GATEWAY_TOKEN",
+	// sandboxd owns openclaw.json (read-only to OpenClaw): OpenClaw restarts
+	// its gateway whenever it saves its config, which cut off chats.
+	Env: []string{"HOME=/state", "OPENCLAW_STATE_DIR=/state",
+		"OPENCLAW_CONFIG_PATH=/state/openclaw.json", "OPENCLAW_CONFIG_READONLY=1",
+		"OPENCLAW_NO_RESPAWN=1", "NODE_COMPILE_CACHE=/tmp/openclaw-compile-cache"},
+	ConfigFile: "openclaw.json",
+	Render:     RenderOpenClawConfig,
+	// It peaks at about 2.4 GB on a chat: with 2 GB and no swap it was killed.
+	Memory:     "3g",
+	ShmSize:    "1g",
+	DiskNote:   "about 2 GB",
+	MemoryNote: "up to 3 GB",
+}
+
+var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw}
 
 // Get returns a package by id.
 func Get(id string) (Package, bool) {
@@ -65,8 +117,12 @@ func List() []Package {
 	return out
 }
 
-// HermesConfig is what sandboxd writes into Hermes's config.yaml.
-type HermesConfig struct {
+// SecretEnv carries the agent secret in the container's environment, for
+// agents whose config references it instead of holding it.
+const SecretEnv = "SANDBOXD_AGENT_SECRET"
+
+// Config is what sandboxd writes into an agent's config file.
+type Config struct {
 	ProxyURL string // sandboxd's in-network proxy, e.g. http://sandboxd:9100
 	AgentID  string
 	Secret   string // the agent secret: model access and app tools
@@ -76,7 +132,7 @@ type HermesConfig struct {
 // RenderHermesConfig returns config.yaml: the model goes through sandboxd's
 // proxy (the real key never enters the container), sandboxd's app tools are an
 // MCP server, and commands run inside the agent's own container.
-func RenderHermesConfig(c HermesConfig) (string, error) {
+func RenderHermesConfig(c Config) (string, error) {
 	base := strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID
 	for name, v := range map[string]string{"proxy URL": c.ProxyURL, "agent id": c.AgentID, "secret": c.Secret, "model": c.Model} {
 		if v == "" {
@@ -98,4 +154,56 @@ func RenderHermesConfig(c HermesConfig) (string, error) {
 		"    url: " + q(base+"/mcp") + "\n" +
 		"    headers:\n" +
 		"      Authorization: " + q("Bearer "+c.Secret) + "\n", nil
+}
+
+// RenderOpenClawConfig returns openclaw.json: a local gateway with its
+// OpenAI-compatible chat endpoint on, the model through sandboxd's proxy, and
+// sandboxd's app tools as a streamable-HTTP MCP server. The secret stays in
+// the environment (SecretEnv); the file only references it.
+func RenderOpenClawConfig(c Config) (string, error) {
+	for name, v := range map[string]string{"proxy URL": c.ProxyURL, "agent id": c.AgentID, "model": c.Model} {
+		if v == "" {
+			return "", fmt.Errorf("openclaw config: %s is required", name)
+		}
+	}
+	base := strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID
+	ref := "${" + SecretEnv + "}"
+	cfg := map[string]any{
+		"gateway": map[string]any{"mode": "local", "bind": "lan",
+			"controlUi": map[string]any{"allowedOrigins": []string{"http://localhost:18789", "http://127.0.0.1:18789"}},
+			"http":      map[string]any{"endpoints": map[string]any{"chatCompletions": map[string]any{"enabled": true}}}},
+		"models": map[string]any{"mode": "merge", "providers": map[string]any{"sandboxd": map[string]any{
+			"baseUrl": base + "/v1", "apiKey": ref, "api": "openai-completions",
+			"models": []map[string]any{{"id": c.Model, "name": c.Model, "input": []string{"text"},
+				"contextWindow": 128000, "maxTokens": 8192}},
+		}}},
+		"agents": map[string]any{"defaults": map[string]any{"model": map[string]any{"primary": "sandboxd/" + c.Model}},
+			"entries": map[string]any{"main": map[string]any{}}},
+		// The skills OpenClaw's startup check turns off in this image (they need
+		// tools or accounts a sandboxd agent does not have). Written here so
+		// the read-only config needs no change; refresh when the pin moves.
+		"skills": map[string]any{"entries": disabledSkills(openClawUnavailableSkills)},
+		"mcp": map[string]any{"servers": map[string]any{"sandboxd": map[string]any{
+			"url": base + "/mcp", "transport": "streamable-http",
+			"headers": map[string]string{"Authorization": "Bearer " + ref},
+		}}},
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	return string(b) + "\n", err
+}
+
+// openClawUnavailableSkills are the skills OpenClaw's doctor disables in the
+// pinned image under sandboxd's profile.
+var openClawUnavailableSkills = []string{"1password", "blogwatcher", "blucli", "camsnap", "coding-agent",
+	"eightctl", "gemini", "gh-issues", "gifgrep", "github", "gog", "goplaces", "himalaya", "mcporter",
+	"model-usage", "nano-pdf", "obsidian", "openai-whisper", "openai-whisper-api", "openhue", "oracle",
+	"ordercli", "sag", "sherpa-onnx-tts", "songsee", "sonoscli", "spotify-player", "summarize", "tmux",
+	"trello", "xurl"}
+
+func disabledSkills(names []string) map[string]any {
+	out := make(map[string]any, len(names))
+	for _, n := range names {
+		out[n] = map[string]bool{"enabled": false}
+	}
+	return out
 }

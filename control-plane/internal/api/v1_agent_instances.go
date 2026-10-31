@@ -116,6 +116,10 @@ func (s *Server) v1CreateAgentInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	users := strings.TrimSpace(req.TelegramAllowedUsers)
 	token := strings.TrimSpace(req.TelegramBotToken)
+	if token != "" && !pkg.Telegram {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", pkg.Label+" cannot use Telegram yet")
+		return
+	}
 	if token != "" && users == "" {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
 			"add your Telegram user ID so only you can talk to the agent")
@@ -207,12 +211,12 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	if err := os.Chown(dir, uid, gid); err != nil {
 		return fmt.Errorf("prepare the agent's storage: %w", err)
 	}
-	config, err := agentcatalog.RenderHermesConfig(agentcatalog.HermesConfig{
+	config, err := pkg.Render(agentcatalog.Config{
 		ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model})
 	if err != nil {
 		return err
 	}
-	cfgPath := filepath.Join(dir, "config.yaml")
+	cfgPath := filepath.Join(dir, pkg.ConfigFile)
 	if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
 		return err
 	}
@@ -223,14 +227,18 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		return err
 	}
 	h.SecretHash = hashSecret(secret)
-	env := []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0",
-		"API_SERVER_PORT=" + strconv.Itoa(pkg.APIPort), "API_SERVER_KEY=" + string(apiKey)}
-	if len(h.TelegramCiphertext) > 0 {
+	env := append(append([]string{}, pkg.Env...),
+		pkg.APIKeyEnv+"="+string(apiKey), agentcatalog.SecretEnv+"="+secret)
+	if len(h.TelegramCiphertext) > 0 && pkg.Telegram {
 		token, err := s.Secrets.Open(h.TelegramCiphertext, h.TelegramNonce)
 		if err != nil {
 			return errors.New("the Telegram token cannot be read")
 		}
 		env = append(env, "TELEGRAM_BOT_TOKEN="+string(token), "TELEGRAM_ALLOWED_USERS="+h.TelegramAllowedUsers)
+	}
+	tmpfs := []string{"/tmp"}
+	if pkg.ExecRun { // a supervisor such as s6 executes from /run
+		tmpfs = append(tmpfs, "/run:exec,mode=755,uid="+strconv.Itoa(uid))
 	}
 	name := agentContainer(h.ID)
 	_ = s.Docker.Remove(ctx, name)
@@ -238,8 +246,7 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
 		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
 		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize,
-		// The image's supervisor (s6) executes from /run.
-		Tmpfs:   []string{"/run:exec,mode=755,uid=" + strconv.Itoa(uid), "/tmp"},
+		Tmpfs:   tmpfs,
 		User:    pkg.User,
 		Restart: "unless-stopped", // always on: survives engine and computer restarts
 		Env:     env,
@@ -349,7 +356,7 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")
 		return
 	}
-	body, _ := json.Marshal(map[string]any{"model": "hermes-agent", "messages": req.Messages, "stream": false})
+	body, _ := json.Marshal(map[string]any{"model": pkg.ChatModel, "messages": req.Messages, "stream": false})
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute) // building an app can take a while
 	defer cancel()
 	up, _ := http.NewRequestWithContext(ctx, http.MethodPost,

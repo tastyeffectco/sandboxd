@@ -8,6 +8,15 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Added
+
+- **OpenClaw joins Hermes on the Agents page.** Add it with your model
+  connection, chat with it in sandboxd, and ask it to build or change apps
+  through the same tools (no deleting, at most 10 new apps a day). It runs from
+  its official image under the same protections as Hermes and uses up to 3 GB
+  of memory; the Agents page shows each agent's download and memory before you
+  add it.
+
 ### Fixed
 
 - **Updating the desktop app now updates its engine.** The app installs its

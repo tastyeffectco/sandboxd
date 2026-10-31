@@ -362,6 +362,8 @@ export interface AgentCatalogEntry {
   label: string
   description: string
   download: string
+  memory: string
+  telegram: boolean
 }
 export interface AgentInstance {
   id: string
