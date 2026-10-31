@@ -19,6 +19,7 @@ const STAGES = {
   source: 'Downloading sandboxd…',
   engine: 'Downloading your engine and coding tools…',
   starting: 'Starting your engine…',
+  upgrade: 'Updating your engine to the new version…',
   health: 'Waiting for the engine to be ready…',
   ready: 'Checking the connection from Windows…',
 }
@@ -105,6 +106,16 @@ const ENABLE_WSL = String.raw`$ErrorActionPreference='Stop'; try { $p=Start-Proc
 function createWindowsEngine({
   dataDir,
   probe,
+  // engineCommit reports the running engine's commit ("" when unknown), so an
+  // app update can bring its engine along.
+  engineCommit = async () => {
+    try {
+      const res = await fetch(ENGINE_URL + '/version', { signal: AbortSignal.timeout(5000) })
+      return String((await res.json()).commit || '')
+    } catch {
+      return ''
+    }
+  },
   onChange = () => {},
   platform = process.platform,
   arch = process.arch,
@@ -170,10 +181,18 @@ function createWindowsEngine({
     set({ phase: 'checking', busy: true, message: 'Checking this computer…' })
     try {
       if (await probe()) {
-        set({ phase: 'ready', message: 'Your local engine is ready.' })
-        return { ...state }
+        await load()
+        // An engine answers. Update it only when it is ours and the app now pins
+        // another release; an engine the user runs themselves is never touched.
+        const running = manifest?.installed ? await engineCommit() : ''
+        if (!running || ENGINE_COMMIT.startsWith(running)) {
+          set({ phase: 'ready', message: 'Your local engine is ready.' })
+          return { ...state }
+        }
+        set({ phase: 'installing', message: STAGES.upgrade })
+      } else {
+        await load()
       }
-      await load()
       // WSL may retain its localhost listener while our installed engine restarts.
       // Starting the owned distro is safe; never stop an unrelated port owner.
       if (!manifest?.installed && (await isPortOpen(9090)))
