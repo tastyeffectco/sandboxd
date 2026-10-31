@@ -356,7 +356,44 @@ export interface ModelProvider extends Omit<ModelProviderInput, 'api_key'> {
   has_api_key: boolean
 }
 
+// Helpers: operator agents such as Hermes, run by sandboxd as their own workloads.
+export interface HelperPackage {
+  id: string
+  label: string
+  description: string
+  download: string
+}
+export interface Helper {
+  id: string
+  package: string
+  name: string
+  connection_id: string
+  model: string
+  status: 'running' | 'stopped' | 'missing'
+  telegram: boolean
+  apps_today: number
+  apps_per_day: number
+  created_at: string
+}
+export interface HelperInput {
+  package: string
+  connection_id: string
+  model?: string
+  telegram_bot_token?: string
+  telegram_allowed_users?: string
+}
+
 export const api = {
+  listHelperPackages: () =>
+    req<{ packages: HelperPackage[] }>('GET', '/v1/helper-packages').then((r) => r.packages || []),
+  listHelpers: () => req<{ helpers: Helper[] }>('GET', '/v1/helpers').then((r) => r.helpers || []),
+  createHelper: (input: HelperInput) =>
+    req<{ helper: Helper; warning?: string }>('POST', '/v1/helpers', input),
+  startHelper: (id: string) => req<Helper>('POST', `/v1/helpers/${encodeURIComponent(id)}/start`),
+  stopHelper: (id: string) => req<Helper>('POST', `/v1/helpers/${encodeURIComponent(id)}/stop`),
+  deleteHelper: (id: string) => req<void>('DELETE', `/v1/helpers/${encodeURIComponent(id)}`),
+  chatWithHelper: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
+    req<{ reply: string }>('POST', `/v1/helpers/${encodeURIComponent(id)}/chat`, { messages }),
   listModelProviders: () =>
     req<{ providers: ModelProvider[] }>('GET', '/v1/model-providers').then((r) => r.providers || []),
   saveModelProvider: (id: string | undefined, input: ModelProviderInput) =>

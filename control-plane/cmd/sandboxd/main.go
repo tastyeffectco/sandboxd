@@ -431,9 +431,10 @@ func main() {
 		os.Exit(1)
 	}
 	agentProxyURL := envDefault("SANDBOXD_AGENT_PROXY_URL", "http://sandboxd:9100")
+	var proxyMux *http.ServeMux // helpers are mounted on it once the API server exists
 	if proxy := authproxy.New(agentAuth, log.With("component", "authproxy")); proxy != nil && agentProxyURL != "" {
 		proxyAddr := envDefault("SANDBOXD_AGENT_PROXY_ADDR", "0.0.0.0:9100")
-		proxyMux := http.NewServeMux()
+		proxyMux = http.NewServeMux()
 		proxyMux.Handle("/providers/", modelProviders)
 		proxyMux.Handle("/", proxy)
 		go func() {
@@ -578,6 +579,7 @@ func main() {
 		ForwardAuthDenyMode: denyMode,
 		TemplatesDir:        envDefault("SANDBOXD_TEMPLATES_DIR", templatesRoot),
 		LibraryRoot:         envDefault("SANDBOXD_LIBRARY_DIR", libraryRoot),
+		HelperRoot:          filepath.Join(dataDir, "helpers"),
 		LLMTxtPath:          envDefault("SANDBOXD_LLM_TXT_PATH", legacyAware("/etc/sandboxd/llm.txt", legacyEtcDir+"/llm.txt")),
 		Instance: api.InstanceInfo{
 			Version:              version,
@@ -619,6 +621,11 @@ func main() {
 	// the browser preview path and stays unauthenticated; a private
 	// sandbox's stopped-wake is gated inside the wake handler itself.
 	apiMux := authMw.Wrap(server.Handler())
+	// Helpers reach their model and sandboxd's app tools on the proxy port,
+	// authenticated by their own helper secret.
+	if proxyMux != nil {
+		proxyMux.Handle("/helpers/", server.HelperProxy())
+	}
 	root := hostDispatch(wakeHandler, apiMux, log)
 	root = logging.Middleware(log, root)
 

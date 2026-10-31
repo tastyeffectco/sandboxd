@@ -6,6 +6,20 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
+## [Unreleased]
+
+### Added
+
+- **Helpers, starting with Hermes.** Add Nous Research's Hermes assistant from
+  the new Helpers page, chat with it there or on Telegram, and ask it to build
+  apps: it creates and changes apps on your sandboxd (at most 10 new apps a
+  day, no deleting, every action in the app's activity log). Hermes runs in its
+  own container from its official image, pinned, as a non-root user with no
+  Linux capabilities and a read-only root; it reaches its model through your
+  model connection and sandboxd's tools through its own secret, never seeing a
+  real key. It needs an OpenAI-compatible model connection. See
+  [helpers](docs/helpers.md).
+
 ## [0.3.24] — 2026-10-30
 
 ### Added
