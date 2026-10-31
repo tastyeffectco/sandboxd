@@ -6,7 +6,7 @@ import { api } from './api'
 vi.mock('./api', () => ({
   api: {
     listAgentCatalogEntrys: vi.fn().mockResolvedValue([
-      { id: 'hermes', label: 'Hermes', description: 'A personal assistant.', download: 'about 3 GB' },
+      { id: 'hermes', label: 'Hermes', description: 'A personal assistant.', download: 'about 3 GB', memory: 'up to 2 GB', telegram: true },
     ]),
     listAgentInstances: vi.fn(),
     listModelProviders: vi.fn(),

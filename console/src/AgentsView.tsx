@@ -113,27 +113,29 @@ function AddAgent({
               </select>
             </label>
           )}
-          <details style={{ margin: '4px 0 14px' }}>
-            <summary>Talk to {pkg.label} on Telegram (optional)</summary>
-            <p style={{ color: c.muted, fontSize: 13 }}>
-              Create a bot with @BotFather and paste its token. Add your Telegram user ID (from @userinfobot) so
-              only you can talk to it.
-            </p>
-            <label className="form-field">
-              Bot token
-              <Input value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
-            </label>
-            <label className="form-field">
-              Your Telegram user ID
-              <Input value={users} onChange={(e) => setUsers(e.target.value)} />
-            </label>
-          </details>
+          {pkg.telegram && (
+            <details style={{ margin: '4px 0 14px' }}>
+              <summary>Talk to {pkg.label} on Telegram (optional)</summary>
+              <p style={{ color: c.muted, fontSize: 13 }}>
+                Create a bot with @BotFather and paste its token. Add your Telegram user ID (from @userinfobot) so
+                only you can talk to it.
+              </p>
+              <label className="form-field">
+                Bot token
+                <Input value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
+              </label>
+              <label className="form-field">
+                Your Telegram user ID
+                <Input value={users} onChange={(e) => setUsers(e.target.value)} />
+              </label>
+            </details>
+          )}
           <Btn variant="primary" disabled={busy || !chosen} onClick={() => void add()} data-testid="add-agent">
             {busy ? `Setting up ${pkg.label}…` : `Add ${pkg.label}`}
           </Btn>
           <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
-            The first setup downloads {pkg.download}. {pkg.label} runs in its own protected space and keeps
-            running while this computer is on.
+            The first setup downloads {pkg.download}. {pkg.label} runs in its own protected space, uses{' '}
+            {pkg.memory} of memory and keeps running while this computer is on.
           </p>
         </>
       )}
