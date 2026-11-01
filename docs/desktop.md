@@ -81,8 +81,19 @@ Reopening the app with the managed local engine selected starts it again if
 needed. Closing the app leaves the engine and workloads running. Setup never
 unregisters a distribution or deletes workspaces. Removing the desktop app does
 not intentionally remove engine data. Back up work before manually removing the
-managed distribution or its user-data directory. The desktop does not silently
-upgrade an installed engine; engine upgrades retain the normal sandboxd workflow.
+managed distribution or its user-data directory.
+
+Each desktop release pins one engine release (tag and commit). When an updated
+app opens and its managed engine runs another commit, it moves the engine to the
+pinned release ("Updating your engine to the new version…"), only once that tag
+is reachable and resolves to the pinned commit; offline, the current engine just
+starts and the update waits for the next launch. Before updating, it stops the
+stack and backs up `.env` and the engine state to
+`/var/lib/sandboxd-desktop/backups/<timestamp>`, then installs the release's
+signed images (up to three attempts). If the install fails or the updated engine
+does not become ready, the previous version, settings and database are restored
+and started again. An engine the user runs outside the managed distribution is
+never updated by the app.
 
 ## Windows: command-line installation
 
