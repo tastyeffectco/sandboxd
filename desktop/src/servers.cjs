@@ -10,7 +10,7 @@
 // - After install the device key may only forward to the engine API and run
 //   `frontdoor …` (enforced on the server by authorized_keys options).
 const { Client, utils } = require('ssh2')
-const { createHash, randomBytes } = require('node:crypto')
+const { createHash, generateKeyPairSync, randomBytes } = require('node:crypto')
 const fs = require('node:fs/promises')
 const http = require('node:http')
 const net = require('node:net')
@@ -60,6 +60,56 @@ class ServerError extends Error {
 // OpenSSH's own format, so users can compare it with `ssh-keygen -lf`.
 const fingerprint = (key) => 'SHA256:' + createHash('sha256').update(key).digest('base64').replace(/=+$/, '')
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
+
+// An ed25519 key pair in OpenSSH format, from Node's crypto. (ssh2's own
+// generator emits a key its parser rejects about once in 250 tries.)
+function generateDeviceKey(comment = 'sandboxd-desktop') {
+  const { privateKey } = generateKeyPairSync('ed25519')
+  const jwk = privateKey.export({ format: 'jwk' })
+  const seed = Buffer.from(jwk.d, 'base64url')
+  const pub = Buffer.from(jwk.x, 'base64url')
+  const string = (value) => {
+    const data = Buffer.from(value)
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    return Buffer.concat([length, data])
+  }
+  const uint32 = (value) => {
+    const data = Buffer.alloc(4)
+    data.writeUInt32BE(value)
+    return data
+  }
+  const blob = Buffer.concat([string('ssh-ed25519'), string(pub)])
+  const check = randomBytes(4).readUInt32BE()
+  let secret = Buffer.concat([
+    uint32(check),
+    uint32(check),
+    string('ssh-ed25519'),
+    string(pub),
+    string(Buffer.concat([seed, pub])),
+    string(comment),
+  ])
+  const padding = []
+  for (let i = 1; (secret.length + padding.length) % 8; i++) padding.push(i)
+  secret = Buffer.concat([secret, Buffer.from(padding)])
+  const body = Buffer.concat([
+    Buffer.from('openssh-key-v1\0'),
+    string('none'),
+    string('none'),
+    string(''),
+    uint32(1),
+    string(blob),
+    string(secret),
+  ])
+  const lines = body
+    .toString('base64')
+    .match(/.{1,70}/g)
+    .join('\n')
+  return {
+    private: `-----BEGIN OPENSSH PRIVATE KEY-----\n${lines}\n-----END OPENSSH PRIVATE KEY-----\n`,
+    public: `ssh-ed25519 ${blob.toString('base64')} ${comment}`,
+  }
+}
 
 function installRef(env = process.env) {
   const ref = env.SANDBOXD_SERVER_REF || ENGINE_TAG
@@ -202,7 +252,9 @@ function connectionError(error) {
   if (error?.level === 'client-authentication') return new ServerError('auth', MESSAGES.password)
   if (['ENOTFOUND', 'EAI_AGAIN'].includes(error?.code)) return new ServerError('not_found', MESSAGES.notFound)
   if (error?.level || error?.code) return new ServerError('unreachable', MESSAGES.noAnswer)
-  return new ServerError('error', 'Something went wrong while adding the server. Try again.')
+  return new ServerError('error', 'Something went wrong while adding the server. Try again.', {
+    detail: String(error?.stack || error),
+  })
 }
 
 // Opens an SSH connection. The host key must match `expected` when given;
@@ -580,7 +632,10 @@ function createServers({
       // another OS user): create one. Servers added with an unreadable key
       // must be added again anyway.
     }
-    const pair = utils.generateKeyPairSync('ed25519', { comment: 'sandboxd-desktop' })
+    const pair = generateDeviceKey()
+    const parsed = utils.parseKey(pair.private)
+    if (parsed instanceof Error || parsed.getPublicSSH().toString('base64') !== pair.public.split(' ')[1])
+      throw new ServerError('error', 'sandboxd could not create this computer’s key. Try again.')
     await writeAtomic(keyFile, {
       version: 1,
       public: pair.public,
@@ -853,6 +908,7 @@ function createServers({
 
 module.exports = {
   createServers,
+  generateDeviceKey,
   createTunnel,
   installCommand,
   installRef,

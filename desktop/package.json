@@ -34,7 +34,8 @@
       "!node_modules/buildcheck/**",
       "!node_modules/ssh2/lib/protocol/crypto/src/**",
       "!node_modules/ssh2/lib/protocol/crypto/binding.gyp",
-      "!node_modules/ssh2/install.js"
+      "!node_modules/ssh2/install.js",
+      "!node_modules/ssh2/util/**"
     ],
     "asar": true,
     "npmRebuild": false,

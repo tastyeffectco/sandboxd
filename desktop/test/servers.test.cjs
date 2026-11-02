@@ -15,6 +15,7 @@ const {
   installRef,
   parseInstallResult,
   checkFacts,
+  generateDeviceKey,
   MESSAGES,
 } = require('../src/servers.cjs')
 
@@ -72,7 +73,7 @@ async function fakeServer(t, options = {}) {
   }
   let ssh
   const listen = async (port = 0) => {
-    const hostKey = utils.generateKeyPairSync('ed25519').private
+    const hostKey = generateDeviceKey('host').private
     ssh = new Server({ hostKeys: [hostKey] }, (client) => {
       let user = ''
       state.clients.add(client)
@@ -243,6 +244,19 @@ test('install command follows the server contract and the pinned engine', () => 
   assert.throws(() => installCommand('v1', 'ssh-ed25519 AAAA" ; reboot ; "'))
 })
 
+test('device keys are valid OpenSSH ed25519 keys every time', () => {
+  for (let i = 0; i < 1000; i++) {
+    const key = generateDeviceKey()
+    const parsed = utils.parseKey(key.private)
+    assert(!(parsed instanceof Error), key.private)
+    assert.equal(parsed.type, 'ssh-ed25519')
+    assert.equal(parsed.getPublicSSH().toString('base64'), key.public.split(' ')[1])
+    assert.match(key.public, /^ssh-ed25519 [A-Za-z0-9+/=]+ sandboxd-desktop$/)
+    if (i < 20)
+      assert.equal(utils.parseKey(key.public).verify(Buffer.from('x'), parsed.sign(Buffer.from('x'))), true)
+  }
+})
+
 test('install result parsing accepts only the documented shape', () => {
   assert.deepEqual(
     parseInstallResult(
@@ -283,7 +297,7 @@ test('adds a server: installs, pins the host key, verifies the limited key, neve
     { host: '127.0.0.1', port: fake.port, password: PASSWORD, name: 'My VPS' },
     (p) => progress.push(p),
   )
-  assert.equal(result.ok, true, result.message)
+  assert.equal(result.ok, true, result.message + (result.detail || ''))
   assert.deepEqual(
     progress.map((p) => p.message),
     [
@@ -442,7 +456,7 @@ test('a sudo user installs with the password on stdin only', async (t) => {
     username: 'ubuntu',
     password: PASSWORD,
   })
-  assert.equal(result.ok, true, result.message)
+  assert.equal(result.ok, true, result.message + (result.detail || ''))
   const install = fake.state.commands.find((c) => c.command.includes('/install.sh'))
   assert(install.command.startsWith("sudo -S -p '' bash -c "))
   assert(!install.command.includes(PASSWORD))
@@ -461,7 +475,7 @@ test('asks before installing Docker, then installs it when allowed', async (t) =
     { host: '127.0.0.1', port: fake.port, password: PASSWORD, installDocker: true },
     (p) => progress.push(p.step),
   )
-  assert.equal(result.ok, true, result.message)
+  assert.equal(result.ok, true, result.message + (result.detail || ''))
   assert(progress.includes('docker'))
 })
 
