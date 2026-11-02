@@ -22,6 +22,10 @@ func newEdgeTestServer(t *testing.T, style, tag string) *Server {
 			t.Fatal(err)
 		}
 	}
+	if err := st.Create(context.Background(), &store.Sandbox{ID: "01HZXPUB00000000000000000A", Status: "running",
+		Mode: store.ModeProduction, PublicHosts: []string{"my-shop.1-2-3-4.sslip.io"}}); err != nil {
+		t.Fatal(err)
+	}
 	return &Server{Store: st, PreviewDomain: "1-2-3-4.sslip.io", PreviewHostStyle: style, PreviewHostTag: tag}
 }
 
@@ -51,6 +55,9 @@ func TestHostServed(t *testing.T) {
 		{"api nested", previewhost.StyleNested, "", "", "api.preview." + d, true},
 		{"console tagged", previewhost.StyleFlat, "eu1", "", "console--eu1." + d, true},
 		{"console override", previewhost.StyleFlat, "", "Admin.Example.com", "admin.example.com", true},
+		{"published app", previewhost.StyleFlat, "", "", "my-shop." + d, true},
+		{"published app, mixed case", previewhost.StyleFlat, "", "", "My-Shop." + d, true},
+		{"unpublished name", previewhost.StyleFlat, "", "", "other-shop." + d, false},
 		{"bare domain", previewhost.StyleFlat, "", "", d, false},
 		{"random sibling", previewhost.StyleFlat, "", "", "www." + d, false},
 		{"empty", previewhost.StyleFlat, "", "", "", false},

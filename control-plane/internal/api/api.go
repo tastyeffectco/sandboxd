@@ -70,9 +70,6 @@ type Server struct {
 	// URLs or it cannot iframe previews (mixed content). Empty = derive from
 	// PreviewTLS, exactly the previous behaviour.
 	PreviewURLScheme string
-	// RateLimitMiddleware guards published apps' public routers
-	// (SANDBOXD_RATELIMIT_MIDDLEWARE, e.g. "sandbox-ratelimit@file"); "" = none.
-	RateLimitMiddleware string
 	// Recreate rebuilds a sandbox's container from its row (the same function
 	// the wake path uses). Publishing uses it when a published app's container
 	// is missing. nil = unavailable.

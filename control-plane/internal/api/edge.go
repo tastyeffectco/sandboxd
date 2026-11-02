@@ -40,6 +40,7 @@ func (s *Server) hostServed(ctx context.Context, host string) bool {
 	for _, served := range []func(context.Context, string) bool{
 		s.servesInstanceHost,
 		s.servesPreviewHost,
+		s.servesPublishedHost,
 	} {
 		if served(ctx, host) {
 			return true
@@ -140,4 +141,13 @@ func validRefPart(v string, upper bool) bool {
 		}
 	}
 	return true
+}
+
+// servesPublishedHost: a published app's public hostname (sandbox.public_hosts).
+func (s *Server) servesPublishedHost(ctx context.Context, host string) bool {
+	if s.Store == nil {
+		return false
+	}
+	used, err := s.Store.PublicHostInUse(ctx, host, "")
+	return err == nil && used
 }

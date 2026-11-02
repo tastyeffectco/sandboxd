@@ -519,7 +519,6 @@ func main() {
 	// new agent/model support. Lossless: everything durable is in the workspace
 	// bind mount, and the container rootfs is read-only by construction.
 	wakeHandler.Image = image
-	rateLimitMiddleware := envDefault("SANDBOXD_RATELIMIT_MIDDLEWARE", "")
 	wakeHandler.Recreate = func(ctx context.Context, sb *store.Sandbox) error {
 		spec := sandboxspec.Build(sb, sandboxspec.Env{
 			RateLimitMiddleware: rateLimitMiddleware,
@@ -581,7 +580,6 @@ func main() {
 		},
 		PublicHTTPPort:      publicHTTPPort,
 		ConsoleHost:         strings.TrimSpace(os.Getenv("SANDBOXD_CONSOLE_HOST")),
-		RateLimitMiddleware: rateLimitMiddleware,
 		SetMemoryHigh:       setMemoryHigh,
 		Inflight:            inflight,
 		Wake:                wakeHandler,
