@@ -106,3 +106,34 @@ func LabelsFor(hs previewhost.Scheme, id string, ports []int, visibility, entryp
 	}
 	return out
 }
+
+// ProductionLabels are the extra labels of a published app: a router for its
+// public hostnames (s-<id>-public) to the web port's service, behind the
+// rate-limit middleware when one is configured. They come after LabelsFor's,
+// which keep the preview router and define the service.
+func ProductionLabels(id string, webPort int, hosts []string, entrypoint string, tls bool, rateLimit string) []string {
+	if len(hosts) == 0 || webPort <= 0 {
+		return nil
+	}
+	if entrypoint == "" {
+		entrypoint = "web"
+	}
+	rules := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		rules = append(rules, fmt.Sprintf("Host(`%s`)", h))
+	}
+	router := fmt.Sprintf("s-%s-public", id)
+	out := []string{
+		fmt.Sprintf("traefik.http.routers.%s.rule=%s", router, strings.Join(rules, " || ")),
+		fmt.Sprintf("traefik.http.routers.%s.entrypoints=%s", router, entrypoint),
+		fmt.Sprintf("traefik.http.routers.%s.priority=100", router),
+		fmt.Sprintf("traefik.http.routers.%s.service=s-%s-%d", router, id, webPort),
+	}
+	if tls {
+		out = append(out, fmt.Sprintf("traefik.http.routers.%s.tls=true", router))
+	}
+	if rateLimit != "" {
+		out = append(out, fmt.Sprintf("traefik.http.routers.%s.middlewares=%s", router, rateLimit))
+	}
+	return out
+}

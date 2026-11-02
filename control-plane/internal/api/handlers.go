@@ -88,6 +88,12 @@ type createReq struct {
 	// inline). Set by v1CreateAppSandbox; nil for blank/preset apps.
 	Git *createGitReq `json:"git,omitempty"`
 
+	// Mode "production" creates a published app's sandbox (ADR 0003): it runs
+	// web.start, restarts by itself and also answers to PublicHosts. Set only
+	// by the releases path; "" for everything else.
+	Mode        string   `json:"mode,omitempty"`
+	PublicHosts []string `json:"public_hosts,omitempty"`
+
 	// Image is rejected — per-app image selection is not supported (instance-wide
 	// via SANDBOXD_IMAGE). Declared so we 400 it instead of silently dropping it.
 	Image *string `json:"image,omitempty"`
@@ -538,6 +544,14 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ExternalWorkspaceID: nullStr(req.External.WorkspaceID),
 		AppID:               nullStr(req.AppID),
 	}
+	if req.Mode != "" {
+		if req.Mode != store.ModeProduction {
+			writeErr(w, http.StatusBadRequest, "mode must be '' or 'production'")
+			return
+		}
+		sb.Mode = req.Mode
+		sb.PublicHosts = req.PublicHosts
+	}
 	if err := s.Store.Create(r.Context(), sb); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			writeErr(w, http.StatusConflict, "id collision (race)")
@@ -730,6 +744,13 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		previewPorts = ensurePort(previewPorts, webPort)
 	}
 	labels := traefik.LabelsFor(s.hosts(), req.ID, previewPorts, visibility, s.PreviewEntrypoint, s.PreviewTLS)
+	restart := ""
+	if sb.Mode == store.ModeProduction {
+		// Keep in step with sandboxspec.Build, which recreates this container.
+		envFlags = append(envFlags, "RUNTIMED_MODE=production")
+		labels = append(labels, traefik.ProductionLabels(req.ID, webPort, sb.PublicHosts, s.PreviewEntrypoint, s.PreviewTLS, s.RateLimitMiddleware)...)
+		restart = "unless-stopped"
+	}
 	// Phase 10B — bind-mount EVERY connected provider's auth dir at
 	// /run/agent-auth/<provider> (outside the workspace). runtimed selects the
 	// right one per task by the requested agent, so an explicit agent:"claude-code"
@@ -759,6 +780,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Env:         envFlags,
 		Volumes:     volumes,
 		Labels:      labels,
+		Restart:     restart,
 		Image:       s.Image,
 	})
 	metrics.ObserveDocker("run", startRun, &runErr)

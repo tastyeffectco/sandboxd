@@ -17,6 +17,7 @@ security:
 
 tags:
   - name: apps
+  - name: publishing
   - name: sandboxes
   - name: tasks
   - name: snapshots
@@ -630,6 +631,112 @@ paths:
         "204": { description: App and all its resources deleted }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/apps/{id}/bundle:
+    get:
+      operationId: getAppBundle
+      tags: [publishing]
+      summary: The app's code at its last saved commit, ready to publish
+      description: >-
+        A `git archive` (tar.gz) of the app's tracked files at HEAD, without
+        agent notes (BRAIN.md, .claude, .opencode) and .env files. Send it to a
+        server engine with POST /v1/apps/{id}/releases. 409 when the app has no
+        commit yet or is itself a published copy.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The bundle.
+          headers:
+            X-Sandboxd-Commit: { schema: { type: string }, description: The commit the bundle holds. }
+            X-Sandboxd-Uncommitted-Changes: { schema: { type: integer }, description: Changed files not in that commit. }
+          content:
+            application/gzip:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/apps/{id}/releases:
+    get:
+      operationId: listReleases
+      tags: [publishing]
+      summary: Published versions of an app, newest first, and its address
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Releases" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createRelease
+      tags: [publishing]
+      summary: Publish a version on this engine
+      description: >-
+        The body is a bundle from GET /v1/apps/{id}/bundle. The first release
+        creates the app's production sandbox (always on, restarted by Docker,
+        answering at `<name>.<domain>`). The release is unpacked, its data:
+        paths linked to persistent storage, `build.release` run in a one-off
+        container while the live version keeps serving, then the app switches
+        to it and restarts. If it does not answer within 5 minutes the previous
+        version is put back. Poll GET /v1/apps/{id}/releases/{rid}. 409 when a
+        publish is already running or the app is being built on this engine.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: query, name: commit, schema: { type: string }, description: The commit the bundle holds. }
+      requestBody:
+        required: true
+        content:
+          application/gzip:
+            schema: { type: string, format: binary }
+      responses:
+        "202":
+          description: Publishing started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/apps/{id}/releases/{rid}:
+    get:
+      operationId: getRelease
+      tags: [publishing]
+      summary: One release, with the end of its log
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: rid, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/apps/{id}/releases/{rid}/activate:
+    post:
+      operationId: activateRelease
+      tags: [publishing]
+      summary: Go back to a version that was live before
+      description: >-
+        Only a `previous` release still kept on the server (the last three
+        versions are kept). If it does not start, the current version stays.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: rid, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Already the active version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "202":
+          description: Switching started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/apps/{id}/sandbox:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -1989,6 +2096,24 @@ components:
         labels:
           allOf: [{ $ref: "#/components/schemas/AppLabels" }]
           description: Replaces all of the app's labels.
+    Release:
+      type: object
+      properties:
+        id: { type: string }
+        commit: { type: string }
+        status: { type: string, enum: [building, starting, active, previous, failed] }
+        active: { type: boolean }
+        message: { type: string, description: "Plain-language progress or reason for failure." }
+        created_at: { type: string, format: date-time }
+        activated_at: { type: string, format: date-time }
+        log: { type: string, description: "End of the build and start log (GET one release only)." }
+    Releases:
+      type: object
+      properties:
+        releases: { type: array, items: { $ref: "#/components/schemas/Release" } }
+        url: { type: string, description: "Where the published app is reached; empty before the first publish." }
+        hosts: { type: array, items: { type: string } }
+        sandbox_id: { type: string }
     AppLabels:
       type: object
       description: >-

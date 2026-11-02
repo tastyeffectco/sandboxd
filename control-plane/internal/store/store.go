@@ -11,6 +11,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -64,7 +65,16 @@ type Sandbox struct {
 	// (migrations/0013_apps.sql). NULL for sandboxes created outside the
 	// app model (the existing sandbox API).
 	AppID sql.NullString
+
+	// Mode (0029) is "" for an app being built, "production" for a published
+	// app (runs web.start, always on, restarts by itself).
+	Mode string
+	// PublicHosts (0029) are extra hostnames a production app answers to.
+	PublicHosts []string
 }
+
+// ModeProduction marks a published app's sandbox.
+const ModeProduction = "production"
 
 // WorkspaceOwner is the durable sandbox_id -> upstream-identity
 // binding (migrations/0004). It survives DELETE /sandbox/{id}; only
@@ -151,7 +161,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Sandbox, error) {
 		       last_active_at, stopped_at, keepalive_until,
 		       container_ip,
 		       external_user_id, external_project_id, external_workspace_id, visibility,
-		       idle_policy, app_id, web_port
+		       idle_policy, app_id, web_port, mode, public_hosts
 		  FROM sandbox WHERE id = ?`, id)
 	sb, err := scanSandbox(row)
 	if err != nil {
@@ -173,7 +183,7 @@ func (s *Store) List(ctx context.Context) ([]*Sandbox, error) {
 		       last_active_at, stopped_at, keepalive_until,
 		       container_ip,
 		       external_user_id, external_project_id, external_workspace_id, visibility,
-		       idle_policy, app_id, web_port
+		       idle_policy, app_id, web_port, mode, public_hosts
 		  FROM sandbox ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -209,7 +219,7 @@ func (s *Store) ListByStatuses(ctx context.Context, statuses ...string) ([]*Sand
 	             last_active_at, stopped_at, keepalive_until,
 	             container_ip,
 	             external_user_id, external_project_id, external_workspace_id, visibility,
-	             idle_policy, app_id, web_port
+	             idle_policy, app_id, web_port, mode, public_hosts
 	        FROM sandbox WHERE status IN (?`
 	args := make([]any, 0, len(statuses))
 	args = append(args, statuses[0])
@@ -254,7 +264,7 @@ func (s *Store) ListIdleCandidates(ctx context.Context, cutoff time.Time) ([]*Sa
 		       last_active_at, stopped_at, keepalive_until,
 		       container_ip,
 		       external_user_id, external_project_id, external_workspace_id, visibility,
-		       idle_policy, app_id, web_port
+		       idle_policy, app_id, web_port, mode, public_hosts
 		  FROM sandbox
 		 WHERE status='running' AND last_active_at < ? AND idle_policy != 'always_on'
 		 ORDER BY last_active_at ASC`, cutoff.Unix())
@@ -299,6 +309,7 @@ type scanner interface {
 func scanSandbox(s scanner) (*Sandbox, error) {
 	sb := &Sandbox{}
 	var createdUnix, updatedUnix, lastActiveUnix int64
+	var publicHosts string
 	err := s.Scan(
 		&sb.ID, &sb.Status, &sb.Image, &sb.WorkspaceImg, &sb.WorkspaceMnt,
 		&sb.ContainerID, &sb.CgroupPath, &sb.MemoryHigh, &sb.ErrorMessage,
@@ -309,6 +320,7 @@ func scanSandbox(s scanner) (*Sandbox, error) {
 		&sb.IdlePolicy,
 		&sb.AppID,
 		&sb.WebPort,
+		&sb.Mode, &publicHosts,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -324,6 +336,7 @@ func scanSandbox(s scanner) (*Sandbox, error) {
 	if sb.IdlePolicy == "" {
 		sb.IdlePolicy = "sleep"
 	}
+	_ = json.Unmarshal([]byte(publicHosts), &sb.PublicHosts)
 	return sb, nil
 }
 
@@ -335,7 +348,7 @@ const sandboxSelectCols = `id, status, image, workspace_img, workspace_mnt,
 	       last_active_at, stopped_at, keepalive_until,
 	       container_ip,
 	       external_user_id, external_project_id, external_workspace_id, visibility,
-	       idle_policy, app_id, web_port`
+	       idle_policy, app_id, web_port, mode, public_hosts`
 
 // ListFiltered returns sandbox rows filtered by external_user_id and/
 // or external_project_id. An empty string for either filter means "do
