@@ -266,6 +266,19 @@ async function main() {
     })
     assert.equal(await downloaded, 'completed')
     assert.equal(await fs.readFile(path.join(temp, 'workspace.zip'), 'utf8'), 'ZIP')
+    // Your servers: the bridge answers and unknown server routes stay closed.
+    assert.deepEqual(await page.evaluate(() => window.sandboxdDesktop.servers.list()), [])
+    assert.equal(
+      await page.evaluate(() => fetch('/servers/srv_000000000000/v1/apps').then((r) => r.status)),
+      404,
+    )
+    await page.evaluate(() => (location.hash = '#/settings/servers'))
+    await expect(page.getByTestId('server-add-open')).toBeVisible()
+    await page.getByTestId('server-add-open').click()
+    await expect(page.getByTestId('server-host')).toBeVisible()
+    await page.screenshot({ path: path.join(output, 'servers-add.png') })
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => (location.hash = '#/apps'))
     await expect(page.getByTestId('nav-apps')).toBeVisible()
     await page.getByRole('button', { name: /This computer/ }).click()
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click()

@@ -20,6 +20,18 @@ if (process.isMainFrame) {
       onConnections: (callback) => subscribe('desktop:connections', callback),
       onNavigate: (callback) => subscribe('desktop:navigate', callback),
       onSearch: (callback) => subscribe('desktop:search', callback),
+      // Your servers (see servers.cjs). Server engines are reached through the
+      // gateway at /servers/<id>/v1/...
+      servers: Object.freeze({
+        list: () => ipcRenderer.invoke('servers:list'),
+        status: (id) => ipcRenderer.invoke('servers:status', id),
+        add: (input) => ipcRenderer.invoke('servers:add', input),
+        remove: (id) => ipcRenderer.invoke('servers:remove', id),
+        frontdoor: (id, args) => ipcRenderer.invoke('servers:frontdoor', id, args),
+        trustIdentity: (id) => ipcRenderer.invoke('servers:trust-identity', id),
+        onProgress: (callback) => subscribe('servers:progress', callback),
+        onChange: (callback) => subscribe('servers:changed', callback),
+      }),
     }),
   )
 }

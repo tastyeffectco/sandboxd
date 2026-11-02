@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "build:ui": "node scripts/build-ui.cjs",
-    "test": "node --test test/*.test.cjs",
+    "test": "node --test --test-timeout=120000 test/*.test.cjs",
     "pack": "electron-builder --dir --publish never",
     "dist": "electron-builder --publish never",
     "smoke": "node scripts/smoke.cjs",
@@ -28,7 +28,13 @@
     "files": [
       "src/**",
       "ui/**",
-      "package.json"
+      "package.json",
+      "!node_modules/cpu-features/**",
+      "!node_modules/nan/**",
+      "!node_modules/buildcheck/**",
+      "!node_modules/ssh2/lib/protocol/crypto/src/**",
+      "!node_modules/ssh2/lib/protocol/crypto/binding.gyp",
+      "!node_modules/ssh2/install.js"
     ],
     "asar": true,
     "npmRebuild": false,
@@ -71,5 +77,8 @@
       "onlyLoadAppFromAsar": true,
       "grantFileProtocolExtraPrivileges": false
     }
+  },
+  "dependencies": {
+    "ssh2": "1.17.0"
   }
 }

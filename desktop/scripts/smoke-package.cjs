@@ -38,6 +38,16 @@ async function main() {
     files.some((file) => /[\\/]ui[\\/]index.html$/.test(file)),
     'Packaged UI missing',
   )
+  // Your servers: ssh2 runs in pure JavaScript (its optional native addons are
+  // neither built nor packaged).
+  assert(
+    files.some((file) => /[\\/]node_modules[\\/]ssh2[\\/]lib[\\/]client\.js$/.test(file)),
+    'ssh2 missing from the package',
+  )
+  assert(
+    !files.some((file) => /[\\/]node_modules[\\/]cpu-features[\\/]/.test(file)),
+    'native optional dependency packaged',
+  )
   assert(!files.some((file) => /[\\/]node_modules[\\/]/.test(file)), 'Build dependencies must not ship')
   assert(
     files.some((file) => /[\\/]src[\\/]windows-engine-bootstrap\.sh$/.test(file)),

@@ -148,6 +148,59 @@ verification is never disabled, and there is no certificate-exception switch. An
 banner offers retry and connection settings. The app requires a reachable engine
 for workspace actions; it is not an offline copy of your code.
 
+## Your servers
+
+Put your apps online on a Linux server you rent (Hetzner, DigitalOcean, OVH…).
+Open **Settings → Your servers → Add a server**, paste the server address and
+the password from your provider's email, and click **Add server**. Under
+**More options** you can set a user name other than `root` (it must be able to
+use `sudo`), another SSH port, and a name for the list. The app shows each step:
+connecting, checking the server, installing sandboxd (a few minutes), securing
+the connection. Keep the app open until it says the server is ready.
+
+What the app checks first, with a plain message if one fails: the server runs
+Linux on an x86-64 or ARM64 processor, has at least 5 GB of free disk space
+and 1 GB of memory, and can download files (curl or wget). If Docker is
+missing, the app says so and offers **Install Docker and continue**, which runs
+Docker's official installer (`get.docker.com`) on the server; nothing is
+installed before you click it.
+
+How it works and what is kept:
+
+- The install runs over SSH with the password you typed, which is held in
+  memory for that one setup only. It is never written to disk, logs or progress
+  messages. For a `sudo` user, it is sent to `sudo -S` on standard input, never
+  on a command line. The server's own `install.sh` runs at the engine version this
+  app pins (`SANDBOXD_SERVER_REF=<branch or tag>` overrides it for testing; a ref
+  that is not a `v…` tag builds images instead of pulling signed ones).
+- Each computer has its own SSH key (ed25519), created the first time you add a
+  server. The private key is encrypted with the OS credential store (macOS
+  Keychain, Windows DPAPI) in `device-key.json` in the app's data directory. The
+  installer adds only the public key, for the limited `sandboxd` user, which may
+  only reach the engine API (`127.0.0.1:9090`) and run the server's `frontdoor`
+  helper. Adding a server needs secure storage; Linux `basic_text` is refused.
+- The server's SSH identity (host key, SHA256 fingerprint) is remembered the
+  first time. If it changes later, the app stops talking to the server and
+  says so. If you reinstalled the server yourself, click **I reinstalled it:
+  trust the new identity** and confirm in the dialog that shows the old and new
+  fingerprints. Otherwise, don't: someone may be impersonating your server.
+- `servers.json` in the app's data directory lists your servers (address, port,
+  pinned fingerprint, front door, the engine API token encrypted with the OS
+  credential store). Both files are written atomically with mode 0600.
+- The app keeps one SSH connection per server, as `sandboxd`, and reconnects on
+  its own after sleep, a network change or a server restart. The list shows
+  **Connected**, **Connecting…** or **Offline** with the reason. The console
+  reaches a server's engine through the private gateway at
+  `/servers/<server id>/v1/…` (HTTP, SSE and terminals), which adds that server's
+  API token. Unknown server ids are refused; no other host can be reached.
+
+**Removing a server** forgets it on this computer and closes its connection.
+sandboxd and your apps keep running on the server, and this computer's public key
+stays in `~sandboxd/.ssh/authorized_keys` there (it can only reach the engine API,
+and only with the private key that this app no longer uses for that server). To
+remove it completely, delete that line on the server, or uninstall sandboxd
+there with `uninstall.sh`.
+
 ## Build and test from source
 
 Use Node.js 22 and pnpm 9.15.0. From a source checkout:
@@ -175,7 +228,8 @@ run without that override.
 
 - The renderer is sandboxed with Node disabled and context isolation enabled.
   Native IPC is limited to connection management, fixed Windows engine setup,
-  state and HTTP(S) links; only
+  your servers (add, remove, status, allow-listed `frontdoor` commands), state
+  and HTTP(S) links; only
   the packaged main frame may call it. Preview frames have no native bridge.
 - Bundled assets come from the application archive. A private loopback gateway
   proxies only `/v1/` requests to the selected engine, including SSE and terminal

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell, session, safeStorage, dialog } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell, session, safeStorage, dialog, powerMonitor } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
@@ -7,6 +7,7 @@ const agentLogins = createAgentLogins()
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
 const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 const { signInManagedEngine } = require('./local-auth.cjs')
+const { createServers } = require('./servers.cjs')
 
 let window,
   gateway,
@@ -16,6 +17,7 @@ let config = { connections: [], selected: '', sessions: {} }
 let writes = Promise.resolve()
 let connecting = false
 let localEngine
+let servers
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -250,11 +252,24 @@ async function start() {
     })
     await localEngine.load().catch(() => {})
   }
+  // Your servers: SSH tunnels to engines on the user's own servers.
+  servers = createServers({
+    dataDir: app.getPath('userData'),
+    encrypt: (text) => safeStorage.encryptString(text),
+    decrypt: (buffer) => safeStorage.decryptString(buffer),
+    canEncrypt: canRemember,
+    onStatus: (id, status) => window?.webContents.send('servers:changed', { id, status }),
+  })
+  await servers.load().catch(() => {})
+  // After sleep the old connections are usually dead: reconnect right away.
+  powerMonitor.on('resume', () => servers.refreshAll())
+  powerMonitor.on('unlock-screen', () => servers.refreshAll())
   gateway = await createGateway({
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
+    servers,
   })
   desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
@@ -389,6 +404,50 @@ async function start() {
     trusted(event)
     await openExternal(url)
   })
+  ipcMain.handle('servers:list', (event) => {
+    trusted(event)
+    return servers.list()
+  })
+  ipcMain.handle('servers:status', (event, id) => {
+    trusted(event)
+    return servers.status(id)
+  })
+  // The password stays in this call's memory; progress never includes it.
+  ipcMain.handle('servers:add', (event, input) => {
+    trusted(event)
+    return servers.add(input, (progress) => {
+      if (!event.sender.isDestroyed()) event.sender.send('servers:progress', progress)
+    })
+  })
+  ipcMain.handle('servers:remove', (event, id) => {
+    trusted(event)
+    return servers.remove(id)
+  })
+  ipcMain.handle('servers:frontdoor', (event, id, args) => {
+    trusted(event)
+    return servers.frontdoor(id, args)
+  })
+  // Trusting a changed server identity is confirmed in a native dialog the page
+  // cannot answer by itself.
+  ipcMain.handle('servers:trust-identity', async (event, id) => {
+    trusted(event)
+    const status = servers.status(id)
+    if (!status.identityChanged || !status.presentedSha256) return { trusted: false }
+    const server = servers.list().find((s) => s.id === id)
+    const answer = await dialog.showMessageBox(window, {
+      type: 'warning',
+      buttons: ['Cancel', 'Trust the new identity'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Server identity changed',
+      message: `Trust the new identity of ${server.name}?`,
+      detail:
+        "Do this only if you reinstalled or rebuilt this server. If you didn't, someone may be impersonating it: choose Cancel and contact your server provider.\n\n" +
+        `Previous identity: ${server.hostKeySha256}\nNew identity: ${status.presentedSha256}`,
+    })
+    if (answer.response !== 1) return { trusted: false }
+    return { trusted: true, server: await servers.trustIdentity(id, status.presentedSha256) }
+  })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
@@ -488,5 +547,6 @@ else {
   })
   app.on('will-quit', () => {
     void gateway?.close()
+    void servers?.close()
   })
 }
