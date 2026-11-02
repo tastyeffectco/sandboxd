@@ -153,6 +153,17 @@ var ErrConflict = errors.New("conflict")
 
 // --- Reads -----------------------------------------------------------
 
+// SandboxExists reports whether a sandbox row with exactly this id exists.
+// One primary-key lookup: cheap enough for the edge's per-hostname checks.
+func (s *Store) SandboxExists(ctx context.Context, id string) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM sandbox WHERE id = ? LIMIT 1`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (s *Store) Get(ctx context.Context, id string) (*Sandbox, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, status, image, workspace_img, workspace_mnt,

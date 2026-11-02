@@ -147,6 +147,8 @@ else die "Docker Compose not found."; fi
 PROFILE=""; $DOCKER ps -a --format '{{.Names}}' 2>/dev/null | grep -q 'sandboxd-console' && PROFILE="--profile console"
 [ "${SANDBOXD_CONSOLE:-1}" = "0" ] || PROFILE="--profile console"
 BUILD_PROFILE="--profile console"
+# The managed Caddy front door (install.sh --front=caddy) stays up.
+[ "${SANDBOXD_FRONT:-}" = caddy ] && PROFILE="$PROFILE --profile caddy"
 
 # ── 1. back up (always, before anything changes) ─────────────────────
 TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo backup)"

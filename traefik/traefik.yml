@@ -18,6 +18,17 @@ api:
 entryPoints:
   web:
     address: ":80"
+    # Keep X-Forwarded-* (client IP, https) set by a front door on this host
+    # (managed Caddy on the Docker network, or your nginx/Caddy reaching the
+    # 127.0.0.1:8088 publish through Docker's gateway). Clients from the
+    # internet are not in these ranges, so they cannot spoof them.
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "::1/128"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
   # websecure:
   #   address: ":443"
 

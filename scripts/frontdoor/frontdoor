@@ -1,0 +1,433 @@
+#!/bin/bash
+#
+# sandboxd front-door helper. Installed root-owned at
+# /usr/local/lib/sandboxd/frontdoor by `install.sh --front=…`; the limited
+# `sandboxd` user may run it (and nothing else) as root through
+# /etc/sudoers.d/sandboxd-frontdoor. The desktop reaches it over SSH via the
+# forced command frontdoor-ssh.
+#
+#   frontdoor facts                      what this server runs (read-only)
+#   frontdoor apply <site> <host>...     publish hosts through your nginx/Caddy
+#   frontdoor remove <site>              take a site off your nginx/Caddy
+#   frontdoor status <site>              what is configured for a site
+#   frontdoor enable-caddy-import        add the one sandboxd import line to
+#                                        /etc/caddy/Caddyfile (approved step)
+#
+# Output contract: human-readable progress on stderr; exactly one JSON line on
+# stdout, the last thing printed:
+#   {"ok":true|false,"step":"…","message":"<plain language>", …extra fields}
+#
+# Safety rules: only files whose first line is "# managed by sandboxd" are
+# written or removed, plus the single import line enable-caddy-import adds.
+# Every change is backed up, tested (nginx -t / caddy validate), reloaded, and
+# restored from the backup if any step fails.
+
+set -u
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 022
+
+MARK='# managed by sandboxd'
+CONF=/usr/local/lib/sandboxd/frontdoor.conf
+BACKUP_DIR=/var/backups/sandboxd-frontdoor
+NGINX_DIR=/etc/nginx
+CADDYFILE=/etc/caddy/Caddyfile
+CADDY_SITES=/etc/caddy/sandboxd
+CADDY_IMPORT="import $CADDY_SITES/*.caddy"
+SITE_RE='^[a-z0-9][a-z0-9-]{0,62}$'
+LABEL='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?'
+HOST_RE="^$LABEL(\\.$LABEL)+\$"
+MAX_HOSTS=20
+
+log() { printf 'frontdoor: %s\n' "$*" >&2; }
+
+# json_str: a JSON string literal for $1 (quotes, backslashes, control chars).
+json_str() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/}
+  s=${s//$'\t'/ }
+  s=$(printf '%s' "$s" | tr -d '\000-\037')
+  printf '"%s"' "$s"
+}
+
+# result ok step message [extra-json-fields-without-braces]
+result() {
+  local extra=${4:-}
+  printf '{"ok":%s,"step":%s,"message":%s%s}\n' "$1" "$(json_str "$2")" "$(json_str "$3")" "${extra:+,$extra}"
+}
+fail() { result false "$1" "$2" "${3:-}"; exit 1; }
+
+valid_site() { [[ $1 =~ $SITE_RE ]]; }
+valid_host() { [ "${#1}" -le 253 ] && [[ $1 =~ $HOST_RE ]]; }
+
+# conf_get key: a value from the installer's frontdoor.conf (never sourced).
+conf_get() {
+  [ -r "$CONF" ] || return 0
+  sed -n "s/^$1=//p" "$CONF" | head -n1
+}
+
+# env_get key: a value from the sandboxd .env named in frontdoor.conf.
+env_get() {
+  local f
+  f=$(conf_get env_file)
+  [ -n "$f" ] && [ -r "$f" ] || return 0
+  sed -n "s/^$1=//p" "$f" | tail -n1 | tr -d '"'"'"
+}
+
+# router: where nginx/Caddy forward to — sandboxd's Traefik on the loopback.
+router() {
+  local bind port
+  bind=$(env_get SANDBOXD_HTTP_BIND); port=$(env_get HTTP_PORT)
+  [ -n "$bind" ] && [ "$bind" != 0.0.0.0 ] || bind=127.0.0.1
+  [ -n "$port" ] || port=8088
+  [[ $bind =~ ^[0-9.]+$ ]] || bind=127.0.0.1
+  [[ $port =~ ^[0-9]{1,5}$ ]] || port=8088
+  printf '%s:%s' "$bind" "$port"
+}
+
+lock() {
+  command -v flock >/dev/null 2>&1 || return 0
+  exec 9>/run/sandboxd-frontdoor.lock 2>/dev/null || return 0
+  flock -w 60 9 || fail lock "Another change to this server's web settings is still running. Try again in a minute."
+}
+
+managed() { [ -f "$1" ] && [ "$(head -n1 "$1")" = "$MARK" ]; }
+
+# ── facts ────────────────────────────────────────────────────────────
+
+port_owner() {
+  command -v ss >/dev/null 2>&1 || { printf unknown; return; }
+  local out name
+  out=$(ss -ltnpH "( sport = :$1 )" 2>/dev/null)
+  [ -n "$out" ] || { printf none; return; }
+  name=$(printf '%s\n' "$out" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -n1)
+  case "$name" in
+    "") printf unknown ;;
+    docker-proxy) printf docker ;;
+    apache2|httpd) printf apache ;;
+    *) printf '%s' "$name" ;;
+  esac
+}
+
+detect_proxies() {
+  local found=() names self
+  command -v nginx >/dev/null 2>&1 && found+=(nginx)
+  command -v caddy >/dev/null 2>&1 && found+=(caddy)
+  { command -v apache2 >/dev/null 2>&1 || command -v httpd >/dev/null 2>&1; } && found+=(apache)
+  if command -v docker >/dev/null 2>&1; then
+    # Leave out sandboxd's own containers (its compose project directory).
+    self=$(conf_get env_file); self=${self%/*}
+    names=$(docker ps --format '{{.Image}} {{.Names}} {{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null \
+      | awk -v self="$self" 'self == "" || $3 != self' || true)
+    printf '%s\n' "$names" | grep -qi 'coolify' && found+=(coolify)
+    printf '%s\n' "$names" | grep -qi 'traefik' && found+=(traefik)
+  fi
+  printf '%s\n' "${found[@]}"
+}
+
+nginx_layout() {
+  if [ -d "$NGINX_DIR/sites-available" ] && [ -d "$NGINX_DIR/sites-enabled" ]; then printf sites-available
+  elif [ -d "$NGINX_DIR/conf.d" ]; then printf conf.d
+  else printf none; fi
+}
+
+caddy_layout() {
+  if [ ! -f "$CADDYFILE" ]; then printf none
+  elif caddy_has_import; then printf import
+  else printf caddyfile; fi
+}
+
+caddy_has_import() { grep -Eq "^[[:space:]]*import[[:space:]]+$CADDY_SITES/\\*\\.caddy[[:space:]]*\$" "$CADDYFILE" 2>/dev/null; }
+
+# target: which web server apply/remove act on — the one owning :80/:443,
+# else whichever supported one is installed (nginx first).
+target() {
+  local o
+  for o in "$(port_owner 443)" "$(port_owner 80)"; do
+    case "$o" in
+      nginx) command -v nginx >/dev/null 2>&1 && { printf nginx; return; } ;;
+      caddy) [ -f "$CADDYFILE" ] && { printf caddy; return; } ;;
+    esac
+  done
+  if command -v nginx >/dev/null 2>&1 && [ "$(nginx_layout)" != none ]; then printf nginx
+  elif command -v caddy >/dev/null 2>&1 && [ -f "$CADDYFILE" ]; then printf caddy
+  else printf none; fi
+}
+
+cmd_facts() {
+  local os=unknown arch proxies p list="" certbot=false front
+  if [ -r /etc/os-release ]; then
+    os=$(. /etc/os-release && printf '%s %s' "${ID:-linux}" "${VERSION_ID:-}")
+  fi
+  arch=$(uname -m)
+  proxies=$(detect_proxies)
+  for p in $proxies; do list="$list${list:+,}$(json_str "$p")"; done
+  command -v certbot >/dev/null 2>&1 && certbot=true
+  front=$(env_get SANDBOXD_FRONT)
+  result true facts "Read this server's web setup." "$(printf '"os":%s,"arch":%s,"proxies":[%s],"ports":{"80":%s,"443":%s},"nginx_layout":%s,"caddy_layout":%s,"certbot":%s,"target":%s,"front":%s,"router":%s' \
+    "$(json_str "$os")" "$(json_str "$arch")" "$list" "$(json_str "$(port_owner 80)")" "$(json_str "$(port_owner 443)")" \
+    "$(json_str "$(nginx_layout)")" "$(json_str "$(caddy_layout)")" "$certbot" "$(json_str "$(target)")" \
+    "$(json_str "${front:-}")" "$(json_str "$(router)")")"
+}
+
+# ── backup / restore ─────────────────────────────────────────────────
+
+# Files touched by the current change, and where their backups went.
+TOUCHED=()
+backup() { # backup <path>: remember the current state of path (or its absence)
+  local f=$1 b
+  mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+  b="$BACKUP_DIR/$(printf '%s' "$f" | tr '/' '_').$(date +%Y%m%d%H%M%S).$$"
+  if [ -L "$f" ]; then
+    b="$b.link"; readlink "$f" > "$b" || return 1
+  elif [ -e "$f" ]; then
+    cp -p "$f" "$b" || return 1
+  else
+    : > "$b.absent"; b="$b.absent"
+  fi
+  TOUCHED+=("$f|$b")
+}
+
+restore_all() {
+  local i entry f b
+  for (( i=${#TOUCHED[@]}-1; i>=0; i-- )); do
+    entry=${TOUCHED[$i]}; f=${entry%%|*}; b=${entry#*|}
+    case "$b" in
+      *.absent) rm -f "$f" ;;
+      *.link) rm -f "$f"; ln -s "$(cat "$b")" "$f" ;;
+      *) cp -p "$b" "$f" ;;
+    esac
+  done
+  log "restored the previous configuration"
+}
+
+# ── nginx ────────────────────────────────────────────────────────────
+
+nginx_paths() { # sets CONF_FILE and LINK_FILE for site $1
+  case "$(nginx_layout)" in
+    sites-available) CONF_FILE="$NGINX_DIR/sites-available/sandboxd-$1.conf"; LINK_FILE="$NGINX_DIR/sites-enabled/sandboxd-$1.conf" ;;
+    conf.d) CONF_FILE="$NGINX_DIR/conf.d/sandboxd-$1.conf"; LINK_FILE="" ;;
+    *) return 1 ;;
+  esac
+}
+
+nginx_test() { local out; out=$(nginx -t 2>&1) && return 0; NGINX_ERR=$(printf '%s\n' "$out" | grep -m1 -E 'emerg|error' || printf '%s' "$out" | head -n1); log "$out"; return 1; }
+
+nginx_reload() {
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx 2>/dev/null; then
+    systemctl reload nginx
+  elif [ -s /run/nginx.pid ] || pgrep -x nginx >/dev/null 2>&1; then
+    nginx -s reload
+  else
+    log "nginx was not running; starting it"
+    nginx
+  fi
+}
+
+nginx_rollback() { # nginx_rollback step message
+  restore_all
+  nginx_test && nginx_reload >/dev/null 2>&1
+  fail "$1" "$2"
+}
+
+nginx_write() { # nginx_write site router host...
+  local site=$1 rt=$2; shift 2
+  local var="sandboxd_${site//-/_}_connection" v6=""
+  [ -e /proc/net/if_inet6 ] && v6="    listen [::]:80;"
+  {
+    printf '%s\n' "$MARK"
+    printf '# site %s — written by /usr/local/lib/sandboxd/frontdoor; changes here are replaced.\n' "$site"
+    printf 'map $http_upgrade $%s {\n    default upgrade;\n    %s close;\n}\n\n' "$var" "''"
+    printf 'server {\n    listen 80;\n%s\n    server_name %s;\n' "$v6" "$*"
+    printf '    client_max_body_size 100m;\n\n    location / {\n'
+    printf '        proxy_pass http://%s;\n' "$rt"
+    printf '        proxy_http_version 1.1;\n'
+    printf '        proxy_set_header Host $host;\n'
+    printf '        proxy_set_header Upgrade $http_upgrade;\n'
+    printf '        proxy_set_header Connection $%s;\n' "$var"
+    printf '        proxy_set_header X-Real-IP $remote_addr;\n'
+    printf '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n'
+    printf '        proxy_set_header X-Forwarded-Proto $scheme;\n'
+    printf '        proxy_set_header X-Forwarded-Host $host;\n'
+    printf '        proxy_read_timeout 3600s;\n'
+    printf '        proxy_buffering off;\n'
+    printf '    }\n}\n'
+  } > "$CONF_FILE.tmp.$$" && mv -f "$CONF_FILE.tmp.$$" "$CONF_FILE"
+}
+
+nginx_apply() { # site host...
+  local site=$1; shift
+  nginx_paths "$site" || fail nginx-layout "nginx is installed but has neither sites-available/sites-enabled nor conf.d. Use the manual setup."
+  if [ -e "$CONF_FILE" ] && ! managed "$CONF_FILE"; then
+    fail refused "$CONF_FILE already exists and was not created by sandboxd, so it was left untouched."
+  fi
+  if [ -n "$LINK_FILE" ] && { [ -e "$LINK_FILE" ] || [ -L "$LINK_FILE" ]; } && [ "$(readlink "$LINK_FILE" 2>/dev/null)" != "$CONF_FILE" ]; then
+    fail refused "$LINK_FILE already exists and was not created by sandboxd, so it was left untouched."
+  fi
+  nginx_test || fail nginx-test "Your nginx configuration already has an error, so nothing was changed: ${NGINX_ERR:-nginx -t failed}"
+  backup "$CONF_FILE" || fail backup "Could not back up $CONF_FILE."
+  [ -n "$LINK_FILE" ] && { backup "$LINK_FILE" || fail backup "Could not back up $LINK_FILE."; }
+  log "writing $CONF_FILE"
+  nginx_write "$site" "$(router)" "$@" || nginx_rollback write "Could not write $CONF_FILE."
+  [ -n "$LINK_FILE" ] && { ln -sfn "$CONF_FILE" "$LINK_FILE" || nginx_rollback write "Could not enable the site."; }
+  log "testing nginx configuration"
+  nginx_test || nginx_rollback nginx-test "nginx rejected the new site, so the previous setup was restored: ${NGINX_ERR:-nginx -t failed}"
+  log "reloading nginx"
+  nginx_reload >&2 || nginx_rollback reload "nginx could not reload, so the previous setup was restored."
+  if ! command -v certbot >/dev/null 2>&1; then
+    result true "done" "The site is live over http. https needs certbot, which is not installed on this server." '"https":false,"proxy":"nginx","certbot":false'
+    return 0
+  fi
+  local args=() h
+  for h in "$@"; do args+=(-d "$h"); done
+  log "requesting the https certificate (certbot)"
+  if ! certbot --nginx "${args[@]}" --non-interactive --agree-tos --register-unsafely-without-email \
+      --redirect --keep-until-expiring --expand >&2; then
+    nginx_rollback certbot "The https certificate could not be issued, so the previous setup was restored. Check that the domain points to this server and try again."
+  fi
+  result true "done" "The site is live over https." '"https":true,"proxy":"nginx","certbot":true'
+}
+
+nginx_remove() {
+  local site=$1
+  nginx_paths "$site" || fail nginx-layout "nginx has no supported layout."
+  [ -e "$CONF_FILE" ] || [ -L "${LINK_FILE:-/nonexistent}" ] || { result true "done" "Nothing to remove: $site is not configured." '"proxy":"nginx"'; return 0; }
+  managed "$CONF_FILE" || fail refused "$CONF_FILE was not created by sandboxd, so it was left untouched."
+  backup "$CONF_FILE" || fail backup "Could not back up $CONF_FILE."
+  [ -n "$LINK_FILE" ] && { backup "$LINK_FILE" || fail backup "Could not back up $LINK_FILE."; }
+  [ -n "$LINK_FILE" ] && rm -f "$LINK_FILE"
+  rm -f "$CONF_FILE"
+  nginx_test || nginx_rollback nginx-test "nginx rejected the change, so the site was put back: ${NGINX_ERR:-nginx -t failed}"
+  nginx_reload >&2 || nginx_rollback reload "nginx could not reload, so the site was put back."
+  result true "done" "The site was removed from nginx." '"proxy":"nginx"'
+}
+
+# ── Caddy (installed on the host) ────────────────────────────────────
+
+caddy_validate() { local out; out=$(caddy validate --config "$CADDYFILE" --adapter caddyfile 2>&1) && return 0; CADDY_ERR=$(printf '%s\n' "$out" | grep -m1 -iE 'error' || printf '%s' "$out" | tail -n1); log "$out"; return 1; }
+
+caddy_reload() {
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
+    systemctl reload caddy
+  else
+    caddy reload --config "$CADDYFILE" --adapter caddyfile
+  fi
+}
+
+caddy_rollback() {
+  restore_all
+  caddy_validate && caddy_reload >/dev/null 2>&1
+  fail "$1" "$2"
+}
+
+caddy_apply() {
+  local site=$1; shift
+  local f="$CADDY_SITES/$site.caddy" hosts
+  caddy_has_import || fail caddy-import "Your Caddy configuration does not load sandboxd sites yet. Approve adding one line to $CADDYFILE (frontdoor enable-caddy-import), then try again."
+  if [ -e "$f" ] && ! managed "$f"; then fail refused "$f was not created by sandboxd, so it was left untouched."; fi
+  caddy_validate || fail caddy-validate "Your Caddy configuration already has an error, so nothing was changed: ${CADDY_ERR:-caddy validate failed}"
+  mkdir -p "$CADDY_SITES"
+  backup "$f" || fail backup "Could not back up $f."
+  hosts=$(printf '%s, ' "$@"); hosts=${hosts%, }
+  log "writing $f"
+  {
+    printf '%s\n' "$MARK"
+    printf '# site %s — written by /usr/local/lib/sandboxd/frontdoor; changes here are replaced.\n' "$site"
+    printf '%s {\n\treverse_proxy %s {\n\t\theader_up Host {host}\n\t}\n}\n' "$hosts" "$(router)"
+  } > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f" || caddy_rollback write "Could not write $f."
+  log "validating Caddy configuration"
+  caddy_validate || caddy_rollback caddy-validate "Caddy rejected the new site, so the previous setup was restored: ${CADDY_ERR:-caddy validate failed}"
+  log "reloading Caddy"
+  caddy_reload >&2 || caddy_rollback reload "Caddy could not reload, so the previous setup was restored."
+  result true "done" "The site is live. Caddy gets the https certificate on the first visit." '"https":true,"proxy":"caddy"'
+}
+
+caddy_remove() {
+  local site=$1 f="$CADDY_SITES/$1.caddy"
+  [ -e "$f" ] || { result true "done" "Nothing to remove: $site is not configured." '"proxy":"caddy"'; return 0; }
+  managed "$f" || fail refused "$f was not created by sandboxd, so it was left untouched."
+  backup "$f" || fail backup "Could not back up $f."
+  rm -f "$f"
+  caddy_validate || caddy_rollback caddy-validate "Caddy rejected the change, so the site was put back: ${CADDY_ERR:-caddy validate failed}"
+  caddy_reload >&2 || caddy_rollback reload "Caddy could not reload, so the site was put back."
+  result true "done" "The site was removed from Caddy." '"proxy":"caddy"'
+}
+
+cmd_enable_caddy_import() {
+  [ -f "$CADDYFILE" ] || fail caddy-missing "No Caddy configuration was found at $CADDYFILE."
+  if caddy_has_import; then result true "done" "Caddy already loads sandboxd sites." '"changed":false'; return 0; fi
+  caddy_validate || fail caddy-validate "Your Caddy configuration already has an error, so nothing was changed: ${CADDY_ERR:-caddy validate failed}"
+  mkdir -p "$CADDY_SITES"
+  backup "$CADDYFILE" || fail backup "Could not back up $CADDYFILE."
+  log "adding '$CADDY_IMPORT' to $CADDYFILE"
+  { [ -z "$(tail -c1 "$CADDYFILE")" ] || printf '\n'; printf '\n# Sites published by sandboxd (one file per app).\n%s\n' "$CADDY_IMPORT"; } >> "$CADDYFILE" \
+    || caddy_rollback write "Could not update $CADDYFILE."
+  caddy_validate || caddy_rollback caddy-validate "Caddy rejected the change, so $CADDYFILE was restored: ${CADDY_ERR:-caddy validate failed}"
+  caddy_reload >&2 || caddy_rollback reload "Caddy could not reload, so $CADDYFILE was restored."
+  result true "done" "Caddy now loads sandboxd sites from $CADDY_SITES." '"changed":true'
+}
+
+# ── status ───────────────────────────────────────────────────────────
+
+cmd_status() {
+  local site=$1 proxy=none file="" hosts="" https=false h list=""
+  if command -v nginx >/dev/null 2>&1 && nginx_paths "$site" && [ -e "$CONF_FILE" ]; then
+    proxy=nginx; file=$CONF_FILE
+    hosts=$(sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;]*\);.*/\1/p' "$file" | head -n1)
+    grep -q 'ssl_certificate' "$file" && https=true
+  elif [ -e "$CADDY_SITES/$site.caddy" ]; then
+    proxy=caddy; file="$CADDY_SITES/$site.caddy"; https=true
+    hosts=$(grep -v '^#' "$file" | sed -n 's/^\([^[:space:]{][^{]*\){.*/\1/p' | head -n1 | tr -d ',')
+  fi
+  if [ "$proxy" = none ]; then
+    result true status "$site is not configured on this server." '"configured":false'
+    return 0
+  fi
+  for h in $hosts; do list="$list${list:+,}$(json_str "$h")"; done
+  local m=false; managed "$file" && m=true
+  result true status "$site is configured in $proxy." "$(printf '"configured":true,"proxy":%s,"file":%s,"managed":%s,"hosts":[%s],"https":%s' \
+    "$(json_str "$proxy")" "$(json_str "$file")" "$m" "$list" "$https")"
+}
+
+# ── main ─────────────────────────────────────────────────────────────
+
+[ "$(id -u)" = 0 ] || fail permission "frontdoor must run as root (sudo -n /usr/local/lib/sandboxd/frontdoor …)."
+
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  facts)
+    [ $# -eq 0 ] || fail usage "facts takes no arguments."
+    cmd_facts ;;
+  apply)
+    [ $# -ge 2 ] || fail usage "usage: frontdoor apply <site> <host> [host…]"
+    site=$1; shift
+    valid_site "$site" || fail usage "The site name must be lowercase letters, digits and dashes."
+    [ $# -le $MAX_HOSTS ] || fail usage "At most $MAX_HOSTS hostnames per site."
+    for h in "$@"; do valid_host "$h" || fail usage "$h is not a valid hostname (lowercase, no wildcards)."; done
+    lock
+    case "$(target)" in
+      nginx) nginx_apply "$site" "$@" ;;
+      caddy) caddy_apply "$site" "$@" ;;
+      *) fail no-proxy "This server has no nginx or Caddy for sandboxd to configure. Use the managed Caddy or the manual setup." ;;
+    esac ;;
+  remove)
+    [ $# -eq 1 ] && valid_site "$1" || fail usage "usage: frontdoor remove <site>"
+    lock
+    if command -v nginx >/dev/null 2>&1 && nginx_paths "$1" && [ -e "$CONF_FILE" ]; then nginx_remove "$1"
+    elif [ -e "$CADDY_SITES/$1.caddy" ]; then caddy_remove "$1"
+    else result true "done" "Nothing to remove: $1 is not configured."; fi ;;
+  status)
+    [ $# -eq 1 ] && valid_site "$1" || fail usage "usage: frontdoor status <site>"
+    cmd_status "$1" ;;
+  enable-caddy-import)
+    [ $# -eq 0 ] || fail usage "enable-caddy-import takes no arguments."
+    command -v caddy >/dev/null 2>&1 || fail caddy-missing "Caddy is not installed on this server."
+    lock
+    cmd_enable_caddy_import ;;
+  *)
+    fail usage "usage: frontdoor facts | apply <site> <host>… | remove <site> | status <site> | enable-caddy-import" ;;
+esac

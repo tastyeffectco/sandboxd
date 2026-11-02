@@ -36,6 +36,12 @@ you may change before installing:
   URLs then include it.
 - `SANDBOXD_API_BIND` (default `127.0.0.1:9090`) — where the API is published.
 
+On a public server that will host published apps, add a front door:
+`./install.sh --front=auto` (or `caddy`, `existing`, `manual`, plus
+`--domain=<D>` and `--desktop-key="<ssh key>"`). Traefik then listens on
+`127.0.0.1:8088` behind Caddy or your nginx, and the last output line is
+`SANDBOXD_INSTALL_RESULT {…}`. Reference: [`docs/front-door.md`](docs/front-door.md).
+
 Verify it's up:
 ```bash
 curl -s http://127.0.0.1:9090/healthz   # -> ok

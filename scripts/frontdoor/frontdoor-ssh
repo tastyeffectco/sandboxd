@@ -1,0 +1,70 @@
+#!/bin/bash
+#
+# sandboxd forced command for the limited `sandboxd` SSH user. Installed
+# root-owned at /usr/local/lib/sandboxd/frontdoor-ssh and named in
+# ~sandboxd/.ssh/authorized_keys:
+#
+#   restrict,port-forwarding,permitopen="127.0.0.1:9090",command="/usr/local/lib/sandboxd/frontdoor-ssh" ssh-ed25519 AAAA…
+#
+# The desktop may only (a) forward 127.0.0.1:9090 (the engine API, `ssh -N -L`)
+# and (b) run one of:
+#
+#   frontdoor facts
+#   frontdoor apply <site> <host> [host…]
+#   frontdoor remove <site>
+#   frontdoor status <site>
+#   frontdoor enable-caddy-import
+#
+# Everything else, including an interactive shell, is refused. The command is
+# never evaluated: it must consist of plain words drawn from [a-z0-9.-], which
+# rules out quoting, expansion, globbing, separators and newlines outright,
+# and every argument is validated again before it reaches sudo.
+
+set -u
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+HELPER=/usr/local/lib/sandboxd/frontdoor
+SITE_RE='^[a-z0-9][a-z0-9-]{0,62}$'
+LABEL='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?'
+HOST_RE="^$LABEL(\\.$LABEL)+\$"
+MAX_HOSTS=20
+
+refuse() {
+  printf 'sandboxd: %s\n' "$1" >&2
+  printf '{"ok":false,"step":"refused","message":"This connection may only run sandboxd front-door commands."}\n'
+  exit 1
+}
+
+cmd=${SSH_ORIGINAL_COMMAND-}
+[ -n "$cmd" ] || refuse "interactive sessions are not allowed"
+[ "${#cmd}" -le 6000 ] || refuse "command too long"
+case "$cmd" in
+  *[!a-z0-9\ .-]*) refuse "command contains characters that are not allowed" ;;
+esac
+
+# Split on spaces only. The character check above leaves nothing for the
+# shell to expand, and `read -a` never globs or evaluates.
+IFS=' ' read -r -a words <<<"$cmd"
+[ "${#words[@]}" -ge 2 ] || refuse "unknown command"
+[ "${words[0]}" = frontdoor ] || refuse "unknown command"
+
+sub=${words[1]}
+args=("${words[@]:2}")
+valid_site() { [[ $1 =~ $SITE_RE ]]; }
+valid_host() { [ "${#1}" -le 253 ] && [[ $1 =~ $HOST_RE ]]; }
+
+case "$sub" in
+  facts|enable-caddy-import)
+    [ "${#args[@]}" -eq 0 ] || refuse "$sub takes no arguments" ;;
+  remove|status)
+    [ "${#args[@]}" -eq 1 ] && valid_site "${args[0]}" || refuse "invalid site name" ;;
+  apply)
+    [ "${#args[@]}" -ge 2 ] && [ "${#args[@]}" -le $((MAX_HOSTS + 1)) ] || refuse "usage: frontdoor apply <site> <host>…"
+    valid_site "${args[0]}" || refuse "invalid site name"
+    for h in "${args[@]:1}"; do valid_host "$h" || refuse "invalid hostname"; done ;;
+  *)
+    refuse "unknown command" ;;
+esac
+
+exec sudo -n "$HELPER" "$sub" "${args[@]}"

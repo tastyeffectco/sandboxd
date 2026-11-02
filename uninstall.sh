@@ -62,7 +62,20 @@ bold "sandboxd — uninstall"
 
 # 1. Stop + remove the compose stack (traefik + sandboxd) and its network.
 if [ -n "$COMPOSE" ]; then
-  $COMPOSE down --remove-orphans 2>/dev/null && ok "stopped the stack (traefik + sandboxd)" || info "stack was not running"
+  $COMPOSE --profile console --profile caddy down --remove-orphans 2>/dev/null && ok "stopped the stack (traefik + sandboxd)" || info "stack was not running"
+fi
+
+# 1b. Server installs (install.sh --front): the limited `sandboxd` user, its
+#     sudo rule and the front-door helpers. Sites the helper added to your
+#     nginx/Caddy are left in place (they are marked "# managed by sandboxd").
+if [ -e /etc/sudoers.d/sandboxd-frontdoor ] || [ -e /usr/local/lib/sandboxd/frontdoor ] || id sandboxd >/dev/null 2>&1; then
+  # shellcheck source=scripts/install-front.sh
+  . "$REPO_ROOT/scripts/install-front.sh"
+  if front_remove_user; then ok "removed the limited 'sandboxd' user"; else info "left the existing 'sandboxd' user alone (not created by sandboxd)"; fi
+  ok "removed the front-door helper and its sudo rule"
+  for f in /etc/nginx/sites-available/sandboxd-*.conf /etc/nginx/conf.d/sandboxd-*.conf /etc/caddy/sandboxd/*.caddy; do
+    [ -e "$f" ] && info "still in your web server (remove when you no longer need it): $f"
+  done
 fi
 
 # 2. Remove every sandbox container this stack created. Scoped precisely

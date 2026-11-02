@@ -92,6 +92,14 @@ type Server struct {
 	// see package previewhost). Empty style = nested, today's layout.
 	PreviewHostStyle string
 	PreviewHostTag   string
+	// ConsoleHost is CONSOLE_HOST when the console is served on a name other
+	// than console.<PreviewDomain>; the edge treats it as served. Empty = none.
+	ConsoleHost string
+	// RateLimitMiddleware is the Traefik middleware (e.g.
+	// "sandbox-ratelimit-proxied@file", traefik/dynamic/ratelimit.yml) to
+	// attach to production app routers, from SANDBOXD_RATELIMIT_MIDDLEWARE.
+	// Never applied to previews. Empty = no rate limiting.
+	RateLimitMiddleware string
 
 	// GitPush runs the host-side git read+push ops (B2). Nil in production →
 	// the handler uses the real gitimport.Runner; tests inject a fake.
@@ -254,6 +262,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.observe("GET /healthz", s.handleHealthz))
 	mux.HandleFunc("GET /version", s.observe("GET /version", s.handleVersion))
 	mux.HandleFunc("GET /readyz", s.observe("GET /readyz", s.handleReadyz))
+	mux.HandleFunc("GET /edge/tls-allowed", s.observe("GET /edge/tls-allowed", s.handleEdgeTLSAllowed))
 	mux.Handle("GET /metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
 
 	// Phase 8 — external identity, purge, and preview-auth endpoints.

@@ -74,15 +74,18 @@ func (m *Middleware) Snapshot() *Config { return m.cfg.Load() }
 // token. /preview-auth and /forward-auth validate their
 // own JWTs; /healthz, /readyz and /version carry nothing sensitive.
 var exemptPaths = map[string]bool{
-	"/healthz":        true,
-	"/readyz":         true,
-	"/version":        true,
-	"/preview-auth":   true,
-	"/forward-auth":   true,
-	"/llm.txt":        true, // public API contract for integrators (no token)
-	"/v1/auth/status": true, // console asks "is auth on / am I logged in / is a password set" pre-login
-	"/v1/auth/login":  true, // you cannot be authenticated in order to authenticate
-	"/v1/auth/setup":  true, // first-run "create password" (self-guards: 409 once set)
+	"/healthz":      true,
+	"/readyz":       true,
+	"/version":      true,
+	"/preview-auth": true,
+	"/forward-auth": true,
+	"/llm.txt":      true, // public API contract for integrators (no token)
+	// Caddy's on-demand TLS "ask" hook: answers only "is this hostname ours"
+	// and refuses requests that came through Traefik (internal/api/edge.go).
+	"/edge/tls-allowed": true,
+	"/v1/auth/status":   true, // console asks "is auth on / am I logged in / is a password set" pre-login
+	"/v1/auth/login":    true, // you cannot be authenticated in order to authenticate
+	"/v1/auth/setup":    true, // first-run "create password" (self-guards: 409 once set)
 }
 
 // Wrap returns next gated by the uniform credential check.
