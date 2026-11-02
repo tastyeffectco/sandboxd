@@ -8,7 +8,7 @@
 # Inputs (env): SANDBOXD_IMAGE (built base image), SANDBOXD_BIN (sandboxd binary).
 # Needs root: sandboxd hands release files to the sandbox user.
 #
-#   sudo -E SANDBOXD_IMAGE=sandboxd-base:ci SANDBOXD_BIN=/tmp/sandboxd bash scripts/e2e-publish.sh
+#   sudo env SANDBOXD_IMAGE=sandboxd-base:ci SANDBOXD_BIN=/tmp/sandboxd bash scripts/e2e-publish.sh
 set -uo pipefail
 
 IMG="${SANDBOXD_IMAGE:?set SANDBOXD_IMAGE}"

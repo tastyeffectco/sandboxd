@@ -112,7 +112,7 @@ jobs:
           SANDBOXD_IMAGE: sandboxd-base:ci
           SANDBOXD_BIN: /tmp/sandboxd
         # Root: publishing hands release files to the sandbox user.
-        run: sudo -E bash scripts/e2e-publish.sh
+        run: sudo env "SANDBOXD_IMAGE=$SANDBOXD_IMAGE" "SANDBOXD_BIN=$SANDBOXD_BIN" "PATH=$PATH" bash scripts/e2e-publish.sh
 
   # Console is a /v1 client: typecheck, unit-test, and build it directly (not
   # only via docker) so a TS/test/build break is caught with clear output.
