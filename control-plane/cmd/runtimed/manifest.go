@@ -77,6 +77,9 @@ type Manifest struct {
 	Web     *WebProc   `yaml:"web"`     // the previewed process; nil => no preview (worker-only)
 	Build   *BuildSpec `yaml:"build"`   // post-task build check
 	Workers []Worker   `yaml:"workers"` // background processes, no preview
+	// Data is the persistent paths of a production app (see internal/manifest).
+	// runtimed only needs to accept the key; the control plane links them.
+	Data []string `yaml:"data"`
 }
 
 // WebProc is the single previewed process: it serves HTTP on Port and is
@@ -91,6 +94,9 @@ type WebProc struct {
 	// then 500s on). The web command re-runs on restart, so a start-time clean
 	// step (e.g. `rm -rf .next`) takes effect. Default false (no restart).
 	RestartAfterTask bool `yaml:"restart_after_task"`
+	// Start is the production start command, used instead of Command when
+	// runtimed runs in production mode (RUNTIMED_MODE=production).
+	Start string `yaml:"start"`
 }
 
 // BuildSpec is the build check run after a coding task.
@@ -99,6 +105,9 @@ type BuildSpec struct {
 	// build) from an explicit empty string (&"" → SKIP the build check).
 	Command        *string `yaml:"command"`
 	TimeoutSeconds int     `yaml:"timeout_seconds"`
+	// Release is the production build; the control plane runs it once per
+	// release, before the release starts. runtimed never runs it.
+	Release string `yaml:"release"`
 }
 
 // Worker is a background process with no preview (e.g. a queue consumer).
@@ -182,7 +191,7 @@ func unknownTopLevelKeys(raw []byte) []string {
 	var out []string
 	for k := range top {
 		switch k {
-		case "version", "web", "workers", "build":
+		case "version", "web", "workers", "build", "data":
 		default:
 			out = append(out, k)
 		}
@@ -293,4 +302,21 @@ func (m *Manifest) isDefaultWeb(def Defaults) bool {
 		m.Web.Command == def.WebCommand &&
 		m.Web.Port == def.WebPort &&
 		m.Web.HealthPath == def.WebHealthPath
+}
+
+// productionStart is the command a production app's web process runs:
+// web.start, else the production start of the preset whose dev command the
+// manifest still carries, else a command that explains what is missing (the
+// supervisor then reports the web process as failing).
+func productionStart(m *Manifest) string {
+	if m.Web == nil {
+		return ""
+	}
+	if m.Web.Start != "" {
+		return m.Web.Start
+	}
+	if start, _, ok := preset.Production(m.Web.Command); ok {
+		return start
+	}
+	return `echo "sandbox.yaml has no web.start: add the command that starts this app in production" >&2; exit 1`
 }

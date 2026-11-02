@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The Next.js preset must not run a build check that poisons `next dev`:
@@ -128,5 +130,32 @@ func TestTemplatesIgnoreDependencies(t *testing.T) {
 				t.Errorf("%s .gitignore missing %q", template, want)
 			}
 		}
+	}
+}
+
+func TestEveryWebPresetCanBePublished(t *testing.T) {
+	for _, p := range List() {
+		var m struct {
+			Web *struct {
+				Command string `yaml:"command"`
+				Start   string `yaml:"start"`
+			} `yaml:"web"`
+		}
+		if err := yaml.Unmarshal([]byte(p.Manifest), &m); err != nil {
+			t.Fatal(err)
+		}
+		if m.Web == nil {
+			continue
+		}
+		start, release, ok := Production(m.Web.Command)
+		if !ok || start != m.Web.Start || start == "" || release == "" {
+			t.Errorf("%s: start=%q release=%q ok=%v", p.ID, start, release, ok)
+		}
+		if strings.Contains(start, "--reload") || strings.Contains(start, " dev") {
+			t.Errorf("%s: production start runs a dev server: %q", p.ID, start)
+		}
+	}
+	if _, _, ok := Production("python app.py"); ok {
+		t.Error("an unknown command matched a preset")
 	}
 }

@@ -482,6 +482,10 @@ func (a *app) activeTaskRef() *runtime.ActiveTask {
 // --- HTTP handlers --------------------------------------------------
 
 func (a *app) handleStartTask(w http.ResponseWriter, r *http.Request) {
+	if a.production {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "this is a published app: make changes on your computer, then publish again"})
+		return
+	}
 	var req runtime.StartTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
