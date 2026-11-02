@@ -64,7 +64,7 @@ Every field is optional and defaulted:
 | `web.restart_after_task` | `false` | restart the web process after each task — see "Dev-mode resilience" |
 | `build.command` | `pnpm build` | see "Build checks" — explicit `""` skips |
 | `build.timeout_seconds` | `120` | |
-| `workers` | none | each gets a `worker-N` name if unnamed |
+| `workers` | none | each needs a `name` and a `command` — see "Validation" |
 
 Resolution rules (how **runtimed** runs a manifest — lenient, the app always boots):
 - **no file** → default web app, no workers.
@@ -211,7 +211,7 @@ name becomes a log-file path — every worker needs a command, and an explicit
 ```yaml
 version: 1
 web:
-  command: "pip install -r requirements.txt && python -m flask run --port 8000"
+  command: "pip install -r requirements.txt && python -m flask run --host 0.0.0.0 --port 8000"
   port: 8000
   health_path: "/healthz"
 build:
