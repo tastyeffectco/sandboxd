@@ -1,11 +1,15 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
@@ -313,5 +317,45 @@ func TestManifestUnknownTopLevelNoDefaultWeb(t *testing.T) {
 	}
 	if m, _ := LoadManifest(writeManifest(t, "version: 1\nworkers:\n  - name: w\n    command: x\n"), testDefaults); m.Web != nil {
 		t.Error("worker-only manifest must have no web")
+	}
+}
+
+func TestProductionStart(t *testing.T) {
+	dir := t.TempDir()
+	write := func(s string) *Manifest {
+		if err := os.WriteFile(filepath.Join(dir, ManifestFile), []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		m, err := LoadManifest(dir, Defaults{WebCommand: "pnpm dev", WebPort: 3000, WebHealthPath: "/", BuildTimeoutS: 60})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	m := write("version: 1\nweb:\n  command: pnpm dev\n  start: node dist/server.js\n  port: 3000\nbuild:\n  release: pnpm build\ndata: [data]\n")
+	if got := productionStart(m); got != "node dist/server.js" {
+		t.Errorf("declared start: %q", got)
+	}
+	if m.Build.Release != "pnpm build" || len(m.Data) != 1 {
+		t.Errorf("release/data not parsed: %+v %v", m.Build, m.Data)
+	}
+	// An app created before web.start existed still carries a preset's dev command.
+	p, _ := preset.Get("nextjs")
+	m = write(strings.Replace(p.Manifest, "  start:", "  old_start:", 1))
+	if got := productionStart(m); !strings.Contains(got, "next start") {
+		t.Errorf("preset fallback: %q", got)
+	}
+	m = write("version: 1\nweb:\n  command: python app.py\n  port: 3000\n")
+	if got := productionStart(m); !strings.Contains(got, "exit 1") {
+		t.Errorf("missing start must fail loudly: %q", got)
+	}
+}
+
+func TestProductionRefusesCodingTasks(t *testing.T) {
+	a := &app{production: true, bootedAt: time.Now()}
+	w := httptest.NewRecorder()
+	a.handleStartTask(w, httptest.NewRequest("POST", "/tasks", strings.NewReader(`{"task_id":"t","prompt":"p"}`)))
+	if w.Code != http.StatusConflict {
+		t.Errorf("HTTP %d", w.Code)
 	}
 }

@@ -8,7 +8,12 @@
 // sandbox.yaml = how to run it; preset = template + manifest + capabilities.
 package preset
 
-import "sort"
+import (
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Preset is one create-time bundle.
 type Preset struct {
@@ -40,10 +45,12 @@ var registry = map[string]Preset{
 		Manifest: `version: 1
 web:
   command: "[ -x node_modules/.bin/vite ] || pnpm install; pnpm exec vite --host 0.0.0.0 --port 3000"
+  start: "pnpm exec vite preview --host 0.0.0.0 --port 3000 --strictPort"
   port: 3000
   health_path: "/"
 build:
   command: "pnpm build"
+  release: "pnpm install && pnpm build"
 `,
 		Capabilities: []string{"node", "pnpm"},
 	},
@@ -60,11 +67,13 @@ build:
 		Manifest: `version: 1
 web:
   command: "[ -x node_modules/.bin/next ] || pnpm install; rm -rf .next; pnpm dev --hostname 0.0.0.0"
+  start: "pnpm exec next start --hostname 0.0.0.0 --port 3000"
   port: 3000
   health_path: "/"
   restart_after_task: true
 build:
   command: ""
+  release: "pnpm install && pnpm exec next build"
 `,
 		Capabilities: []string{"node", "pnpm"},
 	},
@@ -77,11 +86,13 @@ build:
 		Manifest: `version: 1
 web:
   command: "[ -d node_modules ] || pnpm install; node server.js"
+  start: "node server.js"
   port: 3000
   health_path: "/health"
   restart_after_task: true
 build:
   command: ""
+  release: "pnpm install"
 `,
 		Capabilities: []string{"node"},
 	},
@@ -95,10 +106,12 @@ build:
 		Manifest: `version: 1
 web:
   command: "[ -d .venv ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt); .venv/bin/uvicorn main:app --host 0.0.0.0 --port 3000 --reload"
+  start: ".venv/bin/uvicorn main:app --host 0.0.0.0 --port 3000"
   port: 3000
   health_path: "/health"
 build:
   command: ""
+  release: "python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
 `,
 		Capabilities: []string{"python3", "python3-venv"},
 	},
@@ -119,6 +132,35 @@ workers:
 `,
 		Capabilities: nil,
 	},
+}
+
+// Production is the production start and release build of the preset whose
+// dev web command is webCommand. It lets an app created before sandbox.yaml
+// had web.start (whose manifest still holds a preset's dev command verbatim)
+// be published without editing its manifest. ok is false for anything else.
+func Production(webCommand string) (start, release string, ok bool) {
+	for _, id := range order {
+		p := registry[id]
+		var m struct {
+			Web *struct {
+				Command string `yaml:"command"`
+				Start   string `yaml:"start"`
+			} `yaml:"web"`
+			Build *struct {
+				Release string `yaml:"release"`
+			} `yaml:"build"`
+		}
+		if err := yaml.Unmarshal([]byte(p.Manifest), &m); err != nil || m.Web == nil || m.Web.Start == "" {
+			continue
+		}
+		if strings.TrimSpace(webCommand) == m.Web.Command {
+			if m.Build != nil {
+				release = m.Build.Release
+			}
+			return m.Web.Start, release, true
+		}
+	}
+	return "", "", false
 }
 
 // Get returns a preset by id.

@@ -30,6 +30,11 @@ type Manifest struct {
 	Web     *WebProc `yaml:"web"`
 	Workers []Worker `yaml:"workers"`
 	Build   *Build   `yaml:"build"`
+	// Data lists the app paths (relative to the app dir) whose contents must
+	// survive new releases in production: SQLite files, uploads. They live on a
+	// persistent volume, are never part of a release bundle, and are what
+	// backups copy. Unset means DefaultData in production.
+	Data []string `yaml:"data"`
 }
 
 // WebProc is the previewed process declaration.
@@ -37,6 +42,9 @@ type WebProc struct {
 	Command    string `yaml:"command"`
 	Port       int    `yaml:"port"`
 	HealthPath string `yaml:"health_path"`
+	// Start is the production start command (e.g. `next start`), used instead
+	// of Command when the app runs in production mode on a server. Optional.
+	Start string `yaml:"start"`
 }
 
 // Worker is a background process declaration.
@@ -49,7 +57,17 @@ type Worker struct {
 type Build struct {
 	Command        string `yaml:"command"`
 	TimeoutSeconds int    `yaml:"timeout_seconds"`
+	// Release is the production build, run once per release before it starts
+	// (install dependencies, compile). Optional.
+	Release string `yaml:"release"`
 }
+
+// DefaultData is the persistent data path used in production when the
+// manifest declares none.
+var DefaultData = []string{"data"}
+
+// MaxDataPaths bounds the data: list.
+const MaxDataPaths = 16
 
 // Parse unmarshals raw sandbox.yaml bytes. No defaults are applied.
 func Parse(raw []byte) (*Manifest, error) {
@@ -89,12 +107,18 @@ type Result struct {
 type Effective struct {
 	Web     *EffectiveWeb     `json:"web,omitempty"`
 	Workers []EffectiveWorker `json:"workers"`
+	// Release is the production build command ("" = none).
+	Release string `json:"release"`
+	// Data is the persistent data paths (DefaultData when unset, in Effective).
+	Data []string `json:"data"`
 }
 
 type EffectiveWeb struct {
 	Command    string `json:"command"`
 	Port       int    `json:"port"`
 	HealthPath string `json:"health_path"`
+	// Start is the production start command ("" = not ready to publish).
+	Start string `json:"start"`
 }
 
 type EffectiveWorker struct {
@@ -106,6 +130,7 @@ var (
 	reLocalhost  = regexp.MustCompile(`localhost|127\.0\.0\.1`)
 	reCmdPort    = regexp.MustCompile(`(?:--port[ =]|:)(\d{2,5})`)
 	reWorkerName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	reDataPath   = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$`)
 )
 
 // knownTopLevel are the keys the v1 contract understands. The set is CLOSED for
@@ -113,7 +138,7 @@ var (
 // version field — a new key requires a version bump). This catches the common,
 // dangerous mistakes (processes:/services:/top-level command) that otherwise parse
 // to an empty runtime and silently run the default template.
-var knownTopLevel = map[string]bool{"version": true, "web": true, "workers": true, "build": true}
+var knownTopLevel = map[string]bool{"version": true, "web": true, "workers": true, "build": true, "data": true}
 
 // Validate is the authoritative manifest validation. It never executes anything
 // and is framework-agnostic. Errors make a manifest invalid; warnings are advice.
@@ -172,7 +197,7 @@ func Validate(raw []byte) Result {
 			topLevelMistake = true
 		default:
 			if !knownTopLevel[k] {
-				res.Errors = append(res.Errors, fmt.Sprintf("unknown top-level key %q — sandbox.yaml (v1) allows: version, web, workers, build", k))
+				res.Errors = append(res.Errors, fmt.Sprintf("unknown top-level key %q — sandbox.yaml (v1) allows: version, web, workers, build, data", k))
 				topLevelMistake = true
 			}
 		}
@@ -196,6 +221,18 @@ func Validate(raw []byte) Result {
 				fmt.Sprintf("web.command appears to use port %d but web.port is %d", cp, m.Web.Port))
 		}
 	}
+
+	if m.Web != nil && m.Web.Start != "" && bindsLocalhost(m.Web.Start) {
+		res.Warnings = append(res.Warnings,
+			"web.start may bind localhost only — a published app needs 0.0.0.0 (e.g. --host 0.0.0.0)")
+	}
+	if m.Web != nil && m.Web.Start != "" && m.Web.Port != 0 {
+		if cp := commandPort(m.Web.Start); cp != 0 && cp != m.Web.Port {
+			res.Warnings = append(res.Warnings,
+				fmt.Sprintf("web.start appears to use port %d but web.port is %d", cp, m.Web.Port))
+		}
+	}
+	res.Errors = append(res.Errors, DataPathErrors(m.Data)...)
 
 	// Workers — mirror runtimed's rules (kept as errors, like today's behavior).
 	seen := map[string]bool{}
@@ -229,22 +266,74 @@ func Validate(raw []byte) Result {
 	return res
 }
 
+// DataPathErrors checks a data: list. Each path must be relative to the app
+// dir, without "." or ".." segments, so it can never point outside the app.
+func DataPathErrors(paths []string) []string {
+	var errs []string
+	if len(paths) > MaxDataPaths {
+		errs = append(errs, fmt.Sprintf("data: lists %d paths; at most %d are allowed", len(paths), MaxDataPaths))
+	}
+	seen := map[string]bool{}
+	for _, p := range paths {
+		clean := strings.TrimSuffix(p, "/")
+		if !reDataPath.MatchString(clean) || strings.Contains("/"+clean+"/", "/../") || len(clean) > 200 {
+			errs = append(errs, fmt.Sprintf("invalid data path %q — use a folder or file inside the app, like \"data\" or \"prisma/dev.db\"", p))
+			continue
+		}
+		if seen[clean] {
+			errs = append(errs, fmt.Sprintf("duplicate data path %q", p))
+		}
+		seen[clean] = true
+	}
+	return errs
+}
+
+// DataPaths returns the cleaned data: list, or DefaultData when none is declared.
+func (m *Manifest) DataPaths() []string {
+	if m == nil || len(m.Data) == 0 {
+		return append([]string(nil), DefaultData...)
+	}
+	out := make([]string, 0, len(m.Data))
+	for _, p := range m.Data {
+		out = append(out, strings.TrimSuffix(p, "/"))
+	}
+	return out
+}
+
+// ReleaseCommand is the production build: build.release when set.
+func (m *Manifest) ReleaseCommand() string {
+	if m == nil || m.Build == nil {
+		return ""
+	}
+	return m.Build.Release
+}
+
+// StartCommand is the production start command ("" when undeclared).
+func (m *Manifest) StartCommand() string {
+	if m == nil || m.Web == nil {
+		return ""
+	}
+	return m.Web.Start
+}
+
 // parsedOf is the as-declared view (no defaults applied).
 func parsedOf(m *Manifest) *Effective {
 	e := &Effective{Workers: []EffectiveWorker{}}
 	if m.Web != nil {
-		e.Web = &EffectiveWeb{Command: m.Web.Command, Port: m.Web.Port, HealthPath: m.Web.HealthPath}
+		e.Web = &EffectiveWeb{Command: m.Web.Command, Port: m.Web.Port, HealthPath: m.Web.HealthPath, Start: m.Web.Start}
 	}
 	for _, wk := range m.Workers {
 		e.Workers = append(e.Workers, EffectiveWorker{Name: wk.Name, Command: wk.Command})
 	}
+	e.Release = m.ReleaseCommand()
+	e.Data = append([]string{}, m.Data...)
 	return e
 }
 
 func effectiveOf(m *Manifest) *Effective {
 	e := &Effective{Workers: []EffectiveWorker{}}
 	if m.Web != nil {
-		w := &EffectiveWeb{Command: m.Web.Command, Port: m.Web.Port, HealthPath: m.Web.HealthPath}
+		w := &EffectiveWeb{Command: m.Web.Command, Port: m.Web.Port, HealthPath: m.Web.HealthPath, Start: m.Web.Start}
 		if w.Port == 0 {
 			w.Port = DefaultWebPort
 		}
@@ -256,6 +345,8 @@ func effectiveOf(m *Manifest) *Effective {
 	for _, wk := range m.Workers {
 		e.Workers = append(e.Workers, EffectiveWorker{Name: wk.Name, Command: wk.Command})
 	}
+	e.Release = m.ReleaseCommand()
+	e.Data = m.DataPaths()
 	return e
 }
 

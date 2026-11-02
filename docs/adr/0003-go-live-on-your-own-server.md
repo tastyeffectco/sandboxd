@@ -23,8 +23,8 @@ one is. Servers differ a lot; a single rigid setup will not fit them.
 What sandboxd has today (main, v0.3.26):
 
 - The same engine runs on a laptop (desktop app) and on a Linux server (`install.sh`).
-- Each app is a hardened container. Its workspace is a loopback disk image and a
-  git repository. Snapshots copy that image; there is no export or import.
+- Each app is a hardened container. Its workspace is a host folder holding a
+  git repository. Snapshots copy that folder; there is no export or import.
 - `sandbox.yaml` declares one web process (`web.command`, usually a dev
   server such as `pnpm dev`), a build check and workers. There is no production
   start command, and no notion of data that must survive a new version.
@@ -238,7 +238,7 @@ rollback steps the desktop already uses (#148, #152). The desktop offers
 
 | # | Change | Phase |
 |---|---|---|
-| C1 | `sandbox.yaml`: optional `web.start` and `data:` (additive, validated) | 1 |
+| C1 | `sandbox.yaml`: optional `web.start`, `build.release` (the production build, separate from the post-task check that some presets skip) and `data:` (additive, validated) | 1 |
 | C2 | Release bundles: `GET /v1/apps/{id}/bundle`; `POST/GET /v1/apps/{id}/releases`; `POST …/releases/{rid}/activate` | 1 |
 | C3 | Production mode for an app: always on, start command, data volume, no agent tasks, build at publish | 1 |
 | C4 | Router: listen on `127.0.0.1:8088` when it is not the front door; app hostnames (`sslip.io`, custom) | 1 |

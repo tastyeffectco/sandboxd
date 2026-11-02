@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
@@ -30,17 +31,18 @@ type v1AppGit struct {
 }
 
 type v1App struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Tags              []string  `json:"tags"`
-	ExternalUserID    string    `json:"external_user_id,omitempty"`
-	ExternalProjectID string    `json:"external_project_id,omitempty"`
-	RuntimePreset     string    `json:"runtime_preset,omitempty"`
-	Git               *v1AppGit `json:"git,omitempty"`
-	CurrentSandboxID  string    `json:"current_sandbox_id,omitempty"`
-	CreatedAt         string    `json:"created_at"`
-	UpdatedAt         string    `json:"updated_at"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	Tags              []string          `json:"tags"`
+	ExternalUserID    string            `json:"external_user_id,omitempty"`
+	ExternalProjectID string            `json:"external_project_id,omitempty"`
+	RuntimePreset     string            `json:"runtime_preset,omitempty"`
+	Git               *v1AppGit         `json:"git,omitempty"`
+	CurrentSandboxID  string            `json:"current_sandbox_id,omitempty"`
+	Labels            map[string]string `json:"labels"`
+	CreatedAt         string            `json:"created_at"`
+	UpdatedAt         string            `json:"updated_at"`
 }
 
 func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
@@ -50,11 +52,15 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 		Description:      a.Description,
 		Tags:             a.Tags,
 		CurrentSandboxID: currentSandboxID,
+		Labels:           a.Labels,
 		CreatedAt:        a.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:        a.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if out.Tags == nil {
 		out.Tags = []string{}
+	}
+	if out.Labels == nil {
+		out.Labels = map[string]string{}
 	}
 	if a.ExternalUserID.Valid {
 		out.ExternalUserID = a.ExternalUserID.String
@@ -97,13 +103,14 @@ func (s *Server) currentSandboxID(r *http.Request, appID string) string {
 }
 
 type v1CreateAppReq struct {
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Tags              []string  `json:"tags"`
-	ExternalUserID    string    `json:"external_user_id"`
-	ExternalProjectID string    `json:"external_project_id"`
-	RuntimePreset     string    `json:"runtime_preset"`
-	Git               *v1AppGit `json:"git,omitempty"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	Tags              []string          `json:"tags"`
+	ExternalUserID    string            `json:"external_user_id"`
+	ExternalProjectID string            `json:"external_project_id"`
+	RuntimePreset     string            `json:"runtime_preset"`
+	Git               *v1AppGit         `json:"git,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
 	// Image is rejected on purpose — per-app image selection is not supported (the
 	// sandbox image is instance-wide via SANDBOXD_IMAGE). Declared so we 400 it
 	// explicitly instead of silently dropping it.
@@ -132,6 +139,10 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown runtime_preset")
 		return
 	}
+	if msg := labelsError(req.Labels); msg != "" {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", msg)
+		return
+	}
 	app := &store.App{
 		ID:                newULID(),
 		OwnerToken:        tenantToken(r),
@@ -141,6 +152,7 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 		ExternalUserID:    nullStr(req.ExternalUserID),
 		ExternalProjectID: nullStr(req.ExternalProjectID),
 		RuntimePreset:     nullStr(req.RuntimePreset),
+		Labels:            req.Labels,
 	}
 	// Optional Git import: validate the tokenless repo URL + branch and that the
 	// referenced credential exists for this owner. The token itself is NOT stored
@@ -191,8 +203,18 @@ func (s *Server) v1CreateApp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, v1AppFromRow(app, ""))
 }
 
-// v1ListApps — GET /v1/apps (tenant-scoped; optional ?external_user_id).
+// v1ListApps — GET /v1/apps (tenant-scoped; optional ?external_user_id and
+// repeatable ?label=key=value, all of which must match).
 func (s *Server) v1ListApps(w http.ResponseWriter, r *http.Request) {
+	want := map[string]string{}
+	for _, l := range r.URL.Query()["label"] {
+		k, v, ok := strings.Cut(l, "=")
+		if !ok || !reLabelKey.MatchString(k) {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "label filter must be key=value")
+			return
+		}
+		want[k] = v
+	}
 	apps, err := s.Store.ListAppsForOwner(r.Context(), tenantToken(r), r.URL.Query().Get("external_user_id"))
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
@@ -200,6 +222,9 @@ func (s *Server) v1ListApps(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]v1App, 0, len(apps))
 	for _, a := range apps {
+		if !labelsMatch(a.Labels, want) {
+			continue
+		}
 		out = append(out, v1AppFromRow(a, s.currentSandboxID(r, a.ID)))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"apps": out})
@@ -220,9 +245,10 @@ func (s *Server) v1GetApp(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1PatchAppReq struct {
-	Name        *string   `json:"name"`
-	Description *string   `json:"description"`
-	Tags        *[]string `json:"tags"`
+	Name        *string            `json:"name"`
+	Description *string            `json:"description"`
+	Tags        *[]string          `json:"tags"`
+	Labels      *map[string]string `json:"labels"`
 }
 
 // v1PatchApp — PATCH /v1/apps/{id}.
@@ -237,8 +263,14 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "name cannot be empty")
 		return
 	}
+	if req.Labels != nil {
+		if msg := labelsError(*req.Labels); msg != "" {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", msg)
+			return
+		}
+	}
 	err := s.Store.UpdateApp(r.Context(), id, tenantToken(r), store.AppPatch{
-		Name: req.Name, Description: req.Description, Tags: req.Tags,
+		Name: req.Name, Description: req.Description, Tags: req.Tags, Labels: req.Labels,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no such app")

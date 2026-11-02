@@ -27,8 +27,10 @@ type App struct {
 	GitBranch       sql.NullString
 	GitCredentialID sql.NullString
 	LastImportAt    sql.NullInt64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Labels are free-form key/values (0028), e.g. env=live; never nil after a read.
+	Labels    map[string]string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // AppPatch carries the fields a PATCH may change; nil means "leave as-is".
@@ -36,6 +38,18 @@ type AppPatch struct {
 	Name        *string
 	Description *string
 	Tags        *[]string
+	Labels      *map[string]string // replaces all labels
+}
+
+func marshalLabels(l map[string]string) string {
+	if l == nil {
+		return "{}"
+	}
+	b, err := json.Marshal(l)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 func marshalTags(tags []string) string {
@@ -51,11 +65,11 @@ func marshalTags(tags []string) string {
 
 func scanApp(sc scanner) (*App, error) {
 	a := &App{}
-	var tags string
+	var tags, labels string
 	var created, updated int64
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
 		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset,
-		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt)
+		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &labels)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -66,6 +80,10 @@ func scanApp(sc scanner) (*App, error) {
 	if a.Tags == nil {
 		a.Tags = []string{}
 	}
+	_ = json.Unmarshal([]byte(labels), &a.Labels)
+	if a.Labels == nil {
+		a.Labels = map[string]string{}
+	}
 	a.CreatedAt = time.Unix(created, 0).UTC()
 	a.UpdatedAt = time.Unix(updated, 0).UTC()
 	return a, nil
@@ -73,7 +91,7 @@ func scanApp(sc scanner) (*App, error) {
 
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
 	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset,
-	       git_repo_url, git_branch, git_credential_id, last_import_at`
+	       git_repo_url, git_branch, git_credential_id, last_import_at, labels`
 
 // SetAppImported stamps last_import_at after a successful Git clone.
 func (s *Store) SetAppImported(ctx context.Context, id string, at int64) error {
@@ -91,11 +109,11 @@ func (s *Store) CreateApp(ctx context.Context, a *App) error {
 			INSERT INTO app (id, owner_token, external_user_id, external_project_id,
 			                 name, description, tags, latest_snapshot_id,
 			                 created_at, updated_at, runtime_preset,
-			                 git_repo_url, git_branch, git_credential_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			                 git_repo_url, git_branch, git_credential_id, labels)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			a.ID, a.OwnerToken, a.ExternalUserID, a.ExternalProjectID,
 			a.Name, a.Description, marshalTags(a.Tags), a.LatestSnapshotID, now, now, a.RuntimePreset,
-			a.GitRepoURL, a.GitBranch, a.GitCredentialID)
+			a.GitRepoURL, a.GitBranch, a.GitCredentialID, marshalLabels(a.Labels))
 		if err != nil {
 			if isUniqueViolation(err) {
 				return ErrConflict
@@ -168,6 +186,10 @@ func (s *Store) UpdateApp(ctx context.Context, id, ownerToken string, patch AppP
 		if patch.Tags != nil {
 			sets = append(sets, "tags = ?")
 			args = append(args, marshalTags(*patch.Tags))
+		}
+		if patch.Labels != nil {
+			sets = append(sets, "labels = ?")
+			args = append(args, marshalLabels(*patch.Labels))
 		}
 		// Always bump updated_at; an empty patch is a touch.
 		sets = append(sets, "updated_at = ?")

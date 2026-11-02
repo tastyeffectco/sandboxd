@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -231,5 +232,68 @@ func TestValidateWorkerRules(t *testing.T) {
 	ok := Validate([]byte("version: 1\nworkers:\n  - name: queue\n    command: \"node worker.js\"\n"))
 	if !ok.Valid {
 		t.Errorf("valid worker should pass: %+v", ok)
+	}
+}
+
+func TestValidateProductionFields(t *testing.T) {
+	res := Validate([]byte(`version: 1
+web:
+  command: "pnpm dev"
+  start: "pnpm exec next start --hostname 0.0.0.0 --port 3000"
+  port: 3000
+build:
+  command: ""
+  release: "pnpm install && pnpm exec next build"
+data: [data, prisma/dev.db, uploads/]
+`))
+	if !res.Valid {
+		t.Fatalf("valid production manifest rejected: %v", res.Errors)
+	}
+	e := res.Effective
+	if e.Web.Start == "" || e.Release != "pnpm install && pnpm exec next build" {
+		t.Errorf("effective production view: %+v", e)
+	}
+	if got := strings.Join(e.Data, ","); got != "data,prisma/dev.db,uploads" {
+		t.Errorf("data paths: %q", got)
+	}
+}
+
+func TestDataDefaultsInEffectiveOnly(t *testing.T) {
+	res := Validate([]byte("version: 1\nweb:\n  command: x\n  port: 3000\n"))
+	if !res.Valid || strings.Join(res.Effective.Data, ",") != "data" {
+		t.Errorf("effective data default: %+v", res.Effective)
+	}
+	if len(res.Parsed.Data) != 0 {
+		t.Errorf("parsed view must be as declared: %v", res.Parsed.Data)
+	}
+}
+
+func TestDataPathsMustStayInsideTheApp(t *testing.T) {
+	for _, bad := range []string{"/etc", "../up", "a/../../b", ".", "..", "./data", "a//b", "", ".env", "a b", "data/./x"} {
+		if errs := DataPathErrors([]string{bad}); len(errs) == 0 {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, ok := range []string{"data", "prisma/dev.db", "storage/app_files", "db.sqlite3", "uploads/"} {
+		if errs := DataPathErrors([]string{ok}); len(errs) != 0 {
+			t.Errorf("%q rejected: %v", ok, errs)
+		}
+	}
+	if errs := DataPathErrors([]string{"data", "data/"}); len(errs) != 1 {
+		t.Errorf("duplicate not caught: %v", errs)
+	}
+	many := make([]string, MaxDataPaths+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("d%d", i)
+	}
+	if errs := DataPathErrors(many); len(errs) != 1 {
+		t.Errorf("too many paths: %v", errs)
+	}
+}
+
+func TestStartWarnings(t *testing.T) {
+	res := Validate([]byte("version: 1\nweb:\n  command: x\n  start: \"serve --listen localhost:4000\"\n  port: 3000\n"))
+	if !res.Valid || len(res.Warnings) != 2 {
+		t.Errorf("want localhost + port warnings: %+v", res)
 	}
 }

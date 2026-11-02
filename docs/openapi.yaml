@@ -558,6 +558,12 @@ paths:
           name: external_user_id
           schema: { type: string }
           description: Optional integration-tag filter.
+        - in: query
+          name: label
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+          description: Repeatable `key=value` label filter; an app must carry every one.
       responses:
         "200":
           description: OK
@@ -1940,6 +1946,7 @@ components:
         external_project_id: { type: string }
         runtime_preset: { type: string, description: "Default runtime preset id for new sandboxes." }
         current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
+        labels: { $ref: "#/components/schemas/AppLabels" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     Preset:
@@ -1960,6 +1967,7 @@ components:
         external_user_id: { type: string }
         external_project_id: { type: string }
         runtime_preset: { type: string, description: "Runtime preset id; see GET /v1/presets." }
+        labels: { $ref: "#/components/schemas/AppLabels" }
         git:
           type: object
           description: >-
@@ -1978,6 +1986,16 @@ components:
         name: { type: string }
         description: { type: string }
         tags: { type: array, items: { type: string } }
+        labels:
+          allOf: [{ $ref: "#/components/schemas/AppLabels" }]
+          description: Replaces all of the app's labels.
+    AppLabels:
+      type: object
+      description: >-
+        Free-form key/value labels, e.g. `env: live`, `source: <local app id>`.
+        Keys are lowercase letters, digits, `.`, `_` or `-` (up to 63 characters);
+        values up to 256 characters; at most 32 labels.
+      additionalProperties: { type: string }
     ConfigItem:
       type: object
       properties:
@@ -2042,6 +2060,7 @@ components:
             command: { type: string }
             port: { type: integer }
             health_path: { type: string }
+            start: { type: string, description: "Production start command (web.start); empty when undeclared." }
         workers:
           type: array
           items:
@@ -2049,6 +2068,8 @@ components:
             properties:
               name: { type: string }
               command: { type: string }
+        release: { type: string, description: "Production build run once per release (build.release); empty = none." }
+        data: { type: array, items: { type: string }, description: "Paths kept across releases in production (default [data])." }
     ManifestValidation:
       type: object
       properties:

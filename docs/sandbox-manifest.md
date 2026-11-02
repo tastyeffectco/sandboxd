@@ -40,11 +40,13 @@ web:
   port: 3000              # the HTTP port the preview routes to
   health_path: "/"        # path probed for readiness; HTTP 200 = ready
   restart_after_task: false  # restart the web process after each task (see below)
+  start: "pnpm exec next start --hostname 0.0.0.0 --port 3000"  # production start (see "Publishing")
 
 # Post-task build check (run after a coding task to catch breakage).
 build:
   command: "pnpm build"   # empty string = skip the build check
   timeout_seconds: 120
+  release: "pnpm install && pnpm build"  # production build, once per release (see "Publishing")
 
 # Background processes with NO preview (e.g. a queue consumer). Optional.
 workers:
@@ -52,6 +54,11 @@ workers:
     command: "node worker.js"
   - name: "cron"
     command: "python cron.py"
+
+# Paths whose contents survive new releases in production (see "Publishing").
+data:
+  - data
+  - prisma/dev.db
 ```
 
 Every field is optional and defaulted:
@@ -64,7 +71,10 @@ Every field is optional and defaulted:
 | `web.restart_after_task` | `false` | restart the web process after each task — see "Dev-mode resilience" |
 | `build.command` | `pnpm build` | see "Build checks" — explicit `""` skips |
 | `build.timeout_seconds` | `120` | |
+| `web.start` | none | production start command; preset apps fall back to their preset's — see "Publishing" |
+| `build.release` | none | production build, run once per release |
 | `workers` | none | each needs a `name` and a `command` — see "Validation" |
+| `data` | `[data]` (in production) | relative paths inside the app; no `.` or `..` segments; at most 16 |
 
 Resolution rules (how **runtimed** runs a manifest — lenient, the app always boots):
 - **no file** → default web app, no workers.
@@ -187,6 +197,40 @@ web:
 build:
   command: ""      # dev server: no post-task production build
 ```
+
+## Publishing (production mode)
+
+An app published to a server ([ADR 0003](adr/0003-go-live-on-your-own-server.md))
+runs in **production mode**. The dev fields above still describe how it runs on
+your computer; three optional fields describe production:
+
+- **`web.start`** replaces `web.command` in production. It must start the app
+  without a dev server or file watcher (`next start`, `uvicorn` without
+  `--reload`, `vite preview`), listen on `0.0.0.0` and on `web.port`. The
+  validator warns when it names `localhost` or another port.
+- **`build.release`** runs once for each release, in the release's own folder,
+  before it starts: install dependencies and compile. A failing release build
+  stops the publish and the live version keeps running. It is separate from
+  `build.command`, the post-task check, which some presets skip.
+- **`data`** lists the files and folders that must survive new releases:
+  SQLite files, uploads. They live outside the release folders, are never part
+  of what you publish, and are what backups copy. Default: `data`.
+
+In production, runtimed also sets `NODE_ENV=production`, refuses coding tasks
+(make changes on your computer, then publish again) and ignores
+`restart_after_task`. Workers run their usual `command`.
+
+Every built-in preset declares `web.start` and `build.release`. An app created
+before these fields existed can still be published: when `web.start` is missing
+and `web.command` is exactly a preset's dev command, that preset's production
+commands are used.
+
+| Preset | `web.start` | `build.release` |
+|---|---|---|
+| React / Vite | `pnpm exec vite preview --host 0.0.0.0 --port 3000 --strictPort` | `pnpm install && pnpm build` |
+| Next.js | `pnpm exec next start --hostname 0.0.0.0 --port 3000` | `pnpm install && pnpm exec next build` |
+| Node / Express | `node server.js` | `pnpm install` |
+| Python / FastAPI | `.venv/bin/uvicorn main:app --host 0.0.0.0 --port 3000` | `python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt` |
 
 ## Process model
 runtimed supervises each declared process — one web process (optional) plus any

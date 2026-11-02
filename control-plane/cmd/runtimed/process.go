@@ -32,6 +32,7 @@ type process struct {
 	command string // shell command, run via `bash -lc`
 	logPath string
 	log     *slog.Logger
+	env     []string // extra environment (e.g. NODE_ENV=production), on top of runtimed's
 
 	restartAfterTask bool // bounce this process after each task (manifest restart_after_task)
 
@@ -99,6 +100,9 @@ func (p *process) runOnce() {
 	p.mu.Unlock()
 	cmd := exec.Command("bash", "-lc", command)
 	cmd.Dir = p.appDir
+	if len(p.env) > 0 {
+		cmd.Env = append(os.Environ(), p.env...)
+	}
 	// Own process group so the whole `bash → … ` tree can be signalled as a unit.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if f, err := os.Create(p.logPath); err == nil {

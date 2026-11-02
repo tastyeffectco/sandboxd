@@ -8,6 +8,15 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Added
+
+- **`sandbox.yaml` describes production too.** Optional `web.start` (the
+  production start command), `build.release` (the build run once per release)
+  and `data:` (paths that survive new releases). Every built-in preset declares
+  them. Apps can also carry free-form labels (`labels` on `POST`/`PATCH
+  /v1/apps`, `?label=key=value` on `GET /v1/apps`). First steps of publishing
+  to your own server (ADR 0003).
+
 ### Fixed
 
 - **Desktop engine updates now go through.** Updating from 0.3.25 always

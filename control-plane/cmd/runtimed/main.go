@@ -30,6 +30,7 @@ const version = "0.1.0"
 // server and any workers from sandbox.yaml), the most recent preview health
 // probe, and the one active coding task.
 type app struct {
+	production    bool       // RUNTIMED_MODE=production: run web.start, refuse coding tasks
 	web           *process   // the previewed process; nil for a worker-only app
 	workers       []*process // background processes, no preview
 	previewPort   int        // web process's HTTP port
@@ -112,7 +113,12 @@ func main() {
 	// seed the preset's starter template into an empty workspace and write its
 	// sandbox.yaml when none exists. Otherwise fall back to the named template.
 	// Both paths only ever touch an EMPTY workspace / a MISSING sandbox.yaml.
-	if presetID := envOr("RUNTIMED_RUNTIME_PRESET", ""); presetID != "" {
+	production := envOr("RUNTIMED_MODE", "") == "production"
+	if production {
+		// A published app runs the release the control plane linked at appDir;
+		// never seed a template into it.
+		log.Info("production mode: serving the published release")
+	} else if presetID := envOr("RUNTIMED_RUNTIME_PRESET", ""); presetID != "" {
 		if p, ok := preset.Get(presetID); ok {
 			applyPreset(appDir, p, log)
 		} else {
@@ -143,6 +149,7 @@ func main() {
 		log:        log,
 		bootedAt:   time.Now(),
 		defaults:   manifestDefaults,
+		production: production,
 	}
 	// Remember the file in effect so a task that edits it can be detected, and
 	// undone when the new settings would break the preview. An invalid file at
@@ -150,16 +157,26 @@ func main() {
 	if err == nil {
 		a.manifestRaw, _ = os.ReadFile(filepath.Join(appDir, ManifestFile))
 	}
+	var prodEnv []string
+	if production {
+		prodEnv = []string{"NODE_ENV=production"}
+	}
 	if m.Web != nil {
-		a.web = newProcess("web", "web", appDir, m.Web.Command, filepath.Join(runtimeDir, "web.log"), log)
-		a.web.restartAfterTask = m.Web.RestartAfterTask
+		command := m.Web.Command
+		if production {
+			command = productionStart(m)
+		}
+		a.web = newProcess("web", "web", appDir, command, filepath.Join(runtimeDir, "web.log"), log)
+		a.web.env = prodEnv
+		a.web.restartAfterTask = m.Web.RestartAfterTask && !production
 		a.previewPort = m.Web.Port
 		a.webHealthPath = m.Web.HealthPath
 		a.defaultWeb = m.isDefaultWeb(manifestDefaults)
 	}
 	for _, w := range m.Workers {
 		wp := newProcess(w.Name, "worker", appDir, w.Command, filepath.Join(runtimeDir, w.Name+".log"), log)
-		wp.restartAfterTask = w.RestartAfterTask
+		wp.restartAfterTask = w.RestartAfterTask && !production
+		wp.env = prodEnv
 		a.workers = append(a.workers, wp)
 	}
 
