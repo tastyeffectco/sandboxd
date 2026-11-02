@@ -277,6 +277,7 @@ func (s *Store) DeleteApp(ctx context.Context, appID string) error {
 		for _, stmt := range []string{
 			`DELETE FROM app_config WHERE app_id = ?`,
 			`DELETE FROM app_events WHERE app_id = ?`,
+			`DELETE FROM app_release WHERE app_id = ?`,
 			`DELETE FROM snapshot   WHERE source_app_id = ?`,
 			`DELETE FROM app        WHERE id = ?`,
 		} {

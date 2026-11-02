@@ -95,12 +95,12 @@ func (s *Store) Create(ctx context.Context, sb *Sandbox) error {
 			                    created_at, updated_at,
 			                    external_user_id, external_project_id,
 			                    external_workspace_id, visibility,
-			                    idle_policy, app_id, web_port)
-			VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			                    idle_policy, app_id, web_port, mode, public_hosts)
+			VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			sb.ID, sb.Status, sb.Image, sb.WorkspaceImg, sb.WorkspaceMnt,
 			sb.MemoryHigh, now, now,
 			sb.ExternalUserID, sb.ExternalProjectID, sb.ExternalWorkspaceID, visibility, idlePolicy,
-			sb.AppID, sb.WebPort)
+			sb.AppID, sb.WebPort, sb.Mode, marshalHosts(sb.PublicHosts))
 
 		if err != nil {
 			if isUniqueViolation(err) {

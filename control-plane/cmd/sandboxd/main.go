@@ -201,6 +201,10 @@ func main() {
 		log.Error("startup: store open failed", "err", err.Error())
 		os.Exit(1)
 	}
+	// A publish runs inside this process; one cut short by a restart never finishes.
+	if err := st.FailUnfinishedReleases(ctx); err != nil {
+		log.Warn("startup: mark interrupted releases failed", "err", err.Error())
+	}
 	defer func() {
 		if err := st.Close(); err != nil {
 			log.Error("shutdown: store close failed", "err", err.Error())
@@ -507,22 +511,24 @@ func main() {
 	// new agent/model support. Lossless: everything durable is in the workspace
 	// bind mount, and the container rootfs is read-only by construction.
 	wakeHandler.Image = image
+	rateLimitMiddleware := envDefault("SANDBOXD_RATELIMIT_MIDDLEWARE", "")
 	wakeHandler.Recreate = func(ctx context.Context, sb *store.Sandbox) error {
 		spec := sandboxspec.Build(sb, sandboxspec.Env{
-			Image:             image,
-			Network:           network,
-			Userns:            userns,
-			Runtime:           sbxRuntime,
-			DNSResolvConf:     dnsResolvConf,
-			PreviewDomain:     domain,
-			PreviewHostStyle:  hosts.Style,
-			PreviewHostTag:    hosts.Tag,
-			PreviewEntrypoint: previewEntrypoint,
-			PreviewTLS:        previewTLS,
-			AgentProxyURL:     agentProxyURL,
-			OpencodeModel:     envDefault("SANDBOXD_OPENCODE_MODEL", ""),
-			OpencodeZenPath:   envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
-			RuntimePreset:     runtimePresetForSandbox(ctx, st, sb),
+			RateLimitMiddleware: rateLimitMiddleware,
+			Image:               image,
+			Network:             network,
+			Userns:              userns,
+			Runtime:             sbxRuntime,
+			DNSResolvConf:       dnsResolvConf,
+			PreviewDomain:       domain,
+			PreviewHostStyle:    hosts.Style,
+			PreviewHostTag:      hosts.Tag,
+			PreviewEntrypoint:   previewEntrypoint,
+			PreviewTLS:          previewTLS,
+			AgentProxyURL:       agentProxyURL,
+			OpencodeModel:       envDefault("SANDBOXD_OPENCODE_MODEL", ""),
+			OpencodeZenPath:     envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
+			RuntimePreset:       runtimePresetForSandbox(ctx, st, sb),
 		})
 		// Remove any existing container first so the name is free; ignore a
 		// not-found (the common case) and let Run surface a real failure.
@@ -534,29 +540,31 @@ func main() {
 	}
 
 	server := &api.Server{
-		Store:             st,
-		Secrets:           secretsCipher,
-		ModelProviders:    modelProviders,
-		Update:            updateChecker,
-		AgentAuth:         agentAuth,
-		OpencodeModel:     envDefault("SANDBOXD_OPENCODE_MODEL", ""),
-		OpencodeZenPath:   envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
-		DefaultAgent:      defaultAgent,
-		AgentProxyURL:     agentProxyURL,
-		Docker:            dockerClient,
-		Loopback:          loopMgr,
-		Log:               log.With("component", "api"),
-		PreviewDomain:     domain,
-		PreviewHostStyle:  hosts.Style,
-		PreviewHostTag:    hosts.Tag,
-		Image:             image,
-		Network:           network,
-		Userns:            userns,
-		Runtime:           sbxRuntime,
-		DNSResolvConf:     dnsResolvConf,
-		PreviewEntrypoint: previewEntrypoint,
-		PreviewTLS:        previewTLS,
-		PreviewURLScheme:  previewURLScheme,
+		Store:               st,
+		Secrets:             secretsCipher,
+		ModelProviders:      modelProviders,
+		Update:              updateChecker,
+		AgentAuth:           agentAuth,
+		OpencodeModel:       envDefault("SANDBOXD_OPENCODE_MODEL", ""),
+		OpencodeZenPath:     envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
+		DefaultAgent:        defaultAgent,
+		AgentProxyURL:       agentProxyURL,
+		Docker:              dockerClient,
+		Loopback:            loopMgr,
+		Log:                 log.With("component", "api"),
+		PreviewDomain:       domain,
+		PreviewHostStyle:    hosts.Style,
+		PreviewHostTag:      hosts.Tag,
+		Image:               image,
+		Network:             network,
+		Userns:              userns,
+		Runtime:             sbxRuntime,
+		DNSResolvConf:       dnsResolvConf,
+		PreviewEntrypoint:   previewEntrypoint,
+		PreviewTLS:          previewTLS,
+		PreviewURLScheme:    previewURLScheme,
+		RateLimitMiddleware: rateLimitMiddleware,
+		Recreate:            wakeHandler.Recreate,
 		Upgrade: &upgrade.Manager{
 			Docker: dockerClient, DataDir: dataDir, Version: version,
 			SrcDir:        os.Getenv("SANDBOXD_SRC_DIR"),

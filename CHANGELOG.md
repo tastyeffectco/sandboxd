@@ -16,6 +16,14 @@ patch** — each lands the meaningful changes merged since the last one — and 
   them. Apps can also carry free-form labels (`labels` on `POST`/`PATCH
   /v1/apps`, `?label=key=value` on `GET /v1/apps`). First steps of publishing
   to your own server (ADR 0003).
+- **Publish an app to a server engine.** `GET /v1/apps/{id}/bundle` gives an
+  app's saved code (without agent notes or `.env` files); `POST
+  /v1/apps/{id}/releases` on a server publishes it: built in a one-off
+  container while the live version keeps serving, switched to, and switched
+  back if it does not start. The published app stays on, restarts after a
+  crash, keeps its `data:` across versions, answers at `<name>.<domain>` and
+  keeps its last three versions for "Go back"
+  (`POST /v1/apps/{id}/releases/{rid}/activate`).
 
 ### Fixed
 

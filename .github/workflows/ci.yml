@@ -107,6 +107,13 @@ jobs:
           SANDBOXD_BIN: /tmp/sandboxd
         run: bash scripts/e2e.sh
 
+      - name: e2e publish (ADR 0003)
+        env:
+          SANDBOXD_IMAGE: sandboxd-base:ci
+          SANDBOXD_BIN: /tmp/sandboxd
+        # Root: publishing hands release files to the sandbox user.
+        run: sudo -E bash scripts/e2e-publish.sh
+
   # Console is a /v1 client: typecheck, unit-test, and build it directly (not
   # only via docker) so a TS/test/build break is caught with clear output.
   console:

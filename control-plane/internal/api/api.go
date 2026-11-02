@@ -4,6 +4,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"log/slog"
 	"net"
@@ -69,6 +70,16 @@ type Server struct {
 	// URLs or it cannot iframe previews (mixed content). Empty = derive from
 	// PreviewTLS, exactly the previous behaviour.
 	PreviewURLScheme string
+	// RateLimitMiddleware guards published apps' public routers
+	// (SANDBOXD_RATELIMIT_MIDDLEWARE, e.g. "sandbox-ratelimit@file"); "" = none.
+	RateLimitMiddleware string
+	// Recreate rebuilds a sandbox's container from its row (the same function
+	// the wake path uses). Publishing uses it when a published app's container
+	// is missing. nil = unavailable.
+	Recreate func(ctx context.Context, sb *store.Sandbox) error
+	// releaseMu guards releasing: the apps with a publish or go-back running.
+	releaseMu sync.Mutex
+	releasing map[string]bool
 	// PublicHTTPPort is the HOST-facing port that preview/console URLs are
 	// reached on (the host side of Traefik's published port). previewURL
 	// appends it unless it's the default for the scheme (80 for http, 443
@@ -274,6 +285,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sandboxes/{id}/files/content", s.observe("GET /v1/sandboxes/{id}/files/content", s.v1FileContent))
 	mux.HandleFunc("PUT /v1/sandboxes/{id}/files", s.observe("PUT /v1/sandboxes/{id}/files", s.v1PutFile))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/export", s.observe("GET /v1/sandboxes/{id}/export", s.v1Export))
+
+	// Publishing (ADR 0003): bundle on the engine you build on, releases on a server.
+	mux.HandleFunc("GET /v1/apps/{id}/bundle", s.observe("GET /v1/apps/{id}/bundle", s.v1AppBundle))
+	mux.HandleFunc("GET /v1/apps/{id}/releases", s.observe("GET /v1/apps/{id}/releases", s.v1ListReleases))
+	mux.HandleFunc("POST /v1/apps/{id}/releases", s.observe("POST /v1/apps/{id}/releases", s.v1CreateRelease))
+	mux.HandleFunc("GET /v1/apps/{id}/releases/{rid}", s.observe("GET /v1/apps/{id}/releases/{rid}", s.v1GetRelease))
+	mux.HandleFunc("POST /v1/apps/{id}/releases/{rid}/activate", s.observe("POST /v1/apps/{id}/releases/{rid}/activate", s.v1ActivateRelease))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/processes/{name}/logs", s.observe("GET /v1/sandboxes/{id}/processes/{name}/logs", s.v1ProcessLogs))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/terminal", s.observe("GET /v1/sandboxes/{id}/terminal", s.v1Terminal))
 

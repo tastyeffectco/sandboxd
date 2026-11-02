@@ -37,6 +37,9 @@ type Env struct {
 	OpencodeZenPath   string
 	RuntimePreset     string   // from the owning app, when known
 	AgentAuthMounts   []string // only when the auth proxy is disabled
+	// RateLimitMiddleware guards published apps' public routers (e.g.
+	// "sandbox-ratelimit@file"); "" = none.
+	RateLimitMiddleware string
 }
 
 // Build returns the RunSpec for `sb`. It reproduces the create path's flags:
@@ -57,6 +60,14 @@ func Build(sb *store.Sandbox, e Env) docker.RunSpec {
 	}
 	if e.OpencodeZenPath != "" {
 		env = append(env, "SANDBOXD_OPENCODE_ZEN_PATH="+e.OpencodeZenPath)
+	}
+	production := sb.Mode == store.ModeProduction
+	restart := ""
+	if production {
+		// A published app: runtimed runs web.start and refuses coding
+		// tasks; Docker brings it back after a crash or a reboot.
+		env = append(env, "RUNTIMED_MODE=production")
+		restart = "unless-stopped"
 	}
 
 	volumes := append([]string{sb.WorkspaceMnt + ":/home/sandbox"}, e.AgentAuthMounts...)
@@ -89,6 +100,13 @@ func Build(sb *store.Sandbox, e Env) docker.RunSpec {
 		visibility = "private"
 	}
 	labels := traefik.LabelsFor(e.Hosts(), sb.ID, ports, visibility, e.PreviewEntrypoint, e.PreviewTLS)
+	if production {
+		web := 3000
+		if sb.WebPort.Valid && sb.WebPort.Int64 > 0 {
+			web = int(sb.WebPort.Int64)
+		}
+		labels = append(labels, traefik.ProductionLabels(sb.ID, web, sb.PublicHosts, e.PreviewEntrypoint, e.PreviewTLS, e.RateLimitMiddleware)...)
+	}
 
 	return docker.RunSpec{
 		Name:        name,
@@ -108,6 +126,7 @@ func Build(sb *store.Sandbox, e Env) docker.RunSpec {
 		Env:         env,
 		Volumes:     volumes,
 		Labels:      labels,
+		Restart:     restart,
 		Image:       e.Image,
 	}
 }
