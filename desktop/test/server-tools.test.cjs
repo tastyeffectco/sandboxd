@@ -9,6 +9,10 @@ const path = require('node:path')
 const { createServerTools } = require('../src/server-tools.cjs')
 
 const SERVER = { id: 'srv_0123456789ab', name: 'My VPS', username: 'ubuntu' }
+// The tools drive a Linux server's shell; these tests stand one in with the
+// local POSIX shell, which Windows doesn't have.
+const posix = { skip: process.platform === 'win32' && 'needs a POSIX shell' }
+const testPosix = (name, fn) => test(name, posix, fn)
 
 // servers.run, executed by the local bash. `admin` is recorded, not elevated.
 function localServers({ needsPassword = false } = {}) {
@@ -50,7 +54,7 @@ async function setup(t, options = {}) {
   return { root, servers, tools, events, answer }
 }
 
-test('run asks first, shows the reason and the exact command, and runs only when allowed', async (t) => {
+testPosix('run asks first, shows the reason and the exact command, and runs only when allowed', async (t) => {
   const { tools, servers, answer, root } = await setup(t)
   const marker = path.join(root, 'ran')
   const asked = answer({ allow: false })
@@ -77,7 +81,7 @@ test('run asks first, shows the reason and the exact command, and runs only when
   )
 })
 
-test('a reason is required, and unanswered questions are a no', async (t) => {
+testPosix('a reason is required, and unanswered questions are a no', async (t) => {
   const { tools, servers } = await setup(t, { approvalTimeout: 50 })
   await assert.rejects(tools.call('run', { server: SERVER.id, command: 'ls' }), /why this command/)
   const result = await tools.call('run', { server: SERVER.id, command: 'ls', why: 'List' })
@@ -87,7 +91,7 @@ test('a reason is required, and unanswered questions are a no', async (t) => {
   await assert.rejects(tools.call('nope', {}), /Unknown tool/)
 })
 
-test('closing the app declines everything still open', async (t) => {
+testPosix('closing the app declines everything still open', async (t) => {
   const { tools } = await setup(t)
   const pending = tools.call('run', { server: SERVER.id, command: 'ls', why: 'List' })
   await new Promise((r) => setImmediate(r))
@@ -97,7 +101,7 @@ test('closing the app declines everything still open', async (t) => {
   assert.equal(tools.pending().length, 0)
 })
 
-test('admin changes on a sudo login ask for the password, used for that command only', async (t) => {
+testPosix('admin changes on a sudo login ask for the password, used for that command only', async (t) => {
   const { tools, servers, answer } = await setup(t, { needsPassword: true })
   const asked = answer({ allow: true, password: 'hunter2' })
   const result = await tools.call('run', { server: SERVER.id, command: 'echo ok', why: 'Reload', admin: true })
@@ -113,7 +117,7 @@ test('admin changes on a sudo login ask for the password, used for that command 
   )
 })
 
-test('web server configuration is read freely; other files ask first', async (t) => {
+testPosix('web server configuration is read freely; other files ask first', async (t) => {
   const { tools, root, answer, events } = await setup(t)
   const secret = path.join(root, 'secret.txt')
   await fs.writeFile(secret, 'token=abc')
@@ -130,7 +134,7 @@ test('web server configuration is read freely; other files ask first', async (t)
   await assert.rejects(tools.call('read', { server: SERVER.id, path: 'relative' }), /absolute/)
 })
 
-test('write shows before/after, backs up, keeps the mode, and undo puts it back', async (t) => {
+testPosix('write shows before/after, backs up, keeps the mode, and undo puts it back', async (t) => {
   const { tools, root, answer } = await setup(t)
   const site = path.join(root, 'nginx', 'shop.conf')
   await fs.mkdir(path.dirname(site))
@@ -168,7 +172,7 @@ test('write shows before/after, backs up, keeps the mode, and undo puts it back'
   await assert.rejects(tools.call('undo', { server: SERVER.id, change: '../../etc' }), /change id/)
 })
 
-test('declined writes change nothing', async (t) => {
+testPosix('declined writes change nothing', async (t) => {
   const { tools, root, answer } = await setup(t)
   const site = path.join(root, 'a.conf')
   await fs.writeFile(site, 'keep\n')
@@ -179,7 +183,7 @@ test('declined writes change nothing', async (t) => {
   await assert.rejects(fs.stat(path.join(root, 'backups')))
 })
 
-test('look runs the read-only survey without asking', async (t) => {
+testPosix('look runs the read-only survey without asking', async (t) => {
   const { tools, events } = await setup(t)
   const result = await tools.call('look', { server: SERVER.id })
   assert.equal(result.ok, true)

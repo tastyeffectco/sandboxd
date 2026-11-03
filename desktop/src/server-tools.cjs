@@ -216,8 +216,10 @@ function createServerTools({
         `mkdir -p "$b"; if [ -e "$f" ]; then cp -a "$f" "$b/file"; echo "$f" > "$b/path"; else echo "$f" > "$b/new"; fi; ` +
         `mkdir -p "$(dirname "$f")"; t="$(mktemp "$f.sandboxd.XXXXXX")"; ` +
         `printf '%s' ${shellQuote(data)} | base64 -d > "$t"; ` +
-        `if [ -e "$f" ]; then chmod --reference="$f" "$t"; chown --reference="$f" "$t" 2>/dev/null || true; else chmod 644 "$t"; fi; ` +
-        `mv -f "$t" "$f"; echo "changed $f (undo: ${change})"`
+        // An existing file is overwritten in place, which keeps its owner and
+        // mode on any POSIX system; a new one is moved into place.
+        `if [ -e "$f" ]; then cat "$t" > "$f"; rm -f "$t"; else chmod 644 "$t"; mv -f "$t" "$f"; fi; ` +
+        `echo "changed $f (undo: ${change})"`
       const result = await runApproved(server, command, {
         admin: !!admin,
         password: decision.password,
@@ -236,7 +238,7 @@ function createServerTools({
       const backup = `${backupRoot}/${change}`
       const command =
         `set -e; b=${shellQuote(backup)}; ` +
-        `if [ -f "$b/path" ]; then f="$(cat "$b/path")"; cp -a "$b/file" "$f"; echo "restored $f"; ` +
+        `if [ -f "$b/path" ]; then f="$(cat "$b/path")"; cat "$b/file" > "$f"; echo "restored $f"; ` +
         `elif [ -f "$b/new" ]; then f="$(cat "$b/new")"; rm -f "$f"; echo "removed $f (it was new)"; ` +
         `else echo "no backup for ${change}" >&2; exit 2; fi`
       const result = await runApproved(server, command, {

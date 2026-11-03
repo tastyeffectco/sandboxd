@@ -3,6 +3,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { execFileSync } = require('node:child_process')
+const zlib = require('node:zlib')
 const { createHash } = require('node:crypto')
 const { EventEmitter, once } = require('node:events')
 const fs = require('node:fs/promises')
@@ -26,18 +27,39 @@ const tmp = async (t) => {
   return dir
 }
 
-// A package shaped like npm's: package/package.json + package/bin/<binary>,
-// with a long path so tar writes a pax header.
+// A tarball shaped like npm's: package/package.json + package/bin/<binary>,
+// plus an entry with a long name (a pax header), written here so the test
+// needs no tar program.
+function tarEntry(name, body, type = '0') {
+  const header = Buffer.alloc(512)
+  header.write(name.slice(0, 100), 0)
+  header.write('0000755\0', 100)
+  header.write('0000000\0', 108)
+  header.write('0000000\0', 116)
+  header.write(body.length.toString(8).padStart(11, '0') + '\0', 124)
+  header.write('00000000000\0', 136)
+  header.write('        ', 148)
+  header.write(type, 156)
+  header.write('ustar\0' + '00', 257)
+  let sum = 0
+  for (const byte of header) sum += byte
+  header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148)
+  return Buffer.concat([header, body, Buffer.alloc((512 - (body.length % 512)) % 512)])
+}
 async function makePackage(dir, binary = 'opencode', content = '#!/bin/sh\necho 1.19.5\n') {
-  const root = path.join(dir, 'src')
-  await fs.mkdir(path.join(root, 'package', 'bin'), { recursive: true })
-  await fs.mkdir(path.join(root, 'package', 'x'.repeat(120)), { recursive: true })
-  await fs.writeFile(path.join(root, 'package', 'x'.repeat(120), 'pad.txt'), 'pad')
-  await fs.writeFile(path.join(root, 'package', 'package.json'), '{}')
-  await fs.writeFile(path.join(root, 'package', 'bin', binary), content)
+  const long = 'package/' + 'x'.repeat(120) + '/pad.txt'
+  const record = ` path=${long}\n`
+  const pax = Buffer.from(`${record.length + String(record.length + 3).length}${record}`)
+  const tar = Buffer.concat([
+    tarEntry('package/package.json', Buffer.from('{}')),
+    tarEntry('PaxHeader/pad', pax, 'x'),
+    tarEntry('package/' + 'x'.repeat(90), Buffer.from('pad')),
+    tarEntry(`package/bin/${binary}`, Buffer.from(content)),
+    Buffer.alloc(1024),
+  ])
+  const bytes = zlib.gzipSync(tar)
   const tgz = path.join(dir, 'pkg.tgz')
-  execFileSync('tar', ['--format=pax', '-czf', tgz, '-C', root, 'package'])
-  const bytes = await fs.readFile(tgz)
+  await fs.writeFile(tgz, bytes)
   return { tgz, bytes, integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64') }
 }
 
@@ -54,7 +76,10 @@ async function serve(t, bytes) {
   server.hits = 0
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
-  t.after(() => new Promise((r) => server.close(r)))
+  t.after(() => {
+    server.closeAllConnections()
+    return new Promise((r) => server.close(r))
+  })
   return { server, url: (p = '/pkg.tgz') => `http://127.0.0.1:${server.address().port}${p}` }
 }
 
@@ -86,7 +111,7 @@ test('installs OpenCode once, only when its hash matches', async (t) => {
   assert.equal(a, b)
   assert.equal(server.hits, 2, 'one download (plus its redirect)')
   assert.equal(await fs.readFile(a, 'utf8'), '#!/bin/sh\necho 1.19.5\n')
-  assert.equal(execFileSync(a, { encoding: 'utf8' }), '1.19.5\n')
+  if (process.platform !== 'win32') assert.equal(execFileSync(a, { encoding: 'utf8' }), '1.19.5\n')
   assert(progress.at(-1).received === bytes.length)
   assert.equal(await installer.installed(), true)
   await installer.ensure()
