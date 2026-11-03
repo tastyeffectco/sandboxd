@@ -1,17 +1,15 @@
 # shellcheck shell=bash
 # sandboxd installer — front door setup for servers (install.sh --front=…).
 # Sourced by install.sh only when --front is given, so desktop and local
-# installs never run any of this. Expects from install.sh: REPO_ROOT, DOCKER,
+# installs never run any of this. Wiring an existing web server to the router
+# is not done here: the desktop's assistant proposes those changes and the
+# user approves each one. Expects from install.sh: REPO_ROOT, DOCKER,
 # info/ok/die. Every function is safe to re-run.
 #
 #   front door   who owns 80/443                      Traefik (the router)
 #   caddy        sandboxd's Caddy container            127.0.0.1:8088
-#   existing     your nginx or Caddy (frontdoor helper) 127.0.0.1:8088
+#   existing     your nginx or Caddy                   127.0.0.1:8088
 #   manual       whatever you set up                   127.0.0.1:8088
-
-FRONT_LIB=/usr/local/lib/sandboxd
-FRONT_SUDOERS=/etc/sudoers.d/sandboxd-frontdoor
-FRONT_USER=sandboxd
 
 front_sudo() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 
@@ -145,69 +143,6 @@ front_write_env() {
   else
     front_env_unset "$f" COMPOSE_PROFILES
   fi
-}
-
-# front_valid_ssh_key <key>: "<type> <base64> [comment]" with a known type and
-# nothing that could smuggle options into authorized_keys.
-front_valid_ssh_key() {
-  [[ $1 =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)\ [A-Za-z0-9+/]{16,}={0,3}(\ [A-Za-z0-9@._:+-]{0,100})?$ ]]
-}
-
-# front_install_user <helpers-dir> <env-file> [ssh-public-key]: the limited
-# `sandboxd` user, the root-owned helpers, the one sudo rule, and the
-# desktop's key (restricted to the forced command + the API tunnel).
-front_install_user() {
-  local src=$1 envf=$2 key=${3:-} home ak tmp opts blob
-  if ! id "$FRONT_USER" >/dev/null 2>&1; then
-    front_sudo useradd --system --create-home --home-dir "/home/$FRONT_USER" --shell /bin/sh \
-      --comment "sandboxd desktop access" "$FRONT_USER" || die "Could not create the $FRONT_USER user."
-    ok "created the limited user '$FRONT_USER'"
-  fi
-  # No password at all ("*" is neither a password nor a locked account, so
-  # key logins keep working).
-  front_sudo usermod -p '*' "$FRONT_USER" >/dev/null 2>&1 || true
-
-  front_sudo install -d -o root -g root -m 0755 "$FRONT_LIB"
-  front_sudo install -o root -g root -m 0755 "$src/frontdoor" "$FRONT_LIB/frontdoor"
-  front_sudo install -o root -g root -m 0755 "$src/frontdoor-ssh" "$FRONT_LIB/frontdoor-ssh"
-  printf '# managed by sandboxd\nenv_file=%s\n' "$envf" | front_sudo tee "$FRONT_LIB/frontdoor.conf" >/dev/null
-  front_sudo chmod 0644 "$FRONT_LIB/frontdoor.conf"
-
-  tmp="$(mktemp "${TMPDIR:-/tmp}/sandboxd-sudoers.XXXXXX")"
-  cat > "$tmp" <<EOF
-# managed by sandboxd: the desktop's limited user may run the front-door
-# helper as root, and nothing else.
-Defaults:$FRONT_USER !requiretty
-$FRONT_USER ALL=(root) NOPASSWD: $FRONT_LIB/frontdoor
-EOF
-  if ! front_sudo visudo -cf "$tmp" >/dev/null; then rm -f "$tmp"; die "The sudo rule for $FRONT_USER did not validate; nothing was installed."; fi
-  front_sudo install -o root -g root -m 0440 "$tmp" "$FRONT_SUDOERS"; rm -f "$tmp"
-  ok "front-door helper installed ($FRONT_LIB/frontdoor)"
-
-  [ -n "$key" ] || return 0
-  front_valid_ssh_key "$key" || die "The desktop key is not a valid SSH public key."
-  home=$(getent passwd "$FRONT_USER" | cut -d: -f6); [ -n "$home" ] || home="/home/$FRONT_USER"
-  ak="$home/.ssh/authorized_keys"
-  opts="restrict,port-forwarding,permitopen=\"127.0.0.1:9090\",command=\"$FRONT_LIB/frontdoor-ssh\""
-  blob=$(printf '%s' "$key" | awk '{ print $2 }')
-  front_sudo install -d -o "$FRONT_USER" -g "$(id -gn "$FRONT_USER")" -m 0700 "$home/.ssh"
-  tmp="$(mktemp "${TMPDIR:-/tmp}/sandboxd-ak.XXXXXX")"
-  front_sudo cat "$ak" 2>/dev/null | grep -vF " $blob" > "$tmp" || true
-  printf '%s %s\n' "$opts" "$key" >> "$tmp"
-  front_sudo install -o "$FRONT_USER" -g "$(id -gn "$FRONT_USER")" -m 0600 "$tmp" "$ak"; rm -f "$tmp"
-  ok "desktop key authorised for '$FRONT_USER' (tunnel to the API + front-door commands only)"
-}
-
-# front_remove_user: undo front_install_user (uninstall.sh).
-front_remove_user() {
-  front_sudo rm -f "$FRONT_SUDOERS" "$FRONT_LIB/frontdoor" "$FRONT_LIB/frontdoor-ssh" "$FRONT_LIB/frontdoor.conf"
-  front_sudo rmdir "$FRONT_LIB" 2>/dev/null || true
-  if id "$FRONT_USER" >/dev/null 2>&1 && [ "$(getent passwd "$FRONT_USER" | cut -d: -f7)" = /bin/sh ] \
-      && getent passwd "$FRONT_USER" | cut -d: -f5 | grep -q '^sandboxd desktop access'; then
-    front_sudo userdel -r "$FRONT_USER" >/dev/null 2>&1 || front_sudo userdel "$FRONT_USER"
-    return 0
-  fi
-  return 1
 }
 
 # front_api_token <SANDBOXD_API_TOKENS value>: the default= key, else the first.

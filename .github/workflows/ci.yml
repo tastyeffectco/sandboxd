@@ -169,6 +169,3 @@ jobs:
         run: bash scripts/test-install-images.sh
       - name: install.sh --front decisions (Docker, ss and curl stubbed)
         run: bash scripts/test-install-front.sh
-      - name: front-door helpers against real nginx and Caddy (throwaway containers)
-        if: runner.os == 'Linux'
-        run: bash scripts/test-frontdoor.sh

@@ -21,12 +21,10 @@
 # Servers (the desktop's "add a server", or by hand):
 #   --front=auto|caddy|existing|manual   who owns ports 80/443 and https:
 #       caddy     sandboxd runs Caddy (needs 80 and 443 free)
-#       existing  your nginx or Caddy forwards to sandboxd (frontdoor helper)
+#       existing  your nginx or Caddy forwards to sandboxd (127.0.0.1:8088)
 #       manual    you wire up the front door yourself
 #       auto      caddy when 80 and 443 are free, else existing
 #   --domain=<D>                 app addresses under D (default <ip>.sslip.io)
-#   --desktop-key="<ssh key>"    let the desktop in as the limited `sandboxd`
-#                                user (API tunnel + front-door commands only)
 # Without --front nothing changes: Traefik stays the front door on :80.
 # With --front the last line printed is machine-readable:
 #   SANDBOXD_INSTALL_RESULT {"front":…,"domain":…,"proxy":…,"api_token":…,"api":…}
@@ -41,7 +39,7 @@ die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # --build always builds locally; --pull requires verified release images.
 MODE=auto
-FRONT=""; FRONT_DOMAIN=""; DESKTOP_KEY=""
+FRONT=""; FRONT_DOMAIN=""
 for arg in "$@"; do
   case "$arg" in
     --build) MODE=build ;;
@@ -49,16 +47,15 @@ for arg in "$@"; do
     --no-console|--no-desktop) ;;
     --front=*) FRONT="${arg#--front=}" ;;
     --domain=*) FRONT_DOMAIN="${arg#--domain=}" ;;
-    --desktop-key=*) DESKTOP_KEY="${arg#--desktop-key=}" ;;
-    *) die "Unknown option: $arg (use --build, --pull, --no-console, --no-desktop, --front=, --domain= or --desktop-key=)" ;;
+    *) die "Unknown option: $arg (use --build, --pull, --no-console, --no-desktop, --front= or --domain=)" ;;
   esac
 done
 case "$FRONT" in
   ""|auto|caddy|existing|manual) ;;
   *) die "Unknown front door: --front=$FRONT (use auto, caddy, existing or manual)" ;;
 esac
-if [ -z "$FRONT" ] && { [ -n "$FRONT_DOMAIN" ] || [ -n "$DESKTOP_KEY" ]; }; then
-  die "--domain and --desktop-key need --front (for example --front=auto)"
+if [ -z "$FRONT" ] && [ -n "$FRONT_DOMAIN" ]; then
+  die "--domain needs --front (for example --front=auto)"
 fi
 
 # ── anonymous install-failure beacon ─────────────────────────────────
@@ -318,12 +315,6 @@ if [ "$(uname -s)" = Darwin ] && [ "$DESKTOP" != 0 ]; then
     info "The engine is running, but desktop installation did not finish."
     info "Retry: bash scripts/install-desktop.sh — see docs/desktop.md for release availability."
   fi
-fi
-
-# ── limited desktop user + front-door helper (servers only) ─────────
-if [ -n "$FRONT" ]; then
-  STAGE=frontdoor
-  front_install_user "$REPO_ROOT/scripts/frontdoor" "$REPO_ROOT/.env" "$DESKTOP_KEY"
 fi
 
 # ── summary ──────────────────────────────────────────────────────────

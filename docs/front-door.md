@@ -3,8 +3,9 @@
 On a server, something has to own ports 80 and 443 and https, and pass each
 request on to sandboxd's router (Traefik), which picks the app by hostname.
 That something is the **front door**. It is chosen when the engine is
-installed (`install.sh --front=…`) and the desktop sets it up for you; this
-page is the reference behind it. Design: [ADR 0003](adr/0003-go-live-on-your-own-server.md),
+installed (`install.sh --front=…`). On the desktop, the assistant sets it up
+for you and asks before each change on the server; this page is the reference
+behind it. Design: [ADR 0003](adr/0003-go-live-on-your-own-server.md),
 sections 3 and 4.
 
 Installs without `--front` (the desktop app on your computer, `./install.sh` on
@@ -21,16 +22,15 @@ curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install
 |---|---|
 | `--front=auto` | `caddy` when ports 80 and 443 are both free, else `existing`. On a re-run, keeps the front door chosen last time. |
 | `--front=caddy` | sandboxd runs Caddy in a container on 80/443 (compose profile `caddy`). Fails if the ports are taken. |
-| `--front=existing` | Your nginx or Caddy stays in charge; the desktop adds one site per app through the front-door helper. |
+| `--front=existing` | Your nginx or Caddy stays in charge and forwards to `127.0.0.1:8088` (see [Your own web server](#your-own-web-server)). |
 | `--front=manual` | You connect your web server yourself (forward to `127.0.0.1:8088`, keep the `Host` header). |
 | `--domain=<D>` | App addresses go under `D`. Default: `<public-ip-with-dashes>.sslip.io`, which needs no DNS. |
-| `--desktop-key="<ssh public key>"` | Lets the desktop in as the limited `sandboxd` user (see below). Re-running with the same key replaces its line. |
 
 With `--front`, the installer writes to `.env`:
 
 | Key | Value | Why |
 |---|---|---|
-| `SANDBOXD_FRONT` | `caddy`, `existing` or `manual` | Remembered for re-runs, `upgrade.sh` and `frontdoor facts` |
+| `SANDBOXD_FRONT` | `caddy`, `existing` or `manual` | Remembered for re-runs and `upgrade.sh` |
 | `PREVIEW_DOMAIN` | `--domain` or `<ip>.sslip.io` | |
 | `PREVIEW_HOST_STYLE` | `flat` | Hosts are `s-<id>-<port>.<D>`, `console.<D>`, `api.<D>`: one level under `D`, which sslip.io resolves and Let's Encrypt can issue for |
 | `PREVIEW_URL_SCHEME` | `https` | Public URLs are `https://…` with no port |
@@ -65,88 +65,41 @@ for random names. The endpoint needs no credential, is not under `/v1`, and
 refuses requests relayed through Traefik (they carry `X-Forwarded-For`).
 Plain http redirects to https; ACME challenges still work.
 
-## The limited `sandboxd` user
+## Your own web server
 
-With `--front`, the installer also creates:
+With `--front=existing` or `--front=manual`, sandboxd does not touch your web
+server. Whoever sets it up (you, or the desktop's assistant with your
+approval for each change) adds one site per published app that:
 
-- a system user `sandboxd` with no password (shell `/bin/sh`, needed to run
-  its forced command);
-- `/usr/local/lib/sandboxd/frontdoor` and `frontdoor-ssh`, owned by root;
-- `/etc/sudoers.d/sandboxd-frontdoor`: `sandboxd` may run
-  `/usr/local/lib/sandboxd/frontdoor` as root without a password, and nothing
-  else;
-- with `--desktop-key`, one line in `~sandboxd/.ssh/authorized_keys`:
+- forwards to `http://127.0.0.1:8088` (the router), keeping the `Host` header;
+- passes websockets (`Upgrade` and `Connection` headers);
+- sets `X-Forwarded-For` and `X-Forwarded-Proto`, which the rate limit and the
+  app rely on;
+- serves https for the app's hostname (certbot for nginx; your Caddy gets the
+  certificate itself).
 
-  ```
-  restrict,port-forwarding,permitopen="127.0.0.1:9090",command="/usr/local/lib/sandboxd/frontdoor-ssh" ssh-ed25519 AAAA…
-  ```
+For example, with nginx:
 
-  The key can forward `127.0.0.1:9090` (the engine API: `ssh -N -L 9090:127.0.0.1:9090 sandboxd@server`)
-  and run front-door commands. It cannot open a shell, a pty, copy files, or
-  forward anything else.
-
-`uninstall.sh` removes the user, the sudo rule and the helpers. Sites the
-helper added to your nginx or Caddy stay; it lists them.
-
-## Front-door commands
-
-Over SSH as `sandboxd`: `ssh sandboxd@server frontdoor <command> …`. The
-forced command accepts only these words, built from `[a-z0-9.-]`, re-checks
-every argument, and runs `sudo -n /usr/local/lib/sandboxd/frontdoor …`.
-Anything else, including an empty command, prints a refusal and exits 1.
-
-| Command | Does |
-|---|---|
-| `frontdoor facts` | Reads the server's web setup (changes nothing) |
-| `frontdoor apply <site> <host> [host…]` | Publishes the hosts through your nginx or Caddy, forwarding to the router |
-| `frontdoor remove <site>` | Takes the site off again |
-| `frontdoor status <site>` | Says what is configured for the site |
-| `frontdoor enable-caddy-import` | Adds `import /etc/caddy/sandboxd/*.caddy` to `/etc/caddy/Caddyfile`. Show this to the user and get approval first. |
-
-`<site>` matches `^[a-z0-9][a-z0-9-]{0,62}$`; hosts are lowercase DNS names
-with at least one dot, no wildcards, up to 20 per site.
-
-Progress goes to stderr. stdout is one JSON line:
-
-```json
-{"ok":true,"step":"done","message":"The site is live over https.","https":true,"proxy":"nginx","certbot":true}
+```nginx
+server {
+    listen 80;
+    server_name shop.203-0-113-7.sslip.io;
+    location / {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
 ```
 
-`ok` and `message` (plain words, fit to show) are always there. `step` names
-where it stopped: `done`, `facts`, `status`, `usage`, `refused`, `lock`,
-`permission`, `no-proxy`, `nginx-layout`, `nginx-test`, `reload`, `certbot`,
-`caddy-import`, `caddy-validate`, `caddy-missing`, `backup` or `write`. Extra
-fields per command:
+and with Caddy, `shop.example.com { reverse_proxy 127.0.0.1:8088 }`.
 
-- `facts`: `os`, `arch`, `proxies` (list), `ports` (`{"80":…,"443":…}`: `none`,
-  `nginx`, `caddy`, `apache`, `docker`, `unknown` or a process name),
-  `nginx_layout` (`sites-available`, `conf.d` or `none`), `caddy_layout`
-  (`import` when the sandboxd import line is there, `caddyfile`, `none`),
-  `certbot` (bool), `target` (`nginx`, `caddy` or `none`: what `apply` will
-  configure), `front` (from `.env`), `router` (`127.0.0.1:8088`).
-- `apply`: `proxy`, `https` (bool), and `certbot` (bool) for nginx.
-- `status`: `configured`, and when configured `proxy`, `file`, `managed`,
-  `hosts`, `https`.
-- `enable-caddy-import`: `changed`.
-
-How each change is made:
-
-- **nginx**: `/etc/nginx/sites-available/sandboxd-<site>.conf` plus its
-  `sites-enabled` link (or `/etc/nginx/conf.d/sandboxd-<site>.conf`), proxying
-  to `http://127.0.0.1:8088` with the `Host` header, websockets and
-  `X-Forwarded-*`. Then `nginx -t`, reload, and
-  `certbot --nginx -d … --non-interactive --agree-tos --register-unsafely-without-email --redirect`
-  when certbot is installed (without it the site works over http and the
-  result says `"https":false`).
-- **Your Caddy**: `/etc/caddy/sandboxd/<site>.caddy` (`<hosts> { reverse_proxy 127.0.0.1:8088 }`),
-  `caddy validate`, reload. Caddy gets the certificate itself. Needs the
-  import line; without it `apply` fails with step `caddy-import`.
-
-Every change is backed up first (`/var/backups/sandboxd-frontdoor`), tested,
-and reloaded. If any step fails, including certbot, the previous files are put
-back and the web server is reloaded. The helper only writes or removes files
-whose first line is `# managed by sandboxd`, plus that one import line. It
-refuses to start if your configuration is already broken.
+Test the configuration (`nginx -t`, `caddy validate`) before reloading, and
+keep a copy of every file you change so it can be put back.
 
 ## Rate limiting
 
