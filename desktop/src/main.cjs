@@ -423,10 +423,6 @@ async function start() {
     trusted(event)
     return servers.remove(id)
   })
-  ipcMain.handle('servers:frontdoor', (event, id, args) => {
-    trusted(event)
-    return servers.frontdoor(id, args)
-  })
   // Trusting a changed server identity is confirmed in a native dialog the page
   // cannot answer by itself.
   ipcMain.handle('servers:trust-identity', async (event, id) => {

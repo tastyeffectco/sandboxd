@@ -29,6 +29,8 @@ export type DesktopServer = {
   name: string
   host: string
   port: number
+  // The login the desktop signs in with (its own key, added at setup).
+  username: string
   hostKeySha256: string
   front: 'caddy' | 'existing' | 'manual'
   domain: string
@@ -71,23 +73,12 @@ export type AddServerResult =
       // The last lines of the installer output, for support.
       detail?: string
     }
-// Each frontdoor command ends with this JSON line (facts returns server facts).
-export type FrontdoorResult = { ok: boolean; step: string; message: string; [key: string]: unknown }
 export interface DesktopServers {
   list(): Promise<DesktopServer[]>
   status(): Promise<Record<string, ServerStatus>>
   status(id: string): Promise<ServerStatus>
   add(input: AddServerInput): Promise<AddServerResult>
-  remove(id: string): Promise<{ removed: true; note: string }>
-  frontdoor(
-    id: string,
-    args:
-      | ['facts']
-      | ['apply', string, ...string[]]
-      | ['remove', string]
-      | ['status', string]
-      | ['enable-caddy-import'],
-  ): Promise<FrontdoorResult>
+  remove(id: string): Promise<{ removed: true; keyRemoved: boolean; note: string }>
   // Shows a native confirmation; resolves trusted:false when the user cancels.
   trustIdentity(id: string): Promise<{ trusted: boolean; server?: DesktopServer }>
   onProgress(callback: (progress: AddServerProgress) => void): () => void

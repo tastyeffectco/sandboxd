@@ -22,6 +22,7 @@ const server: DesktopServer = {
   name: 'My VPS',
   host: '203.0.113.10',
   port: 22,
+  username: 'root',
   hostKeySha256: 'SHA256:' + 'a'.repeat(43),
   front: 'caddy',
   domain: '203-0-113-10.sslip.io',
@@ -50,7 +51,6 @@ function fake(initial: DesktopServer[] = [], results: AddServerResult[] = []) {
       list = list.filter((s) => s.id !== id)
       return { removed: true as const, note: 'My VPS was removed from this computer.' }
     }),
-    frontdoor: vi.fn(),
     trustIdentity: vi.fn(async () => ({ trusted: true })),
     onProgress: (cb: typeof progress) => {
       progress = cb

@@ -1,5 +1,5 @@
 // Your servers: add a Linux server over SSH, install the engine on it, then
-// reach its API through an SSH tunnel as the limited `sandboxd` user.
+// reach its API through an SSH tunnel with the login the user gave.
 //
 // - One ed25519 key per device. The private key is encrypted with the OS
 //   credential store (Electron safeStorage) and never logged.
@@ -7,8 +7,11 @@
 //   anywhere; sudo receives it on stdin, never on a command line.
 // - The server's host key is pinned on first contact (SHA256 fingerprint). A
 //   different key later stops every connection until the user trusts it again.
-// - After install the device key may only forward to the engine API and run
-//   `frontdoor …` (enforced on the server by authorized_keys options).
+// - After install this device's public key is added to that login's
+//   authorized_keys, marked `sandboxd-desktop:<device id>`, and removed again
+//   when the server is removed. Anything the desktop runs on the server beyond
+//   the tunnel goes through `run()`, which callers gate on the user's approval
+//   (server-tools.cjs).
 const { Client, utils } = require('ssh2')
 const { createHash, generateKeyPairSync, randomBytes } = require('node:crypto')
 const fs = require('node:fs/promises')
@@ -20,12 +23,10 @@ const { ENGINE_TAG } = require('./windows-engine.cjs')
 const REPO = 'tastyeffectco/sandboxd'
 const SERVER_ID = /^srv_[a-f0-9]{12}$/
 const RESULT_PREFIX = 'SANDBOXD_INSTALL_RESULT '
-const LIMITED_USER = 'sandboxd'
 const MIN_DISK_KB = 5 * 1024 * 1024
 // Providers sell "1 GB" machines that report a little less once the kernel
 // reserves its share.
 const MIN_MEMORY_KB = 900 * 1024
-const FRONTDOOR = new Set(['facts', 'apply', 'remove', 'status', 'enable-caddy-import'])
 const FRONTS = new Set(['caddy', 'existing', 'manual'])
 const PROXIES = new Set(['nginx', 'caddy', 'apache', 'traefik', 'coolify', 'none'])
 
@@ -47,6 +48,7 @@ const MESSAGES = {
   broken: "sandboxd couldn't open this server's saved connection. Remove it from your list and add it again.",
   keyRefused:
     'This server no longer accepts this computer. Remove it from your list and add it again with its password.',
+  needsPassword: 'This change needs your server password.',
 }
 
 class ServerError extends Error {
@@ -120,15 +122,37 @@ function installRef(env = process.env) {
 
 // The engine install, exactly as documented by install.sh's contract. Release
 // tags pull signed images; any other ref (a branch for testing) builds them.
-function installCommand(ref, desktopKey) {
-  if (!/^ssh-ed25519 [A-Za-z0-9+/=]+ [A-Za-z0-9._-]+$/.test(desktopKey))
-    throw new ServerError('invalid_key', 'The device key is invalid.')
+function installCommand(ref) {
   const url = `https://raw.githubusercontent.com/${REPO}/${ref}/install.sh`
   const mode = /^v\d/.test(ref) ? '--pull' : '--build'
   return (
     `set -o pipefail; ` +
     `if command -v curl >/dev/null 2>&1; then curl -fsSL ${url}; else wget -qO- ${url}; fi | ` +
-    `SANDBOXD_REF=${ref} bash -s -- ${mode} --no-console --no-desktop --front=auto --desktop-key="${desktopKey}"`
+    `SANDBOXD_REF=${ref} bash -s -- ${mode} --no-console --no-desktop --front=auto`
+  )
+}
+const KEY_LINE = /^ssh-ed25519 ([A-Za-z0-9+/]+={0,2}) sandboxd-desktop:[a-f0-9]{16}$/
+const keyBlob = (publicKey) => {
+  const match = KEY_LINE.exec(publicKey)
+  if (!match) throw new ServerError('invalid_key', 'The device key is invalid.')
+  return match[1]
+}
+// Adds this device's key to the login's own authorized_keys (no admin rights),
+// once. The key and its marker are validated, so they are safe to quote.
+function authorizeCommand(publicKey) {
+  keyBlob(publicKey)
+  return (
+    `umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && ` +
+    `{ grep -qF ${shellQuote(publicKey.split(' ').slice(0, 2).join(' '))} ~/.ssh/authorized_keys || ` +
+    `printf '%s\\n' ${shellQuote(publicKey)} >> ~/.ssh/authorized_keys; }`
+  )
+}
+// Removes exactly this device's line, keeping the file's owner and mode.
+function unauthorizeCommand(publicKey) {
+  const blob = keyBlob(publicKey)
+  return (
+    `f=~/.ssh/authorized_keys; [ -f "$f" ] || exit 0; t="$(mktemp)" && ` +
+    `{ grep -vF ${shellQuote(' ' + blob + ' sandboxd-desktop:')} "$f" > "$t" || true; } && cat "$t" > "$f"; rm -f "$t"`
   )
 }
 const DOCKER_COMMAND =
@@ -337,7 +361,7 @@ const lastLines = (output, count = 15) =>
     .slice(-count)
     .join('\n')
 
-// One SSH connection per server as the limited user, with a local listener on
+// One SSH connection per server with the saved login, with a local listener on
 // 127.0.0.1:<ephemeral> forwarding to the engine API. Reconnects with backoff.
 function createTunnel({
   server,
@@ -438,7 +462,7 @@ function createTunnel({
     connection.connect({
       host: server.host,
       port: server.port,
-      username: LIMITED_USER,
+      username: server.username,
       privateKey,
       readyTimeout: connectTimeout,
       keepaliveInterval,
@@ -595,11 +619,12 @@ function createServers({
     writeAtomic(file, {
       version: 1,
       servers: servers.map(
-        ({ id, name, host, port, hostKeySha256, front, domain, proxy, api, apiTokenEnc, addedAt }) => ({
+        ({ id, name, host, port, username, hostKeySha256, front, domain, proxy, api, apiTokenEnc, addedAt }) => ({
           id,
           name,
           host,
           port,
+          username,
           hostKeySha256,
           front,
           domain,
@@ -624,7 +649,8 @@ function createServers({
       const stored = JSON.parse(await fs.readFile(keyFile, 'utf8'))
       const privateKey = decrypt(Buffer.from(stored.privateEnc, 'base64'))
       const parsed = utils.parseKey(privateKey)
-      if (parsed instanceof Error || parsed.type !== 'ssh-ed25519') throw parsed
+      if (parsed instanceof Error || parsed.type !== 'ssh-ed25519' || !KEY_LINE.test(stored.public))
+        throw parsed
       device = { publicKey: stored.public, privateKey }
       return device
     } catch {
@@ -632,7 +658,9 @@ function createServers({
       // another OS user): create one. Servers added with an unreadable key
       // must be added again anyway.
     }
-    const pair = generateDeviceKey()
+    // The marker names this device on the server, so removing the server
+    // removes exactly this key and nothing the user added.
+    const pair = generateDeviceKey(`sandboxd-desktop:${randomBytes(8).toString('hex')}`)
     const parsed = utils.parseKey(pair.private)
     if (parsed instanceof Error || parsed.getPublicSSH().toString('base64') !== pair.public.split(' ')[1])
       throw new ServerError('error', 'sandboxd could not create this computer’s key. Try again.')
@@ -649,6 +677,7 @@ function createServers({
     name: server.name,
     host: server.host,
     port: server.port,
+    username: server.username,
     hostKeySha256: server.hostKeySha256,
     front: server.front,
     domain: server.domain,
@@ -736,6 +765,15 @@ function createServers({
         },
       })
       if (run.code !== 0 || !result) throw failed(run.output, 'install_failed')
+      // The login's own file, so no admin rights: this computer may now sign
+      // in as this user without the password.
+      const authorized = await execute(client, authorizeCommand(publicKey), { timeout: 60000 })
+      if (authorized.code !== 0)
+        throw new ServerError(
+          'verify',
+          'sandboxd was installed, but this computer could not be allowed to sign in. Try adding the server again.',
+          { detail: lastLines(authorized.output) },
+        )
     } finally {
       client.end()
     }
@@ -754,6 +792,8 @@ function createServers({
               SERVER_ID.test(s.id) &&
               typeof s.host === 'string' &&
               Number.isInteger(s.port) &&
+              typeof s.username === 'string' &&
+              /^[a-z_][a-z0-9_.-]{0,31}$/i.test(s.username) &&
               typeof s.hostKeySha256 === 'string' &&
               /^127\.0\.0\.1:\d+$/.test(s.api) &&
               typeof s.apiTokenEnc === 'string',
@@ -795,6 +835,7 @@ function createServers({
           name: input.name,
           host: input.host,
           port: input.port,
+          username: input.username,
           hostKeySha256,
           front: result.front,
           domain: result.domain,
@@ -835,11 +876,20 @@ function createServers({
         adding = false
       }
     },
-    // Forgets the server here. The engine, its apps and this device's limited
-    // key stay on the server (the key can only reach the engine API).
+    // Forgets the server here and takes this device's key off it (when the
+    // server answers). The engine and its apps keep running there.
     async remove(id) {
       const server = find(id)
       const tunnel = tunnels.get(id)
+      let keyRemoved = false
+      if (tunnel && tunnel.status().state === 'connected') {
+        try {
+          const { publicKey } = await deviceKey()
+          keyRemoved = (await tunnel.exec(unauthorizeCommand(publicKey), { timeout: 15000 })).code === 0
+        } catch {
+          /* Offline or refused: the note below says what is left. */
+        }
+      }
       tunnels.delete(id)
       tokens.delete(id)
       servers = servers.filter((s) => s !== server)
@@ -847,36 +897,44 @@ function createServers({
       await persist()
       return {
         removed: true,
-        note: `${server.name} was removed from this computer. sandboxd and your apps keep running on the server.`,
+        keyRemoved,
+        note: keyRemoved
+          ? `${server.name} was removed from this computer. sandboxd and your apps keep running on the server.`
+          : `${server.name} was removed from this computer. sandboxd and your apps keep running on the server. Its list of allowed computers still names this one (marked sandboxd-desktop); it can't be used without this computer.`,
       }
     },
-    async frontdoor(id, args) {
-      const tunnel = tunnels.get(find(id).id)
+    // Runs one shell command on the server with the saved login. Callers are
+    // responsible for the user's approval (server-tools.cjs); nothing here
+    // decides what may run. `admin` runs it as root: directly for root, else
+    // through sudo with the password the user just typed (stdin only, never
+    // kept), or passwordless sudo when there is none.
+    async run(id, command, { admin = false, password, timeout = 10 * 60 * 1000, onLine, stdin } = {}) {
+      const server = find(id)
+      const tunnel = tunnels.get(server.id)
       if (!tunnel) throw new ServerError('unreachable', MESSAGES.offline)
-      if (
-        !Array.isArray(args) ||
-        !args.length ||
-        args.length > 32 ||
-        !FRONTDOOR.has(args[0]) ||
-        !args.every((arg) => typeof arg === 'string' && /^[A-Za-z0-9._:-]{1,253}$/.test(arg))
-      )
-        throw new ServerError('invalid', 'Invalid front door request.')
-      const { output } = await tunnel.exec(['frontdoor', ...args].join(' '), { timeout: 10 * 60 * 1000 })
-      const line =
-        output
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .pop() || ''
-      try {
-        return JSON.parse(line)
-      } catch {
-        return {
-          ok: false,
-          step: args[0],
-          message: 'The server sent an answer sandboxd did not understand. Try again.',
-        }
+      if (typeof command !== 'string' || !command.trim() || command.length > 100000)
+        throw new ServerError('invalid', 'Invalid command.')
+      if (password !== undefined && (typeof password !== 'string' || /[\r\n]/.test(password)))
+        throw new ServerError('invalid', 'Invalid password.')
+      const root = server.username === 'root'
+      let line = command
+      let input = stdin
+      if (admin && !root) {
+        if (password) {
+          if (stdin !== undefined) throw new ServerError('invalid', 'A command run with a password reads no other input.')
+          line = `sudo -S -p '' bash -c ${shellQuote(command)}`
+          input = password + '\n'
+        } else line = `sudo -n bash -c ${shellQuote(command)}`
       }
+      const result = await tunnel.exec(line, { stdin: input, timeout, onLine })
+      if (
+        admin &&
+        !root &&
+        result.code !== 0 &&
+        /a password is required|incorrect password|sorry, try again/i.test(result.output)
+      )
+        throw new ServerError('needs_password', MESSAGES.needsPassword)
+      return result
     },
     // Only after the user confirmed: pin the identity the server now presents.
     async trustIdentity(id, next) {
@@ -911,6 +969,8 @@ module.exports = {
   generateDeviceKey,
   createTunnel,
   installCommand,
+  authorizeCommand,
+  unauthorizeCommand,
   installRef,
   parseInstallResult,
   parseFacts,

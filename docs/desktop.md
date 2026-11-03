@@ -175,10 +175,11 @@ How it works and what is kept:
   that is not a `v…` tag builds images instead of pulling signed ones).
 - Each computer has its own SSH key (ed25519), created the first time you add a
   server. The private key is encrypted with the OS credential store (macOS
-  Keychain, Windows DPAPI) in `device-key.json` in the app's data directory. The
-  installer adds only the public key, for the limited `sandboxd` user, which may
-  only reach the engine API (`127.0.0.1:9090`) and run the server's `frontdoor`
-  helper. Adding a server needs secure storage; Linux `basic_text` is refused.
+  Keychain, Windows DPAPI) in `device-key.json` in the app's data directory.
+  After the install, its public key is added to the `~/.ssh/authorized_keys` of
+  the login you typed, marked `sandboxd-desktop:<device id>`, so the app can
+  sign in again without the password. Adding a server needs secure storage;
+  Linux `basic_text` is refused.
 - The server's SSH identity (host key, SHA256 fingerprint) is remembered the
   first time. If it changes later, the app stops talking to the server and
   says so. If you reinstalled the server yourself, click **I reinstalled it:
@@ -187,19 +188,22 @@ How it works and what is kept:
 - `servers.json` in the app's data directory lists your servers (address, port,
   pinned fingerprint, front door, the engine API token encrypted with the OS
   credential store). Both files are written atomically with mode 0600.
-- The app keeps one SSH connection per server, as `sandboxd`, and reconnects on
+- The app keeps one SSH connection per server, with that login, and reconnects on
   its own after sleep, a network change or a server restart. The list shows
   **Connected**, **Connecting…** or **Offline** with the reason. The console
   reaches a server's engine through the private gateway at
   `/servers/<server id>/v1/…` (HTTP, SSE and terminals), which adds that server's
   API token. Unknown server ids are refused; no other host can be reached.
 
-**Removing a server** forgets it on this computer and closes its connection.
-sandboxd and your apps keep running on the server, and this computer's public key
-stays in `~sandboxd/.ssh/authorized_keys` there (it can only reach the engine API,
-and only with the private key that this app no longer uses for that server). To
-remove it completely, delete that line on the server, or uninstall sandboxd
-there with `uninstall.sh`.
+- Nothing else runs on the server unless you approve it. Changes beyond the
+  install (for example connecting your nginx or Caddy) are proposed by the
+  assistant in plain words, and run only after you click **Allow**; commands that
+  need admin rights ask for the password again if the login needs one for sudo.
+
+**Removing a server** forgets it on this computer, removes this computer's line
+from the login's `authorized_keys` (when the server answers) and closes the
+connection. sandboxd and your apps keep running on the server. If the server was
+offline, the app says the line is still there; it is marked `sandboxd-desktop`.
 
 ## Build and test from source
 
@@ -228,7 +232,7 @@ run without that override.
 
 - The renderer is sandboxed with Node disabled and context isolation enabled.
   Native IPC is limited to connection management, fixed Windows engine setup,
-  your servers (add, remove, status, allow-listed `frontdoor` commands), state
+  your servers (add, remove, status, approved server changes), state
   and HTTP(S) links; only
   the packaged main frame may call it. Preview frames have no native bridge.
 - Bundled assets come from the application archive. A private loopback gateway

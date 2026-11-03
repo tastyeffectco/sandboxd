@@ -12,6 +12,8 @@ const { Server, utils } = require('ssh2')
 const {
   createServers,
   installCommand,
+  authorizeCommand,
+  unauthorizeCommand,
   installRef,
   parseInstallResult,
   checkFacts,
@@ -76,6 +78,7 @@ async function fakeServer(t, options = {}) {
     const hostKey = generateDeviceKey('host').private
     ssh = new Server({ hostKeys: [hostKey] }, (client) => {
       let user = ''
+      let byKey = false
       state.clients.add(client)
       client.on('close', () => state.clients.delete(client))
       client.on('error', () => {})
@@ -84,12 +87,13 @@ async function fakeServer(t, options = {}) {
           user = ctx.username
           return ctx.accept()
         }
-        if (ctx.username === 'sandboxd' && ctx.method === 'publickey') {
+        if (ctx.username === state.admin && ctx.method === 'publickey') {
           const key = state.authorized
             .map((line) => utils.parseKey(line))
             .find((k) => k.type === ctx.key.algo && k.getPublicSSH().equals(ctx.key.data))
           if (key && (!ctx.signature || key.verify(ctx.blob, ctx.signature, ctx.hashAlgo) === true)) {
-            user = 'sandboxd'
+            user = ctx.username
+            byKey = true
             return ctx.accept()
           }
         }
@@ -107,15 +111,18 @@ async function fakeServer(t, options = {}) {
               stream.end()
             }
             const command = info.command
-            state.commands.push({ user, command })
-            if (user === 'sandboxd') {
-              if (command.startsWith('frontdoor '))
-                return finish(
-                  0,
-                  'working…\n{"ok":true,"step":"' + command.split(' ')[1] + '","message":"Ready"}\n',
-                )
-              return finish(1, 'not allowed\n')
+            state.commands.push({ user, command, byKey })
+            if (command.startsWith('umask 077; mkdir -p ~/.ssh')) {
+              const line = /printf '%s\\n' '([^']+)' >>/.exec(command)[1]
+              if (!state.authorized.includes(line)) state.authorized.push(line)
+              return finish(0)
             }
+            if (command.startsWith('f=~/.ssh/authorized_keys')) {
+              const blob = /grep -vF ' ([^ ]+) sandboxd-desktop:'/.exec(command)[1]
+              state.authorized = state.authorized.filter((line) => !line.includes(` ${blob} sandboxd-desktop:`))
+              return finish(0)
+            }
+            if (command === 'echo hello') return finish(0, 'hello\n')
             if (command.startsWith("printf 'os="))
               return finish(
                 0,
@@ -128,24 +135,25 @@ async function fakeServer(t, options = {}) {
               if (sudo) state.stdin.push(input)
               if (sudo && input !== PASSWORD + '\n')
                 return finish(1, 'Sorry, try again.\nsudo: 1 incorrect password attempt\n')
+              if (command.includes("bash -c 'id -u'")) return finish(0, '0\n')
               if (command.includes('get.docker.com')) {
                 state.facts.docker = '1'
                 return finish(0, 'docker installed\n')
               }
               if (command.includes('/install.sh')) {
-                const key = /--desktop-key="([^"]+)"/.exec(command)[1]
                 if (state.installExit !== 0) return finish(state.installExit, 'step 1\nERROR: disk full\n')
-                state.authorized.push(key)
                 return finish(0, `==> pulling images\n==> starting\n${state.result}\n`)
               }
               finish(127, 'unknown command\n')
             }
+            const passwordless = command.startsWith('sudo -n ')
+            if (passwordless) return finish(1, 'sudo: a password is required\n')
             if (sudo) stream.once('end', run)
             else run()
           })
         })
         client.on('tcpip', (accept, reject, info) => {
-          if (user !== 'sandboxd' || info.destIP !== '127.0.0.1' || info.destPort !== 9090) return reject()
+          if (!byKey || info.destIP !== '127.0.0.1' || info.destPort !== 9090) return reject()
           const channel = accept()
           const socket = net.connect(engine.address().port, '127.0.0.1')
           socket.on('error', () => channel.close())
@@ -230,18 +238,22 @@ async function allFiles(directory) {
 }
 
 test('install command follows the server contract and the pinned engine', () => {
-  const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEA3ZGy4260PwjVkdRjtYjyt640xblAAILETw sandboxd-desktop'
-  const tagged = installCommand('v0.3.26', key)
+  const tagged = installCommand('v0.3.26')
   assert.match(tagged, /raw\.githubusercontent\.com\/tastyeffectco\/sandboxd\/v0\.3\.26\/install\.sh/)
-  assert.match(
-    tagged,
-    /SANDBOXD_REF=v0\.3\.26 bash -s -- --pull --no-console --no-desktop --front=auto --desktop-key="ssh-ed25519 /,
-  )
-  assert.match(installCommand('release/go-live', key), / --build --no-console/)
+  assert.match(tagged, /SANDBOXD_REF=v0\.3\.26 bash -s -- --pull --no-console --no-desktop --front=auto$/)
+  assert.match(installCommand('release/go-live'), / --build --no-console/)
   assert.equal(installRef({ SANDBOXD_SERVER_REF: 'release/go-live' }), 'release/go-live')
   assert.match(installRef({}), /^v\d/)
   assert.throws(() => installRef({ SANDBOXD_SERVER_REF: 'main; rm -rf /' }))
-  assert.throws(() => installCommand('v1', 'ssh-ed25519 AAAA" ; reboot ; "'))
+})
+
+test('the device key is added to and removed from the login’s own authorized_keys', () => {
+  const key = generateDeviceKey('sandboxd-desktop:0123456789abcdef').public
+  assert.match(authorizeCommand(key), /^umask 077; mkdir -p ~\/\.ssh/)
+  assert(!authorizeCommand(key).includes('sudo'))
+  assert.match(unauthorizeCommand(key), / sandboxd-desktop:'/)
+  for (const bad of ["ssh-ed25519 AAAA' ; reboot ; ' sandboxd-desktop:0123456789abcdef", 'ssh-ed25519 AAAA me@laptop'])
+    assert.throws(() => authorizeCommand(bad), /device key is invalid/)
 })
 
 test('device keys are valid OpenSSH ed25519 keys every time', () => {
@@ -251,7 +263,7 @@ test('device keys are valid OpenSSH ed25519 keys every time', () => {
     assert(!(parsed instanceof Error), key.private)
     assert.equal(parsed.type, 'ssh-ed25519')
     assert.equal(parsed.getPublicSSH().toString('base64'), key.public.split(' ')[1])
-    assert.match(key.public, /^ssh-ed25519 [A-Za-z0-9+/=]+ sandboxd-desktop$/)
+    assert.match(key.public, /^ssh-ed25519 [A-Za-z0-9+/=]+ sandboxd-desktop$/) // default comment
     if (i < 20)
       assert.equal(utils.parseKey(key.public).verify(Buffer.from('x'), parsed.sign(Buffer.from('x'))), true)
   }
@@ -289,7 +301,7 @@ test('preflight explains in plain words why a server does not fit', () => {
   assert.doesNotThrow(() => checkFacts({ ...FACTS, arch: 'aarch64', mem: '990000' }))
 })
 
-test('adds a server: installs, pins the host key, verifies the limited key, never stores the password', async (t) => {
+test('adds a server: installs, pins the host key, signs in with this computer’s key, never stores the password', async (t) => {
   const fake = await fakeServer(t)
   const { servers, dataDir } = await manager(t)
   const progress = []
@@ -312,6 +324,11 @@ test('adds a server: installs, pins the host key, verifies the limited key, neve
   assert.equal(result.server.front, 'caddy')
   assert.equal(result.server.domain, '203-0-113-10.sslip.io')
   assert.equal(result.server.status.state, 'connected')
+  assert.equal(result.server.username, 'root')
+  // This computer's key, marked, in the login's own file. The fake forwards to
+  // the engine only for key logins, so the verify below proves the tunnel uses it.
+  assert.equal(fake.state.authorized.length, 1)
+  assert.match(fake.state.authorized[0], /^ssh-ed25519 \S+ sandboxd-desktop:[a-f0-9]{16}$/)
   // Root installs run without sudo; the password never appears in a command.
   assert(fake.state.commands.every((c) => !c.command.includes(PASSWORD)))
   assert(
@@ -345,6 +362,7 @@ test('adds a server: installs, pins the host key, verifies the limited key, neve
     'name',
     'port',
     'proxy',
+    'username',
   ])
   assert.equal(decrypt(Buffer.from(saved.apiTokenEnc, 'base64')), TOKEN)
 
@@ -420,7 +438,7 @@ test('a changed host key stops the tunnel until the user trusts the new identity
   assert.equal(status.reason, MESSAGES.identity)
   assert.notEqual(status.presentedSha256, pinned)
   // Nothing goes through while the identity is unconfirmed.
-  await assert.rejects(servers.frontdoor(server.id, ['facts']), /identity changed/)
+  await assert.rejects(servers.run(server.id, 'echo hello'), /identity changed/)
   const port = Number(new URL(servers.resolve(server.id).origin).port)
   await assert.rejects(get(port, '/v1/auth/status'))
   await new Promise((r) => setTimeout(r, 300))
@@ -428,23 +446,25 @@ test('a changed host key stops the tunnel until the user trusts the new identity
   const trusted = await servers.trustIdentity(server.id, status.presentedSha256)
   assert.equal(trusted.hostKeySha256, status.presentedSha256)
   await wait(() => servers.status(server.id).state === 'connected')
-  assert.equal((await servers.frontdoor(server.id, ['status', 'shop'])).ok, true)
+  assert.equal((await servers.run(server.id, 'echo hello')).output, 'hello\n')
 })
 
-test('frontdoor runs only allowed subcommands and parses the final JSON line', async (t) => {
-  const fake = await fakeServer(t)
+test('run executes as the saved login, and as root only with sudo and the password', async (t) => {
+  const fake = await fakeServer(t, { admin: 'ubuntu', facts: { uid: '1000' } })
   const { servers } = await manager(t)
-  const { server } = await servers.add({ host: '127.0.0.1', port: fake.port, password: PASSWORD })
-  assert.deepEqual(await servers.frontdoor(server.id, ['apply', 'shop', 'shop.example.com']), {
-    ok: true,
-    step: 'apply',
-    message: 'Ready',
-  })
-  assert.equal(fake.state.commands.at(-1).command, 'frontdoor apply shop shop.example.com')
-  assert.equal(fake.state.commands.at(-1).user, 'sandboxd')
-  await assert.rejects(servers.frontdoor(server.id, ['rm', '-rf']), /Invalid front door/)
-  await assert.rejects(servers.frontdoor(server.id, ['apply', 'shop; reboot']), /Invalid front door/)
-  await assert.rejects(servers.frontdoor('srv_ffffffffffff', ['facts']), /isn’t in your list/)
+  const { server } = await servers.add({ host: '127.0.0.1', port: fake.port, username: 'ubuntu', password: PASSWORD })
+  const plain = await servers.run(server.id, 'echo hello')
+  assert.deepEqual([plain.code, plain.output], [0, 'hello\n'])
+  assert.deepEqual(fake.state.commands.at(-1), { user: 'ubuntu', command: 'echo hello', byKey: true })
+  // Admin without a password: passwordless sudo, which this server refuses.
+  await assert.rejects(servers.run(server.id, 'id -u', { admin: true }), { code: 'needs_password' })
+  const admin = await servers.run(server.id, 'id -u', { admin: true, password: PASSWORD })
+  assert.equal(admin.output, '0\n')
+  assert.equal(fake.state.commands.at(-1).command, "sudo -S -p '' bash -c 'id -u'")
+  assert.equal(fake.state.stdin.at(-1), PASSWORD + '\n')
+  await assert.rejects(servers.run(server.id, ''), /Invalid command/)
+  await assert.rejects(servers.run(server.id, 'id', { admin: true, password: 'a\nb' }), /Invalid password/)
+  await assert.rejects(servers.run('srv_ffffffffffff', 'echo hello'), /isn’t in your list/)
 })
 
 test('a sudo user installs with the password on stdin only', async (t) => {
@@ -461,6 +481,10 @@ test('a sudo user installs with the password on stdin only', async (t) => {
   assert(install.command.startsWith("sudo -S -p '' bash -c "))
   assert(!install.command.includes(PASSWORD))
   assert.deepEqual(fake.state.stdin, [PASSWORD + '\n'])
+  // The key goes in ubuntu's own file, without sudo.
+  const authorize = fake.state.commands.find((c) => c.command.startsWith('umask 077'))
+  assert.equal(authorize.user, 'ubuntu')
+  assert(!authorize.command.startsWith('sudo'))
 })
 
 test('asks before installing Docker, then installs it when allowed', async (t) => {
@@ -512,13 +536,15 @@ test('plain errors: wrong password, unsuitable server, failed install', async (t
   for (const file of await allFiles(dataDir)) assert(!file.text.includes(PASSWORD))
 })
 
-test('remove forgets the server and stops its tunnel', async (t) => {
+test('remove forgets the server, takes this computer’s key off it and stops its tunnel', async (t) => {
   const fake = await fakeServer(t)
   const { servers, dataDir } = await manager(t)
   const { server } = await servers.add({ host: '127.0.0.1', port: fake.port, password: PASSWORD })
   const port = Number(new URL(servers.resolve(server.id).origin).port)
   const result = await servers.remove(server.id)
   assert.equal(result.removed, true)
+  assert.equal(result.keyRemoved, true)
+  assert.deepEqual(fake.state.authorized, [])
   assert.match(result.note, /keep running on the server/)
   assert.deepEqual(servers.list(), [])
   assert.equal(servers.resolve(server.id), null)

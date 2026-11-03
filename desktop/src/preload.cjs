@@ -27,7 +27,6 @@ if (process.isMainFrame) {
         status: (id) => ipcRenderer.invoke('servers:status', id),
         add: (input) => ipcRenderer.invoke('servers:add', input),
         remove: (id) => ipcRenderer.invoke('servers:remove', id),
-        frontdoor: (id, args) => ipcRenderer.invoke('servers:frontdoor', id, args),
         trustIdentity: (id) => ipcRenderer.invoke('servers:trust-identity', id),
         onProgress: (callback) => subscribe('servers:progress', callback),
         onChange: (callback) => subscribe('servers:changed', callback),
