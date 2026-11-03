@@ -242,6 +242,7 @@ test('install command follows the server contract and the pinned engine', () => 
   assert.match(tagged, /raw\.githubusercontent\.com\/tastyeffectco\/sandboxd\/v0\.3\.26\/install\.sh/)
   assert.match(tagged, /SANDBOXD_REF=v0\.3\.26 bash -s -- --pull --no-console --no-desktop --front=auto$/)
   assert.match(installCommand('release/go-live'), / --build --no-console/)
+  assert.match(tagged, /^set -o pipefail; command -v git >\/dev\/null 2>&1 \|\| \{ if command -v apt-get/)
   assert.equal(installRef({ SANDBOXD_SERVER_REF: 'release/go-live' }), 'release/go-live')
   assert.match(installRef({}), /^v\d/)
   assert.throws(() => installRef({ SANDBOXD_SERVER_REF: 'main; rm -rf /' }))

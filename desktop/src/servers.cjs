@@ -127,6 +127,11 @@ function installCommand(ref) {
   const mode = /^v\d/.test(ref) ? '--pull' : '--build'
   return (
     `set -o pipefail; ` +
+    // install.sh fetches sandboxd with git, which minimal images lack.
+    `command -v git >/dev/null 2>&1 || ` +
+    `{ if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git; ` +
+    `elif command -v dnf >/dev/null 2>&1; then dnf install -y -q git; elif command -v yum >/dev/null 2>&1; then yum install -y -q git; ` +
+    `elif command -v apk >/dev/null 2>&1; then apk add -q git; else echo 'git is missing' >&2; exit 1; fi; }; ` +
     `if command -v curl >/dev/null 2>&1; then curl -fsSL ${url}; else wget -qO- ${url}; fi | ` +
     `SANDBOXD_REF=${ref} bash -s -- ${mode} --no-console --no-desktop --front=auto`
   )
