@@ -197,7 +197,7 @@ function createWindowsEngine({
       // Starting the owned distro is safe; never stop an unrelated port owner.
       if (!manifest?.installed && (await isPortOpen(9090)))
         throw new Error(
-          'Another app is using port 9090. Close it or connect to your existing engine using its API address.',
+          'Another app on this computer is using what sandboxd needs (port 9090). Close that app, then click Retry setup.',
         )
       if (!manifest) {
         manifest = { distro: `sandboxd-desktop-${randomBytes(8).toString('hex')}`, installed: false }
@@ -210,7 +210,7 @@ function createWindowsEngine({
         set({
           phase: 'wsl',
           message:
-            'Enabling Windows Subsystem for Linux. Approve the Windows administrator prompt to continue…',
+            'Turning on a Windows feature sandboxd needs. Click Yes in the Windows prompt to continue…',
         })
         const result = await execute(
           powershell,
@@ -224,7 +224,7 @@ function createWindowsEngine({
         )
         if (![0, 3010].includes(result.code))
           throw new Error(
-            'Windows could not enable WSL, or permission was declined. Retry and approve the Windows prompt. Hardware virtualization must be enabled.',
+            'Windows could not turn on the feature sandboxd needs, or permission was declined. Click Retry setup and click Yes in the Windows prompt. If it fails again, virtualization may be turned off in your computer’s settings.',
           )
         check = await execute(wsl, ['--status']).catch(() => ({ code: 1 }))
         if (result.code === 3010 || check.code !== 0) {
@@ -240,7 +240,7 @@ function createWindowsEngine({
         await save()
       }
       const listed = await execute(wsl, ['--list', '--quiet'])
-      if (listed.code !== 0) throw new Error('Cannot list WSL environments. Restart Windows and retry setup.')
+      if (listed.code !== 0) throw new Error('Windows did not answer when sandboxd checked its setup. Restart Windows, then click Retry setup.')
       const names = listed.output.split(/\r?\n/).map((name) => name.trim().toLowerCase())
       if (!names.includes(manifest.distro)) {
         if (manifest.installed)
@@ -265,7 +265,7 @@ function createWindowsEngine({
           )
           if (imported.code !== 0)
             throw new Error(
-              'WSL could not create the engine environment. Restart Windows and retry. Check that hardware virtualization is enabled and disk space is available.',
+              'Windows could not create sandboxd’s engine. Free up some disk space, restart Windows, then click Retry setup. If it fails again, virtualization may be turned off in your computer’s settings.',
             )
           await removeShortcut(manifest.distro).catch(() => {})
         } finally {
@@ -274,7 +274,7 @@ function createWindowsEngine({
       }
       if (!manifest.installed && (await isPortOpen(8080)))
         throw new Error(
-          'Another app is using preview port 8080. Close it, then retry setup. Your partial setup is preserved.',
+          'Another app on this computer is using what sandboxd needs (port 8080). Close that app, then click Retry setup. Your progress is saved.',
         )
       set({ phase: 'installing', message: 'Preparing your engine…' })
       const script = await fs.readFile(path.join(__dirname, 'windows-engine-bootstrap.sh'), 'utf8')
@@ -337,7 +337,7 @@ function createWindowsEngine({
         await sleep(2000)
       }
       throw new Error(
-        'The engine started, but Windows cannot reach localhost:9090. Check VPN/firewall settings and WSL localhost forwarding, then retry.',
+        'Your engine started, but this computer can’t connect to it. A VPN or firewall may be blocking it: pause it, then click Retry setup.',
       )
     } catch (error) {
       set({ phase: 'error', message: error.message })
