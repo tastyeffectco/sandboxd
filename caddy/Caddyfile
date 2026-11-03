@@ -1,0 +1,36 @@
+# sandboxd — managed Caddy front door (docker compose --profile caddy).
+#
+# Caddy owns ports 80/443 and https; Traefik (the router) is reached on the
+# Docker network as traefik:80 and maps each hostname to its app.
+#
+# Certificates are issued on demand, the first time a hostname is visited,
+# and ONLY for hostnames sandboxd says it serves (GET /edge/tls-allowed on
+# the control plane answers 200 or 404). Anything else gets no certificate,
+# so nobody can make this server request certificates for random names.
+
+{
+	on_demand_tls {
+		ask http://sandboxd:9000/edge/tls-allowed
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy traefik:80 {
+		# Keep the hostname the visitor asked for: Traefik routes on it.
+		header_up Host {host}
+		# Caddy ignores X-Forwarded-* from clients (no trusted_proxies) and
+		# sets them itself, so the app sees the real client address.
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# Plain http redirects to https. Caddy answers ACME HTTP-01 challenges on
+# port 80 before this redirect, so certificate issuance keeps working.
+http:// {
+	redir https://{host}{uri} 308
+}

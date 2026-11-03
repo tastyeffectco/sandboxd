@@ -166,3 +166,11 @@ func TestMiddlewareScopedKey(t *testing.T) {
 		}
 	}
 }
+
+// The edge TLS ask hook must stay reachable without a credential: Caddy has
+// none. (It guards itself: see internal/api/edge.go.)
+func TestEdgeTLSAllowedIsExempt(t *testing.T) {
+	if !exemptPaths["/edge/tls-allowed"] {
+		t.Fatal("/edge/tls-allowed must be exempt from auth")
+	}
+}

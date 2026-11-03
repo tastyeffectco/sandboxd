@@ -175,6 +175,14 @@ func main() {
 	// Host-facing port the preview/console URLs are reached on (compose passes
 	// the published HTTP_PORT here). Default "80": bare URLs on a dedicated host.
 	publicHTTPPort := envDefault("SANDBOXD_PUBLIC_HTTP_PORT", "80")
+	// Traefik middleware for production app routers (rate limiting behind a
+	// front door). A Traefik reference is name[@provider]; anything else would
+	// end up verbatim in a container label, so refuse it at startup.
+	rateLimitMiddleware := strings.TrimSpace(os.Getenv("SANDBOXD_RATELIMIT_MIDDLEWARE"))
+	if !api.ValidMiddlewareRef(rateLimitMiddleware) {
+		fmt.Fprintf(os.Stderr, "SANDBOXD_RATELIMIT_MIDDLEWARE must be a Traefik middleware name like sandbox-ratelimit@file (got %q)\n", rateLimitMiddleware)
+		os.Exit(2)
+	}
 	setMemoryHigh := boolFromEnv("SANDBOXD_SET_MEMORY_HIGH", false)
 
 	migrations := envDefault("SANDBOXD_MIGRATIONS", migrationsDir)
@@ -511,7 +519,6 @@ func main() {
 	// new agent/model support. Lossless: everything durable is in the workspace
 	// bind mount, and the container rootfs is read-only by construction.
 	wakeHandler.Image = image
-	rateLimitMiddleware := envDefault("SANDBOXD_RATELIMIT_MIDDLEWARE", "")
 	wakeHandler.Recreate = func(ctx context.Context, sb *store.Sandbox) error {
 		spec := sandboxspec.Build(sb, sandboxspec.Env{
 			RateLimitMiddleware: rateLimitMiddleware,
@@ -572,6 +579,7 @@ func main() {
 			ReleaseExists: releaseExists,
 		},
 		PublicHTTPPort:      publicHTTPPort,
+		ConsoleHost:         strings.TrimSpace(os.Getenv("SANDBOXD_CONSOLE_HOST")),
 		SetMemoryHigh:       setMemoryHigh,
 		Inflight:            inflight,
 		Wake:                wakeHandler,

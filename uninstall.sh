@@ -62,7 +62,7 @@ bold "sandboxd — uninstall"
 
 # 1. Stop + remove the compose stack (traefik + sandboxd) and its network.
 if [ -n "$COMPOSE" ]; then
-  $COMPOSE down --remove-orphans 2>/dev/null && ok "stopped the stack (traefik + sandboxd)" || info "stack was not running"
+  $COMPOSE --profile console --profile caddy down --remove-orphans 2>/dev/null && ok "stopped the stack (traefik + sandboxd)" || info "stack was not running"
 fi
 
 # 2. Remove every sandbox container this stack created. Scoped precisely

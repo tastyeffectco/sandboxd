@@ -83,9 +83,10 @@ servers themselves.
   macOS Keychain). Passwords are never stored.
 - The server's host key is pinned on first connection. If it ever changes, the
   app stops and says so in plain words.
-- Admin rights are used only to install. Afterwards the desktop connects as a
-  limited `sandboxd` user. That user may do only what the chosen front door
-  needs (for example `nginx -t` and reloading nginx), through a narrow sudo rule.
+- The desktop connects with the user's own login on the server. Every change
+  it makes there (installing the engine, editing nginx or Caddy) is proposed by
+  the assistant in plain words and runs only once the user approves it; the
+  assistant never sees the key, the desktop signs for it (ssh-agent style).
 - The engine's API listens on `127.0.0.1:9090` only and is reached through the
   SSH tunnel. The pairing door is the exception: there the API is served over
   https on the engine's own hostname, with a long random token and rate limiting.
@@ -103,9 +104,9 @@ Exposing an app has two parts:
 
 | Front door | When | What sandboxd does |
 |---|---|---|
-| **Caddy, managed by sandboxd** (default on a clean server) | 80/443 are free | Runs Caddy as a container and configures it through its admin API. https is automatic for `sslip.io` addresses and custom domains (on-demand TLS, allowed only for hostnames the engine knows). |
-| **Your nginx** | nginx is installed | Writes one file per app, `/etc/nginx/sites-available/sandboxd-<app>.conf`, runs `nginx -t`, reloads, then gets the certificate with certbot. |
-| **Your Caddy** | Caddy is installed | Adds `import /etc/caddy/sandboxd/*.caddy` to the Caddyfile once (shown and approved first), then one file per app, `caddy validate`, reload. |
+| **Caddy, managed by sandboxd** (default on a clean server) | 80/443 are free | Runs Caddy as a container with one fixed Caddyfile that forwards every host to the router, so adding an app needs no Caddy change. https is automatic for `sslip.io` addresses and custom domains (on-demand TLS, allowed only for hostnames the engine knows). |
+| **Your nginx** | nginx is installed | The assistant proposes, and on approval writes, one file per app, `/etc/nginx/sites-available/sandboxd-<app>.conf`, runs `nginx -t`, reloads, then gets the certificate with certbot. |
+| **Your Caddy** | Caddy is installed | The assistant proposes adding `import /etc/caddy/sandboxd/*.caddy` to the Caddyfile once (shown and approved first), then one file per app, `caddy validate`, reload. |
 | **Your Traefik / Coolify** | detected | A file-provider dynamic config pointing at the router. |
 | **Cloudflare Tunnel** (phase 3) | behind NAT, no open ports, or by choice | A `cloudflared` container. No ports needed, https included. |
 | **Manual** | the user wants full control | Shows the snippet to paste and checks the result. |
@@ -242,8 +243,8 @@ rollback steps the desktop already uses (#148, #152). The desktop offers
 | C2 | Release bundles: `GET /v1/apps/{id}/bundle`; `POST/GET /v1/apps/{id}/releases`; `POST …/releases/{rid}/activate` | 1 |
 | C3 | Production mode for an app: always on, start command, data volume, no agent tasks, build at publish | 1 |
 | C4 | Router: listen on `127.0.0.1:8088` when it is not the front door; app hostnames (`sslip.io`, custom) | 1 |
-| C5 | Managed Caddy front door (container, admin API, on-demand TLS gated by an engine "is this hostname mine?" endpoint, rate limiting) | 1 |
-| C6 | Installer: `--front=auto\|caddy\|nginx\|existing\|tunnel\|manual`, port and proxy detection, the limited `sandboxd` user, `--pair <code>` | 1 (`--pair` in 2, `tunnel` in 3) |
+| C5 | Managed Caddy front door (container, fixed Caddyfile, on-demand TLS gated by an engine "is this hostname mine?" endpoint, rate limiting) | 1 |
+| C6 | Installer: `--front=auto\|caddy\|nginx\|existing\|tunnel\|manual`, port and proxy detection, `--pair <code>` | 1 (`--pair` in 2, `tunnel` in 3) |
 | C7 | App labels: free-form key/values on an app (`env`, `source`), set at create, listed and filtered on `GET /v1/apps` | 1 |
 | C8 | Custom domains: `PUT /v1/apps/{id}/domains` with a DNS check | 2 |
 | C9 | Nightly data backups: `GET /v1/apps/{id}/backups`, restore | 2 |

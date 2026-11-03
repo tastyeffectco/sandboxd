@@ -167,3 +167,5 @@ jobs:
         run: bash scripts/test-upgrade-notes.sh
       - name: verified release image selection (Docker and cosign stubbed)
         run: bash scripts/test-install-images.sh
+      - name: install.sh --front decisions (Docker, ss and curl stubbed)
+        run: bash scripts/test-install-front.sh

@@ -1,0 +1,32 @@
+# Per-client-IP rate limiting for production app routers.
+#
+# sandboxd attaches ONE of these to an app's router when
+# SANDBOXD_RATELIMIT_MIDDLEWARE is set (reference it as <name>@file).
+# Previews are never rate limited.
+#
+#   sandbox-ratelimit          Traefik faces clients directly: the client
+#                              is the connection's remote address.
+#   sandbox-ratelimit-proxied  A front door (managed Caddy, your nginx or
+#                              Caddy) sits in front: the client is the
+#                              right-most X-Forwarded-For entry, the one that
+#                              front door added (depth 1), which a client
+#                              cannot forge.
+#
+# 100 requests/second on average with bursts of 200 is generous for a person
+# using an app and still stops a single address from flooding it.
+
+http:
+  middlewares:
+    sandbox-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+    sandbox-ratelimit-proxied:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1

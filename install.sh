@@ -17,6 +17,17 @@
 #
 # Idempotent engine installation. On macOS, also installs the optional desktop
 # client under ~/Applications by default; disable with --no-desktop.
+#
+# Servers (the desktop's "add a server", or by hand):
+#   --front=auto|caddy|existing|manual   who owns ports 80/443 and https:
+#       caddy     sandboxd runs Caddy (needs 80 and 443 free)
+#       existing  your nginx or Caddy forwards to sandboxd (127.0.0.1:8088)
+#       manual    you wire up the front door yourself
+#       auto      caddy when 80 and 443 are free, else existing
+#   --domain=<D>                 app addresses under D (default <ip>.sslip.io)
+# Without --front nothing changes: Traefik stays the front door on :80.
+# With --front the last line printed is machine-readable:
+#   SANDBOXD_INSTALL_RESULT {"front":…,"domain":…,"proxy":…,"api_token":…,"api":…}
 
 set -euo pipefail
 
@@ -28,14 +39,24 @@ die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # --build always builds locally; --pull requires verified release images.
 MODE=auto
+FRONT=""; FRONT_DOMAIN=""
 for arg in "$@"; do
   case "$arg" in
     --build) MODE=build ;;
     --pull) MODE=pull ;;
     --no-console|--no-desktop) ;;
-    *) die "Unknown option: $arg (use --build, --pull, --no-console, or --no-desktop)" ;;
+    --front=*) FRONT="${arg#--front=}" ;;
+    --domain=*) FRONT_DOMAIN="${arg#--domain=}" ;;
+    *) die "Unknown option: $arg (use --build, --pull, --no-console, --no-desktop, --front= or --domain=)" ;;
   esac
 done
+case "$FRONT" in
+  ""|auto|caddy|existing|manual) ;;
+  *) die "Unknown front door: --front=$FRONT (use auto, caddy, existing or manual)" ;;
+esac
+if [ -z "$FRONT" ] && [ -n "$FRONT_DOMAIN" ]; then
+  die "--domain needs --front (for example --front=auto)"
+fi
 
 # ── anonymous install-failure beacon ─────────────────────────────────
 # If the installer aborts, send ONE event: {stage} + a random id — nothing
@@ -126,6 +147,37 @@ else
   info ".env already exists — leaving it untouched"
 fi
 
+# ── front door (servers only: --front) ───────────────────────────────
+# Decided before .env is loaded so compose and this script both see the
+# result. Without --front none of this runs.
+FRONT_PROXY=none
+if [ -n "$FRONT" ]; then
+  STAGE=front
+  [ "$(uname -s)" = Linux ] || die "--front is for Linux servers."
+  # shellcheck source=scripts/install-front.sh
+  . "$REPO_ROOT/scripts/install-front.sh"
+  PREV_FRONT="$(sed -n 's/^SANDBOXD_FRONT=//p' .env | tail -n1)"
+  if [ "$FRONT" = auto ] && [ -n "$PREV_FRONT" ]; then
+    FRONT="$PREV_FRONT"   # re-run: keep the front door chosen last time
+    info "front door: keeping '$FRONT' from the previous install"
+  fi
+  FRONT_PROXY="$(front_detect_proxy)"
+  FRONT="$(front_resolve "$FRONT")"
+  if [ -n "$FRONT_DOMAIN" ]; then
+    FRONT_DOMAIN="$(printf '%s' "$FRONT_DOMAIN" | tr 'A-Z' 'a-z')"
+    front_valid_domain "$FRONT_DOMAIN" || die "--domain=$FRONT_DOMAIN is not a valid domain name."
+  else
+    PREV_DOMAIN="$(sed -n 's/^PREVIEW_DOMAIN=//p' .env | tail -n1)"
+    case "$PREV_DOMAIN" in
+      ""|localhost) PUBLIC_IP="$(front_public_ip)" || die "Could not find this server's public IP address. Pass --domain=<your domain>."
+                    FRONT_DOMAIN="$(front_sslip_domain "$PUBLIC_IP")" ;;
+      *) FRONT_DOMAIN="$PREV_DOMAIN" ;;
+    esac
+  fi
+  front_write_env .env "$FRONT" "$FRONT_DOMAIN"
+  ok "front door: $FRONT (web server found: $FRONT_PROXY) · apps at https://<app>.$FRONT_DOMAIN"
+fi
+
 # Load .env so we know the data dir / image tag to use below.
 set -a; . ./.env; set +a
 
@@ -192,11 +244,23 @@ case " $* " in *" --no-console "*) CONSOLE=0 ;; esac
 [ "${SANDBOXD_CONSOLE:-1}" = "0" ] && CONSOLE=0
 PROFILE_ARGS=""
 [ "$CONSOLE" = "1" ] && PROFILE_ARGS="--profile console"
+# The managed Caddy front door (recorded in .env by --front=caddy).
+if [ "${SANDBOXD_FRONT:-}" = caddy ]; then
+  PROFILE_ARGS="$PROFILE_ARGS --profile caddy"
+  for d in "$DATA_DIR/caddy/data" "$DATA_DIR/caddy/config"; do
+    [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || sudo mkdir -p "$d"
+  done
+fi
+# Public URLs: an explicit scheme means a front door owns the public port, so
+# Traefik's own port never appears in them (mirrors the control plane).
+URL_SCHEME="${PREVIEW_URL_SCHEME:-http}"
+PORTSUFFIX=""
+[ -z "${PREVIEW_URL_SCHEME:-}" ] && [ "${HTTP_PORT:-80}" != "80" ] && PORTSUFFIX=":${HTTP_PORT:-80}"
 
 # Stash the console URL + bootstrap key (gitignored, 0600) so ./console-login.sh
 # can show them again anytime.
 {
-  printf 'console_url=http://%s%s\n' "${CONSOLE_HOST:-console.${PREVIEW_DOMAIN:-localhost}}" "$([ "${HTTP_PORT:-80}" != "80" ] && printf ':%s' "${HTTP_PORT:-80}")"
+  printf 'console_url=%s://%s%s\n' "$URL_SCHEME" "${CONSOLE_HOST:-console.${PREVIEW_DOMAIN:-localhost}}" "$PORTSUFFIX"
   printf 'api_key=%s\n' "$API_KEY"
 } > .console-login 2>/dev/null && chmod 600 .console-login
 
@@ -234,6 +298,7 @@ bold "Starting the stack…"
 # Fetch the proxy only if missing; application tags must not move between
 # signature verification and startup.
 $COMPOSE pull --policy missing traefik
+[ "${SANDBOXD_FRONT:-}" = caddy ] && $COMPOSE --profile caddy pull --policy missing caddy
 $COMPOSE $PROFILE_ARGS up -d --pull never
 ok "stack is up"
 chmod +x console-login.sh 2>/dev/null || true   # so `./console-login.sh` always runs
@@ -258,7 +323,6 @@ API_BIND="${SANDBOXD_API_BIND:-127.0.0.1:9090}"
 HTTP_PORT="${HTTP_PORT:-80}"
 PREVIEW_DOMAIN="${PREVIEW_DOMAIN:-localhost}"
 CONSOLE_HOST="${CONSOLE_HOST:-console.${PREVIEW_DOMAIN}}"
-PORTSUFFIX=""; [ "$HTTP_PORT" != "80" ] && PORTSUFFIX=":$HTTP_PORT"
 # Preview host shape, mirroring PREVIEW_HOST_STYLE / PREVIEW_HOST_TAG.
 PREVIEW_SUFFIX=".preview.${PREVIEW_DOMAIN}"
 if [ "${PREVIEW_HOST_STYLE:-nested}" = "flat" ]; then
@@ -270,7 +334,7 @@ bold "sandboxd is running 🎉"
 cat <<EOF
 
   Control-plane API : http://${API_BIND}   (auth required — use your API key)
-  Preview URLs      : http://s-<id>-<port>${PREVIEW_SUFFIX}${PORTSUFFIX}
+  Preview URLs      : ${URL_SCHEME}://s-<id>-<port>${PREVIEW_SUFFIX}${PORTSUFFIX}
 
   Create your first sandbox (exposing a dev server on port 3000):
 
@@ -279,7 +343,7 @@ cat <<EOF
       -H 'content-type: application/json' \\
       -d '{"id":"demo01","ports":[3000]}' | tee /dev/stderr
 
-  Then open:  http://s-demo01-3000${PREVIEW_SUFFIX}${PORTSUFFIX}
+  Then open:  ${URL_SCHEME}://s-demo01-3000${PREVIEW_SUFFIX}${PORTSUFFIX}
 
   Logs:   $COMPOSE logs -f sandboxd
   Stop:   $COMPOSE down
@@ -290,7 +354,7 @@ EOF
 if [ "$CONSOLE" = "1" ]; then
   echo
   bold "Web console — open this first 👇"
-  printf '\n  Open    : http://%s%s\n' "$CONSOLE_HOST" "$PORTSUFFIX"
+  printf '\n  Open    : %s://%s%s\n' "$URL_SCHEME" "$CONSOLE_HOST" "$PORTSUFFIX"
   printf '  Login   : create your password on first visit (change it anytime in Settings)\n'
   printf '  Then connect an agent in Settings, create an app, and build.\n'
 fi
@@ -303,12 +367,22 @@ fi
 printf '\n  Lost these later?  run:  ./console-login.sh\n'
 printf '  Forgot the console password later?  ./console-login.sh --reset-password\n'
 printf '  Update later:      run:  ./upgrade.sh   (backs up first, auto-rollback)\n'
-printf '  Public URL:        previews on %s only work from this network / plain HTTP.\n' "$PREVIEW_DOMAIN"
-printf '                     https://you.sandboxd.io in one command: https://sandboxd.io/cloud  ·  or your own domain: https://sandboxd.io/guides/production-tls\n'
+if [ -z "$FRONT" ]; then
+  printf '  Public URL:        previews on %s only work from this network / plain HTTP.\n' "$PREVIEW_DOMAIN"
+  printf '                     https://you.sandboxd.io in one command: https://sandboxd.io/cloud  ·  or your own domain: https://sandboxd.io/guides/production-tls\n'
+fi
 chmod +x upgrade.sh 2>/dev/null || true
 
 # A single, plain (no-color) nudge — suppress with SANDBOXD_NO_SPONSOR=1.
 if [ -z "${SANDBOXD_NO_SPONSOR:-}" ]; then
   printf '\n  \342\230\205 sandboxd is free & MIT. If it saves you time: https://github.com/sponsors/tastyeffectco\n'
   printf '  Deploying this for real? Support: https://sandboxd.io/support\n'
+fi
+
+# Machine-readable result for the desktop (servers only). Must stay the last
+# line printed.
+if [ -n "$FRONT" ]; then
+  echo
+  front_result_line "$FRONT" "$PREVIEW_DOMAIN" "$FRONT_PROXY" \
+    "$(front_api_token "$(sed -n 's/^SANDBOXD_API_TOKENS=//p' .env | tail -n1)")" "$API_BIND"
 fi

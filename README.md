@@ -212,6 +212,11 @@ curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/deploy/
 
 Full per-provider walkthrough: [deploy/DEPLOY.md](deploy/DEPLOY.md).
 
+**Publishing apps from the desktop to your own server?** Install with a front
+door: `install.sh --front=auto` runs Caddy with automatic https on a clean
+server, or works with the nginx or Caddy already there, and gives every app an
+`https://<app>.<ip>.sslip.io` address. See [docs/front-door.md](docs/front-door.md).
+
 ## What you get
 
 - **Isolated sandboxes** — a hardened container per app with a workspace + live
