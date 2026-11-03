@@ -31,6 +31,18 @@ if (process.isMainFrame) {
         onProgress: (callback) => subscribe('servers:progress', callback),
         onChange: (callback) => subscribe('servers:changed', callback),
       }),
+      // The server assistant (assistant.cjs, server-tools.cjs).
+      assistant: Object.freeze({
+        send: (id, message) => ipcRenderer.invoke('assistant:send', id, message),
+        stop: (id) => ipcRenderer.invoke('assistant:stop', id),
+        reset: (id) => ipcRenderer.invoke('assistant:reset', id),
+        pending: () => ipcRenderer.invoke('assistant:pending'),
+        activity: (id) => ipcRenderer.invoke('assistant:activity', id),
+        decide: (approvalId, decision) => ipcRenderer.invoke('assistant:decide', approvalId, decision),
+        onEvent: (callback) => subscribe('assistant:event', callback),
+        onTools: (callback) => subscribe('assistant:tools', callback),
+        onSetup: (callback) => subscribe('assistant:setup', callback),
+      }),
     }),
   )
 }

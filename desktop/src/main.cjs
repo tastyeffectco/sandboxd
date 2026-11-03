@@ -8,6 +8,8 @@ const { normalizeEngineURL, externalURL } = require('./connection.cjs')
 const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 const { signInManagedEngine } = require('./local-auth.cjs')
 const { createServers } = require('./servers.cjs')
+const { createServerTools } = require('./server-tools.cjs')
+const { createAssistant, createInstaller, createToolEndpoint } = require('./assistant.cjs')
 
 let window,
   gateway,
@@ -18,6 +20,9 @@ let writes = Promise.resolve()
 let connecting = false
 let localEngine
 let servers
+let serverTools
+let toolEndpoint
+let assistant
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -264,6 +269,30 @@ async function start() {
   // After sleep the old connections are usually dead: reconnect right away.
   powerMonitor.on('resume', () => servers.refreshAll())
   powerMonitor.on('unlock-screen', () => servers.refreshAll())
+  // The server assistant: OpenCode (downloaded on first use) whose only tools
+  // are these, each change approved by the user in the app.
+  serverTools = createServerTools({ servers })
+  serverTools.subscribe((event) => window?.webContents.send('assistant:tools', event))
+  toolEndpoint = createToolEndpoint({ tools: serverTools })
+  await toolEndpoint.start()
+  const assistantDir = path.join(app.getPath('userData'), 'assistant')
+  await fs.mkdir(assistantDir, { recursive: true })
+  // OpenCode reads its instructions from disk, not from the app archive.
+  const instructionsFile = path.join(assistantDir, 'SANDBOXD_OPS.md')
+  await fs.writeFile(instructionsFile, await fs.readFile(path.join(__dirname, 'ops', 'SANDBOXD_OPS.md')))
+  const installer = createInstaller({
+    dataDir: app.getPath('userData'),
+    onProgress: ({ received, total }) =>
+      window?.webContents.send('assistant:setup', { received, total }),
+  })
+  assistant = createAssistant({
+    dataDir: app.getPath('userData'),
+    installer,
+    instructionsFile,
+    toolPort: () => toolEndpoint.port(),
+    toolToken: toolEndpoint.token,
+    serverInfo: (id) => servers.list().find((s) => s.id === id) || null,
+  })
   gateway = await createGateway({
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
@@ -419,9 +448,52 @@ async function start() {
       if (!event.sender.isDestroyed()) event.sender.send('servers:progress', progress)
     })
   })
-  ipcMain.handle('servers:remove', (event, id) => {
+  ipcMain.handle('servers:remove', async (event, id) => {
     trusted(event)
+    assistant.stop(id)
+    for (const approval of serverTools.pending())
+      if (approval.serverId === id) serverTools.decide(approval.id, { allow: false })
     return servers.remove(id)
+  })
+  // The server assistant. Replies stream as 'assistant:event'; approvals as
+  // 'assistant:tools' and are answered with 'assistant:decide'.
+  ipcMain.handle('assistant:send', async (event, id, message) => {
+    trusted(event)
+    try {
+      return await assistant.send(id, message, (update) => {
+        if (!event.sender.isDestroyed()) event.sender.send('assistant:event', { serverId: id, ...update })
+      })
+    } catch (error) {
+      return { ok: false, code: error.code || 'error', message: error.message }
+    }
+  })
+  ipcMain.handle('assistant:stop', (event, id) => {
+    trusted(event)
+    assistant.stop(id)
+    for (const approval of serverTools.pending())
+      if (approval.serverId === id) serverTools.decide(approval.id, { allow: false })
+  })
+  ipcMain.handle('assistant:reset', (event, id) => {
+    trusted(event)
+    return assistant.reset(id)
+  })
+  ipcMain.handle('assistant:pending', (event) => {
+    trusted(event)
+    return serverTools.pending()
+  })
+  ipcMain.handle('assistant:activity', (event, id) => {
+    trusted(event)
+    return serverTools.activity(id)
+  })
+  // Only the user's click in the app answers an approval; the password, if
+  // any, is passed on for that one command and not kept.
+  ipcMain.handle('assistant:decide', (event, approvalId, decision) => {
+    trusted(event)
+    if (typeof approvalId !== 'string' || !decision || typeof decision !== 'object') return false
+    return serverTools.decide(approvalId, {
+      allow: decision.allow === true,
+      password: typeof decision.password === 'string' ? decision.password : undefined,
+    })
   })
   // Trusting a changed server identity is confirmed in a native dialog the page
   // cannot answer by itself.
@@ -543,6 +615,9 @@ else {
   })
   app.on('will-quit', () => {
     void gateway?.close()
+    serverTools?.close()
+    assistant?.close()
+    void toolEndpoint?.close()
     void servers?.close()
   })
 }

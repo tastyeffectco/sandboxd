@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AddServerInput, AddServerStep, DesktopServer, DesktopServers, ServerStatus } from './desktop'
+import type {
+  AddServerInput,
+  AddServerStep,
+  DesktopAssistant,
+  DesktopServer,
+  DesktopServers,
+  ServerStatus,
+} from './desktop'
 import { Btn, Input, Pill } from './design/kit'
 import { Dialog } from './design/Dialog'
 import { Icon } from './design/Icon'
+import { ServerAssistant } from './ServerAssistant'
 
 const clean = (message: string) => message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
@@ -14,12 +22,21 @@ function statusLabel(status: ServerStatus) {
 
 // Settings → Your servers (desktop only). Servers are added once here; later
 // screens (environments, publish) pick one from this list.
-export function ServersPanel({ servers, toast }: { servers: DesktopServers; toast: (m: string) => void }) {
+export function ServersPanel({
+  servers,
+  assistant,
+  toast,
+}: {
+  servers: DesktopServers
+  assistant?: DesktopAssistant
+  toast: (m: string) => void
+}) {
   const [list, setList] = useState<DesktopServer[] | null>(null)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<DesktopServer | null>(null)
   const [busy, setBusy] = useState(false)
+  const [talking, setTalking] = useState<DesktopServer | null>(null)
   const load = useCallback(
     () =>
       servers
@@ -92,6 +109,11 @@ export function ServersPanel({ servers, toast }: { servers: DesktopServers; toas
                 >
                   {statusLabel(server.status)}
                 </Pill>
+                {assistant && server.status.state === 'connected' && (
+                  <Btn sm onClick={() => setTalking(server)} data-testid="server-assistant">
+                    Assistant
+                  </Btn>
+                )}
                 <Btn sm variant="danger" onClick={() => setRemoving(server)} data-testid="server-remove">
                   Remove
                 </Btn>
@@ -127,6 +149,9 @@ export function ServersPanel({ servers, toast }: { servers: DesktopServers; toas
             void load()
           }}
         />
+      )}
+      {talking && assistant && (
+        <ServerAssistant assistant={assistant} server={talking} close={() => setTalking(null)} />
       )}
       {removing && (
         <Dialog title={`Remove ${removing.name}?`} close={() => !busy && setRemoving(null)}>

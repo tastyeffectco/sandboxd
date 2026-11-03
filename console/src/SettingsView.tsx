@@ -225,7 +225,7 @@ export function SettingsView({
             </p>
           )}
           {section === 'models' && <ModelProviders onError={onError} toast={toast} />}
-          {section === 'servers' && desktopServers && <ServersPanel servers={desktopServers} toast={toast} />}
+          {section === 'servers' && desktopServers && <ServersPanel servers={desktopServers} assistant={window.sandboxdDesktop?.assistant} toast={toast} />}
           {section === 'agents' && (
             <>
               <div className="agent-accounts" data-testid="settings-agents-list">

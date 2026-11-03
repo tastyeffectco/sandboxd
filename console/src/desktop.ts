@@ -84,6 +84,58 @@ export interface DesktopServers {
   onProgress(callback: (progress: AddServerProgress) => void): () => void
   onChange(callback: (change: { id: string; status: ServerStatus }) => void): () => void
 }
+// The server assistant (desktop/src/assistant.cjs, server-tools.cjs): a chat
+// per server; every change it wants to make waits for an approval here.
+export type AssistantEvent =
+  | { serverId: string; type: 'status'; text: string }
+  | { serverId: string; type: 'text'; text: string }
+  | { serverId: string; type: 'tool'; tool: string; status: string }
+  | { serverId: string; type: 'error'; text: string }
+export type AssistantApproval = {
+  id: string
+  serverId: string
+  serverName: string
+  login: string
+  kind: 'read' | 'run' | 'write' | 'undo'
+  // The assistant's reason, in its words.
+  title: string
+  command?: string
+  path?: string
+  detail?: string
+  // write: the file now (null when it is new) and after.
+  before?: string | null
+  after?: string
+  change?: string
+  admin?: boolean
+  // A sudo login: the approval asks for the server password.
+  needsPassword: boolean
+}
+export type AssistantActivity = {
+  at: string
+  kind: string
+  title: string
+  command?: string
+  path?: string
+  change?: string
+  ok?: boolean
+  declined?: boolean
+}
+export type AssistantToolsEvent =
+  | { type: 'approval'; approval: AssistantApproval }
+  | { type: 'decided'; id: string; allow: boolean }
+  | { type: 'activity'; serverId: string; entry: AssistantActivity }
+export interface DesktopAssistant {
+  send(id: string, message: string): Promise<{ ok: boolean; code?: string; message?: string }>
+  stop(id: string): Promise<void>
+  reset(id: string): Promise<void>
+  pending(): Promise<AssistantApproval[]>
+  activity(id: string): Promise<AssistantActivity[]>
+  decide(approvalId: string, decision: { allow: boolean; password?: string }): Promise<boolean>
+  onEvent(callback: (event: AssistantEvent) => void): () => void
+  onTools(callback: (event: AssistantToolsEvent) => void): () => void
+  // First use: OpenCode is downloaded (about 75 MB).
+  onSetup(callback: (progress: { received: number; total: number }) => void): () => void
+}
 // A server engine's /v1 API, through the desktop gateway and that server's
 // SSH tunnel: fetch(serverApi(id, '/v1/apps')).
 export const serverApi = (id: string, path: string) => `/servers/${encodeURIComponent(id)}${path}`
@@ -102,6 +154,7 @@ export interface DesktopBridge {
   onNavigate(callback: (route: string) => void): () => void
   onSearch(callback: () => void): () => void
   servers?: DesktopServers
+  assistant?: DesktopAssistant
 }
 declare global {
   interface Window {

@@ -200,6 +200,29 @@ How it works and what is kept:
   assistant in plain words, and run only after you click **Allow**; commands that
   need admin rights ask for the password again if the login needs one for sudo.
 
+**The server assistant.** Each connected server has an **Assistant** button: a
+chat about that server, for example "put my apps online" or "use my own
+domain". It is OpenCode running on this computer on its free model (no account
+needed), downloaded the first time you use it (OpenCode 1.19.5 from npm's
+platform package, about 75 MB, accepted only if its SHA-512 matches the one
+pinned in the app). Its data lives in the app's data directory (`opencode/`,
+`assistant/`), apart from any OpenCode you installed yourself. Its own tools
+(shell, files, web) are off; its only tools are sandboxd's, served by the app
+on a private loopback port with a per-run token:
+
+| Tool | Does | Asks you first |
+|---|---|---|
+| `look` | A read-only survey: OS, what listens on 80/443, nginx/Caddy/Apache, Docker, sandboxd's settings | No |
+| `read` | Reads one file | Only outside web server configuration (`/etc/nginx`, `/etc/caddy`, `/etc/apache2`) |
+| `run` | Runs one command, with its reason in plain words | Always |
+| `write` | Replaces one file (backed up to `/var/backups/sandboxd/<change>/`), showing before and after | Always |
+| `undo` | Puts a backed-up file back | Always |
+
+Unanswered requests are refused after 15 minutes, and closing the app refuses
+all of them. The assistant never sees the SSH key or a password: the app signs
+in for it, and a password typed into a request is used for that one command.
+Its instructions are `desktop/src/ops/SANDBOXD_OPS.md`.
+
 **Removing a server** forgets it on this computer, removes this computer's line
 from the login's `authorized_keys` (when the server answers) and closes the
 connection. sandboxd and your apps keep running on the server. If the server was
@@ -232,7 +255,8 @@ run without that override.
 
 - The renderer is sandboxed with Node disabled and context isolation enabled.
   Native IPC is limited to connection management, fixed Windows engine setup,
-  your servers (add, remove, status, approved server changes), state
+  your servers (add, remove, status), the server assistant (messages and your
+  answers to its requests), state
   and HTTP(S) links; only
   the packaged main frame may call it. Preview frames have no native bridge.
 - Bundled assets come from the application archive. A private loopback gateway
