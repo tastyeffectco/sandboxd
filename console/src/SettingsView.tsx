@@ -7,6 +7,7 @@ import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
 import { ModelProviders } from './ModelProviders'
 import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
+import { ServersPanel } from './ServersPanel'
 
 // --- source badges: every value on this page is one of these ----------------
 // editable  → change it here, saved live via PATCH /v1/settings
@@ -88,6 +89,15 @@ const SECTIONS = [
   },
   { id: 'instance', title: 'Instance', note: 'Networking, runtime and system context', icon: 'settings' },
 ] as const
+// Only in the desktop app, which owns the SSH connections to your servers.
+const SERVERS = {
+  id: 'servers',
+  title: 'Your servers',
+  note: 'Put your apps online on servers you own',
+  icon: 'monitor',
+} as const
+const sectionsFor = (desktopServers: boolean) =>
+  desktopServers ? [SECTIONS[0], SECTIONS[1], SERVERS, ...SECTIONS.slice(2)] : [...SECTIONS]
 export function SettingsView({
   onError,
   toast,
@@ -97,11 +107,14 @@ export function SettingsView({
   onError: (m: string) => void
   toast: (m: string) => void
 }) {
+  const desktopServers = window.sandboxdDesktop?.servers
+  const sections = sectionsFor(!!desktopServers)
   const [section, setSection] = useState<string>(
-    SECTIONS.some((s) => s.id === initialSection) ? initialSection! : 'models',
+    sections.some((s) => s.id === initialSection) ? initialSection! : 'models',
   )
   useEffect(() => {
-    if (SECTIONS.some((s) => s.id === initialSection)) setSection(initialSection!)
+    if (sectionsFor(!!window.sandboxdDesktop?.servers).some((s) => s.id === initialSection))
+      setSection(initialSection!)
   }, [initialSection])
   const [s, setS] = useState<TSettings | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
@@ -169,7 +182,7 @@ export function SettingsView({
     )
   const lifecycleEditable = (s.editable || []).some((p) => p.startsWith('lifecycle.'))
   const modelsEditable = (s.editable || []).includes('agents.default_models')
-  const selected = SECTIONS.find((p) => p.id === section)!
+  const selected = sections.find((p) => p.id === section)!
   return (
     <div className="settings-page">
       <header className="page-heading">
@@ -179,7 +192,7 @@ export function SettingsView({
       </header>
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
-          {SECTIONS.map((p) => (
+          {sections.map((p) => (
             <button
               key={p.id}
               className={section === p.id ? 'active' : ''}
@@ -212,6 +225,7 @@ export function SettingsView({
             </p>
           )}
           {section === 'models' && <ModelProviders onError={onError} toast={toast} />}
+          {section === 'servers' && desktopServers && <ServersPanel servers={desktopServers} assistant={window.sandboxdDesktop?.assistant} toast={toast} />}
           {section === 'agents' && (
             <>
               <div className="agent-accounts" data-testid="settings-agents-list">

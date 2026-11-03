@@ -148,6 +148,86 @@ verification is never disabled, and there is no certificate-exception switch. An
 banner offers retry and connection settings. The app requires a reachable engine
 for workspace actions; it is not an offline copy of your code.
 
+## Your servers
+
+Put your apps online on a Linux server you rent (Hetzner, DigitalOcean, OVH…).
+Open **Settings → Your servers → Add a server**, paste the server address and
+the password from your provider's email, and click **Add server**. Under
+**More options** you can set a user name other than `root` (it must be able to
+use `sudo`), another SSH port, and a name for the list. The app shows each step:
+connecting, checking the server, installing sandboxd (a few minutes), securing
+the connection. Keep the app open until it says the server is ready.
+
+What the app checks first, with a plain message if one fails: the server runs
+Linux on an x86-64 or ARM64 processor, has at least 5 GB of free disk space
+and 1 GB of memory, and can download files (curl or wget). If Docker is
+missing, the app says so and offers **Install Docker and continue**, which runs
+Docker's official installer (`get.docker.com`) on the server; nothing is
+installed before you click it.
+
+How it works and what is kept:
+
+- The install runs over SSH with the password you typed, which is held in
+  memory for that one setup only. It is never written to disk, logs or progress
+  messages. For a `sudo` user, it is sent to `sudo -S` on standard input, never
+  on a command line. The server's own `install.sh` runs at the engine version this
+  app pins (`SANDBOXD_SERVER_REF=<branch or tag>` overrides it for testing; a ref
+  that is not a `v…` tag builds images instead of pulling signed ones).
+- Each computer has its own SSH key (ed25519), created the first time you add a
+  server. The private key is encrypted with the OS credential store (macOS
+  Keychain, Windows DPAPI) in `device-key.json` in the app's data directory.
+  After the install, its public key is added to the `~/.ssh/authorized_keys` of
+  the login you typed, marked `sandboxd-desktop:<device id>`, so the app can
+  sign in again without the password. Adding a server needs secure storage;
+  Linux `basic_text` is refused.
+- The server's SSH identity (host key, SHA256 fingerprint) is remembered the
+  first time. If it changes later, the app stops talking to the server and
+  says so. If you reinstalled the server yourself, click **I reinstalled it:
+  trust the new identity** and confirm in the dialog that shows the old and new
+  fingerprints. Otherwise, don't: someone may be impersonating your server.
+- `servers.json` in the app's data directory lists your servers (address, port,
+  pinned fingerprint, front door, the engine API token encrypted with the OS
+  credential store). Both files are written atomically with mode 0600.
+- The app keeps one SSH connection per server, with that login, and reconnects on
+  its own after sleep, a network change or a server restart. The list shows
+  **Connected**, **Connecting…** or **Offline** with the reason. The console
+  reaches a server's engine through the private gateway at
+  `/servers/<server id>/v1/…` (HTTP, SSE and terminals), which adds that server's
+  API token. Unknown server ids are refused; no other host can be reached.
+
+- Nothing else runs on the server unless you approve it. Changes beyond the
+  install (for example connecting your nginx or Caddy) are proposed by the
+  assistant in plain words, and run only after you click **Allow**; commands that
+  need admin rights ask for the password again if the login needs one for sudo.
+
+**The server assistant.** Each connected server has an **Assistant** button: a
+chat about that server, for example "put my apps online" or "use my own
+domain". It is OpenCode running on this computer on its free model (no account
+needed), downloaded the first time you use it (OpenCode 1.19.5 from npm's
+platform package, about 75 MB, accepted only if its SHA-512 matches the one
+pinned in the app). Its data lives in the app's data directory (`opencode/`,
+`assistant/`), apart from any OpenCode you installed yourself. Its own tools
+(shell, files, web) are off; its only tools are sandboxd's, served by the app
+on a private loopback port with a per-run token:
+
+| Tool | Does | Asks you first |
+|---|---|---|
+| `look` | A read-only survey: OS, what listens on 80/443, nginx/Caddy/Apache, Docker, sandboxd's settings | No |
+| `read` | Reads one file | Only outside web server configuration (`/etc/nginx`, `/etc/caddy`, `/etc/apache2`) |
+| `run` | Runs one command, with its reason in plain words | Always |
+| `write` | Replaces one file (backed up to `/var/backups/sandboxd/<change>/`), showing before and after | Always |
+| `undo` | Puts a backed-up file back | Always |
+
+Unanswered requests are refused after 15 minutes, and closing the app refuses
+all of them. The assistant never sees the SSH key or a password: the app signs
+in for it, and a password typed into a request is used for that one command.
+Its instructions are `desktop/src/ops/SANDBOXD_OPS.md`.
+
+**Removing a server** forgets it on this computer, removes this computer's line
+from the login's `authorized_keys` (when the server answers) and closes the
+connection. sandboxd and your apps keep running on the server. If the server was
+offline, the app says the line is still there; it is marked `sandboxd-desktop`.
+
 ## Build and test from source
 
 Use Node.js 22 and pnpm 9.15.0. From a source checkout:
@@ -175,7 +255,9 @@ run without that override.
 
 - The renderer is sandboxed with Node disabled and context isolation enabled.
   Native IPC is limited to connection management, fixed Windows engine setup,
-  state and HTTP(S) links; only
+  your servers (add, remove, status), the server assistant (messages and your
+  answers to its requests), state
+  and HTTP(S) links; only
   the packaged main frame may call it. Preview frames have no native bridge.
 - Bundled assets come from the application archive. A private loopback gateway
   proxies only `/v1/` requests to the selected engine, including SSE and terminal

@@ -38,7 +38,26 @@ async function main() {
     files.some((file) => /[\\/]ui[\\/]index.html$/.test(file)),
     'Packaged UI missing',
   )
-  assert(!files.some((file) => /[\\/]node_modules[\\/]/.test(file)), 'Build dependencies must not ship')
+  // Your servers: ssh2 runs in pure JavaScript (its optional native addons are
+  // neither built nor packaged).
+  assert(
+    files.some((file) => /[\\/]node_modules[\\/]ssh2[\\/]lib[\\/]client\.js$/.test(file)),
+    'ssh2 missing from the package',
+  )
+  assert(
+    !files.some((file) => /[\\/]node_modules[\\/]cpu-features[\\/]/.test(file)),
+    'native optional dependency packaged',
+  )
+  // Only the runtime dependency closure of ssh2 ships; build tooling never does.
+  const runtime = new Set(['ssh2', 'asn1', 'bcrypt-pbkdf', 'safer-buffer', 'tweetnacl'])
+  const shipped = new Set(
+    files.map((file) => /[\\/]node_modules[\\/]([^\\/]+)/.exec(file)?.[1]).filter(Boolean),
+  )
+  assert(
+    [...shipped].every((name) => runtime.has(name)),
+    `Build dependencies must not ship: ${[...shipped].filter((name) => !runtime.has(name))}`,
+  )
+  assert(!files.some((file) => /pagent\.exe$/.test(file)), 'ssh2 Pageant helper must not ship')
   assert(
     files.some((file) => /[\\/]src[\\/]windows-engine-bootstrap\.sh$/.test(file)),
     'Managed engine bootstrap missing',

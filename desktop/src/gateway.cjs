@@ -17,6 +17,10 @@ const MIME = {
 }
 const CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' http: https: ws: wss:; frame-src http: https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+// Your servers: /servers/<id>/v1/... goes through that server's SSH tunnel.
+const SERVER_ROUTE = /^\/servers\/([^/?#]*)(\/v1\/[^#]*)$/
+const SERVER_ID = /^srv_[a-f0-9]{12}$/
+const FORWARDED = ['accept', 'content-type', 'content-length', 'last-event-id', 'range', 'if-none-match']
 const equal = (a, b) =>
   typeof a === 'string' &&
   Buffer.byteLength(a) === Buffer.byteLength(b) &&
@@ -31,6 +35,9 @@ async function createGateway({
   session = '',
   onSession = () => {},
   idleTimeout = 120000,
+  // { resolve(id) -> { origin, token } | null }, from servers.cjs. Origins are
+  // local tunnel listeners; no other host is ever reachable through this route.
+  servers = null,
 }) {
   const token = randomBytes(32).toString('hex')
   let origin = '',
@@ -39,6 +46,7 @@ async function createGateway({
     engineSession = session,
     generation = 0
   const streams = new Set()
+  const serverStreams = new Set()
   const sockets = new Set()
   const terminals = new Set()
   const root = path.resolve(uiRoot)
@@ -63,23 +71,30 @@ async function createGateway({
     // Do not forward browser cookies, capability tokens, proxy headers or
     // ambient credentials. The selected engine owns its own login session.
     const headers = {}
-    for (const key of [
-      'accept',
-      'content-type',
-      'content-length',
-      'last-event-id',
-      'range',
-      'if-none-match',
-    ]) {
-      if (request.headers[key] !== undefined) headers[key] = request.headers[key]
-    }
+    for (const key of FORWARDED) if (request.headers[key] !== undefined) headers[key] = request.headers[key]
     if (engineSession) headers.cookie = `sbx_session=${engineSession}`
     headers.origin = target.origin
     return { target, headers }
   }
-  const track = (request) => {
-    streams.add(request)
-    request.once('close', () => streams.delete(request))
+  const unknownServer = () => Object.assign(new Error('This server isn’t in your list.'), { status: 404 })
+  // A server engine is reached with its API token; browser cookies never are.
+  const serverUpstream = (request) => {
+    const match = SERVER_ROUTE.exec(request.url)
+    if (!match || !SERVER_ID.test(match[1]) || !servers) throw unknownServer()
+    const server = servers.resolve(match[1])
+    if (!server) throw unknownServer()
+    const target = new URL(match[2], server.origin)
+    if (target.origin !== server.origin || !target.pathname.startsWith('/v1/'))
+      throw Object.assign(new Error('Invalid API path.'), { status: 400 })
+    const headers = {}
+    for (const key of FORWARDED) if (request.headers[key] !== undefined) headers[key] = request.headers[key]
+    headers.authorization = `Bearer ${server.token}`
+    headers.origin = target.origin
+    return { target, headers }
+  }
+  const track = (request, set = streams) => {
+    set.add(request)
+    request.once('close', () => set.delete(request))
     return request
   }
   const server = http.createServer(async (request, response) => {
@@ -98,12 +113,14 @@ async function createGateway({
     } catch {
       return error(response, 400, 'Invalid URL.')
     }
-    if (url.pathname.startsWith('/v1/')) {
+    // Decided on the raw path so dot segments cannot switch routes.
+    const toServer = request.url.startsWith('/servers/')
+    if (url.pathname.startsWith('/v1/') || toServer) {
       let target, headers
       try {
-        ;({ target, headers } = upstream(request))
+        ;({ target, headers } = toServer ? serverUpstream(request) : upstream(request))
       } catch (e) {
-        return error(response, 503, e.message)
+        return error(response, e.status || 503, e.message)
       }
       const connectedGeneration = generation
       const proxy = track(
@@ -117,7 +134,7 @@ async function createGateway({
               remote.resume()
               return error(response, 502, 'The engine redirected this request. Use its final API origin.')
             }
-            if (connectedGeneration === generation) {
+            if (!toServer && connectedGeneration === generation) {
               for (const cookie of remote.headers['set-cookie'] || []) {
                 const match = /^sbx_session=([^;]*)/i.exec(cookie)
                 if (match) {
@@ -145,9 +162,16 @@ async function createGateway({
             remote.pipe(response)
           },
         ),
+        toServer ? serverStreams : streams,
       )
       proxy.on('error', () =>
-        error(response, 502, 'Cannot reach the engine. Check the address and whether sandboxd is running.'),
+        error(
+          response,
+          502,
+          toServer
+            ? 'Can’t reach this server right now. Check your internet connection; sandboxd keeps trying.'
+            : 'Cannot reach the engine. Check the address and whether sandboxd is running.',
+        ),
       )
       // Task event streams stay open through quiet agent steps (a long install
       // sends nothing for minutes); they end with the task, page or engine.
@@ -176,11 +200,12 @@ async function createGateway({
     socket.once('close', () => sockets.delete(socket))
   })
   server.on('upgrade', (request, socket, head) => {
-    if (!authorized(request) || !/^\/v1\/sandboxes\/[^/?]+\/terminal$/.test(request.url))
-      return socket.destroy()
+    const toServer = request.url.startsWith('/servers/')
+    const route = toServer ? SERVER_ROUTE.exec(request.url)?.[2] || '' : request.url
+    if (!authorized(request) || !/^\/v1\/sandboxes\/[^/?]+\/terminal$/.test(route)) return socket.destroy()
     let target, headers
     try {
-      ;({ target, headers } = upstream(request))
+      ;({ target, headers } = toServer ? serverUpstream(request) : upstream(request))
     } catch {
       return socket.destroy()
     }
@@ -188,7 +213,10 @@ async function createGateway({
       if (request.headers[key]) headers[key] = request.headers[key]
     headers.connection = 'Upgrade'
     headers.upgrade = 'websocket'
-    const proxy = track((target.protocol === 'https:' ? https : http).request(target, { headers }))
+    const proxy = track(
+      (target.protocol === 'https:' ? https : http).request(target, { headers }),
+      toServer ? serverStreams : streams,
+    )
     proxy.on('upgrade', (response, remote, remoteHead) => {
       const responseHeaders = ['HTTP/1.1 101 Switching Protocols']
       for (const key of ['upgrade', 'connection', 'sec-websocket-accept', 'sec-websocket-protocol'])
@@ -197,8 +225,10 @@ async function createGateway({
       if (remoteHead.length) socket.write(remoteHead)
       if (head.length) remote.write(head)
       sockets.add(remote)
-      terminals.add(remote)
-      remote.once('close', () => terminals.delete(remote))
+      if (!toServer) {
+        terminals.add(remote)
+        remote.once('close', () => terminals.delete(remote))
+      }
       remote.once('close', () => {
         sockets.delete(remote)
         socket.destroy()
@@ -261,7 +291,7 @@ async function createGateway({
         throw new Error(`Could not import login (HTTP ${response.status}). Sign in to the engine and retry.`)
     },
     async close() {
-      for (const stream of streams) stream.destroy()
+      for (const stream of [...streams, ...serverStreams]) stream.destroy()
       for (const socket of sockets) socket.destroy()
       await new Promise((resolve) => server.close(resolve))
     },

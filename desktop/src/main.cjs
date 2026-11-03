@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell, session, safeStorage, dialog } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell, session, safeStorage, dialog, powerMonitor } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
@@ -7,6 +7,9 @@ const agentLogins = createAgentLogins()
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
 const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 const { signInManagedEngine } = require('./local-auth.cjs')
+const { createServers } = require('./servers.cjs')
+const { createServerTools } = require('./server-tools.cjs')
+const { createAssistant, createInstaller, createToolEndpoint } = require('./assistant.cjs')
 
 let window,
   gateway,
@@ -16,6 +19,10 @@ let config = { connections: [], selected: '', sessions: {} }
 let writes = Promise.resolve()
 let connecting = false
 let localEngine
+let servers
+let serverTools
+let toolEndpoint
+let assistant
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -250,11 +257,48 @@ async function start() {
     })
     await localEngine.load().catch(() => {})
   }
+  // Your servers: SSH tunnels to engines on the user's own servers.
+  servers = createServers({
+    dataDir: app.getPath('userData'),
+    encrypt: (text) => safeStorage.encryptString(text),
+    decrypt: (buffer) => safeStorage.decryptString(buffer),
+    canEncrypt: canRemember,
+    onStatus: (id, status) => window?.webContents.send('servers:changed', { id, status }),
+  })
+  await servers.load().catch(() => {})
+  // After sleep the old connections are usually dead: reconnect right away.
+  powerMonitor.on('resume', () => servers.refreshAll())
+  powerMonitor.on('unlock-screen', () => servers.refreshAll())
+  // The server assistant: OpenCode (downloaded on first use) whose only tools
+  // are these, each change approved by the user in the app.
+  serverTools = createServerTools({ servers })
+  serverTools.subscribe((event) => window?.webContents.send('assistant:tools', event))
+  toolEndpoint = createToolEndpoint({ tools: serverTools })
+  await toolEndpoint.start()
+  const assistantDir = path.join(app.getPath('userData'), 'assistant')
+  await fs.mkdir(assistantDir, { recursive: true })
+  // OpenCode reads its instructions from disk, not from the app archive.
+  const instructionsFile = path.join(assistantDir, 'SANDBOXD_OPS.md')
+  await fs.writeFile(instructionsFile, await fs.readFile(path.join(__dirname, 'ops', 'SANDBOXD_OPS.md')))
+  const installer = createInstaller({
+    dataDir: app.getPath('userData'),
+    onProgress: ({ received, total }) =>
+      window?.webContents.send('assistant:setup', { received, total }),
+  })
+  assistant = createAssistant({
+    dataDir: app.getPath('userData'),
+    installer,
+    instructionsFile,
+    toolPort: () => toolEndpoint.port(),
+    toolToken: toolEndpoint.token,
+    serverInfo: (id) => servers.list().find((s) => s.id === id) || null,
+  })
   gateway = await createGateway({
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
+    servers,
   })
   desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
@@ -389,6 +433,89 @@ async function start() {
     trusted(event)
     await openExternal(url)
   })
+  ipcMain.handle('servers:list', (event) => {
+    trusted(event)
+    return servers.list()
+  })
+  ipcMain.handle('servers:status', (event, id) => {
+    trusted(event)
+    return servers.status(id)
+  })
+  // The password stays in this call's memory; progress never includes it.
+  ipcMain.handle('servers:add', (event, input) => {
+    trusted(event)
+    return servers.add(input, (progress) => {
+      if (!event.sender.isDestroyed()) event.sender.send('servers:progress', progress)
+    })
+  })
+  ipcMain.handle('servers:remove', async (event, id) => {
+    trusted(event)
+    assistant.stop(id)
+    for (const approval of serverTools.pending())
+      if (approval.serverId === id) serverTools.decide(approval.id, { allow: false })
+    return servers.remove(id)
+  })
+  // The server assistant. Replies stream as 'assistant:event'; approvals as
+  // 'assistant:tools' and are answered with 'assistant:decide'.
+  ipcMain.handle('assistant:send', async (event, id, message) => {
+    trusted(event)
+    try {
+      return await assistant.send(id, message, (update) => {
+        if (!event.sender.isDestroyed()) event.sender.send('assistant:event', { serverId: id, ...update })
+      })
+    } catch (error) {
+      return { ok: false, code: error.code || 'error', message: error.message }
+    }
+  })
+  ipcMain.handle('assistant:stop', (event, id) => {
+    trusted(event)
+    assistant.stop(id)
+    for (const approval of serverTools.pending())
+      if (approval.serverId === id) serverTools.decide(approval.id, { allow: false })
+  })
+  ipcMain.handle('assistant:reset', (event, id) => {
+    trusted(event)
+    return assistant.reset(id)
+  })
+  ipcMain.handle('assistant:pending', (event) => {
+    trusted(event)
+    return serverTools.pending()
+  })
+  ipcMain.handle('assistant:activity', (event, id) => {
+    trusted(event)
+    return serverTools.activity(id)
+  })
+  // Only the user's click in the app answers an approval; the password, if
+  // any, is passed on for that one command and not kept.
+  ipcMain.handle('assistant:decide', (event, approvalId, decision) => {
+    trusted(event)
+    if (typeof approvalId !== 'string' || !decision || typeof decision !== 'object') return false
+    return serverTools.decide(approvalId, {
+      allow: decision.allow === true,
+      password: typeof decision.password === 'string' ? decision.password : undefined,
+    })
+  })
+  // Trusting a changed server identity is confirmed in a native dialog the page
+  // cannot answer by itself.
+  ipcMain.handle('servers:trust-identity', async (event, id) => {
+    trusted(event)
+    const status = servers.status(id)
+    if (!status.identityChanged || !status.presentedSha256) return { trusted: false }
+    const server = servers.list().find((s) => s.id === id)
+    const answer = await dialog.showMessageBox(window, {
+      type: 'warning',
+      buttons: ['Cancel', 'Trust the new identity'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Server identity changed',
+      message: `Trust the new identity of ${server.name}?`,
+      detail:
+        "Do this only if you reinstalled or rebuilt this server. If you didn't, someone may be impersonating it: choose Cancel and contact your server provider.\n\n" +
+        `Previous identity: ${server.hostKeySha256}\nNew identity: ${status.presentedSha256}`,
+    })
+    if (answer.response !== 1) return { trusted: false }
+    return { trusted: true, server: await servers.trustIdentity(id, status.presentedSha256) }
+  })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
@@ -488,5 +615,9 @@ else {
   })
   app.on('will-quit', () => {
     void gateway?.close()
+    serverTools?.close()
+    assistant?.close()
+    void toolEndpoint?.close()
+    void servers?.close()
   })
 }

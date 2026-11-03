@@ -231,3 +231,128 @@ test('native account import is bound to the chosen engine and never follows redi
   })
   await assert.rejects(redirected.gateway.importAgentLogin('codex', 'private-login', redirected.origin))
 })
+
+test('/servers/<id>/v1 goes through that server tunnel with its token, streams bodies, rejects unknown ids', async (t) => {
+  const received = []
+  let onData = () => {}
+  const serverEngine = http.createServer((req, res) => {
+    received.push({ url: req.url, headers: req.headers })
+    if (req.url.endsWith('/terminal')) return
+    let size = 0
+    req.on('data', (chunk) => {
+      size += chunk.length
+      onData(size)
+    })
+    req.on('end', () => {
+      res.setHeader('set-cookie', 'sbx_session=server-cookie')
+      res.end(JSON.stringify({ size }))
+    })
+  })
+  const upgraded = new Set()
+  serverEngine.on('upgrade', (req, socket) => {
+    upgraded.add(socket)
+    received.push({ url: req.url, headers: req.headers })
+    socket.on('error', () => {})
+    socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
+    socket.on('data', (data) => socket.write(data))
+  })
+  serverEngine.listen(0, '127.0.0.1')
+  await once(serverEngine, 'listening')
+  t.after(() => {
+    for (const socket of upgraded) socket.destroy()
+    serverEngine.closeAllConnections()
+    return new Promise((r) => serverEngine.close(r))
+  })
+  const id = 'srv_0123456789ab'
+  const tunnel = `http://127.0.0.1:${serverEngine.address().port}`
+  const { request, gateway, saved } = await fixture(t, undefined, {
+    session: 'local-session',
+    servers: { resolve: (value) => (value === id ? { origin: tunnel, token: 'server-token' } : null) },
+  })
+
+  const listed = await request(`/servers/${id}/v1/apps?label=env%3Dlive`, { cookie: 'ambient=1' })
+  assert.equal(listed.status, 200)
+  const first = received.at(-1)
+  assert.equal(first.url, '/v1/apps?label=env%3Dlive')
+  assert.equal(first.headers.authorization, 'Bearer server-token')
+  assert.equal(first.headers.cookie, undefined)
+  assert.equal(first.headers['x-sandboxd-desktop'], undefined)
+  // A server's cookies never replace the selected engine's session.
+  assert.deepEqual(saved, [])
+
+  for (const route of [
+    '/servers/srv_ffffffffffff/v1/apps',
+    '/servers/evil.example/v1/apps',
+    `/servers/${id}/apps`,
+    `/servers/${id}`,
+  ])
+    assert.equal((await request(route)).status, 404, route)
+  // Raw paths (the HTTP client would normalize these before sending).
+  const raw = async (route) => {
+    const target = new URL(gateway.origin)
+    const socket = net.connect(Number(target.port), target.hostname)
+    await once(socket, 'connect')
+    socket.write(`GET ${route} HTTP/1.1\r\nHost: ${target.host}\r\nX-Sandboxd-Desktop: ${gateway.authorization['x-sandboxd-desktop']}\r\nConnection: close\r\n\r\n`)
+    let text = ''
+    for await (const data of socket) text += data
+    return Number(/^HTTP\/1\.1 (\d+)/.exec(text)[1])
+  }
+  assert.equal(await raw('/servers/%2e%2e/v1/apps'), 404)
+  assert.equal(await raw(`/servers/${id}/v1/%2e%2e/%2e%2e/healthz`), 400)
+  assert.equal(await raw(`/servers/${id}/v1/../../healthz`), 400)
+  assert.equal(received.length, 1)
+
+  // A large release bundle reaches the server while it is still being sent.
+  const chunk = Buffer.alloc(1024 * 1024, 1)
+  const total = 24
+  const upload = await new Promise((resolve, reject) => {
+    const req = http.request(
+      `${gateway.origin}/servers/${id}/v1/apps/a/releases`,
+      {
+        method: 'POST',
+        headers: { ...gateway.authorization, 'content-type': 'application/zstd', 'content-length': chunk.length * total },
+      },
+      (res) => {
+        let body = ''
+        res.on('data', (d) => (body += d))
+        res.on('end', () => resolve(JSON.parse(body)))
+      },
+    )
+    req.on('error', reject)
+    let streamed = false
+    req.write(chunk)
+    onData = (size) => {
+      if (streamed || size < chunk.length) return
+      streamed = true
+      for (let i = 1; i < total; i++) req.write(chunk)
+      req.end()
+    }
+  })
+  assert.equal(upload.size, chunk.length * total)
+
+  // Terminals work the same way.
+  const target = new URL(gateway.origin)
+  const socket = net.connect(Number(target.port), target.hostname)
+  t.after(() => socket.destroy())
+  await once(socket, 'connect')
+  socket.write(
+    `GET /servers/${id}/v1/sandboxes/app/terminal HTTP/1.1\r\nHost: ${target.host}\r\nOrigin: ${gateway.origin}\r\nX-Sandboxd-Desktop: ${gateway.authorization['x-sandboxd-desktop']}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: test\r\nSec-WebSocket-Version: 13\r\n\r\n`,
+  )
+  assert.match((await once(socket, 'data'))[0].toString(), /101 Switching/)
+  assert.equal(received.at(-1).url, '/v1/sandboxes/app/terminal')
+  assert.equal(received.at(-1).headers.authorization, 'Bearer server-token')
+  socket.write('hello')
+  assert.equal((await once(socket, 'data'))[0].toString(), 'hello')
+
+  const unknown = net.connect(Number(target.port), target.hostname)
+  await once(unknown, 'connect')
+  unknown.write(
+    `GET /servers/srv_ffffffffffff/v1/sandboxes/app/terminal HTTP/1.1\r\nHost: ${target.host}\r\nX-Sandboxd-Desktop: ${gateway.authorization['x-sandboxd-desktop']}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`,
+  )
+  await once(unknown, 'close')
+})
+
+test('without the servers feature, server routes are not found', async (t) => {
+  const { request } = await fixture(t)
+  assert.equal((await request('/servers/srv_0123456789ab/v1/apps')).status, 404)
+})
