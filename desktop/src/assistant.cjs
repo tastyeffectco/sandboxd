@@ -344,6 +344,7 @@ function createAssistant({
         OPENCODE_DISABLE_AUTOUPDATE: '1',
         PWD: work,
       })
+      if (marker.cancelled) return { ok: false, message: 'Stopped.' }
       onEvent({ type: 'status', text: 'Thinking…' })
       const child = spawnProcess(binary, args, { cwd: work, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
       marker.child = child
@@ -392,12 +393,13 @@ function createAssistant({
   return {
     send,
     busy: (serverId) => running.has(serverId),
+    // Works at any point: while it gets ready (the first download), it never
+    // starts; while it runs, it is ended.
     stop(serverId) {
       const marker = running.get(serverId)
-      if (marker?.child) {
-        marker.cancelled = true
-        marker.child.kill()
-      }
+      if (!marker) return
+      marker.cancelled = true
+      marker.child?.kill()
     },
     // A new conversation for this server (the old session stays on disk).
     async reset(serverId) {

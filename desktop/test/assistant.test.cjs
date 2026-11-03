@@ -253,12 +253,23 @@ test('failures are said plainly, one message at a time', async (t) => {
   await assert.rejects(a.send('srv_ffffffffffff', 'Hello'), /isn’t in your list/)
   await assert.rejects(a.send('srv_0123456789ab', '   '), /Write a message/)
 
+  // Stopped while it runs…
   const slow = await assistant(t, () => {})
   const pending = slow.a.send('srv_0123456789ab', 'Hello')
-  await new Promise((r) => setTimeout(r, 20))
   await assert.rejects(slow.a.send('srv_0123456789ab', 'Again'), /still working/)
+  while (!slow.calls.length) await new Promise((r) => setTimeout(r, 5))
   slow.a.stop('srv_0123456789ab')
   assert.deepEqual(await pending, { ok: false, message: 'Stopped.' })
+
+  // …and while it is still getting ready: it never starts.
+  let ready
+  const setup = await assistant(t, () => {}, { installer: { ensure: () => new Promise((r) => (ready = r)) } })
+  const early = setup.a.send('srv_0123456789ab', 'Hello')
+  while (!ready) await new Promise((r) => setTimeout(r, 5))
+  setup.a.stop('srv_0123456789ab')
+  ready('/bin/opencode')
+  assert.deepEqual(await early, { ok: false, message: 'Stopped.' })
+  assert.equal(setup.calls.length, 0)
 })
 
 test('the tools endpoint speaks MCP, pinned to the conversation’s server, with the token', async (t) => {
