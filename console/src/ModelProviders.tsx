@@ -71,7 +71,7 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
     <p style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.6 }}>
       Use local or remote models with <b>OpenCode</b> and <b>Pi</b>. Connect an OpenAI-compatible
       or Anthropic-compatible API, including Ollama, LM Studio, vLLM and LiteLLM gateways.
-      API keys stay encrypted on the control plane.
+      API keys stay encrypted in sandboxd.
     </p>
     {loading && <p role="status">Loading connections…</p>}
     {!loading && providers.length === 0 && editing === null &&
@@ -121,7 +121,7 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
       <label style={fieldStyle}>API base URL
         <Input required type="url" value={form.base_url} placeholder="http://ollama:11434/v1"
           onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
-        <span style={{ fontSize: 11.5 }}>Include the API prefix, usually /v1. This address must be reachable from the control plane.
+        <span style={{ fontSize: 11.5 }}>Include the API prefix, usually /v1. Your sandboxd engine must be able to reach this address.
           For a model on your host, use a host address reachable from its container.</span>
       </label>
       <label style={fieldStyle}>API key <span style={{ fontSize: 11.5 }}>(optional for local servers)</span>

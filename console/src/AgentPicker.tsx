@@ -148,7 +148,7 @@ export function AgentPicker({
             ? 'Pi uses your model connection.'
             : 'Pi uses the account connected in Settings.'
           : value.provider
-            ? 'Your model endpoint. Your API key stays on the control plane.'
+            ? 'Uses your model connection. Its API key stays encrypted in sandboxd.'
             : freeOpencode
               ? 'Free to use. No account needed.'
               : claudeSignIn
