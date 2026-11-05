@@ -15,6 +15,7 @@ vi.mock('./api', () => ({
     startAgentInstance: vi.fn(),
     stopAgentInstance: vi.fn(),
     deleteAgentInstance: vi.fn(),
+    getAgentChannels: vi.fn().mockResolvedValue({ whatsapp: { status: 'off' }, telegram: { status: 'off' } }),
   },
 }))
 
@@ -39,7 +40,7 @@ describe('AgentsView', () => {
     expect(screen.queryByTestId('add-agent')).toBeNull()
   })
 
-  it('adds Hermes with the model connection and an optional Telegram bot', async () => {
+  it('adds Hermes with the model connection', async () => {
     vi.mocked(api.listAgentInstances).mockResolvedValue([])
     vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
     vi.mocked(api.createAgentInstance).mockResolvedValue({ agent: {} as never })
@@ -49,8 +50,6 @@ describe('AgentsView', () => {
       expect(api.createAgentInstance).toHaveBeenCalledWith({
         package: 'hermes',
         connection_id: 'c1',
-        telegram_bot_token: undefined,
-        telegram_allowed_users: undefined,
       }),
     )
   })

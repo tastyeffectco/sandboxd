@@ -36,6 +36,8 @@ type v1AgentInstance struct {
 	Model        string `json:"model"`
 	Status       string `json:"status"` // running | starting | stopped | missing
 	Telegram     bool   `json:"telegram"`
+	TelegramBot  string `json:"telegram_bot,omitempty"`
+	WhatsApp     string `json:"whatsapp,omitempty"` // the linked number
 	AppsToday    int    `json:"apps_today"`
 	AppsPerDay   int    `json:"apps_per_day"`
 	CreatedAt    string `json:"created_at"`
@@ -61,7 +63,8 @@ func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) 
 		today = h.AppsToday
 	}
 	return v1AgentInstance{ID: h.ID, Package: h.Package, Name: h.Name, ConnectionID: h.ConnectionID, Model: h.Model,
-		Status: status, Telegram: len(h.TelegramCiphertext) > 0, AppsToday: today, AppsPerDay: agentAppsPerDay,
+		Status: status, Telegram: len(h.TelegramCiphertext) > 0, TelegramBot: h.TelegramBot,
+		WhatsApp: h.WhatsAppNumber, AppsToday: today, AppsPerDay: agentAppsPerDay,
 		CreatedAt: h.CreatedAt}
 }
 
@@ -211,8 +214,20 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	if err := os.Chown(dir, uid, gid); err != nil {
 		return fmt.Errorf("prepare the agent's storage: %w", err)
 	}
-	config, err := pkg.Render(agentcatalog.Config{
-		ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model})
+	s.dropBrokenChannels(ctx, h, pkg)
+	cfg := agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model}
+	var telegramToken []byte
+	if len(h.TelegramCiphertext) > 0 && pkg.Telegram {
+		if telegramToken, err = s.Secrets.Open(h.TelegramCiphertext, h.TelegramNonce); err != nil {
+			return errors.New("the Telegram token cannot be read")
+		}
+		cfg.TelegramUsers = splitList(h.TelegramAllowedUsers)
+	}
+	if pkg.WhatsApp {
+		cfg.WhatsAppNumber = h.WhatsAppNumber
+		cfg.WhatsApp = h.WhatsAppNumber != "" || s.linking(h.ID, "whatsapp")
+	}
+	config, err := pkg.Render(cfg)
 	if err != nil {
 		return err
 	}
@@ -229,32 +244,40 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	h.SecretHash = hashSecret(secret)
 	env := append(append([]string{}, pkg.Env...),
 		pkg.APIKeyEnv+"="+string(apiKey), agentcatalog.SecretEnv+"="+secret)
-	if len(h.TelegramCiphertext) > 0 && pkg.Telegram {
-		token, err := s.Secrets.Open(h.TelegramCiphertext, h.TelegramNonce)
-		if err != nil {
-			return errors.New("the Telegram token cannot be read")
-		}
-		env = append(env, "TELEGRAM_BOT_TOKEN="+string(token), "TELEGRAM_ALLOWED_USERS="+h.TelegramAllowedUsers)
+	if telegramToken != nil {
+		env = append(env, "TELEGRAM_BOT_TOKEN="+string(telegramToken))
 	}
-	tmpfs := []string{"/tmp"}
-	if pkg.ExecRun { // a supervisor such as s6 executes from /run
-		tmpfs = append(tmpfs, "/run:exec,mode=755,uid="+strconv.Itoa(uid))
+	if pkg.ChannelEnv != nil {
+		env = append(env, pkg.ChannelEnv(cfg)...)
 	}
 	name := agentContainer(h.ID)
 	_ = s.Docker.Remove(ctx, name)
-	_, err = s.Docker.Run(ctx, docker.RunSpec{
+	spec := s.agentRunSpec(h, pkg, name, env, pkg.Cmd)
+	spec.Restart = "unless-stopped" // always on: survives engine and computer restarts
+	spec.Labels = []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
+	_, err = s.Docker.Run(ctx, spec)
+	return err
+}
+
+// agentRunSpec is sandboxd's hardened profile for an agent's containers (the
+// agent itself, and one-off setup steps on its state): non-root, no
+// capabilities, read-only root, no privilege escalation, bounded memory.
+func (s *Server) agentRunSpec(h *store.AgentInstance, pkg agentcatalog.Package, name string, env, cmd []string) docker.RunSpec {
+	uid := strings.SplitN(pkg.User, ":", 2)[0]
+	tmpfs := []string{"/tmp"}
+	if pkg.ExecRun { // a supervisor such as s6 executes from /run
+		tmpfs = append(tmpfs, "/run:exec,mode=755,uid="+uid)
+	}
+	return docker.RunSpec{
 		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
 		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
 		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize,
 		Tmpfs:   tmpfs,
 		User:    pkg.User,
-		Restart: "unless-stopped", // always on: survives engine and computer restarts
 		Env:     env,
-		Volumes: []string{dir + ":" + pkg.StatePath},
-		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID},
-		Image:   pkg.Image, Cmd: pkg.Cmd,
-	})
-	return err
+		Volumes: []string{filepath.Join(s.AgentRoot, h.ID) + ":" + pkg.StatePath},
+		Image:   pkg.Image, Cmd: cmd,
+	}
 }
 
 func (s *Server) ownAgentInstance(w http.ResponseWriter, r *http.Request) (*store.AgentInstance, bool) {

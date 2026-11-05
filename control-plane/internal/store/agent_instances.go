@@ -16,18 +16,20 @@ type AgentInstance struct {
 	TelegramCiphertext            []byte
 	TelegramNonce                 []byte
 	TelegramAllowedUsers          string
+	TelegramBot                   string // the bot's @username, once connected
+	WhatsAppNumber                string // the owner's linked number (digits)
 	AppsDay                       string // UTC date the counter below belongs to
 	AppsToday                     int    // apps this agent created that day
 	CreatedAt                     string
 }
 
 const agentInstanceColumns = `id, owner_token, package, name, connection_id, model, secret_hash,
-	api_key_ciphertext, api_key_nonce, telegram_ciphertext, telegram_nonce, telegram_allowed_users, apps_day, apps_today, created_at`
+	api_key_ciphertext, api_key_nonce, telegram_ciphertext, telegram_nonce, telegram_allowed_users, telegram_bot, whatsapp_number, apps_day, apps_today, created_at`
 
 func scanAgentInstance(row scanner) (*AgentInstance, error) {
 	h := &AgentInstance{}
 	err := row.Scan(&h.ID, &h.OwnerToken, &h.Package, &h.Name, &h.ConnectionID, &h.Model, &h.SecretHash,
-		&h.APIKeyCiphertext, &h.APIKeyNonce, &h.TelegramCiphertext, &h.TelegramNonce, &h.TelegramAllowedUsers, &h.AppsDay, &h.AppsToday, &h.CreatedAt)
+		&h.APIKeyCiphertext, &h.APIKeyNonce, &h.TelegramCiphertext, &h.TelegramNonce, &h.TelegramAllowedUsers, &h.TelegramBot, &h.WhatsAppNumber, &h.AppsDay, &h.AppsToday, &h.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -36,9 +38,9 @@ func scanAgentInstance(row scanner) (*AgentInstance, error) {
 
 func (s *Store) CreateAgentInstance(ctx context.Context, h *AgentInstance) error {
 	return s.submit(ctx, func(db *sql.DB) error {
-		_, err := db.ExecContext(ctx, `INSERT INTO agent_instance (`+agentInstanceColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err := db.ExecContext(ctx, `INSERT INTO agent_instance (`+agentInstanceColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			h.ID, h.OwnerToken, h.Package, h.Name, h.ConnectionID, h.Model, h.SecretHash,
-			h.APIKeyCiphertext, h.APIKeyNonce, h.TelegramCiphertext, h.TelegramNonce, h.TelegramAllowedUsers, h.AppsDay, h.AppsToday, h.CreatedAt)
+			h.APIKeyCiphertext, h.APIKeyNonce, h.TelegramCiphertext, h.TelegramNonce, h.TelegramAllowedUsers, h.TelegramBot, h.WhatsAppNumber, h.AppsDay, h.AppsToday, h.CreatedAt)
 		return err
 	})
 }
@@ -78,6 +80,24 @@ func (s *Store) ListAgentInstancesForOwner(ctx context.Context, owner string) ([
 func (s *Store) RotateAgentInstanceSecret(ctx context.Context, id, hash string) error {
 	return s.submit(ctx, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET secret_hash = ? WHERE id = ?`, hash, id)
+		return err
+	})
+}
+
+// SetAgentInstanceTelegram saves (or, with a nil token, removes) the agent's
+// Telegram bot and the users it answers.
+func (s *Store) SetAgentInstanceTelegram(ctx context.Context, id string, ciphertext, nonce []byte, bot, users string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET telegram_ciphertext = ?, telegram_nonce = ?,
+			telegram_bot = ?, telegram_allowed_users = ? WHERE id = ?`, ciphertext, nonce, bot, users, id)
+		return err
+	})
+}
+
+// SetAgentInstanceWhatsApp saves the owner's linked WhatsApp number ("" unlinks).
+func (s *Store) SetAgentInstanceWhatsApp(ctx context.Context, id, number string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET whatsapp_number = ? WHERE id = ?`, number, id)
 		return err
 	})
 }
