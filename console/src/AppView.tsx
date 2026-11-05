@@ -186,7 +186,7 @@ export function AppView({
         insp.suggestions.find((s) => s.preset === insp.default_suggestion && s.suggested_manifest) ||
         insp.suggestions.find((s) => s.suggested_manifest && (opts.auto ? s.confidence === 'high' : true))
       if (!pick?.suggested_manifest) {
-        if (!opts.auto) onError('No runtime could be confidently detected — add a sandbox.yaml manually')
+        if (!opts.auto) onError('sandboxd couldn’t tell how to start this app. Add a sandbox.yaml that says how to run it.')
         return false
       }
       await api.putWorkspaceFile(sandboxId, 'sandbox.yaml', pick.suggested_manifest)
@@ -194,7 +194,7 @@ export function AppView({
       await api.stopSandbox(sandboxId).catch(() => undefined)
       await api.startSandbox(sandboxId)
       setApplied({ preset: pick.preset })
-      toast(`Detected ${pick.preset} — applied runtime`)
+      toast(`Detected ${pick.preset}. The app now starts with the right settings.`)
       await refresh()
       return true
     },
