@@ -1,11 +1,13 @@
 version: 2
+# Paused: open-pull-requests-limit 0 stops all version-update PRs. Set a
+# limit above 0 on an entry to turn its updates back on.
 updates:
   # Go modules — one grouped PR/week for minor+patch; majors come separately.
   - package-ecosystem: gomod
     directory: /control-plane
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       go:
         patterns: ["*"]
@@ -17,7 +19,7 @@ updates:
     directory: /console
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       npm:
         patterns: ["*"]
@@ -31,7 +33,7 @@ updates:
     directory: /desktop
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       desktop:
         patterns: ["*"]
@@ -42,6 +44,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     groups:
       actions:
         patterns: ["*"]
@@ -55,6 +58,7 @@ updates:
       - /image
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     groups:
       docker:
         patterns: ["*"]
