@@ -201,8 +201,9 @@ run without that override.
   engine source is fetched at an immutable commit. No desktop auto-updater, custom
   URL protocol or desktop telemetry is added. Managed setup disables engine telemetry.
 
-The Electron and electron-builder versions are pinned with an npm lockfile and
-covered by Dependabot. The builder pin uses the maintained v26 line, including
+The Electron and electron-builder versions are pinned with an npm lockfile.
+Dependabot version updates are paused (`.github/dependabot.yml`), so bump them
+by hand when Electron ships a security release. The builder pin uses the maintained v26 line, including
 [the NSIS archive decoder compatibility fix](https://github.com/electron-userland/electron-builder/pull/9989)
 needed for executable files in Windows ARM64 installers (26.15.6 or newer). As of this implementation, `npm audit` reports the
 unpatched moderate [sprintf-js precision DoS advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)
