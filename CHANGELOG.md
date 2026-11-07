@@ -8,6 +8,14 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Added
+
+- **Start a model connection from OpenLLM.** Settings → Model connections →
+  Add connection has a "Start from → OpenLLM" button that fills the format, base
+  URL and the `ultra`, `plus` and `lite` model chains. Add your OpenLLM API key
+  and save; every field stays editable. See
+  [model connections](docs/model-providers.md#openllm).
+
 ### Fixed
 
 - **Desktop engine updates now go through.** Updating from 0.3.25 always

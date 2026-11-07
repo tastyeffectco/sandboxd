@@ -69,4 +69,23 @@ describe('Model connections', () => {
     await waitFor(() => expect(api.saveModelProvider).toHaveBeenCalled())
     expect(vi.mocked(api.saveModelProvider).mock.calls[0][1].api_key).toBe('')
   })
+
+  it('starts a connection from the OpenLLM preset and keeps every field editable', async () => {
+    render(<ModelProviders onError={onError} toast={toast} />)
+    fireEvent.click(await screen.findByText('Add connection'))
+    fireEvent.click(screen.getByText('OpenLLM'))
+    expect((screen.getByLabelText('Connection name') as HTMLInputElement).value).toBe('OpenLLM')
+    expect((screen.getByLabelText(/API base URL/) as HTMLInputElement).value).toBe('https://www.openllm.sh/v1')
+    expect((screen.getByLabelText('API format') as HTMLSelectElement).value).toBe('openai-completions')
+    expect((screen.getByLabelText('Model ID 1') as HTMLInputElement).value).toBe('ultra')
+    expect((screen.getByLabelText('Model ID 3') as HTMLInputElement).value).toBe('lite')
+    screen.getByText(/OpenLLM needs an API key/)
+    fireEvent.change(screen.getByLabelText(/API key \(optional/), { target: { value: 'sk-llm-test.secret' } })
+    fireEvent.submit(screen.getByText('Save connection').closest('form')!)
+    await waitFor(() => expect(api.saveModelProvider).toHaveBeenCalledWith(undefined, {
+      name: 'OpenLLM', protocol: 'openai-completions', base_url: 'https://www.openllm.sh/v1',
+      api_key: 'sk-llm-test.secret',
+      models: ['ultra', 'plus', 'lite'].map((id) => ({ id, context_window: 32768, max_tokens: 4096 })),
+    }))
+  })
 })
