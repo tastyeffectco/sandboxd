@@ -270,7 +270,7 @@ copy-pasteable runbook.
 
 - 🗺️ **Roadmap** — [what's shipped &amp; next](https://sandboxd.io/roadmap) · [public project board](https://github.com/users/tastyeffectco/projects/3)
 - 💬 **Discussions** — [ask &amp; get self-hosting help](https://github.com/tastyeffectco/sandboxd/discussions)
-- 🤝 **Contribute** — good first PRs: add a runtime preset or an App Store recipe ([`CONTRIBUTING.md`](CONTRIBUTING.md))
+- 🤝 **Contribute** — good first PRs: add a framework recipe (one YAML file in [`control-plane/internal/recipes/data`](control-plane/internal/recipes/data)) or a runtime preset ([`CONTRIBUTING.md`](CONTRIBUTING.md))
 - 🔒 **Security** — report privately per [`SECURITY.md`](SECURITY.md)
 
 > **Beta · 0.x.** Container isolation (not VMs), single-server, and API auth off
