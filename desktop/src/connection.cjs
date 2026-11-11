@@ -1,10 +1,10 @@
 function normalizeEngineURL(value, allowInsecure = false) {
-  if (typeof value !== 'string' || value.length > 2048) throw new Error('Enter a valid engine URL.')
+  if (typeof value !== 'string' || value.length > 2048) throw new Error('Enter your engine’s address, such as https://sandboxd.example.com.')
   let url
   try {
     url = new URL(value.trim())
   } catch {
-    throw new Error('Use a complete URL, such as http://127.0.0.1:9090.')
+    throw new Error('Enter the full address, starting with https://, such as https://sandboxd.example.com.')
   }
   if (
     !['http:', 'https:'].includes(url.protocol) ||
@@ -14,11 +14,11 @@ function normalizeEngineURL(value, allowInsecure = false) {
     url.hash ||
     !['/', '/v1', '/v1/'].includes(url.pathname)
   ) {
-    throw new Error('Use the engine origin without credentials, a query, or a path.')
+    throw new Error('Enter just the engine’s address, such as https://sandboxd.example.com, with nothing added to it.')
   }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
   if (url.protocol === 'http:' && !local && !allowInsecure)
-    throw new Error('Use HTTPS for a remote engine, or explicitly allow an unencrypted connection.')
+    throw new Error('Use an address that starts with https://, or turn on Allow unencrypted HTTP.')
   return url.origin
 }
 
