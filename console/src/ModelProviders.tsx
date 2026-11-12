@@ -6,6 +6,11 @@ const emptyModel = () => ({ id: '', context_window: 32768, max_tokens: 4096 })
 const emptyInput = (): ModelProviderInput => ({
   name: '', protocol: 'openai-completions', base_url: '', models: [emptyModel()],
 })
+// Starting points for the New connection form. Fields stay editable.
+const openllmPreset = (): ModelProviderInput => ({
+  name: 'OpenLLM', protocol: 'openai-completions', base_url: 'https://www.openllm.sh/v1',
+  models: ['ultra', 'plus', 'lite'].map((id) => ({ ...emptyModel(), id })),
+})
 const fieldStyle = { display: 'grid', gap: 5, fontSize: 12.5, color: c.muted } as const
 const selectStyle = { padding: '8px 10px', borderRadius: 7, border: `1px solid ${c.border2}`, background: c.bg, color: c.fg }
 
@@ -107,6 +112,10 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
     {editing !== null && <form onSubmit={(e) => { e.preventDefault(); void save() }}
       style={{ display: 'grid', gap: 14, marginTop: 16, paddingTop: 14, borderTop: `1px solid ${c.border}` }}>
       <H size={13}>{editing ? 'Edit connection' : 'New connection'}</H>
+      {!editing && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: c.muted }}>
+        Start from
+        <Btn sm type="button" variant="ghost" onClick={() => { setForm(openllmPreset()); setKey('') }}>OpenLLM</Btn>
+      </div>}
       <label style={fieldStyle}>Connection name
         <Input required maxLength={100} value={form.name} placeholder="Local Ollama or team LiteLLM"
           onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -128,6 +137,10 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
         <Input type="password" autoComplete="new-password" value={key}
           placeholder={editing ? 'Leave blank to keep the saved key' : 'Paste an API key, if required'}
           onChange={(e) => { setKey(e.target.value); setClearKey(false) }} />
+        {form.base_url.startsWith('https://www.openllm.sh/') && <span style={{ fontSize: 11.5 }}>
+          OpenLLM needs an API key (sk-llm-…). Create one at openllm.sh. The names ultra, plus and lite are OpenLLM’s
+          built-in model chains; replace them with exact model IDs from your account if you prefer.
+        </span>}
       </label>
       {editing && <label style={{ fontSize: 12, color: c.muted }}>
         <input type="checkbox" checked={clearKey} onChange={(e) => { setClearKey(e.target.checked); setKey('') }} /> Remove the saved API key

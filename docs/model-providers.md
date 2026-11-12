@@ -40,6 +40,7 @@ not from your browser or the sandbox:
 | vLLM / llama.cpp on the same network | OpenAI-compatible | `http://model-server:8000/v1` |
 | LiteLLM gateway | Either supported format | `http://litellm:4000/v1` |
 | Anthropic API | Anthropic-compatible | `https://api.anthropic.com/v1` |
+| [OpenLLM](https://www.openllm.sh) (hosted, needs an API key) | OpenAI-compatible | `https://www.openllm.sh/v1` |
 | Hosted compatible gateway | Its supported format | `https://models.example.com/api/v1` |
 
 Include the API prefix in the base URL. sandboxd appends `/chat/completions`
@@ -51,6 +52,26 @@ model running on your machine, use a reachable host address, a shared Docker
 network name, or a host-gateway mapping appropriate to your Docker setup.
 HTTP is supported for trusted local networks; use HTTPS for remote endpoints.
 The API key can be omitted for a server that does not require authentication.
+
+### OpenLLM
+
+[OpenLLM](https://www.openllm.sh) routes your API keys, subscription accounts
+and local models through one endpoint. In **Add connection**, choose
+**Start from → OpenLLM**, or enter the values yourself:
+
+- API format: OpenAI-compatible · Chat Completions
+- API base URL: `https://www.openllm.sh/v1`
+- API key: an OpenLLM API key (`sk-llm-…`) from your OpenLLM account
+- Models: `ultra` (most capable), `plus` (everyday) and `lite` (fast, low cost)
+  are OpenLLM's built-in model chains. They exist only for the providers your
+  OpenLLM account has connected, so replace them with exact model IDs from your
+  account if one is missing. The first model is the default.
+
+sandboxd's control-plane container calls the hosted address directly, so no
+OpenLLM software has to run on the sandboxd host. Subscription-backed models
+need one of your devices running OpenLLM to be online; models served from API
+keys or OpenLLM's included inference do not. See the
+[OpenLLM documentation](https://docs.openllm.sh).
 
 ### LiteLLM and AWS Bedrock
 
