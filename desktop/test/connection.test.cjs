@@ -33,3 +33,11 @@ test('external links cannot open executable or local-file schemes', () => {
     assert.equal(externalURL(value), null)
   assert.equal(externalURL('https://example.com/docs'), 'https://example.com/docs')
 })
+test('each address mistake gets the message that says how to fix it', () => {
+  assert.throws(() => normalizeEngineURL(null), /Enter your engine’s address/)
+  assert.throws(() => normalizeEngineURL('x'.repeat(2049)), /Enter your engine’s address/)
+  assert.throws(() => normalizeEngineURL('sandboxd.example.com'), /full address, starting with https:\/\//)
+  for (const value of ['https://engine.example/preview', 'https://user:secret@engine.example', 'ftp://engine.example'])
+    assert.throws(() => normalizeEngineURL(value), /just the engine’s address/, value)
+  assert.throws(() => normalizeEngineURL('http://engine.example'), /turn on Allow unencrypted HTTP/)
+})
