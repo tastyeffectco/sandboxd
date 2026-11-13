@@ -15,7 +15,7 @@ meets the contract below.
 
 Set **`SANDBOXD_IMAGE`** to any compatible image; every sandbox on the instance
 uses it (it's also the seed image). The current value is shown read-only in the
-console **Settings → Runtime** (`base_image`). There is no per-app image selection
+console **Settings → Instance** (**Base image**). There is no per-app image selection
 in v0.3 (see Roadmap) — **`SANDBOXD_IMAGE` is read once at startup**, so after
 changing it you must **recreate the control-plane stack** for it to take effect
 (it also becomes the snapshot seed image). A stray `image` field in a create body
