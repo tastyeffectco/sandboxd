@@ -99,7 +99,7 @@ agent's stored credential for that upstream and injects it. Upstreams:
   Unsupported OAuth refresh flows require re-login in the original CLI.
 
 - **MiniMax** — a credential-only provider: connect a MiniMax API key in
-  Settings → AI Agents (`POST /v1/agents/minimax/api-key`). MiniMax is not a
+  Settings → Coding agents (`POST /v1/agents/minimax/api-key`). MiniMax is not a
   task agent (no CLI, not in the run picker); its key is injected by the proxy
   for the MiniMax direct upstreams. For model selection use a configured MiniMax
   model connection; the account picker does not invent MiniMax models. Legacy
@@ -179,7 +179,7 @@ immediately.
 
 - **No key** → free tier. The default free model is `big-pickle`; override with
   `SANDBOXD_OPENCODE_FREE_MODEL`.
-- **Key connected** (Settings → AI Agents) → the proxy injects it and opencode
+- **Key connected** (Settings → Coding agents) → the proxy injects it and opencode
   gets the full paid catalog, exactly as before. A connected key always wins.
 
 This is **opencode-only** — it's the one provider with a keyless free tier. Every
@@ -189,7 +189,7 @@ unconnected. See `internal/authproxy/proxy.go` (`credFor`) and
 
 ### Per-agent default model (optional)
 
-The task picker and **Settings → AI Agents → Default models** query
+The task picker and **Settings → Coding agents → Default models** query
 `GET /v1/agents/{provider}/models`. This is an authenticated provider catalog,
 not a bundled list of guessed model IDs or CLI aliases. Imported OpenCode/Pi
 models are namespaced by account, for example `openai/<returned-model-id>`.
