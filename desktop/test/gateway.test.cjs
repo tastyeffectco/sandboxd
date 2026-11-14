@@ -252,3 +252,22 @@ test('native account import is bound to the chosen engine and never follows redi
   })
   await assert.rejects(redirected.gateway.importAgentLogin('codex', 'private-login', redirected.origin))
 })
+
+test('a stopped engine reports the restart message only when the connection is refused', async (t) => {
+  let asked = 0
+  const { request, engine } = await fixture(t, (_req, _res) => {}, {
+    idleTimeout: 150,
+    onUnreachable: () => (++asked, 'Your engine stopped. Starting it again…'),
+  })
+  // A slow engine is not a stopped one.
+  const slow = await request('/v1/apps')
+  assert.equal(slow.status, 502)
+  assert.doesNotMatch(slow.body, /Starting it again/)
+  assert.equal(asked, 0)
+  await new Promise((r) => engine.close(r))
+  engine.closeAllConnections()
+  const stopped = await request('/v1/apps')
+  assert.equal(stopped.status, 502)
+  assert.match(stopped.body, /Starting it again/)
+  assert.equal(asked, 1)
+})

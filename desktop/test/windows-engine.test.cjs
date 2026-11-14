@@ -269,3 +269,17 @@ test('an engine the user runs themselves is never updated', async (t) => {
   assert.equal((await f.manager.start()).phase, 'ready')
   assert(!f.commands.some((c) => c.args.includes('bash')))
 })
+
+test('an engine found running is held, so Windows does not stop it later', async (t) => {
+  const f = await installedFixture(t, async () => ENGINE_COMMIT.slice(0, 12))
+  assert.equal((await f.manager.start()).phase, 'ready')
+  assert.equal(f.keepalives.length, 1)
+  assert(f.keepalives[0][1].includes('sandboxd-desktop-0123456789abcdef'))
+  assert(f.keepalives[0][1].includes('flock'))
+})
+
+test('an engine the user runs themselves is not held by the app', async (t) => {
+  const f = await fixture(t, { probe: async () => true })
+  await f.manager.start()
+  assert.equal(f.keepalives.length, 0)
+})

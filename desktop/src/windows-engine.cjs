@@ -175,6 +175,24 @@ function createWindowsEngine({
     await fs.writeFile(manifestPath + '.tmp', JSON.stringify(manifest), { mode: 0o600 })
     await fs.rename(manifestPath + '.tmp', manifestPath)
   }
+  // One detached keepalive per distro; its Linux lock prevents duplicates.
+  // Closing Electron must not stop the engine or its workloads.
+  function hold() {
+    keepAlive(wsl, [
+      '--distribution',
+      manifest.distro,
+      '--user',
+      'root',
+      '--cd',
+      '/',
+      '--exec',
+      'flock',
+      '-n',
+      '/run/sandboxd-desktop.keepalive',
+      'sleep',
+      'infinity',
+    ])
+  }
   async function setup() {
     if (platform !== 'win32') throw new Error('Automatic engine setup is available on Windows.')
     if (!ROOTFS[arch]) throw new Error('This Windows architecture is not supported.')
@@ -186,6 +204,9 @@ function createWindowsEngine({
         // another release; an engine the user runs themselves is never touched.
         const running = manifest?.installed ? await engineCommit() : ''
         if (!running || ENGINE_COMMIT.startsWith(running)) {
+          // WSL stops a distro once no Windows process is attached, even with
+          // the engine running inside: the app must hold the one it found.
+          if (manifest?.installed) hold()
           set({ phase: 'ready', message: 'Your local engine is ready.' })
           return { ...state }
         }
@@ -310,22 +331,7 @@ function createWindowsEngine({
       manifest.installed = true
       await save()
       set({ installed: true })
-      // One detached keepalive per distro; its Linux lock prevents duplicates.
-      // Closing Electron must not stop the engine or its workloads.
-      keepAlive(wsl, [
-        '--distribution',
-        manifest.distro,
-        '--user',
-        'root',
-        '--cd',
-        '/',
-        '--exec',
-        'flock',
-        '-n',
-        '/run/sandboxd-desktop.keepalive',
-        'sleep',
-        'infinity',
-      ])
+      hold()
       set({ phase: 'starting', message: 'Connecting to your engine…' })
       for (let attempt = 0; attempt < 45; attempt++) {
         if (await probe()) {
