@@ -9,9 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
-
-	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
 )
 
 // One chat screen works for every agent: each agent's own stream is turned
@@ -36,55 +33,8 @@ type agentStep struct {
 
 type v1AgentStreamReq struct {
 	v1AgentChatReq
-	// ConversationID keeps the agent's own session across turns and restarts.
+	// ConversationID, when set, also keys the agent's own session.
 	ConversationID string `json:"conversation_id"`
-}
-
-// POST /v1/agent-instances/{id}/chat/stream — one turn, streamed as server-sent
-// events in sandboxd's agent event format.
-func (s *Server) v1AgentChatStream(w http.ResponseWriter, r *http.Request) {
-	h, ok := s.ownAgentInstance(w, r)
-	if !ok {
-		return
-	}
-	var req v1AgentStreamReq
-	if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req); err != nil || len(req.Messages) == 0 {
-		writeV1Err(w, http.StatusBadRequest, "invalid_request", "send at least one message")
-		return
-	}
-	if len(req.ConversationID) > 128 {
-		writeV1Err(w, http.StatusBadRequest, "invalid_request", "conversation id is too long")
-		return
-	}
-	pkg, _ := agentcatalog.Get(h.Package)
-	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
-	if err != nil {
-		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
-	defer cancel()
-	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort)
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher, _ := w.(http.Flusher)
-	emit := func(e agentEvent) {
-		b, _ := json.Marshal(e.data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.name, b)
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}
-	if err := streamAgentChat(ctx, url, string(apiKey), pkg.ChatModel, req, emit); err != nil {
-		s.Log.Warn("agent chat stream failed", "agent", h.ID, "err", err.Error())
-		if ctx.Err() == nil || ctx.Err() == context.DeadlineExceeded {
-			emit(agentEvent{"error", map[string]string{"message": plainAgentError(h.Name, err)}})
-		}
-		return
-	}
-	emit(agentEvent{"done", struct{}{}})
 }
 
 type agentUnavailable struct{ error }

@@ -1,55 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, AgentInstance, AgentStreamEvent, streamAgentChat } from './api'
+import { api, AgentInstance, AgentMessageRow, AgentStep } from './api'
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
 import { StatusPill } from './design/kit'
 
-// One agent's own window: a chat like Telegram or Slack. Every agent uses this
-// screen; the engine's adapter turns each agent's stream into the same events.
-
-export type Step = { id: string; tool: string; label?: string; status: 'running' | 'done' | 'failed' }
-export type Turn =
-  | { role: 'user'; content: string; at: number }
-  | {
-      role: 'assistant'
-      content: string
-      thinking: string
-      steps: Step[]
-      at: number
-      state: 'streaming' | 'done' | 'stopped' | 'error'
-      error?: string
-    }
-type Saved = { conversation: string; turns: Turn[] }
-
-const storageKey = (id: string) => `sandboxd.agent-chat.${id}`
-const newConversation = () =>
-  globalThis.crypto?.randomUUID?.() ?? `c-${Date.now()}-${Math.random().toString(36).slice(2)}`
-
-function load(id: string): Saved {
-  try {
-    const raw = localStorage.getItem(storageKey(id))
-    if (raw) {
-      const saved = JSON.parse(raw) as Saved
-      // A reply cut off by a reload is shown as stopped, not as still typing.
-      saved.turns = saved.turns.map((t) => (t.role === 'assistant' && t.state === 'streaming' ? { ...t, state: 'stopped' } : t))
-      return saved
-    }
-  } catch {
-    /* storage unavailable: start fresh */
-  }
-  return { conversation: newConversation(), turns: [] }
-}
-function save(id: string, saved: Saved) {
-  try {
-    localStorage.setItem(storageKey(id), JSON.stringify({ ...saved, turns: saved.turns.slice(-200) }))
-  } catch {
-    /* storage full or unavailable */
-  }
-}
+// One agent's own window: one continuous conversation, like a chat in Telegram.
+// The engine keeps the thread and writes replies itself, so closing this
+// window or the app never loses a message or stops a reply.
 
 // Tool names in everyday words. Internal bookkeeping tools are not shown.
 const HIDDEN = /^(tool_(describe|search|call)|todo|think|clarify)$/
-export function stepLabel(step: Pick<Step, 'tool'>): string | null {
+export function stepLabel(step: Pick<AgentStep, 'tool'>): string | null {
   const tool = step.tool.replace(/^mcp__/, '').replace(/^(sandboxd__|mcp:sandboxd:sandboxd__)/, '').replace(/^sandboxd__/, '')
   if (HIDDEN.test(tool)) return null
   const known: [RegExp, string][] = [
@@ -100,94 +61,64 @@ export function AgentRoom({
   onError: (message: string) => void
   reloadApps: () => void
 }) {
-  const [saved, setSaved] = useState<Saved>(() => load(agent.id))
+  const [messages, setMessages] = useState<AgentMessageRow[] | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
-  const abort = useRef<AbortController | null>(null)
+  const [sending, setSending] = useState(false)
   const end = useRef<HTMLDivElement>(null)
+  const seen = useRef<Record<string, string>>({})
   const running = agent.status === 'running'
-  const working = saved.turns.some((t) => t.role === 'assistant' && t.state === 'streaming')
+  const working = sending || !!messages?.some((m) => m.state === 'working')
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await api.listAgentMessages(agent.id)
+      // A reply that just finished building or changing an app: show it in the sidebar.
+      let appChanged = false
+      for (const m of r.messages) {
+        if (seen.current[m.id] === 'working' && m.state !== 'working')
+          appChanged ||= m.steps.some((s) => /create_app|ask_app/.test(s.tool) && s.status === 'done')
+        seen.current[m.id] = m.state
+      }
+      if (appChanged) reloadApps()
+      setMessages(r.messages)
+    } catch {
+      /* the next refresh tries again */
+    }
+  }, [agent.id, reloadApps])
 
   useEffect(() => {
-    setSaved(load(agent.id))
-  }, [agent.id])
+    setMessages(null)
+    seen.current = {}
+    void refresh()
+  }, [refresh])
+  // Live while the agent writes; slower when idle (other channels add messages too).
   useEffect(() => {
-    save(agent.id, saved)
-  }, [agent.id, saved])
+    const t = setInterval(() => void refresh(), working ? 800 : 4000)
+    return () => clearInterval(t)
+  }, [refresh, working])
+  const count = messages?.length ?? 0
+  const lastLength = messages?.[count - 1]?.content.length ?? 0
   // Braces: Chromium's scrollIntoView now returns a Promise, which React would
   // take for a clean-up function.
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: 'end' })
-  }, [saved.turns])
-  useEffect(() => () => abort.current?.abort(), [agent.id])
-
-  const update = useCallback((fn: (last: Extract<Turn, { role: 'assistant' }>) => Turn) => {
-    setSaved((s) => {
-      const turns = [...s.turns]
-      const last = turns[turns.length - 1]
-      if (last?.role === 'assistant') turns[turns.length - 1] = fn(last)
-      return { ...s, turns }
-    })
-  }, [])
+  }, [count, lastLength])
 
   const send = async (text: string) => {
     const content = text.trim()
     if (!content || working || !running) return
     setDraft('')
-    const history = saved.turns
-      .filter((t) => t.role === 'user' || (t.state === 'done' && t.content))
-      .map((t) => ({ role: t.role, content: t.content }))
-    const messages = [...history, { role: 'user' as const, content }]
-    setSaved((s) => ({
-      ...s,
-      turns: [
-        ...s.turns,
-        { role: 'user', content, at: Date.now() },
-        { role: 'assistant', content: '', thinking: '', steps: [], at: Date.now(), state: 'streaming' },
-      ],
-    }))
-    const controller = new AbortController()
-    abort.current = controller
-    let failed = ''
-    let createdApp = false
+    setSending(true)
     try {
-      await streamAgentChat(
-        agent.id,
-        { messages, conversation_id: saved.conversation },
-        (e: AgentStreamEvent) => {
-          if (e.type === 'text') update((t) => ({ ...t, content: t.content + e.delta }))
-          else if (e.type === 'thinking') update((t) => ({ ...t, thinking: t.thinking + e.delta }))
-          else if (e.type === 'step') {
-            if (/create_app|ask_app/.test(e.tool) && e.status === 'done') createdApp = true
-            update((t) => {
-              const steps = [...t.steps]
-              const i = steps.findIndex((s) => s.id === e.id && e.id)
-              const step = { id: e.id || `${e.tool}-${steps.length}`, tool: e.tool, label: e.label, status: e.status }
-              if (i >= 0) steps[i] = { ...steps[i], status: e.status }
-              else steps.push(step)
-              return { ...t, steps }
-            })
-          } else if (e.type === 'error') failed = e.message
-        },
-        controller.signal,
-      )
-      update((t) => ({
-        ...t,
-        state: failed ? 'error' : 'done',
-        error: failed || undefined,
-        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: failed ? 'failed' : 'done' } : s)),
-      }))
+      const r = await api.sendAgentMessage(agent.id, content)
+      for (const m of r.messages) seen.current[m.id] = m.state
+      setMessages((prev) => [...(prev || []), ...r.messages])
     } catch (e) {
-      const stopped = controller.signal.aborted
-      update((t) => ({
-        ...t,
-        state: stopped ? 'stopped' : 'error',
-        error: stopped ? undefined : (e as Error).message,
-        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'failed' } : s)),
-      }))
+      setDraft(content)
+      onError((e as Error).message)
     } finally {
-      abort.current = null
-      if (createdApp) reloadApps()
+      setSending(false)
     }
   }
 
@@ -203,7 +134,7 @@ export function AgentRoom({
     }
   }
 
-  const lastUser = [...saved.turns].reverse().find((t) => t.role === 'user')
+  const lastUser = [...(messages || [])].reverse().find((m) => m.role === 'user')
   const initial = agent.name.slice(0, 1).toUpperCase()
   return (
     <section className="agent-room" data-testid="agent-room">
@@ -219,14 +150,6 @@ export function AgentRoom({
           </span>
         </div>
         <div className="agent-room-actions">
-          <button
-            className="text-button"
-            disabled={working || !saved.turns.length}
-            onClick={() => setSaved({ conversation: newConversation(), turns: [] })}
-            data-testid="agent-new-chat"
-          >
-            <Icon name="plus" size={14} /> New chat
-          </button>
           {running || agent.status === 'starting' ? (
             <button className="text-button" disabled={busy} onClick={() => void act(() => api.stopAgentInstance(agent.id))}>
               Pause
@@ -237,17 +160,26 @@ export function AgentRoom({
             </button>
           )}
           <button
+            className="text-button"
+            disabled={busy || working || !count}
+            onClick={() => {
+              if (window.confirm(`Clear this conversation? ${agent.name} keeps what it has learned about you.`))
+                void act(async () => {
+                  await api.clearAgentMessages(agent.id)
+                  await refresh()
+                })
+            }}
+            data-testid="agent-clear"
+          >
+            Clear conversation
+          </button>
+          <button
             className="text-button danger"
             disabled={busy}
             onClick={() => {
-              if (window.confirm(`Remove ${agent.name}? Its memory and skills are deleted. Your apps stay.`))
+              if (window.confirm(`Remove ${agent.name}? Its memory, skills and this conversation are deleted. Your apps stay.`))
                 void act(async () => {
                   await api.deleteAgentInstance(agent.id)
-                  try {
-                    localStorage.removeItem(storageKey(agent.id))
-                  } catch {
-                    /* ignore */
-                  }
                   onRemoved()
                 })
             }}
@@ -258,7 +190,8 @@ export function AgentRoom({
       </header>
 
       <div className="agent-room-log" role="log" aria-live="polite" data-testid="agent-log">
-        {!saved.turns.length && (
+        {messages === null && <p className="bubble-note" style={{ margin: 'auto' }}>Loading the conversation…</p>}
+        {messages?.length === 0 && (
           <div className="agent-room-empty">
             <span className="agent-avatar large" aria-hidden="true">
               {initial}
@@ -274,65 +207,73 @@ export function AgentRoom({
             </div>
           </div>
         )}
-        {saved.turns.map((t, i) =>
-          t.role === 'user' ? (
-            <div key={i} className="bubble-row mine">
+        {messages?.map((m, i) =>
+          m.role === 'user' ? (
+            <div key={m.id} className="bubble-row mine">
               <div className="bubble mine" data-testid="agent-you">
-                {t.content}
+                {m.content}
               </div>
             </div>
           ) : (
-            <div key={i} className="bubble-row">
+            <div key={m.id} className="bubble-row">
               <span className="agent-avatar small" aria-hidden="true">
                 {initial}
               </span>
               <div className="bubble theirs" data-testid="agent-reply">
-                {t.thinking && (
+                {m.thinking && (
                   <details className="bubble-thinking">
-                    <summary>{t.state === 'streaming' && !t.content ? 'Thinking…' : 'How it thought about this'}</summary>
-                    <p>{t.thinking}</p>
+                    <summary>{m.state === 'working' && !m.content ? 'Thinking…' : 'How it thought about this'}</summary>
+                    <p>{m.thinking}</p>
                   </details>
                 )}
-                {t.steps.some((s) => stepLabel(s)) && (
+                {m.steps.some((s) => stepLabel(s)) && (
                   <ul className="bubble-steps" data-testid="agent-steps">
-                    {t.steps
+                    {m.steps
                       .filter((s) => stepLabel(s))
-                      .map((s) => (
-                        <li key={s.id} className={s.status}>
-                          {s.status === 'running' ? <span className="spinner" aria-label="working" /> : s.status === 'done' ? <Icon name="check" size={12} /> : <Icon name="close" size={12} />}
+                      .map((s, k) => (
+                        <li key={s.id || k} className={s.status}>
+                          {s.status === 'running' ? (
+                            <span className="spinner" aria-label="working" />
+                          ) : s.status === 'done' ? (
+                            <Icon name="check" size={12} />
+                          ) : (
+                            <Icon name="close" size={12} />
+                          )}
                           {stepLabel(s)}
                         </li>
                       ))}
                   </ul>
                 )}
-                {t.content ? (
+                {m.content ? (
                   <div className="bubble-text">
-                    <AgentMessage text={t.content} />
+                    <AgentMessage text={m.content} />
                   </div>
                 ) : (
-                  t.state === 'streaming' && !t.thinking && !t.steps.length && <span className="typing" aria-label={`${agent.name} is typing`}><i /><i /><i /></span>
+                  m.state === 'working' &&
+                  !m.thinking &&
+                  !m.steps.length && (
+                    <span className="typing" aria-label={`${agent.name} is typing`}>
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  )
                 )}
-                {links(t.content).length > 0 && t.state !== 'streaming' && (
+                {m.state !== 'working' && links(m.content).length > 0 && (
                   <div className="bubble-links">
-                    {links(t.content).map((url) => (
+                    {links(m.content).map((url) => (
                       <a key={url} href={url} target="_blank" rel="noreferrer" data-testid="agent-link">
                         <Icon name="external" size={13} /> {linkTitle(url)}
                       </a>
                     ))}
                   </div>
                 )}
-                {t.state === 'stopped' && <p className="bubble-note">Stopped.</p>}
-                {t.state === 'error' && (
+                {m.state === 'stopped' && <p className="bubble-note">Stopped.</p>}
+                {m.state === 'error' && (
                   <p className="bubble-note error" role="alert">
-                    {t.error || `${agent.name} couldn't answer.`}{' '}
-                    {lastUser && i === saved.turns.length - 1 && (
-                      <button
-                        className="text-button"
-                        onClick={() => {
-                          setSaved((s) => ({ ...s, turns: s.turns.slice(0, -2) }))
-                          void send(lastUser.content)
-                        }}
-                      >
+                    {m.error || `${agent.name} couldn't answer.`}{' '}
+                    {lastUser && i === messages.length - 1 && running && (
+                      <button className="text-button" onClick={() => void send(lastUser.content)}>
                         Try again
                       </button>
                     )}
@@ -374,7 +315,12 @@ export function AgentRoom({
           data-testid="agent-input"
         />
         {working ? (
-          <button type="button" className="composer-send stop" onClick={() => abort.current?.abort()} data-testid="agent-stop">
+          <button
+            type="button"
+            className="composer-send stop"
+            onClick={() => void api.stopAgentMessage(agent.id).then(refresh)}
+            data-testid="agent-stop"
+          >
             Stop
           </button>
         ) : (

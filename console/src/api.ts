@@ -377,60 +377,19 @@ export interface AgentInstance {
   apps_per_day: number
   created_at: string
 }
-// One chat screen for every agent: the engine turns each agent's stream into
-// these events (POST /v1/agent-instances/{id}/chat/stream).
-export type AgentStreamEvent =
-  | { type: 'text'; delta: string }
-  | { type: 'thinking'; delta: string }
-  | { type: 'step'; id: string; tool: string; label?: string; status: 'running' | 'done' | 'failed' }
-  | { type: 'done' }
-  | { type: 'error'; message: string }
-
-export async function streamAgentChat(
-  id: string,
-  body: { messages: { role: 'user' | 'assistant'; content: string }[]; conversation_id: string },
-  onEvent: (event: AgentStreamEvent) => void,
-  signal?: AbortSignal,
-) {
-  const res = await fetch(`/v1/agent-instances/${encodeURIComponent(id)}/chat/stream`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-    body: JSON.stringify(body),
-    signal,
-  })
-  if (!res.ok || !res.body) {
-    if (res.status === 401 && onUnauthorized) onUnauthorized()
-    let message = `${res.status} ${res.statusText}`
-    try {
-      const e = await res.json()
-      if (e?.error?.message) message = e.error.message
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(message)
-  }
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let event = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let nl: number
-    while ((nl = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, nl).replace(/\r$/, '')
-      buffer = buffer.slice(nl + 1)
-      if (line.startsWith('event:')) event = line.slice(6).trim()
-      else if (line.startsWith('data:') && event) {
-        try {
-          onEvent({ type: event, ...JSON.parse(line.slice(5)) } as AgentStreamEvent)
-        } catch {
-          /* ignore a malformed event */
-        }
-      } else if (!line) event = ''
-    }
-  }
+// One conversation per agent, kept by the engine like a chat app: replies keep
+// going when the window closes. Every agent's stream becomes the same shape.
+export type AgentStep = { id: string; tool: string; label?: string; status: 'running' | 'done' | 'failed' }
+export interface AgentMessageRow {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking?: string
+  steps: AgentStep[]
+  state: 'working' | 'done' | 'stopped' | 'error'
+  error?: string
+  channel: string
+  created_at: string
 }
 
 export interface AgentInstanceInput {
@@ -450,6 +409,12 @@ export const api = {
   startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
   stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  listAgentMessages: (id: string) =>
+    req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
+  sendAgentMessage: (id: string, content: string) =>
+    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, { content }),
+  stopAgentMessage: (id: string) => req<void>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages/stop`),
+  clearAgentMessages: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
     req<{ reply: string }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/chat`, { messages }),
   listModelProviders: () =>

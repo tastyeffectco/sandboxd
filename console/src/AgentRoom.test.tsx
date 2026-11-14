@@ -1,11 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentRoom, stepLabel } from './AgentRoom'
-import { AgentInstance, AgentStreamEvent, streamAgentChat } from './api'
+import { api, AgentInstance, AgentMessageRow } from './api'
 
 vi.mock('./api', () => ({
-  api: { stopAgentInstance: vi.fn(), startAgentInstance: vi.fn(), deleteAgentInstance: vi.fn() },
-  streamAgentChat: vi.fn(),
+  api: {
+    stopAgentInstance: vi.fn(),
+    startAgentInstance: vi.fn(),
+    deleteAgentInstance: vi.fn(),
+    listAgentMessages: vi.fn(),
+    sendAgentMessage: vi.fn(),
+    stopAgentMessage: vi.fn(),
+    clearAgentMessages: vi.fn(),
+  },
 }))
 
 const agent: AgentInstance = {
@@ -20,96 +27,106 @@ const agent: AgentInstance = {
   apps_per_day: 10,
   created_at: '',
 }
+const msg = (m: Partial<AgentMessageRow> & Pick<AgentMessageRow, 'id' | 'role'>): AgentMessageRow => ({
+  content: '',
+  steps: [],
+  state: 'done',
+  channel: 'app',
+  created_at: '',
+  ...m,
+})
 const room = (a = agent, reloadApps = () => {}) =>
   render(<AgentRoom agent={a} onChanged={() => {}} onRemoved={() => {}} onError={() => {}} reloadApps={reloadApps} />)
 
-beforeEach(() => localStorage.clear())
 afterEach(() => {
   cleanup()
-  vi.mocked(streamAgentChat).mockReset()
+  vi.clearAllMocks()
 })
 
 describe('AgentRoom', () => {
-  it('streams a reply with its steps and thinking, and opens links', async () => {
-    const reloadApps = vi.fn()
-    vi.mocked(streamAgentChat).mockImplementation(async (_id, body, onEvent) => {
-      expect(body.messages).toEqual([{ role: 'user', content: 'Build me a tip calculator' }])
-      expect(body.conversation_id).toBeTruthy()
-      const send = (e: AgentStreamEvent) => onEvent(e)
-      send({ type: 'thinking', delta: 'The person wants an app.' })
-      send({ type: 'step', id: 's0', tool: 'tool_describe', status: 'running' })
-      send({ type: 'step', id: 's1', tool: 'mcp__sandboxd__create_app', status: 'running' })
-      send({ type: 'step', id: 's1', tool: 'mcp__sandboxd__create_app', status: 'done' })
-      send({ type: 'text', delta: 'Done! **Tip Calculator** is ready: ' })
-      send({ type: 'text', delta: 'http://s-01abc-3000.preview.localhost:8080' })
-      send({ type: 'done' })
+  it('shows the whole conversation kept by the engine', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: false,
+      messages: [
+        msg({ id: '1', role: 'user', content: 'Call me Abdel' }),
+        msg({ id: '2', role: 'assistant', content: 'Hi **Abdel**!' }),
+      ],
     })
+    room()
+    expect(await screen.findByText('Abdel')).toBeTruthy()
+    expect(screen.getByTestId('agent-you').textContent).toBe('Call me Abdel')
+  })
+
+  it('sends, follows the reply as the engine writes it, and refreshes the sidebar after an app is built', async () => {
+    const reloadApps = vi.fn()
+    const you = msg({ id: '1', role: 'user', content: 'Build me a tip calculator' })
+    const working = msg({
+      id: '2',
+      role: 'assistant',
+      state: 'working',
+      thinking: 'The person wants an app.',
+      steps: [
+        { id: 's0', tool: 'tool_describe', status: 'done' },
+        { id: 's1', tool: 'mcp__sandboxd__create_app', status: 'running' },
+      ],
+    })
+    const done = msg({
+      ...working,
+      state: 'done',
+      steps: [{ id: 's1', tool: 'mcp__sandboxd__create_app', status: 'done' }],
+      content: 'Done! **Tip Calculator**: http://s-01abc-3000.preview.localhost:8080',
+    })
+    vi.mocked(api.listAgentMessages)
+      .mockResolvedValueOnce({ working: false, messages: [] })
+      .mockResolvedValueOnce({ working: true, messages: [you, working] })
+      .mockResolvedValue({ working: false, messages: [you, done] })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue({ messages: [you, msg({ id: '2', role: 'assistant', state: 'working' })] })
     room(agent, reloadApps)
+    await screen.findByText('Chat with Hermes')
     fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'Build me a tip calculator' } })
     fireEvent.click(screen.getByTestId('agent-send'))
-    expect(await screen.findByText('Tip Calculator')).toBeTruthy()
-    expect(screen.getByTestId('agent-you').textContent).toBe('Build me a tip calculator')
-    const steps = screen.getByTestId('agent-steps').textContent
-    expect(steps).toContain('Creating your app')
-    expect(steps).not.toContain('describe') // internal tools stay hidden
-    expect(screen.getByText('How it thought about this')).toBeTruthy()
+    await waitFor(() => expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Build me a tip calculator'))
+    expect(await screen.findByText('Creating your app', {}, { timeout: 3000 })).toBeTruthy()
+    expect(screen.getByTestId('agent-stop')).toBeTruthy()
+    expect(screen.getByTestId('agent-steps').textContent).not.toContain('describe')
+    expect(await screen.findByText('Tip Calculator', {}, { timeout: 3000 })).toBeTruthy()
     const link = screen.getByTestId('agent-link') as HTMLAnchorElement
-    expect(link.href).toBe('http://s-01abc-3000.preview.localhost:8080/')
     expect(link.textContent).toContain('Open the app preview')
-    expect(reloadApps).toHaveBeenCalled() // the new app shows in the sidebar
+    expect(reloadApps).toHaveBeenCalled()
   })
 
-  it('keeps the conversation after reopening, and sends the history', async () => {
-    vi.mocked(streamAgentChat).mockImplementation(async (_id, _body, onEvent) => {
-      onEvent({ type: 'text', delta: 'Hi Abdel!' })
-      onEvent({ type: 'done' })
+  it('stops a reply, says errors plainly and offers to try again', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: true,
+      messages: [msg({ id: '1', role: 'user', content: 'Search the news' }), msg({ id: '2', role: 'assistant', state: 'working' })],
     })
-    const first = room()
-    fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'Call me Abdel' } })
-    fireEvent.click(screen.getByTestId('agent-send'))
-    await screen.findByText('Hi Abdel!')
-    first.unmount()
+    vi.mocked(api.stopAgentMessage).mockResolvedValue(undefined)
     room()
-    expect(screen.getByText('Hi Abdel!')).toBeTruthy()
-    fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'What is my name?' } })
-    fireEvent.click(screen.getByTestId('agent-send'))
-    await waitFor(() => expect(streamAgentChat).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(streamAgentChat).mock.calls[1][1].messages).toEqual([
-      { role: 'user', content: 'Call me Abdel' },
-      { role: 'assistant', content: 'Hi Abdel!' },
-      { role: 'user', content: 'What is my name?' },
-    ])
-  })
+    fireEvent.click(await screen.findByTestId('agent-stop'))
+    expect(api.stopAgentMessage).toHaveBeenCalledWith('h1')
+    cleanup()
 
-  it('can stop a reply, and says errors plainly with a retry', async () => {
-    vi.mocked(streamAgentChat).mockImplementation(
-      (_id, _body, onEvent, signal) =>
-        new Promise((_, reject) => {
-          onEvent({ type: 'step', id: 's1', tool: 'web_search', status: 'running' })
-          signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
-        }),
-    )
-    room()
-    fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'Search the news' } })
-    fireEvent.click(screen.getByTestId('agent-send'))
-    expect(await screen.findByText('Searching the web')).toBeTruthy()
-    fireEvent.click(screen.getByTestId('agent-stop'))
-    expect(await screen.findByText('Stopped.')).toBeTruthy()
-
-    vi.mocked(streamAgentChat).mockImplementation(async (_id, _body, onEvent) => {
-      onEvent({ type: 'error', message: "Hermes couldn't finish this reply. Try again." })
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: false,
+      messages: [
+        msg({ id: '1', role: 'user', content: 'Again' }),
+        msg({ id: '2', role: 'assistant', state: 'error', error: "Hermes couldn't finish this reply. Try again." }),
+      ],
     })
-    fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'Again' } })
-    fireEvent.click(screen.getByTestId('agent-send'))
+    vi.mocked(api.sendAgentMessage).mockResolvedValue({ messages: [] })
+    room()
     expect((await screen.findByRole('alert')).textContent).toMatch(/couldn't finish this reply/)
-    expect(screen.getByText('Try again')).toBeTruthy()
+    fireEvent.click(screen.getByText('Try again'))
+    await waitFor(() => expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Again'))
   })
 
-  it('waits while the agent is getting ready', () => {
+  it('waits while the agent is getting ready', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({ working: false, messages: [] })
     room({ ...agent, status: 'starting' })
     const input = screen.getByTestId('agent-input') as HTMLTextAreaElement
     expect(input.disabled).toBe(true)
     expect(input.placeholder).toMatch(/getting ready/)
+    await screen.findByText('Chat with Hermes')
   })
 })
 

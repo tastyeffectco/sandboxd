@@ -1790,41 +1790,70 @@ paths:
             application/json:
               schema: { type: object, properties: { reply: { type: string } } }
         "502": { $ref: "#/components/responses/Error" }
-  /v1/agent-instances/{id}/chat/stream:
+  /v1/agent-instances/{id}/messages:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
-    post:
-      operationId: streamAgentChat
+    get:
+      operationId: listAgentMessages
       tags: [agents]
-      summary: One chat turn, streamed in sandboxd's agent event format (the same for every agent)
+      summary: The agent's conversation (one thread per agent), oldest first
       description: |
-        Server-sent events. Each agent's own stream is translated into:
-        `text` {delta}, `thinking` {delta}, `step` {id, tool, label?, status: running|done|failed},
-        then `done` {} or `error` {message}. `conversation_id` keeps the agent's own session
-        (Hermes session id, OpenClaw session key) across turns.
+        Includes a reply still being written (state `working`), with its steps so far.
+        Each agent's own stream is translated into the same shape: content, thinking,
+        and steps `{id, tool, label?, status: running|done|failed}`.
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  working: { type: boolean }
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        role: { type: string, enum: [user, assistant] }
+                        content: { type: string }
+                        thinking: { type: string }
+                        steps: { type: array, items: { type: object } }
+                        state: { type: string, enum: [working, done, stopped, error] }
+                        error: { type: string }
+                        channel: { type: string }
+                        created_at: { type: string }
+    post:
+      operationId: sendAgentMessage
+      tags: [agents]
+      summary: Send a message; the reply is written by the engine in the background
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [messages]
+              required: [content]
               properties:
-                conversation_id: { type: string, maxLength: 128 }
-                messages:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      role: { type: string, enum: [user, assistant, system] }
-                      content: { type: string }
+                content: { type: string, maxLength: 8000 }
       responses:
-        "200":
-          description: The streamed reply
-          content:
-            text/event-stream:
-              schema: { type: string }
-        "400": { $ref: "#/components/responses/Error" }
-
+        "202": { description: The message and the reply being written }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: clearAgentMessages
+      tags: [agents]
+      summary: Clear the conversation (the agent keeps its own memory)
+      responses:
+        "204": { description: Cleared }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/messages/stop:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: stopAgentMessage
+      tags: [agents]
+      summary: Stop the reply being written
+      responses:
+        "204": { description: Stopped }
 components:
   securitySchemes:
     bearerAuth:
