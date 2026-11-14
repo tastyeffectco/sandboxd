@@ -23,7 +23,7 @@ import (
 // they are. Every agent works this way, whatever its model can read.
 
 const (
-	agentFileMax        = 25 << 20 // per file
+	agentFileMax         = 25 << 20 // per file
 	agentFilesPerMessage = 10
 )
 
