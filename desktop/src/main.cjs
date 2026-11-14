@@ -264,14 +264,20 @@ async function start() {
     })
     await localEngine.load().catch(() => {})
   }
+  const portFile = path.join(app.getPath('userData'), 'gateway-port')
+  const savedPort = Number(await fs.readFile(portFile, 'utf8').catch(() => '')) || 0
   gateway = await createGateway({
+    port: savedPort >= 1024 && savedPort < 65536 ? savedPort : 0,
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
     onUnreachable: healEngine,
   })
-  desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
+  await fs.writeFile(portFile, new URL(gateway.origin).port).catch(() => {})
+  // Kept across launches: agents' own apps save their setup and sign-in in
+  // the browser. sandboxd's own login never lives here (the gateway holds it).
+  desktopSession = session.fromPartition('persist:sandboxd')
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   desktopSession.setPermissionCheckHandler(() => false)
   // Cookies are shared across ports. Use a main-process-only header so a

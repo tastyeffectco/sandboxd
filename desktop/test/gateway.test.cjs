@@ -332,3 +332,15 @@ test('an agent app may redirect within itself, never elsewhere', async (t) => {
   // The workspace itself still never follows engine redirects.
   assert.equal((await request('/v1/agent-instances/o1abc2/ui/')).status, 502)
 })
+
+test('the gateway reuses its port so agent apps keep their address, or takes a free one', async (t) => {
+  const first = await fixture(t)
+  const port = Number(new URL(first.gateway.origin).port)
+  // That port is busy now: another one is used.
+  const second = await fixture(t, undefined, { port })
+  assert.notEqual(Number(new URL(second.gateway.origin).port), port)
+  const free = Number(new URL(second.gateway.origin).port)
+  await second.gateway.close()
+  const third = await fixture(t, undefined, { port: free })
+  assert.equal(Number(new URL(third.gateway.origin).port), free)
+})

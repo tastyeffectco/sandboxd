@@ -33,6 +33,9 @@ async function createGateway({
   // Called when the engine does not answer; may return a plainer message
   // (the local engine is being started again).
   onUnreachable = () => '',
+  // The port to reuse: agents' own apps keep what they save in the browser
+  // (sign-in, finished setup) per address, so it should not change per launch.
+  port = 0,
   idleTimeout = 120000,
   // An agent's chat reply can take minutes of silence (it builds an app);
   // the engine itself gives up after 15 minutes.
@@ -263,10 +266,16 @@ async function createGateway({
     socket.on('close', () => proxy.destroy())
     proxy.end()
   })
-  await new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
-  })
+  const listen = (value) =>
+    new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(value, '127.0.0.1', () => {
+        server.off('error', reject)
+        resolve()
+      })
+    })
+  // A port another program took since last time: any free one will do.
+  await listen(port).catch(() => listen(0))
   host = `127.0.0.1:${server.address().port}`
   origin = `http://${host}`
   return {
