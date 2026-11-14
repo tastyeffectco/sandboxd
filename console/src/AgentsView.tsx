@@ -28,6 +28,13 @@ export function AgentsView({
       .catch((e) => onError((e as Error).message))
   }, [onError])
   useEffect(load, [load])
+  // A new or restarted agent takes up to a minute before it can chat.
+  const starting = agents?.some((h) => h.status === 'starting')
+  useEffect(() => {
+    if (!starting) return
+    const t = setInterval(load, 3000)
+    return () => clearInterval(t)
+  }, [starting, load])
 
   return (
     <div className="content-page">
@@ -205,7 +212,7 @@ function AgentInstanceCard({
           {agent.apps_today}/{agent.apps_per_day} new apps today{agent.telegram ? ' · on Telegram' : ''}
         </span>
         <span style={{ flex: 1 }} />
-        {running ? (
+        {running || agent.status === 'starting' ? (
           <Btn sm disabled={busy} onClick={() => void act(() => api.stopAgentInstance(agent.id))}>
             Pause
           </Btn>
@@ -258,7 +265,13 @@ function AgentInstanceCard({
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={running ? `Message ${agent.name}` : `Start ${agent.name} to chat`}
+          placeholder={
+            running
+              ? `Message ${agent.name}`
+              : agent.status === 'starting'
+                ? `${agent.name} is getting ready… this takes about a minute`
+                : `Start ${agent.name} to chat`
+          }
           disabled={!running || thinking}
           data-testid="agent-chat-input"
           style={{ flex: 1 }}

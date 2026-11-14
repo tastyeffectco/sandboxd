@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -141,4 +142,20 @@ func toolText(out map[string]any) string {
 	}
 	s, _ := c[0].(map[string]any)["text"].(string)
 	return s
+}
+
+// An agent counts as running only once its chat API accepts connections.
+func TestAgentAnsweringProbe(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	if !agentAnswering(context.Background(), "127.0.0.1", port) {
+		t.Fatal("listening agent reported as not answering")
+	}
+	l.Close()
+	if agentAnswering(context.Background(), "127.0.0.1", port) {
+		t.Fatal("closed port reported as answering")
+	}
 }

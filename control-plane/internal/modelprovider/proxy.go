@@ -69,7 +69,11 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if c.Protocol == Anthropic {
 		fields += " system max_tokens thinking top_k stop_sequences "
 	} else {
-		fields += " stream_options max_tokens max_completion_tokens frequency_penalty presence_penalty stop seed response_format parallel_tool_calls reasoning_effort logprobs top_logprobs n store prompt_cache_key "
+		// Reasoning switches differ per model family: OpenAI reasoning_effort,
+		// OpenRouter reasoning, DeepSeek/Z.ai thinking, vLLM/Qwen
+		// chat_template_kwargs and enable_thinking. None change where the
+		// request goes or which credential it uses.
+		fields += " stream_options max_tokens max_completion_tokens frequency_penalty presence_penalty stop seed response_format parallel_tool_calls reasoning_effort reasoning thinking chat_template_kwargs enable_thinking verbosity logprobs top_logprobs n store prompt_cache_key "
 	}
 	allowedFields := make(map[string]bool)
 	for _, field := range strings.Fields(fields) {

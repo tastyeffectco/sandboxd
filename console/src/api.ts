@@ -371,7 +371,7 @@ export interface AgentInstance {
   name: string
   connection_id: string
   model: string
-  status: 'running' | 'stopped' | 'missing'
+  status: 'running' | 'starting' | 'stopped' | 'missing'
   telegram: boolean
   apps_today: number
   apps_per_day: number

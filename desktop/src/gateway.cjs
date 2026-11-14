@@ -31,6 +31,9 @@ async function createGateway({
   session = '',
   onSession = () => {},
   idleTimeout = 120000,
+  // An agent's chat reply can take minutes of silence (it builds an app);
+  // the engine itself gives up after 15 minutes.
+  agentChatTimeout = 16 * 60000,
 }) {
   const token = randomBytes(32).toString('hex')
   let origin = '',
@@ -151,7 +154,9 @@ async function createGateway({
       )
       // Task event streams stay open through quiet agent steps (a long install
       // sends nothing for minutes); they end with the task, page or engine.
-      if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
+      if (/^\/v1\/agent-instances\/[^/]+\/chat$/.test(target.pathname))
+        proxy.setTimeout(agentChatTimeout, () => proxy.destroy())
+      else if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
         proxy.setTimeout(idleTimeout, () => proxy.destroy())
       request.on('aborted', () => proxy.destroy())
       response.on('close', () => proxy.destroy())

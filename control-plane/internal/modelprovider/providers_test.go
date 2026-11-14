@@ -183,6 +183,20 @@ func TestProxyProtocolsAndBoundaries(t *testing.T) {
 			if requests != 1 {
 				t.Fatalf("invalid request reached upstream: %d", requests)
 			}
+			// Agents send their model family's reasoning switch (OpenClaw sends
+			// DeepSeek's thinking and Qwen's chat_template_kwargs, Hermes sends
+			// reasoning_effort); those are inference fields and pass.
+			if protocol == OpenAI {
+				for _, body := range []string{
+					`{"model":"team/model","thinking":{"type":"enabled"}}`,
+					`{"model":"team/model","reasoning":{"effort":"low"},"reasoning_effort":"low"}`,
+					`{"model":"team/model","chat_template_kwargs":{"enable_thinking":false},"enable_thinking":false}`,
+				} {
+					if w := call(path, body, conn.Token); w.Code != 200 {
+						t.Fatalf("rejected reasoning field %s: %d %s", body, w.Code, w.Body.String())
+					}
+				}
+			}
 		})
 	}
 }
