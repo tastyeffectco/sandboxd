@@ -298,7 +298,7 @@ export function AgentChat({
                   <Icon name="spark" size={13} />
                   {t.agent || 'Agent'}
                 </span>
-                <AgentMessage text={t.agent_message || plainTaskError(t.error_message) || `Task ${t.status}`} />
+                <AgentMessage text={plainTaskError(t.agent_message || t.error_message) || `Task ${t.status}`} />
               </div>
               {t.run_settings && (
                 <p
