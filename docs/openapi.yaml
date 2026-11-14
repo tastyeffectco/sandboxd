@@ -1736,6 +1736,27 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateAgentInstance
+      tags: [agents]
+      summary: Change the model an agent thinks with (it restarts; memory stays)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connection_id]
+              properties:
+                connection_id: { type: string }
+                model: { type: string, description: "Defaults to the connection's first model" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentInstance" }
+        "400": { $ref: "#/components/responses/Error" }
   /v1/agent-instances/{id}/start:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
@@ -1833,9 +1854,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [content]
               properties:
-                content: { type: string, maxLength: 8000 }
+                content: { type: string, maxLength: 8000, description: Required unless files are attached }
+                attachments: { type: array, maxItems: 10, items: { type: string }, description: Ids of files uploaded to files/ }
       responses:
         "202": { description: The message and the reply being written }
         "409": { $ref: "#/components/responses/Error" }
@@ -1854,6 +1875,63 @@ paths:
       summary: Stop the reply being written
       responses:
         "204": { description: Stopped }
+  /v1/agent-instances/{id}/files:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: query, name: name, required: true, schema: { type: string }, description: The file's name }
+    post:
+      operationId: uploadAgentFile
+      tags: [agents]
+      summary: Attach a file (up to 25 MB) for the next message
+      description: >-
+        The body is the file. It is saved in the agent's own uploads folder,
+        where its tools can open it; send its id in a message's attachments.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: { schema: { type: string, format: binary } }
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/AgentAttachment" } }
+        "413": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/files/{file}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: path, name: file, required: true, schema: { type: string } }
+    get:
+      operationId: getAgentFile
+      tags: [agents]
+      summary: A file attached in the conversation (pictures inline, others as downloads)
+      responses:
+        "200": { description: The file }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/ui/{path...}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: path, name: path, required: true, schema: { type: string }, description: Any path of the agent's app, empty for its start page }
+    get:
+      operationId: openAgentApp
+      tags: [agents]
+      summary: The agent's own app (e.g. OpenClaw's Control panel), signed in as its owner
+      description: >-
+        Pages, files and WebSocket upgrades are passed to the agent's own web
+        app. sandboxd signs the owner in with an identity header the agent
+        accepts from sandboxd's address only; sandboxd's credentials are never
+        passed on. Only agents whose instance has ui_label have an app.
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: postAgentApp
+      tags: [agents]
+      summary: A form or action of the agent's own app, signed in as its owner
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearerAuth:
@@ -1872,6 +1950,13 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    AgentAttachment:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        size: { type: integer }
     AgentInstance:
       type: object
       properties:
@@ -1880,11 +1965,12 @@ components:
         name: { type: string }
         connection_id: { type: string }
         model: { type: string }
-        status: { type: string, enum: [running, stopped, missing] }
+        status: { type: string, enum: [running, starting, stopped, missing] }
         telegram: { type: boolean }
         apps_today: { type: integer }
         apps_per_day: { type: integer }
         created_at: { type: string, format: date-time }
+        ui_label: { type: string, description: "Name of the agent's own app, served at ui/; absent when it has none" }
     ClaudeSignIn:
       type: object
       properties:

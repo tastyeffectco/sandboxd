@@ -12,14 +12,16 @@ type AgentMessage struct {
 	Content, Thinking, Steps string
 	State, Error, Channel    string
 	CreatedAt, UpdatedAt     string
+	// Attachments is a JSON array of the files sent with the message.
+	Attachments string
 }
 
-const agentMessageColumns = `id, agent_id, role, content, thinking, steps, state, error, channel, created_at, updated_at`
+const agentMessageColumns = `id, agent_id, role, content, thinking, steps, state, error, channel, created_at, updated_at, attachments`
 
 func (s *Store) AddAgentMessage(ctx context.Context, m *AgentMessage) error {
 	return s.submit(ctx, func(db *sql.DB) error {
-		_, err := db.ExecContext(ctx, `INSERT INTO agent_message (`+agentMessageColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-			m.ID, m.AgentID, m.Role, m.Content, m.Thinking, m.Steps, m.State, m.Error, m.Channel, m.CreatedAt, m.UpdatedAt)
+		_, err := db.ExecContext(ctx, `INSERT INTO agent_message (`+agentMessageColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+			m.ID, m.AgentID, m.Role, m.Content, m.Thinking, m.Steps, m.State, m.Error, m.Channel, m.CreatedAt, m.UpdatedAt, attachmentsOrEmpty(m.Attachments))
 		return err
 	})
 }
@@ -44,7 +46,7 @@ func (s *Store) ListAgentMessages(ctx context.Context, agentID string, limit int
 	var out []*AgentMessage
 	for rows.Next() {
 		m := &AgentMessage{}
-		if err := rows.Scan(&m.ID, &m.AgentID, &m.Role, &m.Content, &m.Thinking, &m.Steps, &m.State, &m.Error, &m.Channel, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.AgentID, &m.Role, &m.Content, &m.Thinking, &m.Steps, &m.State, &m.Error, &m.Channel, &m.CreatedAt, &m.UpdatedAt, &m.Attachments); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -57,4 +59,11 @@ func (s *Store) DeleteAgentMessages(ctx context.Context, agentID string) error {
 		_, err := db.ExecContext(ctx, `DELETE FROM agent_message WHERE agent_id = ?`, agentID)
 		return err
 	})
+}
+
+func attachmentsOrEmpty(v string) string {
+	if v == "" {
+		return "[]"
+	}
+	return v
 }

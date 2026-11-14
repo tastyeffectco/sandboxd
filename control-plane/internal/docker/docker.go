@@ -56,6 +56,7 @@ type RunSpec struct {
 	Labels      []string // --label key=value
 	User        string   // --user uid:gid ("" = the image's user)
 	ShmSize     string   // --shm-size (e.g. 1g for a browser); "" = docker default
+	Init        bool     // --init: reap child processes (browsers leave zombies)
 	Restart     string   // --restart policy ("" = none)
 	Image       string   // last positional
 	Cmd         []string // optional CMD override
@@ -117,6 +118,9 @@ func (c *Client) Run(ctx context.Context, spec RunSpec) (string, error) {
 	}
 	if spec.User != "" {
 		args = append(args, "--user", spec.User)
+	}
+	if spec.Init {
+		args = append(args, "--init")
 	}
 	if spec.ShmSize != "" {
 		args = append(args, "--shm-size="+spec.ShmSize)

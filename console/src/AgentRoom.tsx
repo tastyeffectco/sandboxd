@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, AgentInstance, AgentMessageRow, AgentStep } from './api'
+import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep, ModelProvider } from './api'
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
 import { StatusPill } from './design/kit'
@@ -7,6 +7,24 @@ import { StatusPill } from './design/kit'
 // One agent's own window: one continuous conversation, like a chat in Telegram.
 // The engine keeps the thread and writes replies itself, so closing this
 // window or the app never loses a message or stops a reply.
+
+// The agent's own app (OpenClaw's Control panel) opens inside this window in
+// the desktop app, on a private address only that agent's app can use. The
+// engine signs the person in: no token to paste, nothing to pair.
+export function agentAppUrl(agent: Pick<AgentInstance, 'id' | 'ui_label'>): string {
+  if (!agent.ui_label || !window.sandboxdDesktop || !/^[0-9a-z]{6,40}$/i.test(agent.id)) return ''
+  return `http://ui-${agent.id.toLowerCase()}.localhost:${location.port}/`
+}
+
+type View = 'chat' | 'app'
+const viewKey = (id: string) => `sandboxd.agent-view.${id}`
+function savedView(id: string): View {
+  try {
+    return localStorage.getItem(viewKey(id)) === 'app' ? 'app' : 'chat'
+  } catch {
+    return 'chat'
+  }
+}
 
 // Tool names in everyday words. Internal bookkeeping tools are not shown.
 const HIDDEN = /^(tool_(describe|search|call)|todo|think|clarify)$/
@@ -62,11 +80,28 @@ export function AgentRoom({
   reloadApps: () => void
 }) {
   const [messages, setMessages] = useState<AgentMessageRow[] | null>(null)
+  const [files, setFiles] = useState<Pending[]>([])
+  const [dragging, setDragging] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
+  const uploading = files.some((f) => !f.file)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [sending, setSending] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   const seen = useRef<Record<string, string>>({})
+  const appUrl = agentAppUrl(agent)
+  const chatless = agent.chat === false
+  const [view, setView] = useState<View>(() => (chatless ? 'app' : appUrl ? savedView(agent.id) : 'chat'))
+  const [appOpened, setAppOpened] = useState(view === 'app' || chatless)
+  const choose = (next: View) => {
+    setView(next)
+    if (next === 'app') setAppOpened(true)
+    try {
+      localStorage.setItem(viewKey(agent.id), next)
+    } catch {
+      /* remembered for this visit only */
+    }
+  }
   const running = agent.status === 'running'
   const working = sending || !!messages?.some((m) => m.state === 'working')
 
@@ -105,17 +140,60 @@ export function AgentRoom({
     end.current?.scrollIntoView?.({ block: 'end' })
   }, [count, lastLength])
 
-  const send = async (text: string) => {
+  // Attach: the paperclip, dropping files on the window, or pasting.
+  const attach = (list: FileList | File[] | null) => {
+    const picked = Array.from(list || [])
+    if (!picked.length) return
+    if (files.length + picked.length > MAX_FILES) {
+      onError(`You can send up to ${MAX_FILES} files at a time.`)
+      return
+    }
+    for (const f of picked) {
+      if (f.size > MAX_FILE_BYTES) {
+        onError(`${f.name} is too big. Files can be up to 25 MB.`)
+        continue
+      }
+      if (!f.size) continue
+      const key = `${Date.now()}-${Math.random()}`
+      const name = f.name || (f.type.startsWith('image/') ? `pasted-image.${f.type.slice(6) || 'png'}` : 'file')
+      const preview = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined
+      setFiles((prev) => [...prev, { key, name, size: f.size, preview }])
+      api
+        .uploadAgentFile(agent.id, f, name)
+        .then((file) => setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, file } : p))))
+        .catch((e) => {
+          setFiles((prev) => prev.filter((p) => p.key !== key))
+          if (preview) URL.revokeObjectURL(preview)
+          onError(`${name} could not be attached: ${(e as Error).message}`)
+        })
+    }
+  }
+  const unattach = (key: string) =>
+    setFiles((prev) => {
+      const gone = prev.find((p) => p.key === key)
+      if (gone?.preview) URL.revokeObjectURL(gone.preview)
+      return prev.filter((p) => p.key !== key)
+    })
+
+  const send = async (text: string, withFiles = true) => {
     const content = text.trim()
-    if (!content || working || !running) return
+    const attached = withFiles ? files.filter((f) => f.file) : []
+    if ((!content && !attached.length) || working || !running || (withFiles && uploading)) return
     setDraft('')
+    if (withFiles) setFiles([])
     setSending(true)
     try {
-      const r = await api.sendAgentMessage(agent.id, content)
+      const r = await api.sendAgentMessage(
+        agent.id,
+        content,
+        attached.map((f) => f.file!.id),
+      )
       for (const m of r.messages) seen.current[m.id] = m.state
       setMessages((prev) => [...(prev || []), ...r.messages])
+      for (const f of attached) if (f.preview) URL.revokeObjectURL(f.preview)
     } catch (e) {
       setDraft(content)
+      if (withFiles) setFiles(attached)
       onError((e as Error).message)
     } finally {
       setSending(false)
@@ -137,7 +215,24 @@ export function AgentRoom({
   const lastUser = [...(messages || [])].reverse().find((m) => m.role === 'user')
   const initial = agent.name.slice(0, 1).toUpperCase()
   return (
-    <section className="agent-room" data-testid="agent-room">
+    <section
+      className={dragging ? 'agent-room dragging' : 'agent-room'}
+      data-testid="agent-room"
+      onDragOver={(e) => {
+        if (view !== 'chat' || !running || !e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragging(false)
+      }}
+      onDrop={(e) => {
+        if (view !== 'chat' || !running || !e.dataTransfer.files.length) return
+        e.preventDefault()
+        setDragging(false)
+        attach(e.dataTransfer.files)
+      }}
+    >
       <header className="agent-room-header">
         <span className="agent-avatar" aria-hidden="true">
           {initial}
@@ -146,7 +241,7 @@ export function AgentRoom({
           <h1>{agent.name}</h1>
           <span>
             <StatusPill status={agent.status === 'missing' ? 'not started' : agent.status} />
-            <small title="AI model">{agent.model}</small>
+            <ModelSwitch agent={agent} disabled={busy || working} onChanged={onChanged} onError={onError} />
           </span>
         </div>
         <div className="agent-room-actions">
@@ -159,7 +254,7 @@ export function AgentRoom({
               Start
             </button>
           )}
-          <button
+          {!chatless && <button
             className="text-button"
             disabled={busy || working || !count}
             onClick={() => {
@@ -172,7 +267,7 @@ export function AgentRoom({
             data-testid="agent-clear"
           >
             Clear conversation
-          </button>
+          </button>}
           <button
             className="text-button danger"
             disabled={busy}
@@ -189,7 +284,43 @@ export function AgentRoom({
         </div>
       </header>
 
-      <div className="agent-room-log" role="log" aria-live="polite" data-testid="agent-log">
+      {chatless && !appUrl && (
+        <p className="bubble-note" style={{ margin: 'auto' }}>
+          Open the sandboxd desktop app to use {agent.name}.
+        </p>
+      )}
+
+      {appUrl && !chatless && (
+        <nav className="agent-views" role="tablist" aria-label={`${agent.name} views`}>
+          <button role="tab" aria-selected={view === 'chat'} className={view === 'chat' ? 'active' : ''} onClick={() => choose('chat')} data-testid="agent-view-chat">
+            <Icon name="spark" size={14} /> Chat
+          </button>
+          <button role="tab" aria-selected={view === 'app'} className={view === 'app' ? 'active' : ''} onClick={() => choose('app')} data-testid="agent-view-app">
+            <Icon name="grid" size={14} /> {agent.ui_label}
+          </button>
+        </nav>
+      )}
+
+      {appUrl && appOpened && (
+        <div className="agent-app" hidden={view !== 'app'} data-testid="agent-app">
+          {running ? (
+            <iframe
+              src={appUrl}
+              title={`${agent.name} ${agent.ui_label}`}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+              allow="clipboard-read; clipboard-write"
+            />
+          ) : (
+            <p className="bubble-note" style={{ margin: 'auto' }}>
+              {agent.status === 'starting'
+                ? `${agent.name} is getting ready… its ${agent.ui_label} opens in about a minute.`
+                : `${agent.name} is paused. Start it to open its ${agent.ui_label}.`}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="agent-room-log" hidden={view !== 'chat'} role="log" aria-live="polite" data-testid="agent-log">
         {messages === null && <p className="bubble-note" style={{ margin: 'auto' }}>Loading the conversation…</p>}
         {messages?.length === 0 && (
           <div className="agent-room-empty">
@@ -211,6 +342,13 @@ export function AgentRoom({
           m.role === 'user' ? (
             <div key={m.id} className="bubble-row mine">
               <div className="bubble mine" data-testid="agent-you">
+                {(m.attachments || []).length > 0 && (
+                  <div className="bubble-files" data-testid="agent-files">
+                    {(m.attachments || []).map((f) => (
+                      <AttachedFile key={f.id} agentId={agent.id} file={f} />
+                    ))}
+                  </div>
+                )}
                 {m.content}
               </div>
             </div>
@@ -273,7 +411,7 @@ export function AgentRoom({
                   <p className="bubble-note error" role="alert">
                     {m.error || `${agent.name} couldn't answer.`}{' '}
                     {lastUser && i === messages.length - 1 && running && (
-                      <button className="text-button" onClick={() => void send(lastUser.content)}>
+                      <button className="text-button" onClick={() => void send(lastUser.content, false)}>
                         Try again
                       </button>
                     )}
@@ -286,16 +424,60 @@ export function AgentRoom({
         <div ref={end} />
       </div>
 
+      {files.length > 0 && (
+        <div className="agent-attachments" hidden={view !== 'chat'} data-testid="agent-attachments">
+          {files.map((f) => (
+            <span key={f.key} className={f.file ? 'attachment' : 'attachment uploading'}>
+              {f.preview ? <img src={f.preview} alt="" /> : <Icon name="book" size={14} />}
+              <span className="attachment-name">{f.name}</span>
+              <small>{f.file ? fileSize(f.size) : 'Attaching…'}</small>
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => unattach(f.key)}>
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <form
+        hidden={view !== 'chat'}
         className="agent-composer"
         onSubmit={(e) => {
           e.preventDefault()
           void send(draft)
         }}
       >
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            attach(e.target.files)
+            e.target.value = ''
+          }}
+          data-testid="agent-file-input"
+        />
+        <button
+          type="button"
+          className="composer-attach"
+          disabled={!running}
+          onClick={() => picker.current?.click()}
+          title="Attach files"
+          data-testid="agent-attach"
+        >
+          <Icon name="plus" size={18} />
+          <span className="sr-only">Attach files</span>
+        </button>
         <textarea
           value={draft}
           rows={1}
+          onPaste={(e) => {
+            if (e.clipboardData.files.length) {
+              e.preventDefault()
+              attach(e.clipboardData.files)
+            }
+          }}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -324,12 +506,110 @@ export function AgentRoom({
             Stop
           </button>
         ) : (
-          <button type="submit" className="composer-send" disabled={!running || !draft.trim()} data-testid="agent-send">
+          <button
+            type="submit"
+            className="composer-send"
+            disabled={!running || uploading || (!draft.trim() && !files.length)}
+            data-testid="agent-send"
+          >
             <Icon name="arrow" size={16} />
             <span className="sr-only">Send</span>
           </button>
         )}
       </form>
     </section>
+  )
+}
+
+const MAX_FILES = 10
+const MAX_FILE_BYTES = 25 * 1024 * 1024
+type Pending = { key: string; name: string; size: number; preview?: string; file?: AgentAttachment }
+
+export function fileSize(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`
+  return `${n} bytes`
+}
+
+// A file in the conversation: pictures show, anything else downloads.
+function AttachedFile({ agentId, file }: { agentId: string; file: AgentAttachment }) {
+  const url = api.agentFileUrl(agentId, file.id)
+  if (file.type.startsWith('image/') && file.type !== 'image/svg+xml')
+    return (
+      <a href={url} download={file.name} className="bubble-image" title={file.name}>
+        <img src={url} alt={file.name} loading="lazy" />
+      </a>
+    )
+  return (
+    <a href={url} download={file.name} className="bubble-file">
+      <Icon name="book" size={14} />
+      <span>{file.name}</span>
+      <small>{fileSize(file.size)}</small>
+    </a>
+  )
+}
+
+// The AI model the agent thinks with; changing it restarts the agent (its
+// memory and skills stay).
+function ModelSwitch({
+  agent,
+  disabled,
+  onChanged,
+  onError,
+}: {
+  agent: AgentInstance
+  disabled: boolean
+  onChanged: () => void
+  onError: (message: string) => void
+}) {
+  const [options, setOptions] = useState<ModelProvider[] | null>(null)
+  const [saving, setSaving] = useState(false)
+  if (!options)
+    return (
+      <button
+        className="agent-model"
+        title="Change the AI model"
+        disabled={disabled}
+        onClick={() =>
+          void api
+            .listModelProviders()
+            .then((m) => setOptions(m.filter((x) => x.protocol === 'openai-completions' && x.models.length > 0)))
+            .catch((e) => onError((e as Error).message))
+        }
+        data-testid="agent-model-change"
+      >
+        {agent.model} <Icon name="chevron" size={11} />
+      </button>
+    )
+  return (
+    <select
+      className="agent-model"
+      autoFocus
+      disabled={saving}
+      value={agent.connection_id}
+      onBlur={() => !saving && setOptions(null)}
+      onChange={async (e) => {
+        const next = e.target.value
+        if (next === agent.connection_id) return setOptions(null)
+        setSaving(true)
+        try {
+          await api.setAgentModel(agent.id, next)
+          onChanged()
+        } catch (err) {
+          onError((err as Error).message)
+        } finally {
+          setSaving(false)
+          setOptions(null)
+        }
+      }}
+      aria-label="AI model"
+      data-testid="agent-model-select"
+    >
+      {options.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.name} · {m.models[0].id}
+        </option>
+      ))}
+    </select>
   )
 }

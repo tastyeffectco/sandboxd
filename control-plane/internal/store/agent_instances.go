@@ -82,6 +82,14 @@ func (s *Store) RotateAgentInstanceSecret(ctx context.Context, id, hash string) 
 	})
 }
 
+// SetAgentInstanceModel changes the model connection an agent thinks with.
+func (s *Store) SetAgentInstanceModel(ctx context.Context, id, connectionID, model string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET connection_id = ?, model = ? WHERE id = ?`, connectionID, model, id)
+		return err
+	})
+}
+
 func (s *Store) DeleteAgentInstance(ctx context.Context, id string) error {
 	return s.submit(ctx, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `DELETE FROM agent_instance WHERE id = ?`, id)

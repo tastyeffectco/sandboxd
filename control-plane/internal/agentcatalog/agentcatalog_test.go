@@ -40,7 +40,8 @@ func TestPackagesArePinned(t *testing.T) {
 }
 
 func TestRenderOpenClawConfig(t *testing.T) {
-	got, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s3cret", Model: "gpt-4.1-mini"})
+	got, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s3cret", Model: "gpt-4.1-mini",
+		ProxyIP: "172.18.0.4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +62,14 @@ func TestRenderOpenClawConfig(t *testing.T) {
 		`"canvas"`,
 		`"toolSearch": {`,
 		`"enabled": false`,
+		// sandboxd alone signs people in, so the Control panel needs no pairing.
+		`"trustedProxies": [
+      "172.18.0.4"
+    ]`,
+		`"mode": "trusted-proxy"`,
+		`"userHeader": "x-sandboxd-user"`,
+		`"deviceAutoApprove": {`,
+		`"http://a-a1:18789"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("openclaw.json is missing %s:\n%s", want, got)
@@ -70,8 +79,37 @@ func TestRenderOpenClawConfig(t *testing.T) {
 
 func TestEveryPackageCanStart(t *testing.T) {
 	for _, p := range List() {
-		if p.Render == nil || p.ConfigFile == "" || p.ChatModel == "" || p.APIKeyEnv == "" || p.APIPort == 0 || p.StatePath == "" {
+		chatOK := !p.Chat || (p.ChatModel != "" && (p.APIKeyEnv != "" || p.ProxyAuth))
+		configOK := (p.Render != nil && p.ConfigFile != "") || p.RenderEnv != nil
+		if !chatOK || !configOK || p.APIPort == 0 || p.StatePath == "" || (!p.Chat && p.UIPort == 0) {
 			t.Errorf("%s is missing what sandboxd needs to start it: %+v", p.ID, p)
 		}
+	}
+}
+
+func TestOpenClawConfigNeedsSandboxdAddress(t *testing.T) {
+	if _, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m"}); err == nil {
+		t.Fatal("without sandboxd's address OpenClaw would trust no one, or everyone")
+	}
+}
+
+func TestProxySignInAgentsGetNoSharedToken(t *testing.T) {
+	// OpenClaw will not start with a shared token next to trusted-proxy auth.
+	if OpenClaw.APIKeyEnv != "" {
+		t.Errorf("OpenClaw gets %s", OpenClaw.APIKeyEnv)
+	}
+}
+
+func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
+	env := strings.Join(RenderOpenMausBotEnv(Config{ProxyURL: "http://sandboxd:9100/", AgentID: "m1", Secret: "s", Model: "deepseek/x"}), "\n")
+	// Loopback: it allows plain HTTP for images and computer tools only there.
+	for _, want := range []string{"SANDBOXD_MODEL_UPSTREAM=sandboxd:9100", "OPENAI_COMPAT_URL=http://127.0.0.1:9101/agents/m1/v1",
+		"OPENAI_COMPAT_API_KEY=s", "OPENAI_COMPAT_MODEL=deepseek/x"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("missing %s in\n%s", want, env)
+		}
+	}
+	if !strings.Contains(strings.Join(OpenMausBot.Env, " "), "OMB_BOT_BOX=0") {
+		t.Error("its per-bot sandbox needs user namespaces, which sandboxd's profile does not grant")
 	}
 }

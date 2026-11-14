@@ -312,6 +312,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
+  return answer<T>(res)
+}
+
+async function answer<T>(res: Response): Promise<T> {
   if (!res.ok) {
     if (res.status === 401 && onUnauthorized) onUnauthorized()
     let message = `${res.status} ${res.statusText}`
@@ -364,6 +368,10 @@ export interface AgentCatalogEntry {
   download: string
   memory: string
   telegram: boolean
+  /** It leans on many tools at once: suggest the strongest model connected. */
+  strong_model?: boolean
+  ui_label?: string
+  chat?: boolean
 }
 export interface AgentInstance {
   id: string
@@ -376,6 +384,10 @@ export interface AgentInstance {
   apps_today: number
   apps_per_day: number
   created_at: string
+  /** The agent's own app (e.g. OpenClaw's Control panel), when it has one. */
+  ui_label?: string
+  /** sandboxd's chat can talk to it; otherwise it is used in its own app. */
+  chat?: boolean
 }
 // One conversation per agent, kept by the engine like a chat app: replies keep
 // going when the window closes. Every agent's stream becomes the same shape.
@@ -390,6 +402,14 @@ export interface AgentMessageRow {
   error?: string
   channel: string
   created_at: string
+  attachments?: AgentAttachment[]
+}
+/** A file the person attached in an agent's chat. */
+export interface AgentAttachment {
+  id: string
+  name: string
+  type: string
+  size: number
 }
 
 export interface AgentInstanceInput {
@@ -409,10 +429,25 @@ export const api = {
   startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
   stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  setAgentModel: (id: string, connection_id: string) =>
+    req<AgentInstance>('PATCH', `/v1/agent-instances/${encodeURIComponent(id)}`, { connection_id }),
   listAgentMessages: (id: string) =>
     req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
-  sendAgentMessage: (id: string, content: string) =>
-    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, { content }),
+  sendAgentMessage: (id: string, content: string, attachments: string[] = []) =>
+    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, {
+      content,
+      attachments,
+    }),
+  uploadAgentFile: async (id: string, file: Blob, name: string) =>
+    answer<AgentAttachment>(
+      await fetch(`/v1/agent-instances/${encodeURIComponent(id)}/files?name=${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      }),
+    ),
+  agentFileUrl: (id: string, fileId: string) =>
+    `/v1/agent-instances/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}`,
   stopAgentMessage: (id: string) => req<void>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages/stop`),
   clearAgentMessages: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
