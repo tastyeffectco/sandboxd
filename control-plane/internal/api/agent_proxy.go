@@ -66,7 +66,22 @@ func (s *Server) agentModelRequest(w http.ResponseWriter, r *http.Request, h *st
 		http.Error(w, "the agent's model connection is unavailable: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	// An agent thinks with the model it was given, whatever name it sends:
+	// one it remembered from before the person changed its model still works.
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<20))
+	if err != nil {
+		http.Error(w, "inference request is too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	var input map[string]json.RawMessage
+	if json.Unmarshal(body, &input) == nil && input != nil {
+		input["model"], _ = json.Marshal(h.Model)
+		body, _ = json.Marshal(input)
+	}
 	r2 := r.Clone(r.Context())
+	r2.Body = io.NopCloser(bytes.NewReader(body))
+	r2.ContentLength = int64(len(body))
+	r2.Header.Del("Content-Length")
 	r2.URL.Path = "/providers/" + conn.ID + "/v1/chat/completions"
 	r2.URL.RawPath = ""
 	r2.URL.RawQuery = ""
