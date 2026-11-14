@@ -40,6 +40,8 @@ type v1AgentInstance struct {
 	AppsToday    int    `json:"apps_today"`
 	AppsPerDay   int    `json:"apps_per_day"`
 	CreatedAt    string `json:"created_at"`
+	// UILabel names the agent's own app, served at ui/; empty when it has none.
+	UILabel string `json:"ui_label,omitempty"`
 }
 
 // agentAppsPerDay caps how many apps one agent may create per day.
@@ -80,7 +82,15 @@ func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) 
 	}
 	return v1AgentInstance{ID: h.ID, Package: h.Package, Name: h.Name, ConnectionID: h.ConnectionID, Model: h.Model,
 		Status: status, Telegram: len(h.TelegramCiphertext) > 0, AppsToday: today, AppsPerDay: agentAppsPerDay,
-		CreatedAt: h.CreatedAt}
+		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package)}
+}
+
+// uiLabel names the agent's own app, or "" when it has none.
+func uiLabel(pkgID string) string {
+	if pkg, ok := agentcatalog.Get(pkgID); ok && pkg.UIPort != 0 {
+		return pkg.UILabel
+	}
+	return ""
 }
 
 // GET /v1/agent-catalog
@@ -229,8 +239,13 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	if err := os.Chown(dir, uid, gid); err != nil {
 		return fmt.Errorf("prepare the agent's storage: %w", err)
 	}
-	config, err := pkg.Render(agentcatalog.Config{
-		ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model})
+	cfg := agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model}
+	if pkg.ProxyAuth {
+		if cfg.ProxyIP, err = s.agentProxyIP(ctx); err != nil {
+			return err
+		}
+	}
+	config, err := pkg.Render(cfg)
 	if err != nil {
 		return err
 	}
@@ -240,6 +255,14 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	}
 	if err := os.Chown(cfgPath, uid, gid); err != nil {
 		return err
+	}
+	if pkg.ProxyAuth {
+		s.agentCfg.mu.Lock()
+		if s.agentCfg.ip == nil {
+			s.agentCfg.ip = map[string]string{}
+		}
+		s.agentCfg.ip[h.ID] = cfg.ProxyIP
+		s.agentCfg.mu.Unlock()
 	}
 	if err := s.Store.RotateAgentInstanceSecret(ctx, h.ID, hashSecret(secret)); err != nil {
 		return err
@@ -306,8 +329,8 @@ func (s *Server) v1StartAgentInstance(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if _, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); ierr != nil {
 		err = s.provisionAgent(r.Context(), h, pkg)
-	} else {
-		err = s.Docker.Start(r.Context(), agentContainer(h.ID))
+	} else if err = s.Docker.Start(r.Context(), agentContainer(h.ID)); err == nil {
+		err = s.refreshAgentConfig(r.Context(), h, pkg)
 	}
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "could not start the agent: "+err.Error())
@@ -373,6 +396,9 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
+		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")
@@ -384,6 +410,7 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 	up, _ := http.NewRequestWithContext(ctx, http.MethodPost,
 		fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort), bytes.NewReader(body))
 	up.Header.Set("Authorization", "Bearer "+string(apiKey))
+	setAgentIdentity(up.Header)
 	up.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(up)
 	if err != nil {

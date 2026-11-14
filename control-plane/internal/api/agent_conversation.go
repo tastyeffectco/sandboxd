@@ -125,6 +125,9 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
+		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")

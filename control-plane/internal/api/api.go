@@ -35,6 +35,8 @@ import (
 
 // Server bundles the collaborators the handlers need.
 type Server struct {
+	// agentCfg remembers the sandboxd address each agent's config trusts.
+	agentCfg agentConfigs
 	// turns are the agents' replies being written right now.
 	turns          agentTurns
 	ModelProviders *modelprovider.Service
@@ -323,6 +325,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-instances/{id}/messages", s.observe("POST /v1/agent-instances/{id}/messages", s.v1SendAgentMessage))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/messages/stop", s.observe("POST /v1/agent-instances/{id}/messages/stop", s.v1StopAgentMessage))
 	mux.HandleFunc("DELETE /v1/agent-instances/{id}/messages", s.observe("DELETE /v1/agent-instances/{id}/messages", s.v1ClearAgentMessages))
+	// The agent's own app: pages and its WebSocket (GET), and its forms (POST).
+	mux.HandleFunc("GET /v1/agent-instances/{id}/ui/{path...}", s.observe("GET /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/ui/{path...}", s.observe("POST /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))

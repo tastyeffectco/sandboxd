@@ -1854,6 +1854,31 @@ paths:
       summary: Stop the reply being written
       responses:
         "204": { description: Stopped }
+  /v1/agent-instances/{id}/ui/{path...}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: path, name: path, required: true, schema: { type: string }, description: Any path of the agent's app, empty for its start page }
+    get:
+      operationId: openAgentApp
+      tags: [agents]
+      summary: The agent's own app (e.g. OpenClaw's Control panel), signed in as its owner
+      description: >-
+        Pages, files and WebSocket upgrades are passed to the agent's own web
+        app. sandboxd signs the owner in with an identity header the agent
+        accepts from sandboxd's address only; sandboxd's credentials are never
+        passed on. Only agents whose instance has ui_label have an app.
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: postAgentApp
+      tags: [agents]
+      summary: A form or action of the agent's own app, signed in as its owner
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearerAuth:
@@ -1880,11 +1905,12 @@ components:
         name: { type: string }
         connection_id: { type: string }
         model: { type: string }
-        status: { type: string, enum: [running, stopped, missing] }
+        status: { type: string, enum: [running, starting, stopped, missing] }
         telegram: { type: boolean }
         apps_today: { type: integer }
         apps_per_day: { type: integer }
         created_at: { type: string, format: date-time }
+        ui_label: { type: string, description: "Name of the agent's own app, served at ui/; absent when it has none" }
     ClaudeSignIn:
       type: object
       properties:

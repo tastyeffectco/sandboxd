@@ -30,6 +30,15 @@ type Package struct {
 	ChatModel string `json:"-"`
 	// APIKeyEnv names the variable that sets the key for the agent's chat API.
 	APIKeyEnv string `json:"-"`
+	// UIPort serves the agent's own web app (its native interface), shown in
+	// the person's agent window next to sandboxd's chat. 0: it has none.
+	UIPort int `json:"-"`
+	// UILabel names that app for people, e.g. "Control panel".
+	UILabel string `json:"ui_label,omitempty"`
+	// ProxyAuth: the agent trusts sandboxd as its sign-in proxy (identity
+	// headers from sandboxd's address only), so its own app needs no token
+	// or device pairing. Its config is refreshed when sandboxd's address moves.
+	ProxyAuth bool `json:"-"`
 	// Env is fixed environment for the agent's container.
 	Env []string `json:"-"`
 	// ExecRun mounts an executable /run (supervisors such as s6 run from it).
@@ -83,6 +92,9 @@ var OpenClaw = Package{
 	User:        "1000:1000",
 	StatePath:   "/state",
 	APIPort:     18789,
+	UIPort:      18789,
+	UILabel:     "Control panel",
+	ProxyAuth:   true,
 	ChatModel:   "openclaw",
 	APIKeyEnv:   "OPENCLAW_GATEWAY_TOKEN",
 	// sandboxd owns openclaw.json (read-only to OpenClaw): OpenClaw restarts
@@ -127,7 +139,20 @@ type Config struct {
 	AgentID  string
 	Secret   string // the agent secret: model access and app tools
 	Model    string // the model id of the chosen connection
+	// ProxyIP is sandboxd's address on the agents' network: the only
+	// source trusted to sign people in (ProxyAuth packages).
+	ProxyIP string
 }
+
+// Identity headers sandboxd sends to ProxyAuth agents. The client address is
+// a fixed documentation address: requests through sandboxd are never local.
+const (
+	UserHeader = "X-Sandboxd-User"
+	User       = "owner"
+	ClientIP   = "192.0.2.1"
+	// UIOrigin is the Origin sandboxd presents for the agent's own app.
+	UIOrigin = "http://sandboxd-agent-ui"
+)
 
 // RenderHermesConfig returns config.yaml: the model goes through sandboxd's
 // proxy (the real key never enters the container), sandboxd's app tools are an
@@ -161,7 +186,8 @@ func RenderHermesConfig(c Config) (string, error) {
 // sandboxd's app tools as a streamable-HTTP MCP server. The secret stays in
 // the environment (SecretEnv); the file only references it.
 func RenderOpenClawConfig(c Config) (string, error) {
-	for name, v := range map[string]string{"proxy URL": c.ProxyURL, "agent id": c.AgentID, "model": c.Model} {
+	for name, v := range map[string]string{"proxy URL": c.ProxyURL, "agent id": c.AgentID, "model": c.Model,
+		"proxy address": c.ProxyIP} {
 		if v == "" {
 			return "", fmt.Errorf("openclaw config: %s is required", name)
 		}
@@ -169,8 +195,16 @@ func RenderOpenClawConfig(c Config) (string, error) {
 	base := strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID
 	ref := "${" + SecretEnv + "}"
 	cfg := map[string]any{
+		// Only sandboxd signs people in: its own chat and the person's
+		// Control panel arrive through sandboxd with an identity header, from
+		// sandboxd's address alone. Browsers enroll without pairing codes.
 		"gateway": map[string]any{"mode": "local", "bind": "lan",
-			"controlUi": map[string]any{"allowedOrigins": []string{"http://localhost:18789", "http://127.0.0.1:18789"}},
+			"trustedProxies": []string{c.ProxyIP},
+			"auth": map[string]any{"mode": "trusted-proxy",
+				"identityScopes": map[string]any{User: []string{"operator.admin"}},
+				"trustedProxy": map[string]any{"userHeader": strings.ToLower(UserHeader), "allowUsers": []string{User},
+					"deviceAutoApprove": map[string]any{"enabled": true}}},
+			"controlUi": map[string]any{"allowedOrigins": []string{UIOrigin}},
 			"http":      map[string]any{"endpoints": map[string]any{"chatCompletions": map[string]any{"enabled": true}}}},
 		"models": map[string]any{"mode": "merge", "providers": map[string]any{"sandboxd": map[string]any{
 			"baseUrl": base + "/v1", "apiKey": ref, "api": "openai-completions",

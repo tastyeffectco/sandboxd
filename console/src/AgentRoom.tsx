@@ -8,6 +8,24 @@ import { StatusPill } from './design/kit'
 // The engine keeps the thread and writes replies itself, so closing this
 // window or the app never loses a message or stops a reply.
 
+// The agent's own app (OpenClaw's Control panel) opens inside this window in
+// the desktop app, on a private address only that agent's app can use. The
+// engine signs the person in: no token to paste, nothing to pair.
+export function agentAppUrl(agent: Pick<AgentInstance, 'id' | 'ui_label'>): string {
+  if (!agent.ui_label || !window.sandboxdDesktop || !/^[0-9a-z]{6,40}$/i.test(agent.id)) return ''
+  return `http://ui-${agent.id.toLowerCase()}.localhost:${location.port}/`
+}
+
+type View = 'chat' | 'app'
+const viewKey = (id: string) => `sandboxd.agent-view.${id}`
+function savedView(id: string): View {
+  try {
+    return localStorage.getItem(viewKey(id)) === 'app' ? 'app' : 'chat'
+  } catch {
+    return 'chat'
+  }
+}
+
 // Tool names in everyday words. Internal bookkeeping tools are not shown.
 const HIDDEN = /^(tool_(describe|search|call)|todo|think|clarify)$/
 export function stepLabel(step: Pick<AgentStep, 'tool'>): string | null {
@@ -67,6 +85,18 @@ export function AgentRoom({
   const [sending, setSending] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   const seen = useRef<Record<string, string>>({})
+  const appUrl = agentAppUrl(agent)
+  const [view, setView] = useState<View>(() => (appUrl ? savedView(agent.id) : 'chat'))
+  const [appOpened, setAppOpened] = useState(view === 'app')
+  const choose = (next: View) => {
+    setView(next)
+    if (next === 'app') setAppOpened(true)
+    try {
+      localStorage.setItem(viewKey(agent.id), next)
+    } catch {
+      /* remembered for this visit only */
+    }
+  }
   const running = agent.status === 'running'
   const working = sending || !!messages?.some((m) => m.state === 'working')
 
@@ -189,7 +219,37 @@ export function AgentRoom({
         </div>
       </header>
 
-      <div className="agent-room-log" role="log" aria-live="polite" data-testid="agent-log">
+      {appUrl && (
+        <nav className="agent-views" role="tablist" aria-label={`${agent.name} views`}>
+          <button role="tab" aria-selected={view === 'chat'} className={view === 'chat' ? 'active' : ''} onClick={() => choose('chat')} data-testid="agent-view-chat">
+            <Icon name="spark" size={14} /> Chat
+          </button>
+          <button role="tab" aria-selected={view === 'app'} className={view === 'app' ? 'active' : ''} onClick={() => choose('app')} data-testid="agent-view-app">
+            <Icon name="grid" size={14} /> {agent.ui_label}
+          </button>
+        </nav>
+      )}
+
+      {appUrl && appOpened && (
+        <div className="agent-app" hidden={view !== 'app'} data-testid="agent-app">
+          {running ? (
+            <iframe
+              src={appUrl}
+              title={`${agent.name} ${agent.ui_label}`}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+              allow="clipboard-read; clipboard-write"
+            />
+          ) : (
+            <p className="bubble-note" style={{ margin: 'auto' }}>
+              {agent.status === 'starting'
+                ? `${agent.name} is getting ready… its ${agent.ui_label} opens in about a minute.`
+                : `${agent.name} is paused. Start it to open its ${agent.ui_label}.`}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="agent-room-log" hidden={view !== 'chat'} role="log" aria-live="polite" data-testid="agent-log">
         {messages === null && <p className="bubble-note" style={{ margin: 'auto' }}>Loading the conversation…</p>}
         {messages?.length === 0 && (
           <div className="agent-room-empty">
@@ -287,6 +347,7 @@ export function AgentRoom({
       </div>
 
       <form
+        hidden={view !== 'chat'}
         className="agent-composer"
         onSubmit={(e) => {
           e.preventDefault()

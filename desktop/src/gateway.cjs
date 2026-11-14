@@ -57,15 +57,29 @@ async function createGateway({
         ['same-origin', 'none'].includes(request.headers['sec-fetch-site']))
     )
   }
+  // An agent's own app (OpenClaw's Control panel) gets a private origin per
+  // agent, ui-<id>.localhost on this port, so its scripts can reach only
+  // that agent's app on the engine, never the sandboxd API.
+  const agentHost = (request) => {
+    const match = /^ui-([0-9a-z]{6,40})\.localhost:(\d+)$/.exec(request.headers.host || '')
+    return match && `127.0.0.1:${match[2]}` === host ? match[1] : ''
+  }
+  const authorizedAgent = (request, id) =>
+    equal(request.headers['x-sandboxd-desktop'], token) &&
+    (!request.headers.origin || request.headers.origin === `http://ui-${id}.${host.replace('127.0.0.1', 'localhost')}`)
   const error = (response, status, message) => {
     if (response.headersSent) return response.destroy()
     response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
     response.end(JSON.stringify({ error: { code: 'desktop_connection', message } }))
   }
-  const upstream = (request) => {
+  const upstream = (request, agent = '') => {
     if (!current) throw new Error('Connect an engine to continue.')
-    const target = new URL(request.url, current)
-    if (target.origin !== current || !target.pathname.startsWith('/v1/')) throw new Error('Invalid API path.')
+    const target = new URL(agent ? `/v1/agent-instances/${agent}/ui${request.url}` : request.url, current)
+    if (
+      target.origin !== current ||
+      !target.pathname.startsWith(agent ? `/v1/agent-instances/${agent}/ui/` : '/v1/')
+    )
+      throw new Error('Invalid API path.')
     // Do not forward browser cookies, capability tokens, proxy headers or
     // ambient credentials. The selected engine owns its own login session.
     const headers = {}
@@ -76,6 +90,7 @@ async function createGateway({
       'last-event-id',
       'range',
       'if-none-match',
+      ...(agent ? ['accept-language', 'if-modified-since', 'cache-control'] : []),
     ]) {
       if (request.headers[key] !== undefined) headers[key] = request.headers[key]
     }
@@ -88,6 +103,78 @@ async function createGateway({
     request.once('close', () => streams.delete(request))
     return request
   }
+  const forward = (request, response, agent = '') => {
+    let target, headers
+    try {
+      ;({ target, headers } = upstream(request, agent))
+    } catch (e) {
+      return error(response, 503, e.message)
+    }
+    const connectedGeneration = generation
+    const proxy = track(
+      (target.protocol === 'https:' ? https : http).request(
+        target,
+        { method: request.method, headers },
+        (remote) => {
+          // Redirects are never followed or handed to the renderer: credentials
+          // must not travel to another origin or to a non-API path.
+          if (remote.statusCode >= 300 && remote.statusCode < 400 && remote.statusCode !== 304) {
+            remote.resume()
+            return error(response, 502, 'The engine redirected this request. Use its final API origin.')
+          }
+          // An agent's app can never set the engine login.
+          if (!agent && connectedGeneration === generation) {
+            for (const cookie of remote.headers['set-cookie'] || []) {
+              const match = /^sbx_session=([^;]*)/i.exec(cookie)
+              if (match) {
+                engineSession = /max-age=0\b|max-age=-1\b/i.test(cookie) ? '' : match[1]
+                onSession(current, engineSession)
+              }
+            }
+          }
+          for (const key of [
+            'content-type',
+            'content-disposition',
+            'etag',
+            'content-range',
+            'accept-ranges',
+            ...(agent ? ['last-modified', 'cache-control'] : []),
+          ]) {
+            if (remote.headers[key]) response.setHeader(key, remote.headers[key])
+          }
+          // The agent's app keeps its own policy and may only be shown
+          // inside this app's window.
+          response.setHeader(
+            'content-security-policy',
+            agent
+              ? [remote.headers['content-security-policy'], `frame-ancestors ${origin}`].filter(Boolean)
+              : "default-src 'none'; sandbox; frame-ancestors 'none'",
+          )
+          response.writeHead(remote.statusCode || 502)
+          remote.on('error', () => response.destroy())
+          response.on('close', () => remote.destroy())
+          remote.pipe(response)
+        },
+      ),
+    )
+    proxy.on('error', (failure) =>
+      error(
+        response,
+        502,
+        (failure?.code === 'ECONNREFUSED' && onUnreachable()) ||
+          'Cannot reach the engine. Check the address and whether sandboxd is running.',
+      ),
+    )
+    // Task event streams stay open through quiet agent steps (a long install
+    // sends nothing for minutes); they end with the task, page or engine.
+    if (/^\/v1\/agent-instances\/[^/]+\/chat(\/stream)?$/.test(target.pathname))
+      proxy.setTimeout(agentChatTimeout, () => proxy.destroy())
+    else if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
+      proxy.setTimeout(idleTimeout, () => proxy.destroy())
+    request.on('aborted', () => proxy.destroy())
+    response.on('close', () => proxy.destroy())
+    request.pipe(proxy)
+  }
   const server = http.createServer(async (request, response) => {
     response.setHeader('x-content-type-options', 'nosniff')
     response.setHeader('referrer-policy', 'no-referrer')
@@ -97,6 +184,11 @@ async function createGateway({
       CSP.replace("script-src 'self'", `script-src ${origin}/assets/`),
     )
     response.setHeader('cache-control', 'no-store')
+    const agent = agentHost(request)
+    if (agent) {
+      if (!authorizedAgent(request, agent)) return error(response, 403, 'This connection belongs to the desktop app.')
+      return forward(request, response, agent)
+    }
     if (!authorized(request)) return error(response, 403, 'This connection belongs to the desktop app.')
     let url
     try {
@@ -104,73 +196,7 @@ async function createGateway({
     } catch {
       return error(response, 400, 'Invalid URL.')
     }
-    if (url.pathname.startsWith('/v1/')) {
-      let target, headers
-      try {
-        ;({ target, headers } = upstream(request))
-      } catch (e) {
-        return error(response, 503, e.message)
-      }
-      const connectedGeneration = generation
-      const proxy = track(
-        (target.protocol === 'https:' ? https : http).request(
-          target,
-          { method: request.method, headers },
-          (remote) => {
-            // Redirects are never followed or handed to the renderer: credentials
-            // must not travel to another origin or to a non-API path.
-            if (remote.statusCode >= 300 && remote.statusCode < 400 && remote.statusCode !== 304) {
-              remote.resume()
-              return error(response, 502, 'The engine redirected this request. Use its final API origin.')
-            }
-            if (connectedGeneration === generation) {
-              for (const cookie of remote.headers['set-cookie'] || []) {
-                const match = /^sbx_session=([^;]*)/i.exec(cookie)
-                if (match) {
-                  engineSession = /max-age=0\b|max-age=-1\b/i.test(cookie) ? '' : match[1]
-                  onSession(current, engineSession)
-                }
-              }
-            }
-            for (const key of [
-              'content-type',
-              'content-disposition',
-              'etag',
-              'content-range',
-              'accept-ranges',
-            ]) {
-              if (remote.headers[key]) response.setHeader(key, remote.headers[key])
-            }
-            response.setHeader(
-              'content-security-policy',
-              "default-src 'none'; sandbox; frame-ancestors 'none'",
-            )
-            response.writeHead(remote.statusCode || 502)
-            remote.on('error', () => response.destroy())
-            response.on('close', () => remote.destroy())
-            remote.pipe(response)
-          },
-        ),
-      )
-      proxy.on('error', (failure) =>
-        error(
-          response,
-          502,
-          (failure?.code === 'ECONNREFUSED' && onUnreachable()) ||
-            'Cannot reach the engine. Check the address and whether sandboxd is running.',
-        ),
-      )
-      // Task event streams stay open through quiet agent steps (a long install
-      // sends nothing for minutes); they end with the task, page or engine.
-      if (/^\/v1\/agent-instances\/[^/]+\/chat(\/stream)?$/.test(target.pathname))
-        proxy.setTimeout(agentChatTimeout, () => proxy.destroy())
-      else if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
-        proxy.setTimeout(idleTimeout, () => proxy.destroy())
-      request.on('aborted', () => proxy.destroy())
-      response.on('close', () => proxy.destroy())
-      request.pipe(proxy)
-      return
-    }
+    if (url.pathname.startsWith('/v1/')) return forward(request, response)
     if (!['GET', 'HEAD'].includes(request.method)) return error(response, 405, 'Method not allowed.')
     try {
       const decoded = decodeURIComponent(url.pathname)
@@ -189,11 +215,12 @@ async function createGateway({
     socket.once('close', () => sockets.delete(socket))
   })
   server.on('upgrade', (request, socket, head) => {
-    if (!authorized(request) || !/^\/v1\/sandboxes\/[^/?]+\/terminal$/.test(request.url))
+    const agent = agentHost(request)
+    if (agent ? !authorizedAgent(request, agent) : !authorized(request) || !/^\/v1\/sandboxes\/[^/?]+\/terminal$/.test(request.url))
       return socket.destroy()
     let target, headers
     try {
-      ;({ target, headers } = upstream(request))
+      ;({ target, headers } = upstream(request, agent))
     } catch {
       return socket.destroy()
     }

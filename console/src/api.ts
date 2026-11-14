@@ -376,6 +376,8 @@ export interface AgentInstance {
   apps_today: number
   apps_per_day: number
   created_at: string
+  /** The agent's own app (e.g. OpenClaw's Control panel), when it has one. */
+  ui_label?: string
 }
 // One conversation per agent, kept by the engine like a chat app: replies keep
 // going when the window closes. Every agent's stream becomes the same shape.

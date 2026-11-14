@@ -40,7 +40,8 @@ func TestPackagesArePinned(t *testing.T) {
 }
 
 func TestRenderOpenClawConfig(t *testing.T) {
-	got, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s3cret", Model: "gpt-4.1-mini"})
+	got, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s3cret", Model: "gpt-4.1-mini",
+		ProxyIP: "172.18.0.4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +62,14 @@ func TestRenderOpenClawConfig(t *testing.T) {
 		`"canvas"`,
 		`"toolSearch": {`,
 		`"enabled": false`,
+		// sandboxd alone signs people in, so the Control panel needs no pairing.
+		`"trustedProxies": [
+      "172.18.0.4"
+    ]`,
+		`"mode": "trusted-proxy"`,
+		`"userHeader": "x-sandboxd-user"`,
+		`"deviceAutoApprove": {`,
+		`"http://sandboxd-agent-ui"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("openclaw.json is missing %s:\n%s", want, got)
@@ -73,5 +82,11 @@ func TestEveryPackageCanStart(t *testing.T) {
 		if p.Render == nil || p.ConfigFile == "" || p.ChatModel == "" || p.APIKeyEnv == "" || p.APIPort == 0 || p.StatePath == "" {
 			t.Errorf("%s is missing what sandboxd needs to start it: %+v", p.ID, p)
 		}
+	}
+}
+
+func TestOpenClawConfigNeedsSandboxdAddress(t *testing.T) {
+	if _, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m"}); err == nil {
+		t.Fatal("without sandboxd's address OpenClaw would trust no one, or everyone")
 	}
 }

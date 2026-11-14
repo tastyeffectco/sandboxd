@@ -2911,3 +2911,46 @@ hr {
 .sidebar-agent .project-initial {
   border-radius: 50%;
 }
+
+/* An agent's own app next to its chat (desktop app). */
+.agent-views {
+  display: flex;
+  gap: 4px;
+  padding: 0 clamp(16px, 5vw, 64px);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.agent-views button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agent-views button.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+.agent-app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.agent-app iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+.agent-room-log[hidden],
+.agent-composer[hidden],
+.agent-app[hidden] {
+  display: none !important;
+}
