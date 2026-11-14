@@ -57,6 +57,9 @@ type Package struct {
 	RenderEnv func(Config) []string `json:"-"`
 	// Init runs a minimal init that reaps child processes (browsers).
 	Init bool `json:"-"`
+	// Revision changes when its container must be made again (new
+	// command or environment); the agent's data stays.
+	Revision string `json:"-"`
 	// Chat: sandboxd's own chat window can talk to it. Agents without it
 	// open on their own app.
 	Chat bool `json:"chat"`
@@ -154,6 +157,10 @@ var OpenMausBot = Package{
 	UILogin:     "pairing",
 	Env: []string{"HOME=/data", "OMB_LAN=1", "OMB_BOT_BOX=0", "OMB_SERVER_NAME=sandboxd",
 		"OPENAI_COMPAT_PROVIDER=sandboxd"},
+	// It accepts plain HTTP for images and computer tools only on loopback,
+	// so a small relay on its loopback carries model calls to sandboxd.
+	Cmd:        []string{"sh", "-c", ombStart},
+	Revision:   "2",
 	RenderEnv:  RenderOpenMausBotEnv,
 	Init:       true,
 	UploadsDir: "uploads",
@@ -165,11 +172,31 @@ var OpenMausBot = Package{
 
 var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw, OpenMausBot.ID: OpenMausBot}
 
+// ombModelPort is the loopback port of the relay to sandboxd's model proxy.
+const ombModelPort = "9101"
+
+// ombStart starts the relay, then OpenMausBot itself.
+const ombStart = `node -e '
+const net = require("net"), [host, port] = process.env.SANDBOXD_MODEL_UPSTREAM.split(":");
+net.createServer((c) => {
+  const u = net.connect(Number(port), host);
+  c.on("error", () => u.destroy()); u.on("error", () => c.destroy());
+  c.pipe(u).pipe(c);
+}).listen(` + ombModelPort + `, "127.0.0.1");
+' &
+exec node dist-server/server-launcher.js`
+
 // RenderOpenMausBotEnv points its built-in OpenAI-compatible engine at
-// sandboxd's model proxy (the real key never enters the container).
+// sandboxd's model proxy through the loopback relay (the real key never
+// enters the container).
 func RenderOpenMausBotEnv(c Config) []string {
-	base := strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID + "/v1"
-	return []string{"OPENAI_COMPAT_URL=" + base, "OPENAI_COMPAT_API_KEY=" + c.Secret, "OPENAI_COMPAT_MODEL=" + c.Model}
+	upstream := strings.TrimPrefix(strings.TrimPrefix(strings.TrimRight(c.ProxyURL, "/"), "http://"), "https://")
+	if !strings.Contains(upstream, ":") {
+		upstream += ":80"
+	}
+	base := "http://127.0.0.1:" + ombModelPort + "/agents/" + c.AgentID + "/v1"
+	return []string{"SANDBOXD_MODEL_UPSTREAM=" + upstream, "OPENAI_COMPAT_URL=" + base,
+		"OPENAI_COMPAT_API_KEY=" + c.Secret, "OPENAI_COMPAT_MODEL=" + c.Model}
 }
 
 // Get returns a package by id.

@@ -80,7 +80,7 @@ func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance,
 	// memory and skills stay in its folder).
 	if s.Docker != nil {
 		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil &&
-			c.Config.Labels["sandboxd.agent.ui"] != uiVersion {
+			c.Config.Labels["sandboxd.agent.ui"] != containerRev(pkg) {
 			s.dropUISession(h.ID)
 			return s.provisionAgent(ctx, h, pkg)
 		}
@@ -145,6 +145,9 @@ var frameAncestors = regexp.MustCompile(`(?i)\s*frame-ancestors[^;]*;?`)
 
 // uiVersion marks agent containers made with their own app switched on.
 const uiVersion = "1"
+
+// containerRev is the label value of an up-to-date agent container.
+func containerRev(pkg agentcatalog.Package) string { return uiVersion + pkg.Revision }
 
 // uiPassword is the password sandboxd sets for an agent app with its own
 // login, derived from the agent's key so only sandboxd knows it.
@@ -278,7 +281,7 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 			uiWait(w, http.StatusServiceUnavailable, h.Name+" is paused. Start it to open its "+label+".")
 			return
 		}
-		if c.Config.Labels["sandboxd.agent.ui"] != uiVersion {
+		if c.Config.Labels["sandboxd.agent.ui"] != containerRev(pkg) {
 			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
 				s.Log.Warn("agent ui: re-create", "agent", h.ID, "err", err.Error())
 				uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" can’t open right now. Try again in a minute.")

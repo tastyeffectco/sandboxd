@@ -102,7 +102,9 @@ func TestProxySignInAgentsGetNoSharedToken(t *testing.T) {
 
 func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
 	env := strings.Join(RenderOpenMausBotEnv(Config{ProxyURL: "http://sandboxd:9100/", AgentID: "m1", Secret: "s", Model: "deepseek/x"}), "\n")
-	for _, want := range []string{"OPENAI_COMPAT_URL=http://sandboxd:9100/agents/m1/v1", "OPENAI_COMPAT_API_KEY=s", "OPENAI_COMPAT_MODEL=deepseek/x"} {
+	// Loopback: it allows plain HTTP for images and computer tools only there.
+	for _, want := range []string{"SANDBOXD_MODEL_UPSTREAM=sandboxd:9100", "OPENAI_COMPAT_URL=http://127.0.0.1:9101/agents/m1/v1",
+		"OPENAI_COMPAT_API_KEY=s", "OPENAI_COMPAT_MODEL=deepseek/x"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("missing %s in\n%s", want, env)
 		}

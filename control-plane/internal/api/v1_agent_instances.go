@@ -288,7 +288,7 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	}
 	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
 	if pkg.UIPort != 0 {
-		labels = append(labels, "sandboxd.agent.ui="+uiVersion)
+		labels = append(labels, "sandboxd.agent.ui="+containerRev(pkg))
 	}
 	if pkg.UILogin == "password" {
 		// Only sandboxd knows these: it signs the owner in to the app.
