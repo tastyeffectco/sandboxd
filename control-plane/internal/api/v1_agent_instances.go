@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,13 +47,30 @@ const agentAppsPerDay = 10
 
 func agentContainer(id string) string { return "a-" + id }
 
+// agentAnswering reports whether the agent's chat API accepts connections.
+func agentAnswering(ctx context.Context, host string, port int) bool {
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) v1AgentInstance {
 	status := "missing"
 	if s.Docker != nil {
 		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil {
 			status = "stopped"
 			if c.State.Running {
-				status = "running"
+				// The container runs well before the agent can chat (Hermes and
+				// OpenClaw take up to a minute to load); say so until it answers.
+				status = "starting"
+				if pkg, ok := agentcatalog.Get(h.Package); ok && agentAnswering(ctx, agentContainer(h.ID), pkg.APIPort) {
+					status = "running"
+				}
 			}
 		}
 	}
@@ -365,7 +383,7 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 	up.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(up)
 	if err != nil {
-		writeV1Err(w, http.StatusBadGateway, "unavailable", "the agent is not answering; start it and try again")
+		writeV1Err(w, http.StatusBadGateway, "unavailable", h.Name+" isn't answering. If it was just started, wait a minute and try again.")
 		return
 	}
 	defer resp.Body.Close()
@@ -379,7 +397,12 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode != http.StatusOK || json.Unmarshal(raw, &out) != nil || len(out.Choices) == 0 {
-		writeV1Err(w, http.StatusBadGateway, "agent_error", "the agent could not answer: "+strings.TrimSpace(string(raw[:min(len(raw), 300)])))
+		// The agent's own error is technical ("run openclaw logs", "/model");
+		// keep it in the engine log and tell the person what to do.
+		s.Log.Warn("agent chat failed", "agent", h.ID, "status", resp.StatusCode,
+			"error", strings.TrimSpace(string(raw[:min(len(raw), 600)])))
+		writeV1Err(w, http.StatusBadGateway, "agent_error",
+			h.Name+" couldn't finish this reply. Try again, or ask in a simpler way. If it keeps happening, choose another AI model for it.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"reply": out.Choices[0].Message.Content})

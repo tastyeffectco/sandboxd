@@ -56,6 +56,11 @@ func TestRenderOpenClawConfig(t *testing.T) {
 		`"url": "http://sandboxd:9100/agents/a1/mcp"`,
 		`"transport": "streamable-http"`,
 		`"Authorization": "Bearer ${SANDBOXD_AGENT_SECRET}"`,
+		// sandboxd's app tools are visible up front; its own app builders are off.
+		`"portal",`,
+		`"canvas"`,
+		`"toolSearch": {`,
+		`"enabled": false`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("openclaw.json is missing %s:\n%s", want, got)

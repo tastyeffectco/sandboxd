@@ -78,4 +78,28 @@ describe('AgentsView', () => {
     expect(await screen.findByText('Recipe Box')).toBeTruthy()
     expect(api.chatWithAgent).toHaveBeenCalledWith('h1', [{ role: 'user', content: 'Build a recipe app' }])
   })
+
+  it('waits for a starting agent, then lets you chat without reloading', async () => {
+    const agent = {
+      id: 'h1',
+      package: 'hermes',
+      name: 'Hermes',
+      connection_id: 'c1',
+      model: 'm1',
+      status: 'starting' as const,
+      telegram: false,
+      apps_today: 0,
+      apps_per_day: 10,
+      created_at: '',
+    }
+    vi.mocked(api.listAgentInstances).mockResolvedValueOnce([agent]).mockResolvedValue([{ ...agent, status: 'running' }])
+    vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
+    view()
+    const input = (await screen.findByTestId('agent-chat-input')) as HTMLInputElement
+    expect(input.disabled).toBe(true)
+    expect(input.placeholder).toMatch(/getting ready/)
+    await waitFor(() => expect((screen.getByTestId('agent-chat-input') as HTMLInputElement).disabled).toBe(false), {
+      timeout: 5000,
+    })
+  })
 })
