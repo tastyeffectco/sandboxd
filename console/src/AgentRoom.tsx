@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, AgentInstance, AgentMessageRow, AgentStep } from './api'
+import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep } from './api'
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
 import { StatusPill } from './design/kit'
@@ -80,6 +80,10 @@ export function AgentRoom({
   reloadApps: () => void
 }) {
   const [messages, setMessages] = useState<AgentMessageRow[] | null>(null)
+  const [files, setFiles] = useState<Pending[]>([])
+  const [dragging, setDragging] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
+  const uploading = files.some((f) => !f.file)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [sending, setSending] = useState(false)
@@ -135,17 +139,60 @@ export function AgentRoom({
     end.current?.scrollIntoView?.({ block: 'end' })
   }, [count, lastLength])
 
-  const send = async (text: string) => {
+  // Attach: the paperclip, dropping files on the window, or pasting.
+  const attach = (list: FileList | File[] | null) => {
+    const picked = Array.from(list || [])
+    if (!picked.length) return
+    if (files.length + picked.length > MAX_FILES) {
+      onError(`You can send up to ${MAX_FILES} files at a time.`)
+      return
+    }
+    for (const f of picked) {
+      if (f.size > MAX_FILE_BYTES) {
+        onError(`${f.name} is too big. Files can be up to 25 MB.`)
+        continue
+      }
+      if (!f.size) continue
+      const key = `${Date.now()}-${Math.random()}`
+      const name = f.name || (f.type.startsWith('image/') ? `pasted-image.${f.type.slice(6) || 'png'}` : 'file')
+      const preview = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined
+      setFiles((prev) => [...prev, { key, name, size: f.size, preview }])
+      api
+        .uploadAgentFile(agent.id, f, name)
+        .then((file) => setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, file } : p))))
+        .catch((e) => {
+          setFiles((prev) => prev.filter((p) => p.key !== key))
+          if (preview) URL.revokeObjectURL(preview)
+          onError(`${name} could not be attached: ${(e as Error).message}`)
+        })
+    }
+  }
+  const unattach = (key: string) =>
+    setFiles((prev) => {
+      const gone = prev.find((p) => p.key === key)
+      if (gone?.preview) URL.revokeObjectURL(gone.preview)
+      return prev.filter((p) => p.key !== key)
+    })
+
+  const send = async (text: string, withFiles = true) => {
     const content = text.trim()
-    if (!content || working || !running) return
+    const attached = withFiles ? files.filter((f) => f.file) : []
+    if ((!content && !attached.length) || working || !running || (withFiles && uploading)) return
     setDraft('')
+    if (withFiles) setFiles([])
     setSending(true)
     try {
-      const r = await api.sendAgentMessage(agent.id, content)
+      const r = await api.sendAgentMessage(
+        agent.id,
+        content,
+        attached.map((f) => f.file!.id),
+      )
       for (const m of r.messages) seen.current[m.id] = m.state
       setMessages((prev) => [...(prev || []), ...r.messages])
+      for (const f of attached) if (f.preview) URL.revokeObjectURL(f.preview)
     } catch (e) {
       setDraft(content)
+      if (withFiles) setFiles(attached)
       onError((e as Error).message)
     } finally {
       setSending(false)
@@ -167,7 +214,24 @@ export function AgentRoom({
   const lastUser = [...(messages || [])].reverse().find((m) => m.role === 'user')
   const initial = agent.name.slice(0, 1).toUpperCase()
   return (
-    <section className="agent-room" data-testid="agent-room">
+    <section
+      className={dragging ? 'agent-room dragging' : 'agent-room'}
+      data-testid="agent-room"
+      onDragOver={(e) => {
+        if (view !== 'chat' || !running || !e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragging(false)
+      }}
+      onDrop={(e) => {
+        if (view !== 'chat' || !running || !e.dataTransfer.files.length) return
+        e.preventDefault()
+        setDragging(false)
+        attach(e.dataTransfer.files)
+      }}
+    >
       <header className="agent-room-header">
         <span className="agent-avatar" aria-hidden="true">
           {initial}
@@ -271,6 +335,13 @@ export function AgentRoom({
           m.role === 'user' ? (
             <div key={m.id} className="bubble-row mine">
               <div className="bubble mine" data-testid="agent-you">
+                {(m.attachments || []).length > 0 && (
+                  <div className="bubble-files" data-testid="agent-files">
+                    {(m.attachments || []).map((f) => (
+                      <AttachedFile key={f.id} agentId={agent.id} file={f} />
+                    ))}
+                  </div>
+                )}
                 {m.content}
               </div>
             </div>
@@ -333,7 +404,7 @@ export function AgentRoom({
                   <p className="bubble-note error" role="alert">
                     {m.error || `${agent.name} couldn't answer.`}{' '}
                     {lastUser && i === messages.length - 1 && running && (
-                      <button className="text-button" onClick={() => void send(lastUser.content)}>
+                      <button className="text-button" onClick={() => void send(lastUser.content, false)}>
                         Try again
                       </button>
                     )}
@@ -346,6 +417,21 @@ export function AgentRoom({
         <div ref={end} />
       </div>
 
+      {files.length > 0 && (
+        <div className="agent-attachments" hidden={view !== 'chat'} data-testid="agent-attachments">
+          {files.map((f) => (
+            <span key={f.key} className={f.file ? 'attachment' : 'attachment uploading'}>
+              {f.preview ? <img src={f.preview} alt="" /> : <Icon name="book" size={14} />}
+              <span className="attachment-name">{f.name}</span>
+              <small>{f.file ? fileSize(f.size) : 'Attaching…'}</small>
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => unattach(f.key)}>
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <form
         hidden={view !== 'chat'}
         className="agent-composer"
@@ -354,9 +440,37 @@ export function AgentRoom({
           void send(draft)
         }}
       >
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            attach(e.target.files)
+            e.target.value = ''
+          }}
+          data-testid="agent-file-input"
+        />
+        <button
+          type="button"
+          className="composer-attach"
+          disabled={!running}
+          onClick={() => picker.current?.click()}
+          title="Attach files"
+          data-testid="agent-attach"
+        >
+          <Icon name="plus" size={18} />
+          <span className="sr-only">Attach files</span>
+        </button>
         <textarea
           value={draft}
           rows={1}
+          onPaste={(e) => {
+            if (e.clipboardData.files.length) {
+              e.preventDefault()
+              attach(e.clipboardData.files)
+            }
+          }}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -385,12 +499,45 @@ export function AgentRoom({
             Stop
           </button>
         ) : (
-          <button type="submit" className="composer-send" disabled={!running || !draft.trim()} data-testid="agent-send">
+          <button
+            type="submit"
+            className="composer-send"
+            disabled={!running || uploading || (!draft.trim() && !files.length)}
+            data-testid="agent-send"
+          >
             <Icon name="arrow" size={16} />
             <span className="sr-only">Send</span>
           </button>
         )}
       </form>
     </section>
+  )
+}
+
+const MAX_FILES = 10
+const MAX_FILE_BYTES = 25 * 1024 * 1024
+type Pending = { key: string; name: string; size: number; preview?: string; file?: AgentAttachment }
+
+export function fileSize(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`
+  return `${n} bytes`
+}
+
+// A file in the conversation: pictures show, anything else downloads.
+function AttachedFile({ agentId, file }: { agentId: string; file: AgentAttachment }) {
+  const url = api.agentFileUrl(agentId, file.id)
+  if (file.type.startsWith('image/') && file.type !== 'image/svg+xml')
+    return (
+      <a href={url} download={file.name} className="bubble-image" title={file.name}>
+        <img src={url} alt={file.name} loading="lazy" />
+      </a>
+    )
+  return (
+    <a href={url} download={file.name} className="bubble-file">
+      <Icon name="book" size={14} />
+      <span>{file.name}</span>
+      <small>{fileSize(file.size)}</small>
+    </a>
   )
 }

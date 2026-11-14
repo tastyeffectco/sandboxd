@@ -43,6 +43,9 @@ type Package struct {
 	Env []string `json:"-"`
 	// ExecRun mounts an executable /run (supervisors such as s6 run from it).
 	ExecRun bool `json:"-"`
+	// UploadsDir, under StatePath, holds files the person attaches in chat;
+	// the agent can open them with its own tools.
+	UploadsDir string `json:"-"`
 	// ConfigFile is written into StatePath by Render before every start.
 	ConfigFile string                       `json:"-"`
 	Render     func(Config) (string, error) `json:"-"`
@@ -71,6 +74,7 @@ var Hermes = Package{
 	APIKeyEnv:   "API_SERVER_KEY",
 	Env:         []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642"},
 	ExecRun:     true,
+	UploadsDir:  "uploads",
 	ConfigFile:  "config.yaml",
 	Render:      RenderHermesConfig,
 	Telegram:    true,
@@ -102,6 +106,7 @@ var OpenClaw = Package{
 	Env: []string{"HOME=/state", "OPENCLAW_STATE_DIR=/state",
 		"OPENCLAW_CONFIG_PATH=/state/openclaw.json", "OPENCLAW_CONFIG_READONLY=1",
 		"OPENCLAW_NO_RESPAWN=1", "NODE_COMPILE_CACHE=/tmp/openclaw-compile-cache"},
+	UploadsDir: "workspace/uploads", // its file tools work in its workspace
 	ConfigFile: "openclaw.json",
 	Render:     RenderOpenClawConfig,
 	// It peaks at about 2.4 GB on a chat: with 2 GB and no swap it was killed.

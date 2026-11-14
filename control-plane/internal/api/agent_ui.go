@@ -119,7 +119,9 @@ func writeAgentConfig(path, config, user string) error {
 	if err := os.WriteFile(tmp, []byte(config), 0o600); err != nil {
 		return err
 	}
-	if err := os.Chown(tmp, uid, gid); err != nil {
+	// sandboxd runs as root and hands the file to the agent's user; a
+	// non-root sandboxd (tests, development) keeps it as its own.
+	if err := os.Chown(tmp, uid, gid); err != nil && os.Geteuid() == 0 {
 		return err
 	}
 	return os.Rename(tmp, path)

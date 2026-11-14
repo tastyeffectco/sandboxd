@@ -312,6 +312,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
+  return answer<T>(res)
+}
+
+async function answer<T>(res: Response): Promise<T> {
   if (!res.ok) {
     if (res.status === 401 && onUnauthorized) onUnauthorized()
     let message = `${res.status} ${res.statusText}`
@@ -392,6 +396,14 @@ export interface AgentMessageRow {
   error?: string
   channel: string
   created_at: string
+  attachments?: AgentAttachment[]
+}
+/** A file the person attached in an agent's chat. */
+export interface AgentAttachment {
+  id: string
+  name: string
+  type: string
+  size: number
 }
 
 export interface AgentInstanceInput {
@@ -413,8 +425,21 @@ export const api = {
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
   listAgentMessages: (id: string) =>
     req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
-  sendAgentMessage: (id: string, content: string) =>
-    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, { content }),
+  sendAgentMessage: (id: string, content: string, attachments: string[] = []) =>
+    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, {
+      content,
+      attachments,
+    }),
+  uploadAgentFile: async (id: string, file: Blob, name: string) =>
+    answer<AgentAttachment>(
+      await fetch(`/v1/agent-instances/${encodeURIComponent(id)}/files?name=${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      }),
+    ),
+  agentFileUrl: (id: string, fileId: string) =>
+    `/v1/agent-instances/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}`,
   stopAgentMessage: (id: string) => req<void>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages/stop`),
   clearAgentMessages: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>

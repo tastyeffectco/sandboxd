@@ -2954,3 +2954,111 @@ hr {
 .agent-app[hidden] {
   display: none !important;
 }
+
+/* Files in an agent's chat. */
+.composer-attach {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.composer-attach:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--accent, #22634f);
+}
+.composer-attach:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.agent-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px clamp(16px, 5vw, 64px) 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+.agent-attachments + .agent-composer {
+  border-top: 0;
+}
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 5px 6px 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 12.5px;
+}
+.attachment.uploading {
+  opacity: 0.6;
+}
+.attachment img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment small {
+  color: var(--muted);
+  flex: none;
+}
+.attachment button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+}
+.bubble-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.bubble-files:last-child {
+  margin-bottom: 0;
+}
+.bubble-image img {
+  display: block;
+  max-width: 220px;
+  max-height: 180px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.bubble-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+  text-decoration: none;
+  font-size: 12.5px;
+}
+.bubble-file small {
+  opacity: 0.75;
+}
+.agent-room.dragging .agent-room-log {
+  outline: 2px dashed var(--accent, #22634f);
+  outline-offset: -10px;
+}
+.agent-attachments[hidden] {
+  display: none !important;
+}

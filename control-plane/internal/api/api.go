@@ -325,6 +325,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-instances/{id}/messages", s.observe("POST /v1/agent-instances/{id}/messages", s.v1SendAgentMessage))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/messages/stop", s.observe("POST /v1/agent-instances/{id}/messages/stop", s.v1StopAgentMessage))
 	mux.HandleFunc("DELETE /v1/agent-instances/{id}/messages", s.observe("DELETE /v1/agent-instances/{id}/messages", s.v1ClearAgentMessages))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/files", s.observe("POST /v1/agent-instances/{id}/files", s.v1UploadAgentFile))
+	mux.HandleFunc("GET /v1/agent-instances/{id}/files/{file}", s.observe("GET /v1/agent-instances/{id}/files/{file}", s.v1GetAgentFile))
 	// The agent's own app: pages and its WebSocket (GET), and its forms (POST).
 	mux.HandleFunc("GET /v1/agent-instances/{id}/ui/{path...}", s.observe("GET /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/ui/{path...}", s.observe("POST /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
