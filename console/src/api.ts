@@ -368,6 +368,10 @@ export interface AgentCatalogEntry {
   download: string
   memory: string
   telegram: boolean
+  /** It leans on many tools at once: suggest the strongest model connected. */
+  strong_model?: boolean
+  ui_label?: string
+  chat?: boolean
 }
 export interface AgentInstance {
   id: string
@@ -425,6 +429,8 @@ export const api = {
   startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
   stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  setAgentModel: (id: string, connection_id: string) =>
+    req<AgentInstance>('PATCH', `/v1/agent-instances/${encodeURIComponent(id)}`, { connection_id }),
   listAgentMessages: (id: string) =>
     req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   sendAgentMessage: (id: string, content: string, attachments: string[] = []) =>

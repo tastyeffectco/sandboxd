@@ -1736,6 +1736,27 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateAgentInstance
+      tags: [agents]
+      summary: Change the model an agent thinks with (it restarts; memory stays)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connection_id]
+              properties:
+                connection_id: { type: string }
+                model: { type: string, description: "Defaults to the connection's first model" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentInstance" }
+        "400": { $ref: "#/components/responses/Error" }
   /v1/agent-instances/{id}/start:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:

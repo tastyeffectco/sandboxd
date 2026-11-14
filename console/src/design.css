@@ -3062,3 +3062,25 @@ hr {
 .agent-attachments[hidden] {
   display: none !important;
 }
+
+.agent-model {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.agent-model:hover:not(:disabled) {
+  color: var(--ink);
+}
+select.agent-model {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+  background: var(--panel);
+}

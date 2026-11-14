@@ -57,6 +57,9 @@ type Package struct {
 	RenderEnv func(Config) []string `json:"-"`
 	// Init runs a minimal init that reaps child processes (browsers).
 	Init bool `json:"-"`
+	// StrongModel: it leans on many tools at once, so the strongest model
+	// connected is suggested when adding it (small models garble its calls).
+	StrongModel bool `json:"strong_model"`
 	// Revision changes when its container must be made again (new
 	// command or environment); the agent's data stays.
 	Revision string `json:"-"`
@@ -121,6 +124,7 @@ var OpenClaw = Package{
 	UILabel:     "Control panel",
 	ProxyAuth:   true,
 	Chat:        true,
+	StrongModel: true,
 	ChatModel:   "openclaw",
 	// No shared token: OpenClaw refuses one next to proxy sign-in.
 	APIKeyEnv: "",
@@ -159,15 +163,16 @@ var OpenMausBot = Package{
 		"OPENAI_COMPAT_PROVIDER=sandboxd"},
 	// It accepts plain HTTP for images and computer tools only on loopback,
 	// so a small relay on its loopback carries model calls to sandboxd.
-	Cmd:        []string{"sh", "-c", ombStart},
-	Revision:   "2",
-	RenderEnv:  RenderOpenMausBotEnv,
-	Init:       true,
-	UploadsDir: "uploads",
-	Memory:     "3g",
-	ShmSize:    "512m",
-	DiskNote:   "about 1.5 GB",
-	MemoryNote: "up to 3 GB",
+	Cmd:         []string{"sh", "-c", ombStart},
+	Revision:    "2",
+	StrongModel: true,
+	RenderEnv:   RenderOpenMausBotEnv,
+	Init:        true,
+	UploadsDir:  "uploads",
+	Memory:      "3g",
+	ShmSize:     "512m",
+	DiskNote:    "about 1.5 GB",
+	MemoryNote:  "up to 3 GB",
 }
 
 var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw, OpenMausBot.ID: OpenMausBot}

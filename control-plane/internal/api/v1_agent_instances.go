@@ -378,6 +378,44 @@ func (s *Server) v1StopAgentInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 // DELETE /v1/agent-instances/{id} — removes the agent, its container and its memory.
+// PATCH /v1/agent-instances/{id} {connection_id, model?} — think with another
+// model. The agent is made again with it; its memory and skills stay.
+func (s *Server) v1UpdateAgentInstance(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.ownAgentInstance(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ConnectionID string `json:"connection_id"`
+		Model        string `json:"model"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil || req.ConnectionID == "" {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "choose a model connection")
+		return
+	}
+	model, err := s.agentModel(r.Context(), req.ConnectionID, req.Model)
+	if err != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if err := s.Store.SetAgentInstanceModel(r.Context(), h.ID, req.ConnectionID, model); err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	h.ConnectionID, h.Model = req.ConnectionID, model
+	if s.Docker != nil {
+		if _, err := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); err == nil {
+			pkg, _ := agentcatalog.Get(h.Package)
+			s.dropUISession(h.ID)
+			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
+				writeV1Err(w, http.StatusInternalServerError, "internal", "could not restart the agent: "+err.Error())
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
+}
+
 func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.ownAgentInstance(w, r)
 	if !ok {

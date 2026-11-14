@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep } from './api'
+import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep, ModelProvider } from './api'
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
 import { StatusPill } from './design/kit'
@@ -241,7 +241,7 @@ export function AgentRoom({
           <h1>{agent.name}</h1>
           <span>
             <StatusPill status={agent.status === 'missing' ? 'not started' : agent.status} />
-            <small title="AI model">{agent.model}</small>
+            <ModelSwitch agent={agent} disabled={busy || working} onChanged={onChanged} onError={onError} />
           </span>
         </div>
         <div className="agent-room-actions">
@@ -546,5 +546,70 @@ function AttachedFile({ agentId, file }: { agentId: string; file: AgentAttachmen
       <span>{file.name}</span>
       <small>{fileSize(file.size)}</small>
     </a>
+  )
+}
+
+// The AI model the agent thinks with; changing it restarts the agent (its
+// memory and skills stay).
+function ModelSwitch({
+  agent,
+  disabled,
+  onChanged,
+  onError,
+}: {
+  agent: AgentInstance
+  disabled: boolean
+  onChanged: () => void
+  onError: (message: string) => void
+}) {
+  const [options, setOptions] = useState<ModelProvider[] | null>(null)
+  const [saving, setSaving] = useState(false)
+  if (!options)
+    return (
+      <button
+        className="agent-model"
+        title="Change the AI model"
+        disabled={disabled}
+        onClick={() =>
+          void api
+            .listModelProviders()
+            .then((m) => setOptions(m.filter((x) => x.protocol === 'openai-completions' && x.models.length > 0)))
+            .catch((e) => onError((e as Error).message))
+        }
+        data-testid="agent-model-change"
+      >
+        {agent.model} <Icon name="chevron" size={11} />
+      </button>
+    )
+  return (
+    <select
+      className="agent-model"
+      autoFocus
+      disabled={saving}
+      value={agent.connection_id}
+      onBlur={() => !saving && setOptions(null)}
+      onChange={async (e) => {
+        const next = e.target.value
+        if (next === agent.connection_id) return setOptions(null)
+        setSaving(true)
+        try {
+          await api.setAgentModel(agent.id, next)
+          onChanged()
+        } catch (err) {
+          onError((err as Error).message)
+        } finally {
+          setSaving(false)
+          setOptions(null)
+        }
+      }}
+      aria-label="AI model"
+      data-testid="agent-model-select"
+    >
+      {options.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.name} · {m.models[0].id}
+        </option>
+      ))}
+    </select>
   )
 }
