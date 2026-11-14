@@ -344,3 +344,48 @@ func TestProbeUsesSelectedModelAndRedactsUpstreamErrors(t *testing.T) {
 		})
 	}
 }
+
+// A model that can't reason (Ollama's qwen2.5 refuses reasoning_effort with
+// 400) still answers: the proxy retries once without the reasoning switches.
+func TestProxyRetriesWithoutReasoningWhenRefused(t *testing.T) {
+	s, _ := testService(t)
+	var bodies []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		if strings.Contains(string(body), "reasoning_effort") {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"error":"model does not support thinking"}`)
+			return
+		}
+		io.WriteString(w, `{"choices":[{"message":{"content":"hi"}}]}`)
+	}))
+	defer upstream.Close()
+	c, err := s.Save(context.Background(), "", Input{Name: "Ollama", Protocol: OpenAI, BaseURL: upstream.URL + "/v1", Models: []Model{{ID: "qwen2.5:7b"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := s.Connection(context.Background(), c.ID, "", "http://proxy", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/providers/"+c.ID+"/v1/chat/completions", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+conn.Token)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	w := send(`{"model":"qwen2.5:7b","messages":[],"reasoning_effort":"medium","temperature":0.2}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "hi") {
+		t.Fatalf("not retried: %d %s", w.Code, w.Body.String())
+	}
+	if len(bodies) != 2 || strings.Contains(bodies[1], "reasoning_effort") || !strings.Contains(bodies[1], "temperature") {
+		t.Fatalf("retry should drop only the reasoning switch: %q", bodies)
+	}
+	// Other refusals are not retried.
+	bodies = nil
+	if w := send(`{"model":"qwen2.5:7b","messages":[]}`); w.Code != 200 || len(bodies) != 1 {
+		t.Fatalf("plain request: %d, %d calls", w.Code, len(bodies))
+	}
+}

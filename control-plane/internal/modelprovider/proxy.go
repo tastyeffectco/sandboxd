@@ -90,6 +90,21 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid inference request", http.StatusBadRequest)
 		return
 	}
+	// Agents ask every model to reason, and some models refuse that (Ollama:
+	// "qwen2.5 does not support thinking"). Such a refusal is retried once
+	// without the reasoning switches instead of failing the agent.
+	var plain []byte
+	if c.Protocol != Anthropic {
+		trimmed := make(map[string]json.RawMessage, len(input))
+		for field, value := range input {
+			if !reasoningFields[field] {
+				trimmed[field] = value
+			}
+		}
+		if len(trimmed) < len(input) {
+			plain, _ = json.Marshal(trimmed)
+		}
+	}
 	var key []byte
 	if len(row.KeyCiphertext) > 0 {
 		key, err = s.cipher.Open(row.KeyCiphertext, row.KeyNonce)
@@ -105,8 +120,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
+	var transport http.RoundTripper = s.transport
+	if plain != nil {
+		transport = retryWithout{base: s.transport, plain: plain}
+	}
 	proxy := &httputil.ReverseProxy{
-		Transport:     s.transport,
+		Transport:     transport,
 		FlushInterval: -1,
 		Rewrite: func(p *httputil.ProxyRequest) {
 			p.Out.URL = &url.URL{Scheme: target.Scheme, Host: target.Host,
@@ -150,4 +169,27 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// reasoningFields are the per-family switches that ask a model to reason.
+var reasoningFields = map[string]bool{"reasoning_effort": true, "reasoning": true, "thinking": true,
+	"chat_template_kwargs": true, "enable_thinking": true}
+
+// retryWithout resends a request that the provider rejected (400) without its
+// reasoning switches, once.
+type retryWithout struct {
+	base  http.RoundTripper
+	plain []byte
+}
+
+func (t retryWithout) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(r)
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		return resp, err
+	}
+	resp.Body.Close()
+	again := r.Clone(r.Context())
+	again.Body = io.NopCloser(bytes.NewReader(t.plain))
+	again.ContentLength = int64(len(t.plain))
+	return t.base.RoundTrip(again)
 }
