@@ -4,6 +4,7 @@ import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentP
 import { Icon } from './design/Icon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
+import { appTitle } from './appTitle'
 import { STACK_LABELS, stackFromIdea } from './stackFromIdea'
 
 const ideas = [
@@ -110,7 +111,7 @@ export function BuilderHome({
     creating.current = true
     setError('')
     setBusy('Creating your app…')
-    const title = name.trim() || prompt.trim().split(/\s+/).slice(0, 6).join(' ') || 'Untitled app'
+    const title = name.trim() || appTitle(prompt)
     try {
       const app = await api.createApp({
         name: title.slice(0, 80),
