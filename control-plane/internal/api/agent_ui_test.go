@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -59,7 +61,7 @@ func TestAgentUISignsTheOwnerInThroughSandboxd(t *testing.T) {
 		t.Errorf("forwarded to %s", got.URL)
 	}
 	for k, want := range map[string]string{"X-Sandboxd-User": "owner", "X-Forwarded-For": "192.0.2.1",
-		"Authorization": "", "Cookie": "", "Origin": "http://sandboxd-agent-ui"} {
+		"Authorization": "", "Cookie": "", "Origin": "http://" + u.Host} {
 		if v := got.Header.Get(k); v != want {
 			t.Errorf("%s = %q; want %q", k, v, want)
 		}
@@ -73,13 +75,12 @@ func TestAgentUISignsTheOwnerInThroughSandboxd(t *testing.T) {
 	}
 }
 
-func TestAgentUIOnlyForItsOwnerAndAgentsWithAnApp(t *testing.T) {
+func TestAgentUIOnlyForItsOwner(t *testing.T) {
 	s, _, _ := agentTestServer(t)
 	for _, c := range []struct {
 		actor bool
 		id    string
-		want  int
-	}{{true, "h1", http.StatusNotFound}, {true, "nope", http.StatusNotFound}} {
+	}{{true, "nope"}, {false, "h1"}} {
 		req := httptest.NewRequest(http.MethodGet, "/v1/agent-instances/"+c.id+"/ui/", nil)
 		if c.actor {
 			req = asAlice(req)
@@ -87,16 +88,71 @@ func TestAgentUIOnlyForItsOwnerAndAgentsWithAnApp(t *testing.T) {
 		req.SetPathValue("id", c.id)
 		rec := httptest.NewRecorder()
 		s.v1AgentUI(rec, req)
-		if rec.Code != c.want {
-			t.Errorf("%s: HTTP %d; want %d", c.id, rec.Code, c.want)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s (signed in: %v): HTTP %d", c.id, c.actor, rec.Code)
 		}
 	}
-	// Someone else's agent is not found either.
-	req := httptest.NewRequest(http.MethodGet, "/v1/agent-instances/h1/ui/", nil)
-	req.SetPathValue("id", "h1")
-	rec := httptest.NewRecorder()
-	s.v1AgentUI(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("anonymous: HTTP %d", rec.Code)
+}
+
+// Hermes's dashboard has its own login: sandboxd signs in with a password
+// only it knows and keeps the session; the browser never gets it.
+func TestAgentUISignsInToAnAppWithItsOwnLogin(t *testing.T) {
+	s, st, _ := agentTestServer(t)
+	cipher, err := secrets.Load("", filepath.Join(t.TempDir(), "secrets.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Secrets = cipher
+	ct, nonce, _ := cipher.Seal([]byte("agent-api-key"))
+	if err := st.CreateAgentInstance(context.Background(), &store.AgentInstance{ID: "h2", OwnerToken: "alice",
+		Package: "hermes", Name: "Hermes", ConnectionID: "c1", Model: "m1", CreatedAt: "now",
+		APIKeyCiphertext: ct, APIKeyNonce: nonce}); err != nil {
+		t.Fatal(err)
+	}
+	logins := 0
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/password-login" {
+			var b map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			if b["password"] != uiPassword([]byte("agent-api-key"), "password") || b["username"] != "owner" || b["provider"] != "basic" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			logins++
+			http.SetCookie(w, &http.Cookie{Name: "hermes_session_at", Value: "s1", Path: "/"})
+			return
+		}
+		if c, err := r.Cookie("hermes_session_at"); err != nil || c.Value != "s1" {
+			http.Redirect(w, r, "/login?next=%2F", http.StatusFound)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "hermes_session_at", Value: "s1", Path: "/"})
+		w.Write([]byte("<title>Hermes Agent - Dashboard</title>"))
+	}))
+	defer agent.Close()
+	u, _ := url.Parse(agent.URL)
+	old := agentUIHost
+	agentUIHost = func(string, int) string { return u.Host }
+	defer func() { agentUIHost = old }()
+
+	open := func() *httptest.ResponseRecorder {
+		req := asAlice(httptest.NewRequest(http.MethodGet, "/v1/agent-instances/h2/ui/", nil))
+		req.Header.Set("Cookie", "sbx_session=the-persons-login")
+		req.SetPathValue("id", "h2")
+		rec := httptest.NewRecorder()
+		s.v1AgentUI(rec, req)
+		return rec
+	}
+	for i := 0; i < 2; i++ {
+		rec := open()
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Dashboard") {
+			t.Fatalf("HTTP %d %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("Set-Cookie") != "" {
+			t.Error("the app's session must stay in sandboxd")
+		}
+	}
+	if logins != 1 {
+		t.Errorf("signed in %d times; the session should be reused", logins)
 	}
 }

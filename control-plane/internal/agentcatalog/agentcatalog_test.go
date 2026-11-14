@@ -69,7 +69,7 @@ func TestRenderOpenClawConfig(t *testing.T) {
 		`"mode": "trusted-proxy"`,
 		`"userHeader": "x-sandboxd-user"`,
 		`"deviceAutoApprove": {`,
-		`"http://sandboxd-agent-ui"`,
+		`"http://a-a1:18789"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("openclaw.json is missing %s:\n%s", want, got)

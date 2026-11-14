@@ -35,6 +35,10 @@ type Package struct {
 	UIPort int `json:"-"`
 	// UILabel names that app for people, e.g. "Control panel".
 	UILabel string `json:"ui_label,omitempty"`
+	// UILogin says how sandboxd signs the owner in to an app that has its
+	// own login: "password" — sandboxd sets a password only it knows and
+	// keeps the session itself (Hermes's dashboard).
+	UILogin string `json:"-"`
 	// ProxyAuth: the agent trusts sandboxd as its sign-in proxy (identity
 	// headers from sandboxd's address only), so its own app needs no token
 	// or device pairing. Its config is refreshed when sandboxd's address moves.
@@ -70,9 +74,15 @@ var Hermes = Package{
 	User:        "10000:10000",
 	StatePath:   "/opt/data",
 	APIPort:     8642,
-	ChatModel:   "hermes-agent",
-	APIKeyEnv:   "API_SERVER_KEY",
-	Env:         []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642"},
+	// Its web dashboard (settings, sessions, skills) runs next to the
+	// gateway, behind its own password login.
+	UIPort:    9119,
+	UILabel:   "Dashboard",
+	UILogin:   "password",
+	ChatModel: "hermes-agent",
+	APIKeyEnv: "API_SERVER_KEY",
+	Env: []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642",
+		"HERMES_DASHBOARD=1", "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=" + User},
 	ExecRun:     true,
 	UploadsDir:  "uploads",
 	ConfigFile:  "config.yaml",
@@ -147,6 +157,8 @@ type Config struct {
 	// ProxyIP is sandboxd's address on the agents' network: the only
 	// source trusted to sign people in (ProxyAuth packages).
 	ProxyIP string
+	// UIOrigin is the Origin sandboxd presents to the agent's own app.
+	UIOrigin string
 }
 
 // Identity headers sandboxd sends to ProxyAuth agents. The client address is
@@ -155,9 +167,14 @@ const (
 	UserHeader = "X-Sandboxd-User"
 	User       = "owner"
 	ClientIP   = "192.0.2.1"
-	// UIOrigin is the Origin sandboxd presents for the agent's own app.
-	UIOrigin = "http://sandboxd-agent-ui"
 )
+
+func uiOrigin(c Config) string {
+	if c.UIOrigin != "" {
+		return c.UIOrigin
+	}
+	return "http://a-" + c.AgentID + ":18789"
+}
 
 // RenderHermesConfig returns config.yaml: the model goes through sandboxd's
 // proxy (the real key never enters the container), sandboxd's app tools are an
@@ -209,7 +226,7 @@ func RenderOpenClawConfig(c Config) (string, error) {
 				"identityScopes": map[string]any{User: []string{"operator.admin"}},
 				"trustedProxy": map[string]any{"userHeader": strings.ToLower(UserHeader), "allowUsers": []string{User},
 					"deviceAutoApprove": map[string]any{"enabled": true}}},
-			"controlUi": map[string]any{"allowedOrigins": []string{UIOrigin}},
+			"controlUi": map[string]any{"allowedOrigins": []string{uiOrigin(c)}},
 			"http":      map[string]any{"endpoints": map[string]any{"chatCompletions": map[string]any{"enabled": true}}}},
 		"models": map[string]any{"mode": "merge", "providers": map[string]any{"sandboxd": map[string]any{
 			"baseUrl": base + "/v1", "apiKey": ref, "api": "openai-completions",

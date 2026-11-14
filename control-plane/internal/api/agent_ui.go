@@ -3,10 +3,16 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httputil"
 	"net/url"
 	"os"
@@ -15,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
@@ -28,8 +35,9 @@ import (
 
 // agentConfigs remembers, per agent, the sandboxd address its config trusts.
 type agentConfigs struct {
-	mu sync.Mutex
-	ip map[string]string
+	mu   sync.Mutex
+	ip   map[string]string
+	jars map[string]http.CookieJar // sandboxd's sessions with agent apps
 }
 
 // setAgentIdentity signs a request to an agent in as its owner, through
@@ -78,7 +86,8 @@ func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance,
 	}
 	// ProxyAuth packages keep their secret in the environment, so the config
 	// can be rendered again without rotating it.
-	config, err := pkg.Render(agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Model: h.Model, ProxyIP: ip})
+	config, err := pkg.Render(agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Model: h.Model, ProxyIP: ip,
+		UIOrigin: "http://" + agentUIHost(h.ID, pkg.UIPort)})
 	if err != nil {
 		return err
 	}
@@ -132,7 +141,79 @@ var agentUIHost = func(id string, port int) string { return fmt.Sprintf("%s:%d",
 
 var frameAncestors = regexp.MustCompile(`(?i)\s*frame-ancestors[^;]*;?`)
 
-// /v1/agent-instances/{id}/ui/{path...} — any method, WebSockets included.
+// uiVersion marks agent containers made with their own app switched on.
+const uiVersion = "1"
+
+// uiPassword is the password sandboxd sets for an agent app with its own
+// login, derived from the agent's key so only sandboxd knows it.
+func uiPassword(apiKey []byte, purpose string) string {
+	m := hmac.New(sha256.New, apiKey)
+	m.Write([]byte("sandboxd agent ui " + purpose))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// uiSession is sandboxd's signed-in session with an agent app that has its
+// own login. The person's browser never holds it.
+func (s *Server) uiSession(h *store.AgentInstance) http.CookieJar {
+	s.agentCfg.mu.Lock()
+	defer s.agentCfg.mu.Unlock()
+	if s.agentCfg.jars == nil {
+		s.agentCfg.jars = map[string]http.CookieJar{}
+	}
+	j := s.agentCfg.jars[h.ID]
+	if j == nil {
+		j, _ = cookiejar.New(nil)
+		s.agentCfg.jars[h.ID] = j
+	}
+	return j
+}
+
+func (s *Server) dropUISession(id string) {
+	s.agentCfg.mu.Lock()
+	delete(s.agentCfg.jars, id)
+	s.agentCfg.mu.Unlock()
+}
+
+// uiSignIn signs sandboxd in to the agent's app with its password.
+func (s *Server) uiSignIn(ctx context.Context, h *store.AgentInstance, base *url.URL, jar http.CookieJar) error {
+	if s.Secrets == nil {
+		return errors.New("no secrets")
+	}
+	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]string{"provider": "basic", "username": agentcatalog.User,
+		"password": uiPassword(apiKey, "password")})
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base.String()+"/auth/password-login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}).Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("sign-in answered HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// uiWait answers the agent's window while its app cannot open yet: a plain
+// page that tries again by itself.
+func uiWait(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="5">`+
+		`<title>One moment</title><body style="font:15px system-ui,sans-serif;color:#3f3f46;display:grid;place-items:center;height:90vh;margin:0">`+
+		`<p>%s</p></body>`, html.EscapeString(message))
+}
+
+// /v1/agent-instances/{id}/ui/{path...} — pages, files and WebSockets.
 func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.ownAgentInstance(w, r)
 	if !ok {
@@ -143,14 +224,48 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusNotFound, "not_found", "this agent has no app of its own")
 		return
 	}
+	label := pkg.UILabel
+	// An agent made before its app was switched on is made again (its
+	// memory and skills stay in its folder).
+	if s.Docker != nil {
+		c, err := s.Docker.Inspect(r.Context(), agentContainer(h.ID))
+		if err != nil || !c.State.Running {
+			uiWait(w, http.StatusServiceUnavailable, h.Name+" is paused. Start it to open its "+label+".")
+			return
+		}
+		if pkg.UILogin != "" && c.Config.Labels["sandboxd.agent.ui"] != uiVersion {
+			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
+				s.Log.Warn("agent ui: re-create", "agent", h.ID, "err", err.Error())
+				uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" can’t open right now. Try again in a minute.")
+				return
+			}
+			s.dropUISession(h.ID)
+			uiWait(w, http.StatusServiceUnavailable, "Getting "+h.Name+"’s "+label+" ready… this takes about a minute.")
+			return
+		}
+	}
 	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil {
 		if s.Log != nil {
 			s.Log.Warn("agent ui: refresh config", "agent", h.ID, "err", err.Error())
 		}
-		writeV1Err(w, http.StatusBadGateway, "unavailable", h.Name+"’s app can’t open right now. Try again in a minute.")
+		uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" can’t open right now. Try again in a minute.")
 		return
 	}
 	target := &url.URL{Scheme: "http", Host: agentUIHost(h.ID, pkg.UIPort)}
+	var jar http.CookieJar
+	if pkg.UILogin != "" {
+		jar = s.uiSession(h)
+		if len(jar.Cookies(target)) == 0 {
+			if err := s.uiSignIn(r.Context(), h, target, jar); err != nil {
+				s.dropUISession(h.ID)
+				if s.Log != nil {
+					s.Log.Warn("agent ui: sign in", "agent", h.ID, "err", err.Error())
+				}
+				uiWait(w, http.StatusServiceUnavailable, h.Name+"’s "+label+" is starting… this takes about a minute.")
+				return
+			}
+		}
+	}
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(p *httputil.ProxyRequest) {
 			p.Out.URL.Scheme, p.Out.URL.Host = target.Scheme, target.Host
@@ -162,8 +277,14 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 				p.Out.Header.Del(k)
 			}
 			setAgentIdentity(p.Out.Header)
+			if jar != nil {
+				for _, c := range jar.Cookies(target) {
+					p.Out.AddCookie(c)
+				}
+			}
+			// The app sees itself called on its own address.
 			if p.Out.Header.Get("Origin") != "" {
-				p.Out.Header.Set("Origin", agentcatalog.UIOrigin)
+				p.Out.Header.Set("Origin", "http://"+target.Host)
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
@@ -172,6 +293,18 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 			if csp := resp.Header.Get("Content-Security-Policy"); csp != "" {
 				resp.Header.Set("Content-Security-Policy", strings.TrimSpace(frameAncestors.ReplaceAllString(csp, "")))
 			}
+			if jar != nil {
+				// sandboxd keeps the session; a lapsed one is renewed on the next load.
+				jar.SetCookies(target, resp.Cookies())
+				resp.Header.Del("Set-Cookie")
+				loc := resp.Header.Get("Location")
+				if resp.StatusCode == http.StatusUnauthorized || strings.Contains(loc, "/login") {
+					s.dropUISession(h.ID)
+				}
+				if strings.Contains(loc, "/login") {
+					resp.Header.Set("Location", "/")
+				}
+			}
 			return nil
 		},
 		FlushInterval: -1,
@@ -179,8 +312,7 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 			if s.Log != nil {
 				s.Log.Warn("agent ui: proxy", "agent", h.ID, "err", err.Error())
 			}
-			writeV1Err(w, http.StatusBadGateway, "unavailable",
-				h.Name+" isn’t answering. If it was just started, wait a minute and try again.")
+			uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" isn’t answering yet. If it was just started, it opens in about a minute.")
 		},
 	}
 	rp.ServeHTTP(w, r)

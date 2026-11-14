@@ -239,7 +239,8 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	if err := os.Chown(dir, uid, gid); err != nil {
 		return fmt.Errorf("prepare the agent's storage: %w", err)
 	}
-	cfg := agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model}
+	cfg := agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model,
+		UIOrigin: "http://" + agentUIHost(h.ID, pkg.UIPort)}
 	if pkg.ProxyAuth {
 		if cfg.ProxyIP, err = s.agentProxyIP(ctx); err != nil {
 			return err
@@ -270,6 +271,15 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	h.SecretHash = hashSecret(secret)
 	env := append(append([]string{}, pkg.Env...),
 		pkg.APIKeyEnv+"="+string(apiKey), agentcatalog.SecretEnv+"="+secret)
+	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
+	if pkg.UIPort != 0 {
+		labels = append(labels, "sandboxd.agent.ui="+uiVersion)
+	}
+	if pkg.UILogin == "password" {
+		// Only sandboxd knows these: it signs the owner in to the app.
+		env = append(env, "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="+uiPassword(apiKey, "password"),
+			"HERMES_DASHBOARD_BASIC_AUTH_SECRET="+uiPassword(apiKey, "session"))
+	}
 	if len(h.TelegramCiphertext) > 0 && pkg.Telegram {
 		token, err := s.Secrets.Open(h.TelegramCiphertext, h.TelegramNonce)
 		if err != nil {
@@ -292,7 +302,7 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		Restart: "unless-stopped", // always on: survives engine and computer restarts
 		Env:     env,
 		Volumes: []string{dir + ":" + pkg.StatePath},
-		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID},
+		Labels:  labels,
 		Image:   pkg.Image, Cmd: pkg.Cmd,
 	})
 	return err
