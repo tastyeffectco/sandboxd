@@ -183,6 +183,12 @@ func RenderOpenClawConfig(c Config) (string, error) {
 		// tools or accounts a sandboxd agent does not have). Written here so
 		// the read-only config needs no change; refresh when the pin moves.
 		"skills": map[string]any{"entries": disabledSkills(openClawUnavailableSkills)},
+		// Apps are built through sandboxd's tools so the person can open them.
+		// OpenClaw otherwise hides MCP tools behind a search step and builds
+		// apps itself (files, a local server, portals, canvas) inside its
+		// private container, where nobody can open them. Its other tools stay.
+		"tools": map[string]any{"deny": []string{"portal", "canvas"},
+			"toolSearch": map[string]any{"enabled": false}},
 		"mcp": map[string]any{"servers": map[string]any{"sandboxd": map[string]any{
 			"url": base + "/mcp", "transport": "streamable-http",
 			"headers": map[string]string{"Authorization": "Bearer " + ref},
