@@ -136,6 +136,11 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 	reply := &store.AgentMessage{ID: newULID(), AgentID: h.ID, Role: "assistant", Steps: "[]",
 		State: "working", Channel: "app", CreatedAt: now()}
 	reply.UpdatedAt = reply.CreatedAt
+	// IDs order the thread. Two made in the same millisecond can sort either
+	// way, and the answer must come after the question.
+	for reply.ID <= user.ID {
+		reply.ID = newULID()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	s.turns.mu.Lock()

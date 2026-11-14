@@ -148,3 +148,4 @@ func TestAgentTurnStopAndRestart(t *testing.T) {
 		t.Fatalf("clear: %d, %d messages left", rec.Code, len(msgs))
 	}
 }
+
