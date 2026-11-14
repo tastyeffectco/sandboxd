@@ -1790,6 +1790,40 @@ paths:
             application/json:
               schema: { type: object, properties: { reply: { type: string } } }
         "502": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/chat/stream:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: streamAgentChat
+      tags: [agents]
+      summary: One chat turn, streamed in sandboxd's agent event format (the same for every agent)
+      description: |
+        Server-sent events. Each agent's own stream is translated into:
+        `text` {delta}, `thinking` {delta}, `step` {id, tool, label?, status: running|done|failed},
+        then `done` {} or `error` {message}. `conversation_id` keeps the agent's own session
+        (Hermes session id, OpenClaw session key) across turns.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                conversation_id: { type: string, maxLength: 128 }
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role: { type: string, enum: [user, assistant, system] }
+                      content: { type: string }
+      responses:
+        "200":
+          description: The streamed reply
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
 
 components:
   securitySchemes:

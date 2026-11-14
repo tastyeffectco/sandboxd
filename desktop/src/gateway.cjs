@@ -154,7 +154,7 @@ async function createGateway({
       )
       // Task event streams stay open through quiet agent steps (a long install
       // sends nothing for minutes); they end with the task, page or engine.
-      if (/^\/v1\/agent-instances\/[^/]+\/chat$/.test(target.pathname))
+      if (/^\/v1\/agent-instances\/[^/]+\/chat(\/stream)?$/.test(target.pathname))
         proxy.setTimeout(agentChatTimeout, () => proxy.destroy())
       else if (!/^\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+\/events$/.test(target.pathname))
         proxy.setTimeout(idleTimeout, () => proxy.destroy())

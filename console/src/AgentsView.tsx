@@ -1,58 +1,57 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
-import { AgentMessage } from './AgentMessage'
-import { c, font, Btn, Card, Input, StatusPill } from './design/kit'
+import { c, font, Btn, Card, Input } from './design/kit'
 
-// Agents are assistants (Hermes first) that sandboxd runs for you. They talk
-// to you here or on Telegram and can create and change apps on this sandboxd.
+// The agent catalog: add an agent with one click. Each agent you add gets its
+// own window, listed under AGENTS in the sidebar.
 export function AgentsView({
   onError,
-  reloadApps,
+  agents,
   goModels,
+  onOpen,
 }: {
   onError: (message: string) => void
-  reloadApps: () => void
+  agents: AgentInstance[]
   goModels: () => void
+  onOpen: (id: string) => void
 }) {
-  const [packages, setPackages] = useState<AgentCatalogEntry[]>([])
-  const [agents, setAgents] = useState<AgentInstance[] | null>(null)
+  const [packages, setPackages] = useState<AgentCatalogEntry[] | null>(null)
   const [models, setModels] = useState<ModelProvider[]>([])
-  const load = useCallback(() => {
-    Promise.all([api.listAgentCatalogEntrys(), api.listAgentInstances(), api.listModelProviders()])
-      .then(([p, h, m]) => {
+  useEffect(() => {
+    Promise.all([api.listAgentCatalogEntrys(), api.listModelProviders()])
+      .then(([p, m]) => {
         setPackages(p)
-        setAgents(h)
         // Agents speak the OpenAI chat protocol.
         setModels(m.filter((x) => x.protocol === 'openai-completions' && x.models.length > 0))
       })
       .catch((e) => onError((e as Error).message))
   }, [onError])
-  useEffect(load, [load])
-  // A new or restarted agent takes up to a minute before it can chat.
-  const starting = agents?.some((h) => h.status === 'starting')
-  useEffect(() => {
-    if (!starting) return
-    const t = setInterval(load, 3000)
-    return () => clearInterval(t)
-  }, [starting, load])
 
   return (
     <div className="content-page">
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Agents</h1>
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Add an agent</h1>
       <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 620 }}>
-        Assistants that work for you around the clock. Chat with them here or on Telegram; they remember what
-        you tell them and can create and change apps on this sandboxd.
+        Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
+        remember what you tell them and can create and change apps on this computer.
       </p>
-      {agents === null && <p style={{ color: c.muted2 }}>Loading…</p>}
-      {agents?.map((h) => (
-        <AgentInstanceCard key={h.id} agent={h} onChange={load} onError={onError} reloadApps={reloadApps} />
-      ))}
-      {agents !== null &&
-        packages
-          .filter((p) => !agents.some((h) => h.package === p.id))
-          .map((p) => (
-            <AddAgent key={p.id} pkg={p} models={models} goModels={goModels} onAdded={load} onError={onError} />
-          ))}
+      {packages === null && <p style={{ color: c.muted2 }}>Loading…</p>}
+      {packages?.map((p) => {
+        const added = agents.find((a) => a.package === p.id)
+        return added ? (
+          <Card key={p.id} pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`added-agent-${p.id}`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <strong style={{ fontSize: 16 }}>{p.label}</strong>
+              <span style={{ color: c.muted2, fontSize: 12 }}>Added</span>
+              <span style={{ flex: 1 }} />
+              <Btn sm variant="primary" onClick={() => onOpen(added.id)} data-testid="open-agent">
+                Open {added.name}
+              </Btn>
+            </div>
+          </Card>
+        ) : (
+          <AddAgent key={p.id} pkg={p} models={models} goModels={goModels} onAdded={onOpen} onError={onError} />
+        )
+      })}
     </div>
   )
 }
@@ -67,7 +66,7 @@ function AddAgent({
   pkg: AgentCatalogEntry
   models: ModelProvider[]
   goModels: () => void
-  onAdded: () => void
+  onAdded: (id: string) => void
   onError: (message: string) => void
 }) {
   const [connection, setConnection] = useState('')
@@ -87,7 +86,7 @@ function AddAgent({
         telegram_allowed_users: users.trim() || undefined,
       })
       if (res.warning) setWarning(res.warning)
-      onAdded()
+      onAdded(res.agent.id)
     } catch (e) {
       onError((e as Error).message)
     } finally {
@@ -151,135 +150,6 @@ function AddAgent({
           {warning}
         </p>
       )}
-    </Card>
-  )
-}
-
-type Turn = { role: 'user' | 'assistant'; content: string }
-
-function AgentInstanceCard({
-  agent,
-  onChange,
-  onError,
-  reloadApps,
-}: {
-  agent: AgentInstance
-  onChange: () => void
-  onError: (message: string) => void
-  reloadApps: () => void
-}) {
-  const [turns, setTurns] = useState<Turn[]>([])
-  const [text, setText] = useState('')
-  const [thinking, setThinking] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    try {
-      await fn()
-      onChange()
-    } catch (e) {
-      onError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const send = async () => {
-    const content = text.trim()
-    if (!content || thinking) return
-    const next: Turn[] = [...turns, { role: 'user', content }]
-    setTurns(next)
-    setText('')
-    setThinking(true)
-    try {
-      const { reply } = await api.chatWithAgent(agent.id, next)
-      setTurns([...next, { role: 'assistant', content: reply }])
-      reloadApps() // it may have created an app
-    } catch (e) {
-      setTurns(turns)
-      setText(content)
-      onError((e as Error).message)
-    } finally {
-      setThinking(false)
-    }
-  }
-  const running = agent.status === 'running'
-  return (
-    <Card pad={20} style={{ marginBottom: 16, maxWidth: 820 }} data-testid={`agent-${agent.id}`}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 16 }}>{agent.name}</strong>
-        <StatusPill status={agent.status === 'missing' ? 'not started' : agent.status} />
-        <span style={{ color: c.muted2, fontSize: 12 }}>
-          {agent.apps_today}/{agent.apps_per_day} new apps today{agent.telegram ? ' · on Telegram' : ''}
-        </span>
-        <span style={{ flex: 1 }} />
-        {running || agent.status === 'starting' ? (
-          <Btn sm disabled={busy} onClick={() => void act(() => api.stopAgentInstance(agent.id))}>
-            Pause
-          </Btn>
-        ) : (
-          <Btn sm disabled={busy} onClick={() => void act(() => api.startAgentInstance(agent.id))}>
-            Start
-          </Btn>
-        )}
-        <Btn
-          sm
-          disabled={busy}
-          onClick={() => {
-            if (window.confirm(`Remove ${agent.name}? Its memory and skills are deleted. Your apps stay.`))
-              void act(() => api.deleteAgentInstance(agent.id))
-          }}
-        >
-          Remove
-        </Btn>
-      </div>
-      <div style={{ margin: '16px 0', display: 'grid', gap: 10 }} data-testid="agent-chat">
-        {turns.length === 0 && (
-          <p style={{ color: c.muted, margin: 0 }}>
-            Try: “Build me a recipe app with a shopping list” or “What can you do?”
-          </p>
-        )}
-        {turns.map((t, i) =>
-          t.role === 'user' ? (
-            <div key={i} className="user-message">
-              {t.content}
-            </div>
-          ) : (
-            <div key={i} className="agent-message">
-              <AgentMessage text={t.content} />
-            </div>
-          ),
-        )}
-        {thinking && (
-          <p role="status" style={{ color: c.muted, margin: 0 }}>
-            {agent.name} is working… building an app can take a few minutes.
-          </p>
-        )}
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void send()
-        }}
-        style={{ display: 'flex', gap: 8 }}
-      >
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={
-            running
-              ? `Message ${agent.name}`
-              : agent.status === 'starting'
-                ? `${agent.name} is getting ready… this takes about a minute`
-                : `Start ${agent.name} to chat`
-          }
-          disabled={!running || thinking}
-          data-testid="agent-chat-input"
-          style={{ flex: 1 }}
-        />
-        <Btn type="submit" variant="primary" disabled={!running || thinking || !text.trim()}>
-          Send
-        </Btn>
-      </form>
     </Card>
   )
 }

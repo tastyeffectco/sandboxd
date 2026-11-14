@@ -317,6 +317,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-instances/{id}/start", s.observe("POST /v1/agent-instances/{id}/start", s.v1StartAgentInstance))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/stop", s.observe("POST /v1/agent-instances/{id}/stop", s.v1StopAgentInstance))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/chat", s.observe("POST /v1/agent-instances/{id}/chat", s.v1AgentChat))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/chat/stream", s.observe("POST /v1/agent-instances/{id}/chat/stream", s.v1AgentChatStream))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))
