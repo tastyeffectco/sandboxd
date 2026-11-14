@@ -102,6 +102,33 @@ core (new `/v1` field on the agent instance) to mount them into the agent's
 container under `/shared/<name>`, read-only or read-write. Changing folders
 re-creates the container; the agent's memory is kept.
 
+### Agent #3: OpenMausBot
+
+The maintainer asked for one click to OpenMausBot
+([milind-soni/OpenMausBot](https://github.com/milind-soni/OpenMausBot), Apache-2.0).
+It differs from Hermes and OpenClaw, and the connector model is what lets it
+fit:
+
+- **It is a team platform, not one assistant.** A "harness" server
+  (`127.0.0.1:8799`) runs many bots. Each bot drives a coding CLI (Claude,
+  Codex, Grok) or an OpenAI-compatible model, and the app talks to it with HTTP
+  commands plus one SSE event stream. Its connector maps that stream to
+  sandboxd's event format, and a sandboxd agent instance would be one
+  OpenMausBot workspace.
+- **Models:** its OpenAI-compatible driver takes a base URL and key, so it can
+  use sandboxd's model proxy like the others. The CLI-based bots need their own
+  sign-ins, which are optional.
+- **"Every bot gets a computer"** uses an outside service (boat.dev) or the
+  person's own machine. Inside sandboxd's hardened container only the cloud
+  option or no computer is possible; this needs a check.
+- It ships a Docker image (`ghcr.io/milind-soni/openmausbot`, run as an
+  unprivileged user with `HOME=/data`) and a health endpoint (`/api/health`),
+  which matches how sandboxd runs agents. The image pin and run profile need
+  a test like the ones Hermes and OpenClaw had.
+
+It comes after Hermes and OpenClaw in the order of work: it needs the
+connector and event format first.
+
 ## Constraints
 
 - The desktop and console are clients of core and use `/v1` only. The
@@ -120,6 +147,7 @@ re-creates the container; the agent's memory is kept.
 3. OpenClaw connector (WebSocket), after checking the backend-client question.
 4. Channels: Telegram (reusing #153's flow), then Discord, Slack, WhatsApp.
 5. Shared folders.
+6. OpenMausBot connector, tested in sandboxd's container profile first.
 
 Each step is tested on a real Windows desktop from a fresh install, including
 restarts, before it merges into `release/agents`.
