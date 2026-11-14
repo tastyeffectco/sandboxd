@@ -377,6 +377,21 @@ export interface AgentInstance {
   apps_per_day: number
   created_at: string
 }
+// One conversation per agent, kept by the engine like a chat app: replies keep
+// going when the window closes. Every agent's stream becomes the same shape.
+export type AgentStep = { id: string; tool: string; label?: string; status: 'running' | 'done' | 'failed' }
+export interface AgentMessageRow {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking?: string
+  steps: AgentStep[]
+  state: 'working' | 'done' | 'stopped' | 'error'
+  error?: string
+  channel: string
+  created_at: string
+}
+
 export interface AgentInstanceInput {
   package: string
   connection_id: string
@@ -394,6 +409,12 @@ export const api = {
   startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
   stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  listAgentMessages: (id: string) =>
+    req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
+  sendAgentMessage: (id: string, content: string) =>
+    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, { content }),
+  stopAgentMessage: (id: string) => req<void>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages/stop`),
+  clearAgentMessages: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
     req<{ reply: string }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/chat`, { messages }),
   listModelProviders: () =>

@@ -339,6 +339,10 @@ func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	if live, ok := s.turns.get(h.ID); ok {
+		live.cancel()
+	}
+	_ = s.Store.DeleteAgentMessages(r.Context(), h.ID)
 	if err := s.Store.DeleteAgentInstance(r.Context(), h.ID); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return

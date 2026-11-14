@@ -35,6 +35,8 @@ import (
 
 // Server bundles the collaborators the handlers need.
 type Server struct {
+	// turns are the agents' replies being written right now.
+	turns          agentTurns
 	ModelProviders *modelprovider.Service
 	Store          *store.Store
 	Docker         *docker.Client
@@ -317,6 +319,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-instances/{id}/start", s.observe("POST /v1/agent-instances/{id}/start", s.v1StartAgentInstance))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/stop", s.observe("POST /v1/agent-instances/{id}/stop", s.v1StopAgentInstance))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/chat", s.observe("POST /v1/agent-instances/{id}/chat", s.v1AgentChat))
+	mux.HandleFunc("GET /v1/agent-instances/{id}/messages", s.observe("GET /v1/agent-instances/{id}/messages", s.v1ListAgentMessages))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/messages", s.observe("POST /v1/agent-instances/{id}/messages", s.v1SendAgentMessage))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/messages/stop", s.observe("POST /v1/agent-instances/{id}/messages/stop", s.v1StopAgentMessage))
+	mux.HandleFunc("DELETE /v1/agent-instances/{id}/messages", s.observe("DELETE /v1/agent-instances/{id}/messages", s.v1ClearAgentMessages))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))

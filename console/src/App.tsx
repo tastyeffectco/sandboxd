@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, setOnUnauthorized, App as TApp, Settings, UpgradeState } from './api'
+import { api, setOnUnauthorized, App as TApp, AgentInstance, Settings, UpgradeState } from './api'
 import { previewReach, type PreviewReach } from './publicurl'
 import { c, font, mono, Card, Input } from './design/kit'
 import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { AgentsView } from './AgentsView'
+import { AgentRoom } from './AgentRoom'
 import { BrainGraph } from './BrainGraph'
 import { SettingsView } from './SettingsView'
 import { BuilderHome, BuilderDraft } from './BuilderHome'
@@ -25,6 +26,13 @@ function readRoute(): Route {
       return { name: 'apps' }
     }
   }
+  if (parts[0] === 'agent' && parts[1]) {
+    try {
+      return { name: 'agent', id: decodeURIComponent(parts[1]) }
+    } catch {
+      return { name: 'agents' }
+    }
+  }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
   return { name: ['brain', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
 }
@@ -33,6 +41,7 @@ type Route =
   | { name: 'apps' }
   | { name: 'brain' }
   | { name: 'agents' }
+  | { name: 'agent'; id: string }
   | { name: 'settings'; section?: string }
   | { name: 'app'; id: string; tab?: string; task?: string }
 
@@ -76,7 +85,9 @@ export default function App({
     const hash =
       route.name === 'app'
         ? `#/app/${encodeURIComponent(route.id)}${route.tab ? '/' + route.tab : ''}`
-        : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}`
+        : route.name === 'agent'
+          ? `#/agent/${encodeURIComponent(route.id)}`
+          : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}`
     if (location.hash !== hash) location.hash = hash
     setMobileNav(false)
   }, [route])
@@ -117,6 +128,16 @@ export default function App({
         .catch(() => {}),
     [],
   )
+  // Agents the person added: each has its own window, listed in the sidebar.
+  const [agents, setAgents] = useState<AgentInstance[] | null>(null)
+  const loadAgents = useCallback(
+    () =>
+      api
+        .listAgentInstances()
+        .then(setAgents)
+        .catch(() => {}),
+    [],
+  )
   const refreshAuth = useCallback(
     () =>
       api
@@ -138,8 +159,18 @@ export default function App({
     })
   }, [refreshAuth])
   useEffect(() => {
-    if (auth && (auth.authenticated || auth.enabled === false)) loadApps()
-  }, [auth, loadApps])
+    if (auth && (auth.authenticated || auth.enabled === false)) {
+      loadApps()
+      loadAgents()
+    }
+  }, [auth, loadApps, loadAgents])
+  // A new or restarted agent takes about a minute; refresh until it's ready.
+  const agentStarting = agents?.some((a) => a.status === 'starting')
+  useEffect(() => {
+    if (!agentStarting) return
+    const t = setInterval(loadAgents, 3000)
+    return () => clearInterval(t)
+  }, [agentStarting, loadAgents])
   // 'failed' falls back to the password form (e.g. the user changed it).
   const [hostSignIn, setHostSignIn] = useState<'idle' | 'trying' | 'failed'>('idle')
   useEffect(() => {
@@ -242,7 +273,6 @@ export default function App({
 
   const nav = [
     { key: 'apps', label: 'Build & projects', icon: 'grid' },
-    { key: 'agents', label: 'Agents', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
   ]
@@ -353,6 +383,38 @@ export default function App({
               </button>
             ))}
           </nav>
+          <div className="sidebar-projects" data-testid="sidebar-agents">
+            <div className="sidebar-caption">AGENTS</div>
+            {(agents || []).map((a) => (
+              <button
+                key={a.id}
+                title={a.name}
+                data-testid={`sidebar-agent-${a.id}`}
+                className={
+                  route.name === 'agent' && route.id === a.id
+                    ? 'sidebar-project sidebar-agent active'
+                    : 'sidebar-project sidebar-agent'
+                }
+                onClick={() => setRoute({ name: 'agent', id: a.id })}
+              >
+                <span className="project-initial" aria-hidden="true">
+                  {a.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span>{a.name}</span>
+                <i className={`agent-dot ${a.status}`} aria-label={a.status} />
+              </button>
+            ))}
+            <button
+              className={route.name === 'agents' ? 'sidebar-project active' : 'sidebar-project'}
+              onClick={() => setRoute({ name: 'agents' })}
+              data-testid="sidebar-add-agent"
+            >
+              <span className="project-initial" aria-hidden="true">
+                <Icon name="plus" size={12} />
+              </span>
+              <span>Add an agent</span>
+            </button>
+          </div>
           <div className="sidebar-projects">
             <div className="sidebar-caption">RECENT PROJECTS</div>
             {apps.slice(0, 7).map((a) => (
@@ -412,7 +474,7 @@ export default function App({
         {/* MAIN */}
         <main
           id="main-content"
-          className={route.name === 'app' ? 'studio-main workspace-main' : 'studio-main'}
+          className={route.name === 'app' || route.name === 'agent' ? 'studio-main workspace-main' : 'studio-main'}
         >
           {route.name === 'apps' && (
             <BuilderHome
@@ -432,10 +494,42 @@ export default function App({
           {route.name === 'agents' && (
             <AgentsView
               onError={onError}
-              reloadApps={loadApps}
+              agents={agents || []}
               goModels={() => setRoute({ name: 'settings', section: 'models' })}
+              onOpen={(id) => {
+                loadAgents()
+                setRoute({ name: 'agent', id })
+              }}
             />
           )}
+          {route.name === 'agent' &&
+            (() => {
+              const agent = agents?.find((a) => a.id === route.id)
+              if (!agent)
+                return (
+                  agents && (
+                    <div className="content-page">
+                      <p>This agent was removed.</p>
+                      <button className="text-button" onClick={() => setRoute({ name: 'agents' })}>
+                        Add an agent
+                      </button>
+                    </div>
+                  )
+                )
+              return (
+                <AgentRoom
+                  key={agent.id}
+                  agent={agent}
+                  onChanged={loadAgents}
+                  onRemoved={() => {
+                    loadAgents()
+                    setRoute({ name: 'agents' })
+                  }}
+                  onError={onError}
+                  reloadApps={loadApps}
+                />
+              )
+            })()}
           {route.name === 'settings' && (
             <SettingsView initialSection={route.section} onError={onError} toast={toast} />
           )}
@@ -709,6 +803,7 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
   const commands: { label: string; route: Route }[] = [
     { label: 'Build a new project', route: { name: 'apps' } },
     { label: 'Project memory', route: { name: 'brain' } },
+    { label: 'Add an agent', route: { name: 'agents' } },
     { label: 'Model connections', route: { name: 'settings', section: 'models' } },
     { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },
     { label: 'Git credentials', route: { name: 'settings', section: 'git' } },

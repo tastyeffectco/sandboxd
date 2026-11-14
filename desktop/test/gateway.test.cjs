@@ -204,7 +204,7 @@ test('agent chats wait through a long silent reply, but not forever', async (t) 
   const { request } = await fixture(
     t,
     (req, res) => {
-      if (req.url === '/v1/agent-instances/abc/chat') {
+      if (req.url === '/v1/agent-instances/abc/chat' || req.url === '/v1/agent-instances/abc/chat/stream') {
         // Silent for longer than the normal idle limit, like an agent building an app.
         setTimeout(() => res.end('{"reply":"done"}'), 400)
         return
@@ -216,6 +216,7 @@ test('agent chats wait through a long silent reply, but not forever', async (t) 
   const chat = await request('/v1/agent-instances/abc/chat', {}, 'POST')
   assert.equal(chat.status, 200)
   assert.equal(chat.body, '{"reply":"done"}')
+  assert.equal((await request('/v1/agent-instances/abc/chat/stream', {}, 'POST')).status, 200)
   assert.equal((await request('/v1/agent-instances/xyz/chat', {}, 'POST')).status, 502)
   assert.equal((await request('/v1/apps')).status, 502)
 })
