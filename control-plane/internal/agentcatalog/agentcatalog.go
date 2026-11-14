@@ -110,7 +110,8 @@ var OpenClaw = Package{
 	UILabel:     "Control panel",
 	ProxyAuth:   true,
 	ChatModel:   "openclaw",
-	APIKeyEnv:   "OPENCLAW_GATEWAY_TOKEN",
+	// No shared token: OpenClaw refuses one next to proxy sign-in.
+	APIKeyEnv: "",
 	// sandboxd owns openclaw.json (read-only to OpenClaw): OpenClaw restarts
 	// its gateway whenever it saves its config, which cut off chats.
 	Env: []string{"HOME=/state", "OPENCLAW_STATE_DIR=/state",

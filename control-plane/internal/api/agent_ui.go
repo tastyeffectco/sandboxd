@@ -69,11 +69,20 @@ func (s *Server) agentProxyIP(ctx context.Context) (string, error) {
 }
 
 // refreshAgentConfig rewrites a proxy-sign-in agent's config when sandboxd's
-// address changed (or the agent predates proxy sign-in). OpenClaw reloads
-// its trusted address live; a change of sign-in mode needs a restart.
+// address changed, and re-creates one made before proxy sign-in.
 func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
 	if !pkg.ProxyAuth || s.AgentRoot == "" {
 		return nil
+	}
+	// An agent made before proxy sign-in still carries a shared token, which
+	// OpenClaw refuses next to proxy sign-in: make its container again (its
+	// memory and skills stay in its folder).
+	if s.Docker != nil {
+		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil &&
+			c.Config.Labels["sandboxd.agent.ui"] != uiVersion {
+			s.dropUISession(h.ID)
+			return s.provisionAgent(ctx, h, pkg)
+		}
 	}
 	ip, err := s.agentProxyIP(ctx)
 	if err != nil {
@@ -96,18 +105,10 @@ func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance,
 	if err != nil {
 		return err
 	}
+	// OpenClaw picks up a new trusted address without a restart.
 	if !bytes.Equal(old, []byte(config)) {
 		if err := writeAgentConfig(path, config, pkg.User); err != nil {
 			return err
-		}
-		if !bytes.Contains(old, []byte(`"trusted-proxy"`)) && s.Docker != nil {
-			name := agentContainer(h.ID)
-			if c, err := s.Docker.Inspect(ctx, name); err == nil && c.State.Running {
-				_ = s.Docker.Stop(ctx, name, 20)
-				if err := s.Docker.Start(ctx, name); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	if s.agentCfg.ip == nil {
@@ -233,7 +234,7 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 			uiWait(w, http.StatusServiceUnavailable, h.Name+" is paused. Start it to open its "+label+".")
 			return
 		}
-		if pkg.UILogin != "" && c.Config.Labels["sandboxd.agent.ui"] != uiVersion {
+		if c.Config.Labels["sandboxd.agent.ui"] != uiVersion {
 			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
 				s.Log.Warn("agent ui: re-create", "agent", h.ID, "err", err.Error())
 				uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" can’t open right now. Try again in a minute.")

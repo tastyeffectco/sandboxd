@@ -79,7 +79,7 @@ func TestRenderOpenClawConfig(t *testing.T) {
 
 func TestEveryPackageCanStart(t *testing.T) {
 	for _, p := range List() {
-		if p.Render == nil || p.ConfigFile == "" || p.ChatModel == "" || p.APIKeyEnv == "" || p.APIPort == 0 || p.StatePath == "" {
+		if p.Render == nil || p.ConfigFile == "" || p.ChatModel == "" || (p.APIKeyEnv == "" && !p.ProxyAuth) || p.APIPort == 0 || p.StatePath == "" {
 			t.Errorf("%s is missing what sandboxd needs to start it: %+v", p.ID, p)
 		}
 	}
@@ -88,5 +88,12 @@ func TestEveryPackageCanStart(t *testing.T) {
 func TestOpenClawConfigNeedsSandboxdAddress(t *testing.T) {
 	if _, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m"}); err == nil {
 		t.Fatal("without sandboxd's address OpenClaw would trust no one, or everyone")
+	}
+}
+
+func TestProxySignInAgentsGetNoSharedToken(t *testing.T) {
+	// OpenClaw will not start with a shared token next to trusted-proxy auth.
+	if OpenClaw.APIKeyEnv != "" {
+		t.Errorf("OpenClaw gets %s", OpenClaw.APIKeyEnv)
 	}
 }

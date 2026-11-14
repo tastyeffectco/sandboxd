@@ -270,7 +270,10 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	}
 	h.SecretHash = hashSecret(secret)
 	env := append(append([]string{}, pkg.Env...),
-		pkg.APIKeyEnv+"="+string(apiKey), agentcatalog.SecretEnv+"="+secret)
+		agentcatalog.SecretEnv+"="+secret)
+	if pkg.APIKeyEnv != "" { // proxy sign-in agents take no shared key
+		env = append(env, pkg.APIKeyEnv+"="+string(apiKey))
+	}
 	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
 	if pkg.UIPort != 0 {
 		labels = append(labels, "sandboxd.agent.ui="+uiVersion)
