@@ -38,10 +38,17 @@ type Package struct {
 	ConfigFile string                       `json:"-"`
 	Render     func(Config) (string, error) `json:"-"`
 	// Telegram: the agent can talk on Telegram with an allow-list of users.
-	Telegram bool   `json:"telegram"`
-	Memory   string `json:"-"`
-	ShmSize  string `json:"-"`
-	DiskNote string `json:"download"`
+	Telegram bool `json:"telegram"`
+	// WhatsApp: the agent can be linked to the owner's WhatsApp by QR code;
+	// WhatsAppCreds is where its WhatsApp login lands, relative to StatePath.
+	WhatsApp      bool   `json:"whatsapp"`
+	WhatsAppCreds string `json:"-"`
+	// ChannelEnv returns the environment that turns the configured channels on,
+	// for agents configured through variables rather than their config file.
+	ChannelEnv func(Config) []string `json:"-"`
+	Memory     string                `json:"-"`
+	ShmSize    string                `json:"-"`
+	DiskNote   string                `json:"download"`
 	// MemoryNote tells the user how much memory the agent can use.
 	MemoryNote string `json:"memory"`
 }
@@ -52,7 +59,7 @@ type Package struct {
 var Hermes = Package{
 	ID:          "hermes",
 	Label:       "Hermes",
-	Description: "A personal assistant that remembers, learns new skills and can build apps for you. Chat with it here or on Telegram.",
+	Description: "A personal assistant that remembers you and learns new skills: research, reminders, writing, and building apps. Talk to it on WhatsApp or Telegram.",
 	Image:       "nousresearch/hermes-agent@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d",
 	Cmd:         []string{"gateway", "run"},
 	User:        "10000:10000",
@@ -65,10 +72,15 @@ var Hermes = Package{
 	ConfigFile:  "config.yaml",
 	Render:      RenderHermesConfig,
 	Telegram:    true,
-	Memory:      "2g",
-	ShmSize:     "1g",
-	DiskNote:    "about 3 GB",
-	MemoryNote:  "up to 2 GB",
+	WhatsApp:    true,
+	// Its WhatsApp bridge's own session; "self-chat" answers the owner in
+	// their "Message yourself" chat.
+	WhatsAppCreds: "platforms/whatsapp/session/creds.json",
+	ChannelEnv:    hermesChannelEnv,
+	Memory:        "2g",
+	ShmSize:       "1g",
+	DiskNote:      "about 3 GB",
+	MemoryNote:    "up to 2 GB",
 }
 
 // OpenClaw is the OpenClaw personal assistant. Tested in its official image
@@ -77,7 +89,7 @@ var Hermes = Package{
 var OpenClaw = Package{
 	ID:          "openclaw",
 	Label:       "OpenClaw",
-	Description: "An open-source personal assistant with skills and a memory of its own. Chat with it here and ask it to build apps for you.",
+	Description: "An open-source personal assistant with skills and a memory of its own: it searches, plans, writes and builds apps for you. Talk to it on WhatsApp or Telegram.",
 	Image:       "ghcr.io/openclaw/openclaw@sha256:1a2a3ce113e435039dbeac5ae261759bb4759908563d91c81059e896b38c5d98",
 	Cmd:         []string{"node", "openclaw.mjs", "gateway"},
 	User:        "1000:1000",
@@ -92,6 +104,10 @@ var OpenClaw = Package{
 		"OPENCLAW_NO_RESPAWN=1", "NODE_COMPILE_CACHE=/tmp/openclaw-compile-cache"},
 	ConfigFile: "openclaw.json",
 	Render:     RenderOpenClawConfig,
+	Telegram:   true,
+	// WhatsApp is a plugin OpenClaw installs into its state on first link.
+	WhatsApp:      true,
+	WhatsAppCreds: "credentials/whatsapp/default/creds.json",
 	// It peaks at about 2.4 GB on a chat: with 2 GB and no swap it was killed.
 	Memory:     "3g",
 	ShmSize:    "1g",
@@ -127,6 +143,25 @@ type Config struct {
 	AgentID  string
 	Secret   string // the agent secret: model access and app tools
 	Model    string // the model id of the chosen connection
+	// TelegramUsers are the Telegram user ids the agent answers (its bot
+	// token is in the environment); empty leaves Telegram off.
+	TelegramUsers []string
+	// WhatsApp loads the agent's WhatsApp channel (also while linking);
+	// WhatsAppNumber is the owner's linked number, the only one it answers.
+	WhatsApp       bool
+	WhatsAppNumber string
+}
+
+func hermesChannelEnv(c Config) []string {
+	var env []string
+	if len(c.TelegramUsers) > 0 {
+		env = append(env, "TELEGRAM_ALLOWED_USERS="+strings.Join(c.TelegramUsers, ","))
+	}
+	if c.WhatsAppNumber != "" {
+		env = append(env, "WHATSAPP_ENABLED=true", "WHATSAPP_MODE=self-chat",
+			"WHATSAPP_ALLOWED_USERS="+c.WhatsAppNumber)
+	}
+	return env
 }
 
 // RenderHermesConfig returns config.yaml: the model goes through sandboxd's
@@ -187,6 +222,26 @@ func RenderOpenClawConfig(c Config) (string, error) {
 			"url": base + "/mcp", "transport": "streamable-http",
 			"headers": map[string]string{"Authorization": "Bearer " + ref},
 		}}},
+	}
+	channels := map[string]any{}
+	// Only the owner, in direct chats and groups alike (OpenClaw's startup
+	// check asks for both lists).
+	if len(c.TelegramUsers) > 0 { // the bot token is TELEGRAM_BOT_TOKEN
+		channels["telegram"] = map[string]any{"enabled": true, "dmPolicy": "allowlist",
+			"allowFrom": c.TelegramUsers, "groupAllowFrom": c.TelegramUsers}
+	}
+	if c.WhatsApp {
+		cfg["plugins"] = map[string]any{"entries": map[string]any{"whatsapp": map[string]any{"enabled": true}}}
+		// The plugin's WhatsApp CLI skill needs a tool the image does not have.
+		cfg["skills"] = map[string]any{"entries": disabledSkills(append([]string{"wacli"}, openClawUnavailableSkills...))}
+	}
+	if c.WhatsAppNumber != "" { // the owner's own number, as in OpenClaw's "personal phone" setup
+		owner := []string{"+" + c.WhatsAppNumber}
+		channels["whatsapp"] = map[string]any{"selfChatMode": true, "dmPolicy": "allowlist",
+			"allowFrom": owner, "groupAllowFrom": owner}
+	}
+	if len(channels) > 0 {
+		cfg["channels"] = channels
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	return string(b) + "\n", err

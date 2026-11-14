@@ -364,6 +364,7 @@ export interface AgentCatalogEntry {
   download: string
   memory: string
   telegram: boolean
+  whatsapp: boolean
 }
 export interface AgentInstance {
   id: string
@@ -373,6 +374,8 @@ export interface AgentInstance {
   model: string
   status: 'running' | 'stopped' | 'missing'
   telegram: boolean
+  telegram_bot?: string
+  whatsapp?: string // the linked number
   apps_today: number
   apps_per_day: number
   created_at: string
@@ -385,7 +388,31 @@ export interface AgentInstanceInput {
   telegram_allowed_users?: string
 }
 
+// Where an agent talks to its owner. A channel being linked moves through
+// preparing → scan (show the QR code) or waiting (send the bot a message) →
+// connecting → linked; failed carries a message.
+export interface AgentChannel {
+  status: 'off' | 'preparing' | 'scan' | 'waiting' | 'connecting' | 'linked' | 'failed'
+  qr?: string // text to draw as a QR code
+  qr_image?: string // or a ready QR image
+  bot?: string
+  number?: string
+  message?: string
+}
+export interface AgentChannels {
+  whatsapp: AgentChannel | null // null: this agent cannot use it
+  telegram: AgentChannel | null
+}
+
+const agentPath = (id: string) => `/v1/agent-instances/${encodeURIComponent(id)}`
+
 export const api = {
+  getAgentChannels: (id: string) => req<AgentChannels>('GET', `${agentPath(id)}/channels`),
+  linkWhatsApp: (id: string) => req<AgentChannels>('POST', `${agentPath(id)}/channels/whatsapp`),
+  unlinkWhatsApp: (id: string) => req<AgentChannels>('DELETE', `${agentPath(id)}/channels/whatsapp`),
+  linkTelegram: (id: string, bot_token: string) =>
+    req<AgentChannels>('POST', `${agentPath(id)}/channels/telegram`, { bot_token }),
+  unlinkTelegram: (id: string) => req<AgentChannels>('DELETE', `${agentPath(id)}/channels/telegram`),
   listAgentCatalogEntrys: () =>
     req<{ packages: AgentCatalogEntry[] }>('GET', '/v1/agent-catalog').then((r) => r.packages || []),
   listAgentInstances: () => req<{ agents: AgentInstance[] }>('GET', '/v1/agent-instances').then((r) => r.agents || []),

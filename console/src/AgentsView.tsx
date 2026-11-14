@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
+import { AgentChannels } from './AgentChannels'
 import { AgentMessage } from './AgentMessage'
 import { c, font, Btn, Card, Input, StatusPill } from './design/kit'
 
-// Agents are assistants (Hermes first) that sandboxd runs for you. They talk
-// to you here or on Telegram and can create and change apps on this sandboxd.
+// Agents are personal assistants (Hermes, OpenClaw) that sandboxd runs for
+// you. You talk to them on WhatsApp or Telegram; they research, plan, write,
+// remember, and can create and change apps on this sandboxd.
 export function AgentsView({
   onError,
   reloadApps,
@@ -33,8 +35,8 @@ export function AgentsView({
     <div className="content-page">
       <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Agents</h1>
       <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 620 }}>
-        Assistants that work for you around the clock. Chat with them here or on Telegram; they remember what
-        you tell them and can create and change apps on this sandboxd.
+        Personal assistants that work for you around the clock. Message them on WhatsApp or Telegram: they
+        search, plan, write, remember what you tell them, and can build apps for you.
       </p>
       {agents === null && <p style={{ color: c.muted2 }}>Loading…</p>}
       {agents?.map((h) => (
@@ -64,8 +66,6 @@ function AddAgent({
   onError: (message: string) => void
 }) {
   const [connection, setConnection] = useState('')
-  const [token, setToken] = useState('')
-  const [users, setUsers] = useState('')
   const [busy, setBusy] = useState(false)
   const [warning, setWarning] = useState('')
   const chosen = connection || models[0]?.id || ''
@@ -76,8 +76,6 @@ function AddAgent({
       const res = await api.createAgentInstance({
         package: pkg.id,
         connection_id: chosen,
-        telegram_bot_token: token.trim() || undefined,
-        telegram_allowed_users: users.trim() || undefined,
       })
       if (res.warning) setWarning(res.warning)
       onAdded()
@@ -113,29 +111,13 @@ function AddAgent({
               </select>
             </label>
           )}
-          {pkg.telegram && (
-            <details style={{ margin: '4px 0 14px' }}>
-              <summary>Talk to {pkg.label} on Telegram (optional)</summary>
-              <p style={{ color: c.muted, fontSize: 13 }}>
-                Create a bot with @BotFather and paste its token. Add your Telegram user ID (from @userinfobot) so
-                only you can talk to it.
-              </p>
-              <label className="form-field">
-                Bot token
-                <Input value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
-              </label>
-              <label className="form-field">
-                Your Telegram user ID
-                <Input value={users} onChange={(e) => setUsers(e.target.value)} />
-              </label>
-            </details>
-          )}
           <Btn variant="primary" disabled={busy || !chosen} onClick={() => void add()} data-testid="add-agent">
             {busy ? `Setting up ${pkg.label}…` : `Add ${pkg.label}`}
           </Btn>
           <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
             The first setup downloads {pkg.download}. {pkg.label} runs in its own protected space, uses{' '}
-            {pkg.memory} of memory and keeps running while this computer is on.
+            {pkg.memory} of memory and keeps running while this computer is on. Once it’s added, link your
+            WhatsApp or Telegram to talk to it from your phone.
           </p>
         </>
       )}
@@ -202,7 +184,7 @@ function AgentInstanceCard({
         <strong style={{ fontSize: 16 }}>{agent.name}</strong>
         <StatusPill status={agent.status === 'missing' ? 'not started' : agent.status} />
         <span style={{ color: c.muted2, fontSize: 12 }}>
-          {agent.apps_today}/{agent.apps_per_day} new apps today{agent.telegram ? ' · on Telegram' : ''}
+          {agent.apps_today}/{agent.apps_per_day} new apps today
         </span>
         <span style={{ flex: 1 }} />
         {running ? (
@@ -225,10 +207,12 @@ function AgentInstanceCard({
           Remove
         </Btn>
       </div>
-      <div style={{ margin: '16px 0', display: 'grid', gap: 10 }} data-testid="agent-chat">
+      <AgentChannels agent={agent} onError={onError} />
+      <h3 style={{ fontSize: 14, margin: '20px 0 4px' }}>Try it here</h3>
+      <div style={{ margin: '8px 0 12px', display: 'grid', gap: 10 }} data-testid="agent-chat">
         {turns.length === 0 && (
           <p style={{ color: c.muted, margin: 0 }}>
-            Try: “Build me a recipe app with a shopping list” or “What can you do?”
+            Try: “What can you do?”, “Plan my week” or “Build me a recipe app with a shopping list”.
           </p>
         )}
         {turns.map((t, i) =>

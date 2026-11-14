@@ -3,8 +3,9 @@
 Agents are assistants sandboxd runs for you, next to your apps. The first is
 [Hermes](https://github.com/NousResearch/hermes-agent) by Nous Research: it
 remembers what you tell it, learns skills, runs scheduled jobs, and can create
-and change apps on your sandboxd. You chat with it in the console
-(**Agents**) or on Telegram.
+and change apps on your sandboxd. [OpenClaw](https://github.com/openclaw/openclaw)
+works the same way. You talk to them on WhatsApp or Telegram, or try them out
+in the console (**Agents**).
 
 They are different from the **coding agents** (OpenCode, Claude Code, Codex,
 Pi) that build an app inside its workspace: an agent here works *across* your
@@ -19,9 +20,28 @@ apps and asks those coding agents to build or change them.
    the free model.
 2. Open **Agents**, choose the model and click **Add Hermes**. The first setup
    downloads Hermes's image (about 3 GB).
-3. Optional: paste a Telegram bot token (from @BotFather) and your Telegram
-   user ID. Only the listed users can talk to it. Telegram uses long polling,
-   so it works behind a home router.
+3. Link WhatsApp or Telegram on the agent's card (see below).
+
+## Talking to your agent: WhatsApp and Telegram
+
+Both connect outward from your computer, so they work behind a home router
+with no address or port to open. The agent answers only you.
+
+- **WhatsApp**: click **Link WhatsApp** and scan the QR code with your phone
+  (WhatsApp → Settings → Linked devices → Link a device), as for WhatsApp Web.
+  The agent is linked to *your own* WhatsApp account and answers you in your
+  "Message yourself" chat; it ignores everyone else. sandboxd runs the
+  agent's own WhatsApp support inside its container (Hermes's bridge, or
+  OpenClaw's WhatsApp plugin, installed into the agent's state the first
+  time) and reads the linked number from the saved login. The login stays in
+  the agent's state directory; **Unlink** deletes it.
+- **Telegram**: create a bot with @BotFather, paste its token, then send the
+  bot any message. That first message tells sandboxd your Telegram user ID, so
+  the agent answers only you; you never have to look the ID up. The token is
+  checked with Telegram before anything is saved.
+
+The agent pauses with the computer: Telegram keeps messages for a day and
+WhatsApp delivers them when the agent is back.
 
 ## What Hermes can do on sandboxd
 
@@ -52,13 +72,16 @@ created this app") and is tagged `created-by:Hermes`.
 - **No keys inside**: Hermes reaches its model only through sandboxd's proxy,
   which adds the real key, and reaches sandboxd's tools only with its own
   agent secret. The secret is replaced every time the container is
-  re-created. The Telegram token is stored encrypted and given to Hermes,
-  which needs it to talk to Telegram.
-- **Untrusted input**: what Hermes reads from the web, Telegram or app
+  re-created. The Telegram token is stored encrypted and given to the agent,
+  which needs it to talk to Telegram; the WhatsApp login lives only in the
+  agent's state directory.
+- **Untrusted input**: what Hermes reads from the web, WhatsApp, Telegram or app
   results is data, not instructions. sandboxd limits what it can do (the four
   tools, the daily cap) rather than trusting it.
 
 ## API
 
 `/v1/agent-catalog`, `/v1/agent-instances` (list, add), `/v1/agent-instances/{id}` (get,
-remove), `/v1/agent-instances/{id}/start|stop|chat`. See [openapi.yaml](openapi.yaml).
+remove), `/v1/agent-instances/{id}/start|stop|chat`, and
+`/v1/agent-instances/{id}/channels` (get), `.../channels/whatsapp|telegram`
+(link with POST, unlink with DELETE). See [openapi.yaml](openapi.yaml).

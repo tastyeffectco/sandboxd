@@ -114,6 +114,16 @@ type Server struct {
 	// disables agents.
 	AgentRoot string
 
+	// TelegramAPI is the Telegram Bot API base URL (tests point it at a fake).
+	// Empty → https://api.telegram.org.
+	TelegramAPI string
+
+	// channelLinks are the agents' channel links in progress (see
+	// agent_channels.go); provisionMu serializes their container re-creations.
+	channelMu    sync.Mutex
+	channelLinks map[string]*channelLink
+	provisionMu  sync.Mutex
+
 	// inner is the router behind the auth middleware; agent tools call /v1
 	// routes through it as the agent's owner.
 	inner http.Handler
@@ -317,6 +327,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-instances/{id}/start", s.observe("POST /v1/agent-instances/{id}/start", s.v1StartAgentInstance))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/stop", s.observe("POST /v1/agent-instances/{id}/stop", s.v1StopAgentInstance))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/chat", s.observe("POST /v1/agent-instances/{id}/chat", s.v1AgentChat))
+	mux.HandleFunc("GET /v1/agent-instances/{id}/channels", s.observe("GET /v1/agent-instances/{id}/channels", s.v1AgentChannels))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/channels/whatsapp", s.observe("POST /v1/agent-instances/{id}/channels/whatsapp", s.v1LinkWhatsApp))
+	mux.HandleFunc("DELETE /v1/agent-instances/{id}/channels/whatsapp", s.observe("DELETE /v1/agent-instances/{id}/channels/whatsapp", s.v1UnlinkWhatsApp))
+	mux.HandleFunc("POST /v1/agent-instances/{id}/channels/telegram", s.observe("POST /v1/agent-instances/{id}/channels/telegram", s.v1LinkTelegram))
+	mux.HandleFunc("DELETE /v1/agent-instances/{id}/channels/telegram", s.observe("DELETE /v1/agent-instances/{id}/channels/telegram", s.v1UnlinkTelegram))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))

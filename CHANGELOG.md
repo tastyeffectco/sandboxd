@@ -8,6 +8,15 @@ patch** — each lands the meaningful changes merged since the last one — and 
 
 ## [Unreleased]
 
+### Added
+
+- **Talk to your agents on WhatsApp and Telegram.** Link WhatsApp by scanning
+  a QR code with your phone, as for WhatsApp Web: the agent answers you in your
+  "Message yourself" chat and ignores everyone else. For Telegram, paste your
+  bot's token and send it a message; that is how the agent learns it's you, so
+  there is no user ID to look up. Works for Hermes and OpenClaw, from a home
+  computer, with no address or port to open.
+
 ### Fixed
 
 - **Desktop engine updates now go through.** Updating from 0.3.25 always
