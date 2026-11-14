@@ -316,3 +316,19 @@ test('an agent app has its own origin that reaches only that agent app', async (
   // Another port's ui- host is not ours.
   assert.equal((await request('/x', { host: 'ui-o1abc2.localhost:1' })).status, 403)
 })
+
+test('an agent app may redirect within itself, never elsewhere', async (t) => {
+  const { request, gateway } = await fixture(t, (req, res) => {
+    const to = { '/v1/agent-instances/o1abc2/ui/': '/chat', '/v1/agent-instances/o1abc2/ui/away': '//evil.example/x', '/v1/agent-instances/o1abc2/ui/abs': 'http://evil.example/' }[req.url]
+    res.writeHead(302, { location: to })
+    res.end()
+  })
+  const host = `ui-o1abc2.localhost:${new URL(gateway.origin).port}`
+  const inside = await request('/', { host })
+  assert.equal(inside.status, 302)
+  assert.equal(inside.headers.location, '/chat')
+  assert.equal((await request('/away', { host })).status, 502)
+  assert.equal((await request('/abs', { host })).status, 502)
+  // The workspace itself still never follows engine redirects.
+  assert.equal((await request('/v1/agent-instances/o1abc2/ui/')).status, 502)
+})

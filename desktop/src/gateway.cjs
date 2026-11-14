@@ -119,6 +119,13 @@ async function createGateway({
           // Redirects are never followed or handed to the renderer: credentials
           // must not travel to another origin or to a non-API path.
           if (remote.statusCode >= 300 && remote.statusCode < 400 && remote.statusCode !== 304) {
+            // An agent's app may move between its own pages; it never leaves them.
+            const location = String(remote.headers.location || '')
+            if (agent && /^\/(?![/\\])/.test(location)) {
+              remote.resume()
+              response.writeHead(remote.statusCode, { location })
+              return response.end()
+            }
             remote.resume()
             return error(response, 502, 'The engine redirected this request. Use its final API origin.')
           }

@@ -289,6 +289,11 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			// A move to its own address stays a move within the app.
+			if loc, err := url.Parse(resp.Header.Get("Location")); err == nil && loc.Host == target.Host {
+				loc.Scheme, loc.Host = "", ""
+				resp.Header.Set("Location", loc.String())
+			}
 			// The app is shown inside the agent's window.
 			resp.Header.Del("X-Frame-Options")
 			if csp := resp.Header.Get("Content-Security-Policy"); csp != "" {
