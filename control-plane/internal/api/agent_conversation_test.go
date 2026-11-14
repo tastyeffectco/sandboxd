@@ -128,7 +128,7 @@ func TestAgentTurnStopAndRestart(t *testing.T) {
 	s.v1StopAgentMessage(httptest.NewRecorder(), req)
 	<-done
 	msgs, _ := listMessages(t, s)
-	if msgs[0].State != "stopped" || msgs[0].Content != "Working on it" {
+	if msgs[0].State != "stopped" || msgs[0].Content != "Working on it" || string(msgs[0].Steps) != "[]" {
 		t.Fatalf("stopped reply: %+v", msgs[0])
 	}
 
@@ -148,4 +148,3 @@ func TestAgentTurnStopAndRestart(t *testing.T) {
 		t.Fatalf("clear: %d, %d messages left", rec.Code, len(msgs))
 	}
 }
-

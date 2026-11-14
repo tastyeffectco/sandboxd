@@ -77,7 +77,7 @@ export function AgentRoom({
       let appChanged = false
       for (const m of r.messages) {
         if (seen.current[m.id] === 'working' && m.state !== 'working')
-          appChanged ||= m.steps.some((s) => /create_app|ask_app/.test(s.tool) && s.status === 'done')
+          appChanged ||= (m.steps || []).some((s) => /create_app|ask_app/.test(s.tool) && s.status === 'done')
         seen.current[m.id] = m.state
       }
       if (appChanged) reloadApps()
@@ -226,9 +226,9 @@ export function AgentRoom({
                     <p>{m.thinking}</p>
                   </details>
                 )}
-                {m.steps.some((s) => stepLabel(s)) && (
+                {(m.steps || []).some((s) => stepLabel(s)) && (
                   <ul className="bubble-steps" data-testid="agent-steps">
-                    {m.steps
+                    {(m.steps || [])
                       .filter((s) => stepLabel(s))
                       .map((s, k) => (
                         <li key={s.id || k} className={s.status}>
@@ -251,7 +251,7 @@ export function AgentRoom({
                 ) : (
                   m.state === 'working' &&
                   !m.thinking &&
-                  !m.steps.length && (
+                  !(m.steps || []).length && (
                     <span className="typing" aria-label={`${agent.name} is typing`}>
                       <i />
                       <i />

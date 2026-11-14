@@ -53,7 +53,7 @@ type v1AgentMessage struct {
 
 func agentMessageView(m *store.AgentMessage) v1AgentMessage {
 	steps := json.RawMessage(m.Steps)
-	if !json.Valid(steps) {
+	if !json.Valid(steps) || string(steps) == "null" {
 		steps = json.RawMessage("[]")
 	}
 	return v1AgentMessage{ID: m.ID, Role: m.Role, Content: m.Content, Thinking: m.Thinking, Steps: steps,
@@ -153,7 +153,7 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusConflict, "busy", h.Name+" is still answering. Wait for it, or stop it.")
 		return
 	}
-	live := &liveTurn{cancel: cancel, msg: *reply}
+	live := &liveTurn{cancel: cancel, msg: *reply, steps: []agentStep{}}
 	s.turns.live[h.ID] = live
 	s.turns.mu.Unlock()
 
@@ -241,6 +241,9 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 		if live.steps[i].Status == "running" {
 			live.steps[i].Status = map[bool]string{true: "done", false: "failed"}[live.msg.State == "done"]
 		}
+	}
+	if live.steps == nil {
+		live.steps = []agentStep{}
 	}
 	b, _ := json.Marshal(live.steps)
 	live.msg.Steps = string(b)
