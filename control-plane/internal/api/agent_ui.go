@@ -35,9 +35,10 @@ import (
 
 // agentConfigs remembers, per agent, the sandboxd address its config trusts.
 type agentConfigs struct {
-	mu   sync.Mutex
-	ip   map[string]string
-	jars map[string]http.CookieJar // sandboxd's sessions with agent apps
+	mu     sync.Mutex
+	ip     map[string]string
+	jars   map[string]http.CookieJar // sandboxd's sessions with agent apps
+	tokens map[string]string         // sandboxd's session tokens with agent apps
 }
 
 // setAgentIdentity signs a request to an agent in as its owner, through
@@ -172,6 +173,7 @@ func (s *Server) uiSession(h *store.AgentInstance) http.CookieJar {
 func (s *Server) dropUISession(id string) {
 	s.agentCfg.mu.Lock()
 	delete(s.agentCfg.jars, id)
+	delete(s.agentCfg.tokens, id)
 	s.agentCfg.mu.Unlock()
 }
 
@@ -201,6 +203,48 @@ func (s *Server) uiSignIn(ctx context.Context, h *store.AgentInstance, base *url
 		return fmt.Errorf("sign-in answered HTTP %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// pairScript runs inside OpenMausBot's container, where a request from its
+// own loopback is its owner: it opens a pairing and redeems it for a full
+// session token, which only sandboxd keeps.
+const pairScript = `set -e
+c=$(curl -sf -X POST -H 'content-type: application/json' -d '{"label":"sandboxd"}' http://127.0.0.1:8799/api/auth/pairing)
+code=$(printf '%s' "$c" | sed -n 's/.*"code":"\([^"]*\)".*/\1/p')
+r=$(curl -sf -X POST -H 'content-type: application/json' -d "{\"code\":\"$code\",\"label\":\"sandboxd\"}" http://127.0.0.1:8799/api/auth/pair)
+printf '%s' "$r" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p'`
+
+var pairToken = regexp.MustCompile(`^omb_sess_[A-Za-z0-9_-]{20,200}$`)
+
+// uiToken is sandboxd's session token for an app it signs in to by pairing.
+// It is kept in memory only; a fresh one is made after a restart.
+func (s *Server) uiToken(ctx context.Context, h *store.AgentInstance) (string, error) {
+	s.agentCfg.mu.Lock()
+	t := s.agentCfg.tokens[h.ID]
+	s.agentCfg.mu.Unlock()
+	if t != "" {
+		return t, nil
+	}
+	if s.Docker == nil {
+		return "", errors.New("no docker")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	res, err := s.Docker.Exec(ctx, agentContainer(h.ID), []string{"sh", "-c", pairScript})
+	if err != nil {
+		return "", err
+	}
+	t = strings.TrimSpace(res.Stdout)
+	if !pairToken.MatchString(t) {
+		return "", fmt.Errorf("pairing did not return a session (exit %d)", res.ExitCode)
+	}
+	s.agentCfg.mu.Lock()
+	if s.agentCfg.tokens == nil {
+		s.agentCfg.tokens = map[string]string{}
+	}
+	s.agentCfg.tokens[h.ID] = t
+	s.agentCfg.mu.Unlock()
+	return t, nil
 }
 
 // uiWait answers the agent's window while its app cannot open yet: a plain
@@ -254,7 +298,19 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 	}
 	target := &url.URL{Scheme: "http", Host: agentUIHost(h.ID, pkg.UIPort)}
 	var jar http.CookieJar
-	if pkg.UILogin != "" {
+	var bearer string
+	if pkg.UILogin == "pairing" {
+		t, err := s.uiToken(r.Context(), h)
+		if err != nil {
+			if s.Log != nil {
+				s.Log.Warn("agent ui: pair", "agent", h.ID, "err", err.Error())
+			}
+			uiWait(w, http.StatusServiceUnavailable, h.Name+"’s "+label+" is starting… this takes about a minute.")
+			return
+		}
+		bearer = t
+	}
+	if pkg.UILogin == "password" {
 		jar = s.uiSession(h)
 		if len(jar.Cookies(target)) == 0 {
 			if err := s.uiSignIn(r.Context(), h, target, jar); err != nil {
@@ -278,6 +334,9 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 				p.Out.Header.Del(k)
 			}
 			setAgentIdentity(p.Out.Header)
+			if bearer != "" {
+				p.Out.Header.Set("Authorization", "Bearer "+bearer)
+			}
 			if jar != nil {
 				for _, c := range jar.Cookies(target) {
 					p.Out.AddCookie(c)
@@ -298,6 +357,9 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del("X-Frame-Options")
 			if csp := resp.Header.Get("Content-Security-Policy"); csp != "" {
 				resp.Header.Set("Content-Security-Policy", strings.TrimSpace(frameAncestors.ReplaceAllString(csp, "")))
+			}
+			if bearer != "" && resp.StatusCode == http.StatusUnauthorized {
+				s.dropUISession(h.ID) // signed in again on the next load
 			}
 			if jar != nil {
 				// sandboxd keeps the session; a lapsed one is renewed on the next load.

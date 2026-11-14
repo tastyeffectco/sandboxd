@@ -42,6 +42,8 @@ type v1AgentInstance struct {
 	CreatedAt    string `json:"created_at"`
 	// UILabel names the agent's own app, served at ui/; empty when it has none.
 	UILabel string `json:"ui_label,omitempty"`
+	// Chat: sandboxd's chat can talk to it; otherwise it is used in its app.
+	Chat bool `json:"chat"`
 }
 
 // agentAppsPerDay caps how many apps one agent may create per day.
@@ -82,7 +84,12 @@ func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) 
 	}
 	return v1AgentInstance{ID: h.ID, Package: h.Package, Name: h.Name, ConnectionID: h.ConnectionID, Model: h.Model,
 		Status: status, Telegram: len(h.TelegramCiphertext) > 0, AppsToday: today, AppsPerDay: agentAppsPerDay,
-		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package)}
+		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package), Chat: hasChat(h.Package)}
+}
+
+func hasChat(pkgID string) bool {
+	pkg, ok := agentcatalog.Get(pkgID)
+	return ok && pkg.Chat
 }
 
 // uiLabel names the agent's own app, or "" when it has none.
@@ -246,16 +253,18 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 			return err
 		}
 	}
-	config, err := pkg.Render(cfg)
-	if err != nil {
-		return err
-	}
-	cfgPath := filepath.Join(dir, pkg.ConfigFile)
-	if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
-		return err
-	}
-	if err := os.Chown(cfgPath, uid, gid); err != nil {
-		return err
+	if pkg.Render != nil {
+		config, err := pkg.Render(cfg)
+		if err != nil {
+			return err
+		}
+		cfgPath := filepath.Join(dir, pkg.ConfigFile)
+		if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
+			return err
+		}
+		if err := os.Chown(cfgPath, uid, gid); err != nil {
+			return err
+		}
 	}
 	if pkg.ProxyAuth {
 		s.agentCfg.mu.Lock()
@@ -271,6 +280,9 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	h.SecretHash = hashSecret(secret)
 	env := append(append([]string{}, pkg.Env...),
 		agentcatalog.SecretEnv+"="+secret)
+	if pkg.RenderEnv != nil {
+		env = append(env, pkg.RenderEnv(cfg)...)
+	}
 	if pkg.APIKeyEnv != "" { // proxy sign-in agents take no shared key
 		env = append(env, pkg.APIKeyEnv+"="+string(apiKey))
 	}
@@ -299,7 +311,7 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	_, err = s.Docker.Run(ctx, docker.RunSpec{
 		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
 		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
-		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize,
+		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize, Init: pkg.Init,
 		Tmpfs:   tmpfs,
 		User:    pkg.User,
 		Restart: "unless-stopped", // always on: survives engine and computer restarts
@@ -409,6 +421,10 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if !pkg.Chat {
+		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
+		return
+	}
 	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
 		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
 	}

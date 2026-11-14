@@ -79,7 +79,9 @@ func TestRenderOpenClawConfig(t *testing.T) {
 
 func TestEveryPackageCanStart(t *testing.T) {
 	for _, p := range List() {
-		if p.Render == nil || p.ConfigFile == "" || p.ChatModel == "" || (p.APIKeyEnv == "" && !p.ProxyAuth) || p.APIPort == 0 || p.StatePath == "" {
+		chatOK := !p.Chat || (p.ChatModel != "" && (p.APIKeyEnv != "" || p.ProxyAuth))
+		configOK := (p.Render != nil && p.ConfigFile != "") || p.RenderEnv != nil
+		if !chatOK || !configOK || p.APIPort == 0 || p.StatePath == "" || (!p.Chat && p.UIPort == 0) {
 			t.Errorf("%s is missing what sandboxd needs to start it: %+v", p.ID, p)
 		}
 	}
@@ -95,5 +97,17 @@ func TestProxySignInAgentsGetNoSharedToken(t *testing.T) {
 	// OpenClaw will not start with a shared token next to trusted-proxy auth.
 	if OpenClaw.APIKeyEnv != "" {
 		t.Errorf("OpenClaw gets %s", OpenClaw.APIKeyEnv)
+	}
+}
+
+func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
+	env := strings.Join(RenderOpenMausBotEnv(Config{ProxyURL: "http://sandboxd:9100/", AgentID: "m1", Secret: "s", Model: "deepseek/x"}), "\n")
+	for _, want := range []string{"OPENAI_COMPAT_URL=http://sandboxd:9100/agents/m1/v1", "OPENAI_COMPAT_API_KEY=s", "OPENAI_COMPAT_MODEL=deepseek/x"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("missing %s in\n%s", want, env)
+		}
+	}
+	if !strings.Contains(strings.Join(OpenMausBot.Env, " "), "OMB_BOT_BOX=0") {
+		t.Error("its per-bot sandbox needs user namespaces, which sandboxd's profile does not grant")
 	}
 }

@@ -53,6 +53,13 @@ type Package struct {
 	// ConfigFile is written into StatePath by Render before every start.
 	ConfigFile string                       `json:"-"`
 	Render     func(Config) (string, error) `json:"-"`
+	// RenderEnv adds per-agent environment (agents configured by variables).
+	RenderEnv func(Config) []string `json:"-"`
+	// Init runs a minimal init that reaps child processes (browsers).
+	Init bool `json:"-"`
+	// Chat: sandboxd's own chat window can talk to it. Agents without it
+	// open on their own app.
+	Chat bool `json:"chat"`
 	// Telegram: the agent can talk on Telegram with an allow-list of users.
 	Telegram bool   `json:"telegram"`
 	Memory   string `json:"-"`
@@ -79,6 +86,7 @@ var Hermes = Package{
 	UIPort:    9119,
 	UILabel:   "Dashboard",
 	UILogin:   "password",
+	Chat:      true,
 	ChatModel: "hermes-agent",
 	APIKeyEnv: "API_SERVER_KEY",
 	Env: []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642",
@@ -109,6 +117,7 @@ var OpenClaw = Package{
 	UIPort:      18789,
 	UILabel:     "Control panel",
 	ProxyAuth:   true,
+	Chat:        true,
 	ChatModel:   "openclaw",
 	// No shared token: OpenClaw refuses one next to proxy sign-in.
 	APIKeyEnv: "",
@@ -127,7 +136,41 @@ var OpenClaw = Package{
 	MemoryNote: "up to 3 GB",
 }
 
-var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw}
+// OpenMausBot is OpenMausBot's bot workspace, used through its own app.
+// Tested in its official image under sandboxd's profile (non-root, no
+// capabilities, read-only root, no-new-privileges); its per-bot sandbox is
+// off (it needs user namespaces) and Chrome runs without its own sandbox,
+// as OpenMausBot does in any container.
+var OpenMausBot = Package{
+	ID:          "openmausbot",
+	Label:       "OpenMausBot",
+	Description: "Bots that work on a computer of their own: they browse, use files and run tasks for you. Use it in its own app here.",
+	Image:       "ghcr.io/milind-soni/openmausbot@sha256:597574f2ee587ff9a1c0a960dc8395714103f228d709ba5353f09a59f4ec9415",
+	User:        "1001:1001",
+	StatePath:   "/data",
+	APIPort:     8799,
+	UIPort:      8799,
+	UILabel:     "Workspace",
+	UILogin:     "pairing",
+	Env: []string{"HOME=/data", "OMB_LAN=1", "OMB_BOT_BOX=0", "OMB_SERVER_NAME=sandboxd",
+		"OPENAI_COMPAT_PROVIDER=sandboxd"},
+	RenderEnv:  RenderOpenMausBotEnv,
+	Init:       true,
+	UploadsDir: "uploads",
+	Memory:     "3g",
+	ShmSize:    "512m",
+	DiskNote:   "about 1.5 GB",
+	MemoryNote: "up to 3 GB",
+}
+
+var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw, OpenMausBot.ID: OpenMausBot}
+
+// RenderOpenMausBotEnv points its built-in OpenAI-compatible engine at
+// sandboxd's model proxy (the real key never enters the container).
+func RenderOpenMausBotEnv(c Config) []string {
+	base := strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID + "/v1"
+	return []string{"OPENAI_COMPAT_URL=" + base, "OPENAI_COMPAT_API_KEY=" + c.Secret, "OPENAI_COMPAT_MODEL=" + c.Model}
+}
 
 // Get returns a package by id.
 func Get(id string) (Package, bool) {

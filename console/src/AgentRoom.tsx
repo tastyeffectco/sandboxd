@@ -90,8 +90,9 @@ export function AgentRoom({
   const end = useRef<HTMLDivElement>(null)
   const seen = useRef<Record<string, string>>({})
   const appUrl = agentAppUrl(agent)
-  const [view, setView] = useState<View>(() => (appUrl ? savedView(agent.id) : 'chat'))
-  const [appOpened, setAppOpened] = useState(view === 'app')
+  const chatless = agent.chat === false
+  const [view, setView] = useState<View>(() => (chatless ? 'app' : appUrl ? savedView(agent.id) : 'chat'))
+  const [appOpened, setAppOpened] = useState(view === 'app' || chatless)
   const choose = (next: View) => {
     setView(next)
     if (next === 'app') setAppOpened(true)
@@ -253,7 +254,7 @@ export function AgentRoom({
               Start
             </button>
           )}
-          <button
+          {!chatless && <button
             className="text-button"
             disabled={busy || working || !count}
             onClick={() => {
@@ -266,7 +267,7 @@ export function AgentRoom({
             data-testid="agent-clear"
           >
             Clear conversation
-          </button>
+          </button>}
           <button
             className="text-button danger"
             disabled={busy}
@@ -283,7 +284,13 @@ export function AgentRoom({
         </div>
       </header>
 
-      {appUrl && (
+      {chatless && !appUrl && (
+        <p className="bubble-note" style={{ margin: 'auto' }}>
+          Open the sandboxd desktop app to use {agent.name}.
+        </p>
+      )}
+
+      {appUrl && !chatless && (
         <nav className="agent-views" role="tablist" aria-label={`${agent.name} views`}>
           <button role="tab" aria-selected={view === 'chat'} className={view === 'chat' ? 'active' : ''} onClick={() => choose('chat')} data-testid="agent-view-chat">
             <Icon name="spark" size={14} /> Chat

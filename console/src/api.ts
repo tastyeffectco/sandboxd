@@ -382,6 +382,8 @@ export interface AgentInstance {
   created_at: string
   /** The agent's own app (e.g. OpenClaw's Control panel), when it has one. */
   ui_label?: string
+  /** sandboxd's chat can talk to it; otherwise it is used in its own app. */
+  chat?: boolean
 }
 // One conversation per agent, kept by the engine like a chat app: replies keep
 // going when the window closes. Every agent's stream becomes the same shape.

@@ -142,6 +142,10 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if !pkg.Chat {
+		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
+		return
+	}
 	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
 		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
 	}
