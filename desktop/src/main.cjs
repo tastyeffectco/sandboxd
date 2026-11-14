@@ -16,6 +16,20 @@ let config = { connections: [], selected: '', sessions: {} }
 let writes = Promise.resolve()
 let connecting = false
 let localEngine
+let lastHeal = 0
+// The local engine can stop while the app is open (Windows sleep, WSL
+// updates, a lost keepalive). Start it again instead of leaving the user
+// with an error; setup only probes when the engine is in fact running.
+function healEngine() {
+  if (!localEngine || config.selected !== ENGINE_URL) return ''
+  const state = localEngine.state()
+  if (!state.installed) return ''
+  if (!state.busy && Date.now() - lastHeal > 30000) {
+    lastHeal = Date.now()
+    void probeEngine(ENGINE_URL, false).catch(() => localEngine.start())
+  }
+  return 'Your engine stopped. Starting it again, this takes about a minute…'
+}
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -255,6 +269,7 @@ async function start() {
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
+    onUnreachable: healEngine,
   })
   desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))

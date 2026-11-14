@@ -30,6 +30,9 @@ async function createGateway({
   engine = '',
   session = '',
   onSession = () => {},
+  // Called when the engine does not answer; may return a plainer message
+  // (the local engine is being started again).
+  onUnreachable = () => '',
   idleTimeout = 120000,
   // An agent's chat reply can take minutes of silence (it builds an app);
   // the engine itself gives up after 15 minutes.
@@ -149,8 +152,13 @@ async function createGateway({
           },
         ),
       )
-      proxy.on('error', () =>
-        error(response, 502, 'Cannot reach the engine. Check the address and whether sandboxd is running.'),
+      proxy.on('error', (failure) =>
+        error(
+          response,
+          502,
+          (failure?.code === 'ECONNREFUSED' && onUnreachable()) ||
+            'Cannot reach the engine. Check the address and whether sandboxd is running.',
+        ),
       )
       // Task event streams stay open through quiet agent steps (a long install
       // sends nothing for minutes); they end with the task, page or engine.
