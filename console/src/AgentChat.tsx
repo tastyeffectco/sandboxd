@@ -298,7 +298,7 @@ export function AgentChat({
                   <Icon name="spark" size={13} />
                   {t.agent || 'Agent'}
                 </span>
-                <AgentMessage text={t.agent_message || t.error_message || `Task ${t.status}`} />
+                <AgentMessage text={plainTaskError(t.agent_message || t.error_message) || `Task ${t.status}`} />
               </div>
               {t.run_settings && (
                 <p
@@ -448,4 +448,12 @@ export function AgentChat({
       )}
     </section>
   )
+}
+
+// The engine's task errors are written for operators; say them plainly here.
+export function plainTaskError(message?: string) {
+  if (!message) return message
+  if (/did not finish within the task timeout/i.test(message))
+    return 'This took longer than the time limit, so the agent paused. Everything it made so far is saved: send “Please continue” to let it finish.'
+  return message
 }
