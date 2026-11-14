@@ -108,9 +108,17 @@ export function AgentRoom({
   const running = agent.status === 'running'
   const working = saved.turns.some((t) => t.role === 'assistant' && t.state === 'streaming')
 
-  useEffect(() => setSaved(load(agent.id)), [agent.id])
-  useEffect(() => save(agent.id, saved), [agent.id, saved])
-  useEffect(() => end.current?.scrollIntoView?.({ block: 'end' }), [saved.turns])
+  useEffect(() => {
+    setSaved(load(agent.id))
+  }, [agent.id])
+  useEffect(() => {
+    save(agent.id, saved)
+  }, [agent.id, saved])
+  // Braces: Chromium's scrollIntoView now returns a Promise, which React would
+  // take for a clean-up function.
+  useEffect(() => {
+    end.current?.scrollIntoView?.({ block: 'end' })
+  }, [saved.turns])
   useEffect(() => () => abort.current?.abort(), [agent.id])
 
   const update = useCallback((fn: (last: Extract<Turn, { role: 'assistant' }>) => Turn) => {
