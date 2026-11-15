@@ -388,6 +388,8 @@ export interface AgentInstance {
   ui_label?: string
   /** sandboxd's chat can talk to it; otherwise it is used in its own app. */
   chat?: boolean
+  /** Its own app is a full chat: open there first, sandboxd's chat second. */
+  app_first?: boolean
 }
 // One conversation per agent, kept by the engine like a chat app: replies keep
 // going when the window closes. Every agent's stream becomes the same shape.

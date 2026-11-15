@@ -59,6 +59,28 @@ describe('AgentRoom', () => {
     expect(screen.getByTestId('agent-you').textContent).toBe('Call me Abdel')
   })
 
+  it('opens on the agent’s own app when that is its best chat, and remembers the choice', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({ working: false, messages: [] })
+    ;(window as { sandboxdDesktop?: unknown }).sandboxdDesktop = {}
+    localStorage.clear()
+    try {
+      const claw = { ...agent, id: 'oc1234567', package: 'openclaw', ui_label: 'Control panel', chat: true, app_first: true }
+      room(claw)
+      expect(screen.getByTestId('agent-view-app').getAttribute('aria-selected')).toBe('true')
+      fireEvent.click(screen.getByTestId('agent-view-chat'))
+      cleanup()
+      room(claw)
+      expect(screen.getByTestId('agent-view-chat').getAttribute('aria-selected')).toBe('true')
+      cleanup()
+      // Hermes's app is a dashboard: it opens on the chat.
+      room({ ...agent, id: 'he1234567', ui_label: 'Dashboard', chat: true })
+      expect(screen.getByTestId('agent-view-chat').getAttribute('aria-selected')).toBe('true')
+    } finally {
+      delete (window as { sandboxdDesktop?: unknown }).sandboxdDesktop
+      localStorage.clear()
+    }
+  })
+
   it('marks what the agent sent on its own, like a scheduled job', async () => {
     vi.mocked(api.listAgentMessages).mockResolvedValue({
       working: false,

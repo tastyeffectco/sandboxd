@@ -80,6 +80,9 @@ type Package struct {
 	// Revision changes when its container must be made again (new
 	// command or environment); the agent's data stays.
 	Revision string `json:"-"`
+	// AppFirst: its own app is a full chat (tool steps, files, its own
+	// automations), so it opens there; sandboxd's chat is the other tab.
+	AppFirst bool `json:"app_first"`
 	// Chat: sandboxd's own chat window can talk to it. Agents without it
 	// open on their own app.
 	Chat bool `json:"chat"`
@@ -153,6 +156,7 @@ var OpenClaw = Package{
 	UILabel:     "Control panel",
 	ProxyAuth:   true,
 	Chat:        true,
+	AppFirst:    true,
 	StrongModel: true,
 	ChatModel:   "openclaw",
 	// No shared token: OpenClaw refuses one next to proxy sign-in.

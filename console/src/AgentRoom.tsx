@@ -18,11 +18,12 @@ export function agentAppUrl(agent: Pick<AgentInstance, 'id' | 'ui_label'>): stri
 
 type View = 'chat' | 'app'
 const viewKey = (id: string) => `sandboxd.agent-view.${id}`
-function savedView(id: string): View {
+function savedView(id: string, first: View): View {
   try {
-    return localStorage.getItem(viewKey(id)) === 'app' ? 'app' : 'chat'
+    const saved = localStorage.getItem(viewKey(id))
+    return saved === 'app' || saved === 'chat' ? saved : first
   } catch {
-    return 'chat'
+    return first
   }
 }
 
@@ -91,7 +92,7 @@ export function AgentRoom({
   const seen = useRef<Record<string, string>>({})
   const appUrl = agentAppUrl(agent)
   const chatless = agent.chat === false
-  const [view, setView] = useState<View>(() => (chatless ? 'app' : appUrl ? savedView(agent.id) : 'chat'))
+  const [view, setView] = useState<View>(() => (chatless ? 'app' : appUrl ? savedView(agent.id, agent.app_first ? 'app' : 'chat') : 'chat'))
   const [appOpened, setAppOpened] = useState(view === 'app' || chatless)
   const choose = (next: View) => {
     setView(next)

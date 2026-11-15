@@ -44,6 +44,8 @@ type v1AgentInstance struct {
 	UILabel string `json:"ui_label,omitempty"`
 	// Chat: sandboxd's chat can talk to it; otherwise it is used in its app.
 	Chat bool `json:"chat"`
+	// AppFirst: it opens on its own app; sandboxd's chat is the other tab.
+	AppFirst bool `json:"app_first,omitempty"`
 }
 
 // agentAppsPerDay caps how many apps one agent may create per day.
@@ -88,12 +90,18 @@ func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) 
 	}
 	return v1AgentInstance{ID: h.ID, Package: h.Package, Name: h.Name, ConnectionID: h.ConnectionID, Model: h.Model,
 		Status: status, Telegram: len(h.TelegramCiphertext) > 0, AppsToday: today, AppsPerDay: agentAppsPerDay,
-		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package), Chat: hasChat(h.Package)}
+		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package), Chat: hasChat(h.Package),
+		AppFirst: uiLabel(h.Package) != "" && appFirst(h.Package)}
 }
 
 func hasChat(pkgID string) bool {
 	pkg, ok := agentcatalog.Get(pkgID)
 	return ok && pkg.Chat
+}
+
+func appFirst(pkgID string) bool {
+	pkg, ok := agentcatalog.Get(pkgID)
+	return ok && pkg.AppFirst
 }
 
 // uiLabel names the agent's own app, or "" when it has none.

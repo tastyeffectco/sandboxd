@@ -1973,6 +1973,7 @@ components:
         apps_per_day: { type: integer }
         created_at: { type: string, format: date-time }
         ui_label: { type: string, description: "Name of the agent's own app, served at ui/; absent when it has none" }
+        app_first: { type: boolean, description: "Its own app is a full chat: clients open it first and offer sandboxd's chat second" }
     ClaudeSignIn:
       type: object
       properties:
