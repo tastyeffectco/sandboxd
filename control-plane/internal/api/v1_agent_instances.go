@@ -343,6 +343,9 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		Labels:  labels,
 		Image:   pkg.Image, Cmd: pkg.Cmd,
 	})
+	if err == nil && pkg.GuideSeed != "" {
+		_ = s.writeGuide(h, pkg) // now its template can be read
+	}
 	return err
 }
 
@@ -593,8 +596,17 @@ func (s *Server) writeGuide(h *store.AgentInstance, pkg agentcatalog.Package) er
 		if st, err := os.Stat(file); err == nil {
 			mode = st.Mode().Perm()
 		}
-	case os.IsNotExist(err) && pkg.GuideLater:
-		return nil // the agent writes its own first; the next refresh adds the guide
+	case os.IsNotExist(err) && pkg.GuideSeed != "":
+		// Start from the agent's own template, read from its running container.
+		if s.Docker == nil {
+			return nil
+		}
+		res, xerr := s.Docker.Exec(context.Background(), agentContainer(h.ID), []string{"cat", pkg.GuideSeed})
+		if xerr != nil || res.ExitCode != 0 || strings.TrimSpace(res.Stdout) == "" {
+			return nil // not running yet: a later refresh starts it
+		}
+		old = []byte(agentcatalog.SeedText(res.Stdout))
+		mode = 0o600
 	case !os.IsNotExist(err):
 		return err
 	}

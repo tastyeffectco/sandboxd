@@ -208,3 +208,12 @@ func TestOpenClawUsesSandboxdsBrowser(t *testing.T) {
 		t.Fatal("the browser image is not pinned")
 	}
 }
+
+func TestSeedText(t *testing.T) {
+	if got := SeedText("---\ntitle: x\nsummary: y\n---\n\n# AGENTS.md\nbody\n"); got != "# AGENTS.md\nbody\n" {
+		t.Fatalf("%q", got)
+	}
+	if got := SeedText("# plain\n"); got != "# plain\n" {
+		t.Fatalf("%q", got)
+	}
+}

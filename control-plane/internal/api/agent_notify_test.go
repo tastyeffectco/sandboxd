@@ -150,7 +150,7 @@ func TestWriteGuideKeepsThePersonsText(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
-		t.Fatal("the guide was written before OpenClaw made its own AGENTS.md")
+		t.Fatal("the guide was written without OpenClaw's own template")
 	}
 	_ = os.WriteFile(file, []byte("# My rules\n"), 0o600)
 	for i := 0; i < 2; i++ {

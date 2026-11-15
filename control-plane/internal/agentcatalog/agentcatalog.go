@@ -61,9 +61,11 @@ type Package struct {
 	// of it (how scheduled work reaches the person); the rest is the
 	// person's or the agent's own.
 	GuideFile string `json:"-"`
-	// GuideLater: the agent writes GuideFile itself on its first start (its
-	// own template), so sandboxd adds its section once the file exists.
-	GuideLater bool `json:"-"`
+	// GuideSeed, a path in the agent's image: the agent writes GuideFile
+	// from this template only on its first conversation, so sandboxd starts
+	// the file from it (its own text first) and adds its section from the
+	// first message on.
+	GuideSeed string `json:"-"`
 	// Deliver tells the agent how a scheduled job sends its result to the
 	// person's sandboxd chat (see Skill).
 	Deliver func(Config) string `json:"-"`
@@ -171,8 +173,8 @@ var OpenClaw = Package{
 	// through its own webhook delivery, to the agent's sandboxd inbox. The
 	// guide sits in its own AGENTS.md: as a skill, or as an extra file, it
 	// was skipped.
-	GuideFile:  "workspace/AGENTS.md",
-	GuideLater: true,
+	GuideFile: "workspace/AGENTS.md",
+	GuideSeed: "/app/docs/reference/templates/AGENTS.md",
 	Deliver: func(c Config) string {
 		return "Give every automation, one-time or recurring, this delivery: `{\"mode\": \"webhook\", \"to\": \"" +
 			InboxURL(c) + "\"}`. Its final reply is posted in the user's chat, so make that reply the message " +
@@ -487,4 +489,15 @@ func WithGuide(file, guide string) string {
 		return guide
 	}
 	return strings.TrimRight(file, "\n") + "\n\n" + guide
+}
+
+// SeedText is a template from an agent's image as the agent itself writes
+// it into its workspace: without the YAML front matter.
+func SeedText(template string) string {
+	if rest, ok := strings.CutPrefix(template, "---\n"); ok {
+		if i := strings.Index(rest, "\n---\n"); i >= 0 {
+			template = rest[i+len("\n---\n"):]
+		}
+	}
+	return strings.TrimLeft(template, "\n")
 }
