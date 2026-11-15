@@ -3084,3 +3084,11 @@ select.agent-model {
   padding: 2px 4px;
   background: var(--panel);
 }
+.bubble-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  color: var(--muted-2);
+  font-size: 12px;
+}

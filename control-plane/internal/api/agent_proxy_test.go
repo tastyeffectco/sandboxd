@@ -93,7 +93,7 @@ func TestAgentMCPHandshakeAndTools(t *testing.T) {
 			t.Errorf("%v: required is null (strict MCP clients reject the tool list)", tl.(map[string]any)["name"])
 		}
 	}
-	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status" {
+	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status,message_user" {
 		t.Fatalf("tools: %v (an agent must not get delete or other tools)", names)
 	}
 

@@ -131,6 +131,10 @@ var agentTools = []mcpTool{
 		}, "app_id", "request")},
 	{"app_status", "An app's status, preview link and the outcome of its latest build.",
 		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
+	{"message_user", "Post a message in the user's sandboxd chat with you. Work that runs later (scheduled jobs, " +
+		"reminders, background tasks) cannot answer in the chat by itself: when you schedule something, write " +
+		"in its instructions that it must send its result with this tool. In a normal conversation, just reply.",
+		obj(map[string]any{"text": map[string]any{"type": "string", "description": "The message, in plain words"}}, "text")},
 }
 
 func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
@@ -156,7 +160,8 @@ func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.Agent
 		result = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}},
 			"serverInfo": map[string]string{"name": "sandboxd", "version": "1"},
 			"instructions": "Use these tools to build and change web apps on the user's sandboxd. " +
-				"Building takes minutes: after create_app or ask_app, check app_status."}
+				"Building takes minutes: after create_app or ask_app, check app_status. " +
+				"Scheduled and background work reaches the user only through message_user."}
 	case "ping":
 		result = map[string]any{}
 	case "tools/list":
@@ -287,6 +292,9 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 			}
 		}
 		return fmt.Sprintf("Workspace: %s. Preview: %s\nLatest build: %s", status, preview, last), nil
+
+	case "message_user":
+		return s.agentMessageUser(ctx, h, args["text"])
 	}
 	return "", fmt.Errorf("unknown tool %q", name)
 }

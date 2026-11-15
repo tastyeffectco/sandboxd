@@ -25,7 +25,7 @@ apps and asks those coding agents to build or change them.
 
 ## What Hermes can do on sandboxd
 
-Hermes gets four tools from sandboxd, over MCP:
+Every agent gets these tools from sandboxd, over MCP:
 
 | Tool | What it does |
 |---|---|
@@ -33,6 +33,7 @@ Hermes gets four tools from sandboxd, over MCP:
 | `create_app` | A new app from an idea; its coding agent builds it. At most 10 per agent per day |
 | `ask_app` | Asks an app's coding agent for a change |
 | `app_status` | Status, preview link and the latest build's outcome |
+| `message_user` | Posts in your chat with the agent. Scheduled jobs and background work use it to deliver their results (at most 30 messages an hour) |
 
 It cannot delete or stop apps, read their files, or use any other sandboxd API.
 Every app it creates or changes shows in that app's activity log ("Hermes

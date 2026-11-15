@@ -1842,7 +1842,9 @@ paths:
                         steps: { type: array, items: { type: object } }
                         state: { type: string, enum: [working, done, stopped, error] }
                         error: { type: string }
-                        channel: { type: string }
+                        channel:
+                          type: string
+                          description: "`app` for the chat in sandboxd, `agent` for a message the agent sent on its own (a scheduled job's result), or a messaging channel such as `telegram`."
                         created_at: { type: string }
     post:
       operationId: sendAgentMessage

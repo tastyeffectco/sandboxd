@@ -358,6 +358,11 @@ export function AgentRoom({
                 {initial}
               </span>
               <div className="bubble theirs" data-testid="agent-reply">
+                {m.channel === 'agent' && (
+                  <div className="bubble-tag" data-testid="agent-on-its-own">
+                    <Icon name="history" size={12} /> Sent on its own
+                  </div>
+                )}
                 {m.thinking && (
                   <details className="bubble-thinking">
                     <summary>{m.state === 'working' && !m.content ? 'Thinking…' : 'How it thought about this'}</summary>

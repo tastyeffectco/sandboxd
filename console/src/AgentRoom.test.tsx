@@ -59,6 +59,21 @@ describe('AgentRoom', () => {
     expect(screen.getByTestId('agent-you').textContent).toBe('Call me Abdel')
   })
 
+  it('marks what the agent sent on its own, like a scheduled job', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: false,
+      messages: [
+        msg({ id: '1', role: 'assistant', content: 'Your answer' }),
+        msg({ id: '2', role: 'assistant', content: 'Daily report ready', channel: 'agent' }),
+      ],
+    })
+    room()
+    expect(await screen.findByText('Daily report ready')).toBeTruthy()
+    const tags = screen.getAllByTestId('agent-on-its-own')
+    expect(tags).toHaveLength(1)
+    expect(tags[0].closest('[data-testid=agent-reply]')?.textContent).toContain('Daily report ready')
+  })
+
   it('sends, follows the reply as the engine writes it, and refreshes the sidebar after an app is built', async () => {
     const reloadApps = vi.fn()
     const you = msg({ id: '1', role: 'user', content: 'Build me a tip calculator' })
