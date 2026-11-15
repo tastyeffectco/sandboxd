@@ -417,9 +417,11 @@ func disabledSkills(names []string) map[string]any {
 }
 
 // InboxURL is where an agent posts what its scheduled jobs found; sandboxd
-// adds it to the agent's conversation.
+// adds it to the agent's conversation. It is short and the same for every
+// agent (the agent's secret says which one): a model copied a longer one
+// with a typo.
 func InboxURL(c Config) string {
-	return strings.TrimRight(c.ProxyURL, "/") + "/agents/" + c.AgentID + "/inbox"
+	return strings.TrimRight(c.ProxyURL, "/") + "/agents/inbox"
 }
 
 func proxyHost(proxyURL string) string {

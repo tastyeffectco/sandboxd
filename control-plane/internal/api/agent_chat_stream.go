@@ -35,7 +35,7 @@ type v1AgentStreamReq struct {
 	v1AgentChatReq
 	// ConversationID, when set, also keys the agent's own session.
 	ConversationID string `json:"conversation_id"`
-	// session keys Hermes's own session for sandboxd's conversation (see
+	// session keys the agent's own session for sandboxd's conversation (see
 	// agentSession); sandboxd still sends the whole conversation each turn.
 	session string
 }
@@ -56,6 +56,8 @@ func streamAgentChat(ctx context.Context, url, key, model string, req v1AgentStr
 	payload := map[string]any{"model": model, "messages": req.Messages, "stream": true}
 	if req.ConversationID != "" {
 		payload["user"] = req.ConversationID // OpenClaw keys its session on this
+	} else if req.session != "" {
+		payload["user"] = req.session
 	}
 	body, _ := json.Marshal(payload)
 	up, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -67,7 +69,11 @@ func streamAgentChat(ctx context.Context, url, key, model string, req v1AgentStr
 		up.Header.Set("X-Hermes-Session-Id", req.ConversationID)
 		up.Header.Set("X-Openclaw-Session-Key", req.ConversationID)
 	} else if req.session != "" {
+		// One session per conversation: OpenClaw lets a session manage only
+		// the automations it made, so a new session per message could never
+		// see or remove the jobs it had scheduled.
 		up.Header.Set("X-Hermes-Session-Id", req.session)
+		up.Header.Set("X-Openclaw-Session-Key", req.session)
 	}
 	resp, err := http.DefaultClient.Do(up)
 	if err != nil {

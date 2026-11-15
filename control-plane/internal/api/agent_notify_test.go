@@ -88,8 +88,9 @@ func TestAgentContainersFollowTheTools(t *testing.T) {
 func TestAgentInboxPostsAJobsResult(t *testing.T) {
 	s, st, secret := agentTestServer(t)
 	p := s.AgentProxy()
+	path := "/agents/h1/inbox"
 	post := func(token, body string) int {
-		req := httptest.NewRequest(http.MethodPost, "/agents/h1/inbox", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		rec := httptest.NewRecorder()
 		p.ServeHTTP(rec, req)
@@ -104,8 +105,15 @@ func TestAgentInboxPostsAJobsResult(t *testing.T) {
 	if code := post(secret, `{"status":"ok","summary":"  "}`); code != http.StatusNoContent {
 		t.Fatalf("empty result: %d", code)
 	}
+	path = "/agents/inbox" // the short form
+	if code := post("wrong", `{"summary":"x"}`); code != http.StatusUnauthorized {
+		t.Fatalf("a wrong secret got %d on the short form", code)
+	}
+	if code := post(secret, `{"summary":"second"}`); code != http.StatusNoContent {
+		t.Fatalf("short inbox: %d", code)
+	}
 	msgs, _ := st.ListAgentMessages(context.Background(), "h1", 10)
-	if len(msgs) != 1 || msgs[0].Channel != "agent" || msgs[0].Content != "**Example title**\n\nExample Domain" {
+	if len(msgs) != 2 || msgs[0].Channel != "agent" || msgs[0].Content != "**Example title**\n\nExample Domain" || msgs[1].Content != "second" {
 		t.Fatalf("messages: %+v", msgs)
 	}
 }
@@ -147,7 +155,7 @@ func TestWriteGuideKeepsThePersonsText(t *testing.T) {
 	}
 	b, _ := os.ReadFile(file)
 	if !strings.HasPrefix(string(b), "# My rules\n") || strings.Count(string(b), agentcatalog.GuideBegin) != 1 ||
-		!strings.Contains(string(b), "/agents/h1/inbox") {
+		!strings.Contains(string(b), "/agents/inbox") {
 		t.Fatalf("AGENTS.md: %q", b)
 	}
 	if st, _ := os.Stat(file); st.Mode().Perm() != 0o600 {

@@ -24,6 +24,7 @@ import (
 //	GET  /agents/{id}/v1/models            that one model
 //	POST /agents/{id}/mcp                  sandboxd's app tools (MCP, JSON responses)
 //	POST /agents/{id}/inbox                a scheduled job's result, for the person's chat
+//	POST /agents/inbox                     the same; the secret says which agent
 //
 // The secret grants nothing else: no other route, no upstream key, no other
 // connection or model.
@@ -31,13 +32,16 @@ func (s *Server) AgentProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rest, ok := strings.CutPrefix(r.URL.Path, "/agents/")
 		id, op, _ := strings.Cut(rest, "/")
-		if !ok || id == "" {
+		if rest == "inbox" { // the short form: the secret says which agent
+			id, op = "", "inbox"
+		}
+		if !ok || (id == "" && op != "inbox") {
 			http.NotFound(w, r)
 			return
 		}
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		h, err := s.Store.GetAgentInstanceBySecretHash(r.Context(), hashSecret(token))
-		if token == "" || err != nil || h.ID != id {
+		if token == "" || err != nil || (id != "" && h.ID != id) {
 			http.Error(w, "invalid agent credentials", http.StatusUnauthorized)
 			return
 		}

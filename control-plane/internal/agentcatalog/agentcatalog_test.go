@@ -130,7 +130,7 @@ func TestScheduledResultsGuide(t *testing.T) {
 	if cfg, _ := RenderHermesConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s", Model: "m"}); !strings.Contains(cfg, "  cwd: \"/opt/data/workspace\"\n") {
 		t.Fatalf("hermes config:\n%s", cfg)
 	}
-	if s := Guide(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) {
+	if s := Guide(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/inbox"`) {
 		t.Fatalf("openclaw instructions:\n%s", s)
 	}
 	if Guide(OpenMausBot, c) != "" {

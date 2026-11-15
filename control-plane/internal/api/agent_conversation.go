@@ -313,7 +313,8 @@ func (s *Server) v1ClearAgentMessages(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// agentSession names the agent's own session for this conversation. It
+// agentSession names the agent's own session for this conversation (Hermes
+// and OpenClaw keep their tools' state, such as scheduled jobs, per session). It
 // starts again after a reply that broke off (stopped, failed, or cut by a
 // restart): Hermes pauses a session whose turn it lost ("unknown_execution")
 // and then refuses every later message in it. sandboxd keeps the whole
