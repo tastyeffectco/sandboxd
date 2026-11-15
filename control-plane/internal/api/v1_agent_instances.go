@@ -242,6 +242,12 @@ func (s *Server) agentModel(ctx context.Context, connectionID, model string) (st
 // secret: it writes the agent's config into its state directory and starts
 // the pinned image under sandboxd's hardened profile.
 func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
+	defer s.agentLocks.lock(h.ID)()
+	return s.provisionAgentLocked(ctx, h, pkg)
+}
+
+// provisionAgentLocked makes the agent's container; the caller holds its lock.
+func (s *Server) provisionAgentLocked(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
 	secret, err := randomSecret()
 	if err != nil {
 		return err

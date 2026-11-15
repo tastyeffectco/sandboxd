@@ -78,11 +78,17 @@ func (s *Server) agentProxyIP(ctx context.Context) (string, error) {
 // reports whether the agent was re-created and is starting again.
 func (s *Server) refreshAgent(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) (bool, error) {
 	if s.Docker != nil {
+		// Checked under the agent's lock: a caller that waited sees the
+		// container the first one made, and leaves it alone.
+		unlock := s.agentLocks.lock(h.ID)
 		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil &&
 			c.Config.Labels[agentRevLabel] != containerRev(pkg, s.agentTimeZone()) {
 			s.dropUISession(h.ID)
-			return true, s.provisionAgent(ctx, h, pkg)
+			err := s.provisionAgentLocked(ctx, h, pkg)
+			unlock()
+			return true, err
 		}
+		unlock()
 	}
 	if err := s.writeGuide(h, pkg); err != nil {
 		return false, err
@@ -111,9 +117,9 @@ func (s *Server) RefreshAgents(ctx context.Context) {
 		}
 		c, err := s.Docker.Inspect(ctx, agentContainer(h.ID))
 		if errors.Is(err, docker.ErrNotFound) {
-			if err := s.provisionAgent(ctx, h, pkg); err != nil {
+			if made, err := s.provisionIfMissing(ctx, h, pkg); err != nil {
 				s.Log.Warn("agents: make again at start", "agent", h.ID, "err", err.Error())
-			} else {
+			} else if made {
 				s.Log.Info("agents: made again", "agent", h.ID, "package", h.Package)
 			}
 			continue
@@ -131,6 +137,28 @@ func (s *Server) RefreshAgents(ctx context.Context) {
 			s.Log.Info("agents: updated", "agent", h.ID, "package", h.Package)
 		}
 	}
+}
+
+// provisionIfMissing makes an agent's container when it is still missing
+// once the agent's lock is held (another caller may be making it right now).
+func (s *Server) provisionIfMissing(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) (bool, error) {
+	defer s.agentLocks.lock(h.ID)()
+	if _, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); !errors.Is(err, docker.ErrNotFound) {
+		return false, err
+	}
+	return true, s.provisionAgentLocked(ctx, h, pkg)
+}
+
+// agentLocks lets one caller at a time make an agent's container. Two at once
+// (engine start, an open agent page, a chat) would each rotate the agent's
+// secret, leaving the surviving container with a key sandboxd refuses.
+type agentLocks struct{ m sync.Map }
+
+func (l *agentLocks) lock(id string) (unlock func()) {
+	v, _ := l.m.LoadOrStore(id, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // agentUpdating brings the agent up to date before a chat, and answers for it

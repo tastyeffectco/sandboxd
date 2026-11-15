@@ -224,6 +224,7 @@ export function AgentRoom({
       setDraft(content)
       if (withFiles) setFiles(attached)
       onError((e as Error).message)
+      onChanged() // it may be starting or paused: show that now
     } finally {
       setSending(false)
     }

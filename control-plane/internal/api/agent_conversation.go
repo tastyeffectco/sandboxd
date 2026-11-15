@@ -139,7 +139,7 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	attached, _ := json.Marshal(files)
 	if v := s.agentInstanceView(r.Context(), h); v.Status != "running" {
-		writeV1Err(w, http.StatusConflict, "not_running", h.Name+" isn't running yet. Start it, or wait until it's ready.")
+		writeV1Err(w, http.StatusConflict, "not_running", notRunningText(h.Name, v.Status))
 		return
 	}
 	history, err := s.Store.ListAgentMessages(r.Context(), h.ID, agentHistoryLimit)
@@ -377,4 +377,12 @@ func (s *Server) connectionName(ctx context.Context, id string) string {
 		}
 	}
 	return ""
+}
+
+// notRunningText says why an agent can't take a message, and what to do.
+func notRunningText(name, status string) string {
+	if status == "starting" {
+		return name + " is starting up (after an update or a restart). Try again in a minute."
+	}
+	return name + " is paused. Click Start, then send your message again."
 }

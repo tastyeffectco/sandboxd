@@ -39,6 +39,7 @@ type Server struct {
 	agentCfg     agentConfigs
 	agentNotes   agentNotes
 	modelTrouble modelTroubles
+	agentLocks   agentLocks
 	// turns are the agents' replies being written right now.
 	turns          agentTurns
 	ModelProviders *modelprovider.Service
