@@ -148,3 +148,34 @@ func TestAgentTurnStopAndRestart(t *testing.T) {
 		t.Fatalf("clear: %d, %d messages left", rec.Code, len(msgs))
 	}
 }
+
+// An agent still starting answers with an error: the turn is tried again and
+// succeeds. Once the agent has said something, a failure is not retried.
+func TestAgentTurnRetriesAnAgentStillStarting(t *testing.T) {
+	old := agentRetryDelays
+	agentRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	defer func() { agentRetryDelays = old }()
+	s, st, _ := agentTestServer(t)
+	calls := 0
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			http.Error(w, `{"error":{"message":"internal error"}}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Ready now\"}}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer agent.Close()
+	ctx := context.Background()
+	reply := &store.AgentMessage{ID: "01F", AgentID: "h1", Role: "assistant", Steps: "[]", State: "working", Channel: "app", CreatedAt: "t", UpdatedAt: "t"}
+	_ = st.AddAgentMessage(ctx, reply)
+	turnCtx, cancel := context.WithCancel(ctx)
+	live := &liveTurn{cancel: cancel, msg: *reply}
+	s.turns.live = map[string]*liveTurn{"h1": live}
+	s.runAgentTurn(turnCtx, cancel, "h1", "OpenClaw", agent.URL, "k", "m", v1AgentStreamReq{}, live)
+	msgs, _ := listMessages(t, s)
+	if calls != 2 || msgs[0].State != "done" || msgs[0].Content != "Ready now" {
+		t.Fatalf("calls=%d reply=%+v", calls, msgs[0])
+	}
+}

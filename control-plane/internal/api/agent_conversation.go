@@ -21,6 +21,10 @@ import (
 
 const agentHistoryLimit = 60 // messages sent to the agent with each turn
 
+// agentRetryDelays: waits before trying a turn again when the agent failed
+// before saying anything (a test sets them short).
+var agentRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second}
+
 type liveTurn struct {
 	cancel context.CancelFunc
 	msg    store.AgentMessage
@@ -224,7 +228,9 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 		s.turns.mu.Unlock()
 		_ = s.Store.UpdateAgentMessage(context.Background(), &m)
 	}
-	err := streamAgentChat(ctx, url, key, model, turn, func(e agentEvent) {
+	heard := false // the agent said something: no more retries
+	emit := func(e agentEvent) {
+		heard = true
 		s.turns.mu.Lock()
 		switch e.name {
 		case "text":
@@ -249,7 +255,25 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 		live.msg.UpdatedAt = now()
 		s.turns.mu.Unlock()
 		persist(e.name == "step")
-	})
+	}
+	// An agent that fails at once, before saying anything, is often still
+	// starting (OpenClaw recovers its database for a while after a restart,
+	// already answering with errors): try again a little later. A slower
+	// failure may follow silent work (OpenClaw streams no tool steps), which
+	// must not be done twice.
+	var err error
+	for attempt := 0; ; attempt++ {
+		start := time.Now()
+		err = streamAgentChat(ctx, url, key, model, turn, emit)
+		if err == nil || heard || ctx.Err() != nil || attempt >= len(agentRetryDelays) ||
+			time.Since(start) > 10*time.Second {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(agentRetryDelays[attempt]):
+		}
+	}
 	s.turns.mu.Lock()
 	switch {
 	case err == nil:
