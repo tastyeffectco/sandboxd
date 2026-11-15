@@ -81,6 +81,35 @@ describe('AgentRoom', () => {
     }
   })
 
+  it('keeps the end of the conversation in view, unless the person scrolled up to read', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: false,
+      messages: [msg({ id: '1', role: 'assistant', content: 'Hello' })],
+    })
+    try {
+      room()
+      await screen.findByText('Hello')
+      const log = screen.getByTestId('agent-log')
+      scroll.mockClear()
+      // A message grows after it arrived (a file chip, formatting).
+      log.appendChild(document.createElement('p'))
+      await waitFor(() => expect(scroll).toHaveBeenCalled())
+      // The person scrolls up to read: new content no longer pulls them down.
+      Object.defineProperty(log, 'scrollHeight', { value: 3000, configurable: true })
+      Object.defineProperty(log, 'clientHeight', { value: 500, configurable: true })
+      log.scrollTop = 1000
+      fireEvent.scroll(log)
+      scroll.mockClear()
+      log.appendChild(document.createElement('p'))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(scroll).not.toHaveBeenCalled()
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+
   it('marks what the agent sent on its own, like a scheduled job', async () => {
     vi.mocked(api.listAgentMessages).mockResolvedValue({
       working: false,

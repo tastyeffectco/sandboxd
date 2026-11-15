@@ -89,6 +89,10 @@ export function AgentRoom({
   const [busy, setBusy] = useState(false)
   const [sending, setSending] = useState(false)
   const end = useRef<HTMLDivElement>(null)
+  const log = useRef<HTMLDivElement>(null)
+  // Follow the conversation while the person is at its end; not when they
+  // scrolled up to read.
+  const following = useRef(true)
   const seen = useRef<Record<string, string>>({})
   const appUrl = agentAppUrl(agent)
   const chatless = agent.chat === false
@@ -138,8 +142,23 @@ export function AgentRoom({
   // Braces: Chromium's scrollIntoView now returns a Promise, which React would
   // take for a clean-up function.
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end' })
+    if (following.current) end.current?.scrollIntoView?.({ block: 'end' })
   }, [count, lastLength])
+  // A message can grow after it arrives (formatting, a file it carries, a
+  // reply streaming in): keep the end in view.
+  useEffect(() => {
+    const el = log.current
+    if (!el || typeof MutationObserver === 'undefined') return
+    const observer = new MutationObserver(() => {
+      if (following.current) end.current?.scrollIntoView?.({ block: 'end' })
+    })
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [])
+  const onLogScroll = () => {
+    const el = log.current
+    if (el) following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
 
   // Attach: the paperclip, dropping files on the window, or pasting.
   const attach = (list: FileList | File[] | null) => {
@@ -180,6 +199,7 @@ export function AgentRoom({
     const content = text.trim()
     const attached = withFiles ? files.filter((f) => f.file) : []
     if ((!content && !attached.length) || working || !running || (withFiles && uploading)) return
+    following.current = true // their own message: show it and the answer
     setDraft('')
     if (withFiles) setFiles([])
     setSending(true)
@@ -321,7 +341,15 @@ export function AgentRoom({
         </div>
       )}
 
-      <div className="agent-room-log" hidden={view !== 'chat'} role="log" aria-live="polite" data-testid="agent-log">
+      <div
+        className="agent-room-log"
+        hidden={view !== 'chat'}
+        role="log"
+        aria-live="polite"
+        data-testid="agent-log"
+        ref={log}
+        onScroll={onLogScroll}
+      >
         {messages === null && <p className="bubble-note" style={{ margin: 'auto' }}>Loading the conversation…</p>}
         {messages?.length === 0 && (
           <div className="agent-room-empty">
