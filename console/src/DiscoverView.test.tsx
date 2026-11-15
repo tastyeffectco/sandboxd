@@ -49,8 +49,9 @@ describe('DiscoverView (free apps)', () => {
 
   it('filters by category and links to agents', () => {
     const props = view()
-    fireEvent.click(screen.getByRole('tab', { name: 'Finance' }))
-    expect(screen.getAllByRole('article').length).toBe(CATALOG.filter((a) => a.category === 'Finance').length)
+    const category = CATALOG[0].category
+    fireEvent.click(screen.getByRole('tab', { name: category }))
+    expect(screen.getAllByRole('article').length).toBe(CATALOG.filter((a) => a.category === category).length)
     fireEvent.click(screen.getByTestId('discover-agents'))
     expect(props.goAgents).toHaveBeenCalled()
   })
