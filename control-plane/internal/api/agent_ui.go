@@ -121,6 +121,10 @@ func (s *Server) RefreshAgents(ctx context.Context) {
 		if err != nil || !c.State.Running {
 			continue
 		}
+		// A running agent's browser is brought back if it went missing.
+		if err := s.startAgentBrowser(ctx, h, pkg); err != nil {
+			s.Log.Warn("agents: browser at start", "agent", h.ID, "err", err.Error())
+		}
 		if recreated, err := s.refreshAgent(ctx, h, pkg); err != nil {
 			s.Log.Warn("agents: refresh at start", "agent", h.ID, "err", err.Error())
 		} else if recreated {
