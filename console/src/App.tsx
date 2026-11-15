@@ -175,6 +175,17 @@ export default function App({
     const t = setInterval(loadAgents, 3000)
     return () => clearInterval(t)
   }, [agentStarting, loadAgents])
+  // Apps change elsewhere too (another device, an agent building one): keep
+  // the list current, and catch up when the window is back in front.
+  useEffect(() => {
+    if (!auth || !(auth.authenticated || auth.enabled === false)) return
+    const t = setInterval(loadApps, 30000)
+    window.addEventListener('focus', loadApps)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('focus', loadApps)
+    }
+  }, [auth, loadApps])
   // Agents also stop or start on their own (engine restart, low memory, a crash):
   // keep the list honest, and catch up as soon as the window is back in front.
   useEffect(() => {
