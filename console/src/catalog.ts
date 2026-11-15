@@ -90,6 +90,21 @@ export const CATALOG: CatalogApp[] = [
     minutes: 2,
   },
   {
+    id: 'changedetection',
+    name: 'changedetection.io',
+    pitch: 'Get told when a web page changes: prices, back in stock, news.',
+    category: 'Monitoring',
+    license: 'Apache-2.0',
+    stars: '36k',
+    repo: 'https://github.com/dgtlmoon/changedetection.io',
+    color: '#4c63d2',
+    source: false,
+    firstRun: 'Paste the address of a page to watch at the top, then click Watch.',
+    start:
+      '[ -x .venv/bin/changedetection.io ] || (uv venv -q .venv && uv pip install -q --prerelease=allow --python .venv/bin/python changedetection.io==0.70.3); mkdir -p data; exec .venv/bin/changedetection.io -d ./data -h 0.0.0.0 -p 3000',
+    minutes: 1,
+  },
+  {
     id: 'memos',
     name: 'Memos',
     pitch: 'Quick private notes, like your own little Twitter only you can read.',
