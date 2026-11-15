@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
 import { c, font, Btn, Card, Input } from './design/kit'
+import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
 
 // The agent catalog: add an agent with one click. Each agent you add gets its
 // own window, listed under AGENTS in the sidebar.
@@ -17,6 +18,15 @@ export function AgentsView({
 }) {
   const [packages, setPackages] = useState<AgentCatalogEntry[] | null>(null)
   const [models, setModels] = useState<ModelProvider[]>([])
+  const [notice, setNotice] = useState('')
+  const connected = (p: ModelProvider, free: boolean) => {
+    setModels((m) => [p, ...m])
+    setNotice(
+      free
+        ? 'OpenRouter is connected with its free models. They have a daily limit and can be slow; adding a few dollars of credit on openrouter.ai unlocks the stronger model.'
+        : 'OpenRouter is connected.',
+    )
+  }
   useEffect(() => {
     Promise.all([api.listAgentCatalogEntrys(), api.listModelProviders()])
       .then(([p, m]) => {
@@ -34,6 +44,11 @@ export function AgentsView({
         Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
         remember what you tell them and can create and change apps on this computer.
       </p>
+      {notice && (
+        <p role="status" className="chat-notice" style={{ maxWidth: 680 }} data-testid="openrouter-connected">
+          {notice}
+        </p>
+      )}
       {packages === null && <p style={{ color: c.muted2 }}>Loading…</p>}
       {packages?.map((p) => {
         const added = agents.find((a) => a.package === p.id)
@@ -47,9 +62,18 @@ export function AgentsView({
                 Open {added.name}
               </Btn>
             </div>
+            <p style={{ color: c.muted, margin: '6px 0 0' }}>{p.description}</p>
           </Card>
         ) : (
-          <AddAgent key={p.id} pkg={p} models={models} goModels={goModels} onAdded={onOpen} onError={onError} />
+          <AddAgent
+            key={p.id}
+            pkg={p}
+            models={models}
+            goModels={goModels}
+            onConnected={connected}
+            onAdded={onOpen}
+            onError={onError}
+          />
         )
       })}
     </div>
@@ -60,12 +84,14 @@ function AddAgent({
   pkg,
   models,
   goModels,
+  onConnected,
   onAdded,
   onError,
 }: {
   pkg: AgentCatalogEntry
   models: ModelProvider[]
   goModels: () => void
+  onConnected: (p: ModelProvider, free: boolean) => void
   onAdded: (id: string) => void
   onError: (message: string) => void
 }) {
@@ -97,7 +123,21 @@ function AddAgent({
     <Card pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`add-agent-${pkg.id}`}>
       <strong style={{ fontSize: 16 }}>{pkg.label}</strong>
       <p style={{ color: c.muted, margin: '6px 0 14px' }}>{pkg.description}</p>
-      {models.length === 0 ? (
+      {models.length === 0 && canConnectOpenRouter() ? (
+        <>
+          <p style={{ margin: '0 0 12px' }}>
+            {pkg.label} needs an AI model to think with. The easiest way is a free OpenRouter account: sign in with
+            Google, GitHub or email and you're back here in a minute.
+          </p>
+          <ConnectOpenRouter onConnected={onConnected} onError={onError} />
+          <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
+            Prefer another model, or one running on this computer?{' '}
+            <button className="text-button" onClick={goModels}>
+              Settings → Model connections
+            </button>
+          </p>
+        </>
+      ) : models.length === 0 ? (
         <p style={{ margin: 0 }}>
           {pkg.label} needs an AI model to think with. Add one (for example an OpenRouter key) in{' '}
           <button className="text-button" onClick={goModels}>

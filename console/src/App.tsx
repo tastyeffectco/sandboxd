@@ -171,6 +171,17 @@ export default function App({
     const t = setInterval(loadAgents, 3000)
     return () => clearInterval(t)
   }, [agentStarting, loadAgents])
+  // Agents also stop or start on their own (engine restart, low memory, a crash):
+  // keep the list honest, and catch up as soon as the window is back in front.
+  useEffect(() => {
+    if (!agents?.length) return
+    const t = setInterval(loadAgents, 15000)
+    window.addEventListener('focus', loadAgents)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('focus', loadAgents)
+    }
+  }, [agents?.length, loadAgents])
   // 'failed' falls back to the password form (e.g. the user changed it).
   const [hostSignIn, setHostSignIn] = useState<'idle' | 'trying' | 'failed'>('idle')
   useEffect(() => {

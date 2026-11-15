@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ModelProvider, ModelProviderInput } from './api'
 import { Btn, Card, H, Input, Pill, c, mono } from './design/kit'
+import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
 
 const emptyModel = () => ({ id: '', context_window: 32768, max_tokens: 4096 })
 const emptyInput = (): ModelProviderInput => ({
@@ -69,10 +70,20 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
       {editing === null && <Btn sm style={{ marginLeft: 'auto' }} onClick={() => edit()}>Add connection</Btn>}
     </div>
     <p style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.6 }}>
-      Use local or remote models with <b>OpenCode</b> and <b>Pi</b>. Connect an OpenAI-compatible
+      The AI models your agents, <b>OpenCode</b> and <b>Pi</b> think with. Connect an OpenAI-compatible
       or Anthropic-compatible API, including Ollama, LM Studio, vLLM and LiteLLM gateways.
       API keys stay encrypted in sandboxd.
     </p>
+    {canConnectOpenRouter() && editing === null && !providers.some((p) => p.base_url.startsWith('https://openrouter.ai/')) &&
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', padding: 14, marginBottom: 12, background: c.panel2, borderRadius: 8 }}>
+        <span style={{ flex: '1 1 260px', fontSize: 12.5 }}>
+          <b>Easiest:</b> sign in to OpenRouter (free account) and every model there is ready to use, no key to copy.
+        </span>
+        <ConnectOpenRouter onError={onError} onConnected={(_, free) => {
+          void load()
+          toast(free ? 'OpenRouter connected with its free models' : 'OpenRouter connected')
+        }} />
+      </div>}
     {loading && <p role="status">Loading connections…</p>}
     {!loading && providers.length === 0 && editing === null &&
       <div style={{ padding: 16, background: c.panel2, borderRadius: 8, color: c.muted, fontSize: 12.5 }}>

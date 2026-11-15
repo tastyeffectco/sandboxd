@@ -4,6 +4,8 @@ const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
 const { createAgentLogins } = require('./agent-login.cjs')
 const agentLogins = createAgentLogins()
+const { createOpenRouterSignIn } = require('./openrouter.cjs')
+const openRouter = createOpenRouterSignIn({ open: (url) => shell.openExternal(url) })
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
 const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 const { signInManagedEngine } = require('./local-auth.cjs')
@@ -424,6 +426,14 @@ async function start() {
     if (answer.response !== 1) return { imported: false }
     await gateway.importAgentLogin(agent, await agentLogins.credential(agent), engine)
     return { imported: true }
+  })
+  // The key goes back to the console, which saves it as a model connection.
+  ipcMain.handle('desktop:openrouter-sign-in', async (event) => {
+    trusted(event)
+    const result = await openRouter.signIn()
+    if (window?.isMinimized()) window.restore()
+    window?.focus()
+    return result
   })
   ipcMain.handle('desktop:external', async (event, url) => {
     trusted(event)

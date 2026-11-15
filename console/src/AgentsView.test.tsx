@@ -10,6 +10,7 @@ vi.mock('./api', () => ({
     ]),
     listModelProviders: vi.fn(),
     createAgentInstance: vi.fn(),
+    saveModelProvider: vi.fn(),
   },
 }))
 
@@ -42,6 +43,24 @@ describe('AgentsView (catalog)', () => {
     render(<AgentsView onError={() => {}} agents={[]} goModels={() => {}} onOpen={() => {}} />)
     expect(await screen.findByText(/needs an AI model to think with/)).toBeTruthy()
     expect(screen.queryByTestId('add-agent')).toBeNull()
+  })
+
+  it('connects OpenRouter in one click from the desktop app, free models first for a new account', async () => {
+    vi.mocked(api.listModelProviders).mockResolvedValue([])
+    vi.mocked(api.saveModelProvider).mockResolvedValue(connection as never)
+    const openRouterSignIn = vi.fn().mockResolvedValue({ key: 'sk-or-1', free: true })
+    window.sandboxdDesktop = { openRouterSignIn } as never
+    try {
+      render(<AgentsView onError={() => {}} agents={[]} goModels={() => {}} onOpen={() => {}} />)
+      fireEvent.click(await screen.findByTestId('connect-openrouter'))
+      expect(await screen.findByTestId('add-agent')).toBeTruthy()
+      const input = vi.mocked(api.saveModelProvider).mock.calls[0][1]
+      expect(input.api_key).toBe('sk-or-1')
+      expect(input.models.map((m) => m.id)).toEqual(['openrouter/free', 'deepseek/deepseek-v4-pro'])
+      expect(screen.getByTestId('openrouter-connected').textContent).toMatch(/free models/)
+    } finally {
+      delete window.sandboxdDesktop
+    }
   })
 
   it('adds Hermes and opens its own window', async () => {
