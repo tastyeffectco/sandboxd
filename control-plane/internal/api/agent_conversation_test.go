@@ -179,3 +179,43 @@ func TestAgentTurnRetriesAnAgentStillStarting(t *testing.T) {
 		t.Fatalf("calls=%d reply=%+v", calls, msgs[0])
 	}
 }
+
+// The agent says nothing while its model keeps failing (it retries for
+// minutes): the reply ends at once and says what to do.
+func TestAgentTurnEndsWhenItsModelKeepsFailing(t *testing.T) {
+	oldWatch := agentModelWatch
+	agentModelWatch = 10 * time.Millisecond
+	defer func() { agentModelWatch = oldWatch }()
+	s, st, _ := agentTestServer(t)
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+		s.modelTrouble.record("h1", http.StatusBadGateway) // its model calls fail
+		s.modelTrouble.record("h1", http.StatusBadGateway)
+		<-r.Context().Done()
+	}))
+	defer agent.Close()
+	ctx := context.Background()
+	reply := &store.AgentMessage{ID: "01G", AgentID: "h1", Role: "assistant", Steps: "[]", State: "working", Channel: "app", CreatedAt: "t", UpdatedAt: "t"}
+	_ = st.AddAgentMessage(ctx, reply)
+	turnCtx, cancel := context.WithCancel(ctx)
+	live := &liveTurn{cancel: cancel, msg: *reply, conn: "Ollama on this PC"}
+	s.turns.live = map[string]*liveTurn{"h1": live}
+	done := make(chan struct{})
+	go func() {
+		s.runAgentTurn(turnCtx, cancel, "h1", "Hermes", agent.URL, "k", "m", v1AgentStreamReq{}, live)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the reply kept waiting on a failing model")
+	}
+	msgs, _ := listMessages(t, s)
+	if msgs[0].State != "error" || !strings.Contains(msgs[0].Error, "can't reach its AI model (Ollama on this PC)") {
+		t.Fatalf("reply: %+v", msgs[0])
+	}
+	if got := modelFailureText("Hermes", "OpenRouter", http.StatusUnauthorized); !strings.Contains(got, "refused its key") {
+		t.Fatal(got)
+	}
+}

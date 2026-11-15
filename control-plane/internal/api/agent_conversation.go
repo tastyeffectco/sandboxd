@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -29,6 +30,7 @@ type liveTurn struct {
 	cancel context.CancelFunc
 	msg    store.AgentMessage
 	steps  []agentStep
+	conn   string // the model connection's name, for plain errors
 }
 
 type agentTurns struct {
@@ -181,7 +183,7 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusConflict, "busy", h.Name+" is still answering. Wait for it, or stop it.")
 		return
 	}
-	live := &liveTurn{cancel: cancel, msg: *reply, steps: []agentStep{}}
+	live := &liveTurn{cancel: cancel, msg: *reply, steps: []agentStep{}, conn: s.connectionName(r.Context(), h.ConnectionID)}
 	s.turns.live[h.ID] = live
 	s.turns.mu.Unlock()
 
@@ -228,9 +230,12 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 		s.turns.mu.Unlock()
 		_ = s.Store.UpdateAgentMessage(context.Background(), &m)
 	}
-	heard := false // the agent said something: no more retries
+	var heard atomic.Bool // the agent said something: no more retries
+	var modelStatus atomic.Int32
+	go s.watchModel(ctx, cancel, agentID, time.Now(), agentModelWatch, func() bool { return !heard.Load() },
+		func(status int) { modelStatus.Store(int32(status)) })
 	emit := func(e agentEvent) {
-		heard = true
+		heard.Store(true)
 		s.turns.mu.Lock()
 		switch e.name {
 		case "text":
@@ -265,7 +270,7 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 	for attempt := 0; ; attempt++ {
 		start := time.Now()
 		err = streamAgentChat(ctx, url, key, model, turn, emit)
-		if err == nil || heard || ctx.Err() != nil || attempt >= len(agentRetryDelays) ||
+		if err == nil || heard.Load() || ctx.Err() != nil || attempt >= len(agentRetryDelays) ||
 			time.Since(start) > 10*time.Second {
 			break
 		}
@@ -278,6 +283,10 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 	switch {
 	case err == nil:
 		live.msg.State = "done"
+	case modelStatus.Load() != 0:
+		live.msg.State = "error"
+		live.msg.Error = modelFailureText(name, live.conn, int(modelStatus.Load()))
+		s.Log.Warn("agent turn: its model keeps failing", "agent", agentID, "status", modelStatus.Load())
 	case ctx.Err() == context.Canceled:
 		live.msg.State = "stopped"
 	default:
@@ -351,4 +360,21 @@ func agentSession(agentID, first string, history []*store.AgentMessage) string {
 		}
 	}
 	return key
+}
+
+// connectionName is a model connection's name as the person sees it.
+func (s *Server) connectionName(ctx context.Context, id string) string {
+	if s.ModelProviders == nil {
+		return ""
+	}
+	conns, err := s.ModelProviders.List(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, c := range conns {
+		if c.ID == id {
+			return c.Name
+		}
+	}
+	return ""
 }

@@ -70,6 +70,7 @@ func (s *Server) AgentProxy() http.Handler {
 func (s *Server) agentModelRequest(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
 	conn, err := s.ModelProviders.Connection(r.Context(), h.ConnectionID, h.Model, s.AgentProxyURL, 15*time.Minute)
 	if err != nil {
+		s.modelTrouble.record(h.ID, http.StatusBadGateway)
 		http.Error(w, "the agent's model connection is unavailable: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -93,7 +94,12 @@ func (s *Server) agentModelRequest(w http.ResponseWriter, r *http.Request, h *st
 	r2.URL.RawPath = ""
 	r2.URL.RawQuery = ""
 	r2.Header.Set("Authorization", "Bearer "+conn.Token)
-	s.ModelProviders.ServeHTTP(w, r2)
+	sw := &statusWriter{ResponseWriter: w}
+	s.ModelProviders.ServeHTTP(sw, r2)
+	if r.Context().Err() != nil && sw.status == 0 {
+		sw.status = 499 // the agent hung up
+	}
+	s.modelTrouble.record(h.ID, sw.status)
 }
 
 // --- MCP ---------------------------------------------------------------

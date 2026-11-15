@@ -36,8 +36,9 @@ import (
 // Server bundles the collaborators the handlers need.
 type Server struct {
 	// agentCfg remembers the sandboxd address each agent's config trusts.
-	agentCfg   agentConfigs
-	agentNotes agentNotes
+	agentCfg     agentConfigs
+	agentNotes   agentNotes
+	modelTrouble modelTroubles
 	// turns are the agents' replies being written right now.
 	turns          agentTurns
 	ModelProviders *modelprovider.Service
