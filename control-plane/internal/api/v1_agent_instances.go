@@ -161,6 +161,10 @@ func (s *Server) v1CreateAgentInstance(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if err := roomForAgent(pkg); err != nil {
+		writeV1Err(w, http.StatusConflict, "low_memory", err.Error())
+		return
+	}
 	users := strings.TrimSpace(req.TelegramAllowedUsers)
 	token := strings.TrimSpace(req.TelegramBotToken)
 	if token != "" && !pkg.Telegram {
@@ -370,8 +374,15 @@ func (s *Server) v1StartAgentInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	c, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID))
+	if ierr != nil || !c.State.Running {
+		if err := roomForAgent(pkg); err != nil {
+			writeV1Err(w, http.StatusConflict, "low_memory", err.Error())
+			return
+		}
+	}
 	var err error
-	if _, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); ierr != nil {
+	if ierr != nil {
 		err = s.provisionAgent(r.Context(), h, pkg)
 	} else {
 		err = s.startAgentBrowser(r.Context(), h, pkg)
