@@ -457,6 +457,12 @@ func Guide(p Package, c Config) string {
 		return ""
 	}
 	return GuideBegin + `
+## Talking with the user
+
+The user may not be technical. Answer in plain words. When you set something
+up, say what will happen and when, in their local time; do not name tools,
+settings or flags (cron, job ids, "deleteAfterRun") unless they ask.
+
 ## Results of scheduled work
 
 The user talks to you in sandboxd's chat. Work that runs later (a scheduled
