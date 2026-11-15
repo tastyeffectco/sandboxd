@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -89,8 +90,11 @@ func (s *Server) refreshAgent(ctx context.Context, h *store.AgentInstance, pkg a
 	return false, s.refreshAgentConfig(ctx, h, pkg)
 }
 
-// RefreshAgents brings running agents up to date when the engine starts, so
-// their scheduled jobs get sandboxd's newest tools without anyone opening them.
+// RefreshAgents brings agents up to date when the engine starts, so their
+// scheduled jobs get sandboxd's newest tools without anyone opening them. An
+// agent whose container is gone (the engine stopped while making it again)
+// is made again: stopping an agent keeps its container, so a missing one was
+// never the person's choice.
 func (s *Server) RefreshAgents(ctx context.Context) {
 	if s.Docker == nil {
 		return
@@ -102,7 +106,19 @@ func (s *Server) RefreshAgents(ctx context.Context) {
 	}
 	for _, h := range agents {
 		pkg, ok := agentcatalog.Get(h.Package)
-		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); !ok || err != nil || !c.State.Running {
+		if !ok {
+			continue
+		}
+		c, err := s.Docker.Inspect(ctx, agentContainer(h.ID))
+		if errors.Is(err, docker.ErrNotFound) {
+			if err := s.provisionAgent(ctx, h, pkg); err != nil {
+				s.Log.Warn("agents: make again at start", "agent", h.ID, "err", err.Error())
+			} else {
+				s.Log.Info("agents: made again", "agent", h.ID, "package", h.Package)
+			}
+			continue
+		}
+		if err != nil || !c.State.Running {
 			continue
 		}
 		if recreated, err := s.refreshAgent(ctx, h, pkg); err != nil {
