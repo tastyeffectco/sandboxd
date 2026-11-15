@@ -26,6 +26,9 @@ export interface CatalogApp {
   // A page that answers 200 once the app is up (default "/"); for apps whose
   // home page redirects or rate-limits the preview's frequent checks.
   health?: string
+  // Rebuilds the app after each change the coding agent makes (source apps
+  // served from a production build), so the change shows in the preview.
+  build?: string
   // Minutes the first start takes on a normal connection.
   minutes: number
 }
@@ -49,6 +52,7 @@ export const CATALOG: CatalogApp[] = [
       '[ -f excalidraw-app/build/index.html ] || (mkdir -p "$HOME/.local/bin" && corepack enable --install-directory "$HOME/.local/bin" && export PATH="$HOME/.local/bin:$PATH" && yarn install --frozen-lockfile && yarn build:app:docker); exec ' +
       SERVE +
       ' -s excalidraw-app/build -l tcp://0.0.0.0:3000',
+    build: 'export PATH="$HOME/.local/bin:$PATH" && yarn build:app:docker',
     minutes: 3,
   },
   {
@@ -60,7 +64,8 @@ export const CATALOG: CatalogApp[] = [
     stars: '94k',
     repo: 'https://github.com/louislam/uptime-kuma',
     color: '#5cdd8b',
-    source: true,
+    // Its web page comes prebuilt (download-dist): not changeable as is.
+    source: false,
     firstRun: 'On first open, choose SQLite, then create your account.',
     git: { repo_url: 'https://github.com/louislam/uptime-kuma', branch: '2.5.11' },
     start:
@@ -122,7 +127,8 @@ export const catalogTag = (id: string) => `catalog:${id}`
 
 // sandbox.yaml for an entry. JSON strings are valid YAML double-quoted scalars.
 export function catalogManifest(app: CatalogApp): string {
-  return `version: 1\nweb:\n  command: ${JSON.stringify(app.start)}\n  port: 3000\n  health_path: ${JSON.stringify(app.health || '/')}\n`
+  const web = `version: 1\nweb:\n  command: ${JSON.stringify(app.start)}\n  port: 3000\n  health_path: ${JSON.stringify(app.health || '/')}\n`
+  return app.build ? `${web}build:\n  command: ${JSON.stringify(app.build)}\n  timeout_seconds: 600\n` : web
 }
 
 // The first task: the coding agent only writes sandbox.yaml; the start

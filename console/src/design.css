@@ -3134,12 +3134,16 @@ select.agent-model {
 .catalog-art > span:first-child {
   background: #ffffffa8;
 }
-.catalog-stars {
+.project-art > span.catalog-stars {
   position: absolute;
   right: 12px;
   top: 10px;
+  width: auto;
+  height: auto;
+  display: inline-block;
   font: 600 11px var(--sans);
   background: #ffffffd0;
+  border: 0;
   border-radius: 999px;
   padding: 3px 9px;
   color: #3f3f46;

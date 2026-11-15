@@ -74,6 +74,9 @@ describe('catalog', () => {
       // JSON strings are valid YAML double-quoted scalars: decode the same way.
       expect(JSON.parse(line.slice('  command: '.length))).toBe(a.start)
       expect(yaml).toContain('port: 3000')
+      const build = yaml.split('\n').find((l) => l.startsWith('  command: ') && l !== line)
+      if (a.build) expect(JSON.parse(build!.slice('  command: '.length))).toBe(a.build)
+      if (a.source && a.start.includes('build')) expect(a.build).toBeTruthy() // a change must show
       expect(installPrompt(a)).toContain(yaml)
     }
   })
