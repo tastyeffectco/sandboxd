@@ -54,6 +54,9 @@ type Package struct {
 	// ConfigFile is written into StatePath by Render before every start.
 	ConfigFile string                       `json:"-"`
 	Render     func(Config) (string, error) `json:"-"`
+	// KeepSettings merges a new render into the agent's current config when
+	// the agent's own app saves settings in that file; nil replaces it.
+	KeepSettings func(current, rendered string) (string, error) `json:"-"`
 	// RenderEnv adds per-agent environment (agents configured by variables).
 	RenderEnv func(Config) []string `json:"-"`
 	// GuideFile, under StatePath, is the instructions file the agent reads
@@ -132,11 +135,13 @@ var Hermes = Package{
 	UploadsDir: "uploads",
 	ConfigFile: "config.yaml",
 	Render:     RenderHermesConfig,
-	Telegram:   true,
-	Memory:     "2g",
-	ShmSize:    "1g",
-	DiskNote:   "about 3 GB",
-	MemoryNote: "up to 2 GB",
+	// Its dashboard saves settings in config.yaml too.
+	KeepSettings: KeepYAMLSettings,
+	Telegram:     true,
+	Memory:       "2g",
+	ShmSize:      "1g",
+	DiskNote:     "about 3 GB",
+	MemoryNote:   "up to 2 GB",
 }
 
 // OpenClaw is the OpenClaw personal assistant. Tested in its official image
@@ -328,8 +333,8 @@ func RenderHermesConfig(c Config) (string, error) {
 		}
 	}
 	q := strconv.Quote // YAML accepts JSON-style double-quoted strings
-	return "# Written by sandboxd. Changes to model, terminal and mcp_servers are\n" +
-		"# replaced when the agent is re-created.\n" +
+	return "# sandboxd sets model, terminal and mcp_servers.sandboxd here when the\n" +
+		"# agent is updated; everything else is kept.\n" +
 		"model:\n" +
 		"  provider: custom\n" +
 		"  default: " + q(c.Model) + "\n" +

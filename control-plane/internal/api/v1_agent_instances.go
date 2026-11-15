@@ -275,6 +275,11 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 			return err
 		}
 		cfgPath := filepath.Join(dir, pkg.ConfigFile)
+		if current, err := os.ReadFile(cfgPath); err == nil && pkg.KeepSettings != nil {
+			if config, err = pkg.KeepSettings(string(current), config); err != nil {
+				return err
+			}
+		}
 		if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
 			return err
 		}

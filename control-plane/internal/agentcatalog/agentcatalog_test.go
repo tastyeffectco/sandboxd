@@ -217,3 +217,30 @@ func TestSeedText(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// What Hermes's dashboard saved survives an update; sandboxd's own keys are
+// set again.
+func TestKeepYAMLSettings(t *testing.T) {
+	current := "# old header\nmodel:\n  default: \"old-model\"\n  api_key: \"old\"\nterminal:\n  backend: local\n  timeout: 300\n" +
+		"mcp_servers:\n  sandboxd:\n    url: \"http://old\"\n  github:\n    url: \"http://github-mcp\"\n" +
+		"telemetry:\n  shared_metrics:\n    enabled: false # the person said no\ndisplay:\n  personality: kawaii\n"
+	rendered, _ := RenderHermesConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "h1", Secret: "new", Model: "new-model"})
+	got, err := KeepYAMLSettings(current, rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`default: "new-model"`, `api_key: "new"`, `cwd: "/opt/data/workspace"`, "timeout: 300",
+		"http://github-mcp", "/agents/h1/mcp", "enabled: false # the person said no", "personality: kawaii", "# sandboxd sets model"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	for _, gone := range []string{"old-model", `"old"`, "http://old\"", "# old header"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("still has %q in:\n%s", gone, got)
+		}
+	}
+	if got, _ := KeepYAMLSettings("", rendered); got != rendered {
+		t.Fatal("an empty file is not started again")
+	}
+}
