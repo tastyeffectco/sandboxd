@@ -266,6 +266,11 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 			return err
 		}
 	}
+	if skill := agentcatalog.Skill(pkg, cfg); skill != "" {
+		if err := writeAgentFile(dir, agentcatalog.SkillFile(pkg), skill, uid, gid); err != nil {
+			return fmt.Errorf("give the agent its sandboxd skill: %w", err)
+		}
+	}
 	if pkg.ProxyAuth {
 		s.agentCfg.mu.Lock()
 		if s.agentCfg.ip == nil {

@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -73,5 +75,46 @@ func TestAgentContainersFollowTheTools(t *testing.T) {
 	fewer := agentTools[:len(agentTools)-1]
 	if setupRev(fewer) == agentSetup {
 		t.Fatal("the revision ignores the tools")
+	}
+}
+
+// OpenClaw's scheduled jobs deliver to the agent's inbox, signed with the
+// agent's secret; the result shows in its conversation.
+func TestAgentInboxPostsAJobsResult(t *testing.T) {
+	s, st, secret := agentTestServer(t)
+	p := s.AgentProxy()
+	post := func(token, body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/agents/h1/inbox", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		p.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post("wrong", `{"summary":"x"}`); code != http.StatusUnauthorized {
+		t.Fatalf("a wrong secret got %d", code)
+	}
+	if code := post(secret, `{"jobName":"Example title","status":"ok","summary":"Example Domain"}`); code != http.StatusNoContent {
+		t.Fatalf("inbox: %d", code)
+	}
+	if code := post(secret, `{"status":"ok","summary":"  "}`); code != http.StatusNoContent {
+		t.Fatalf("empty result: %d", code)
+	}
+	msgs, _ := st.ListAgentMessages(context.Background(), "h1", 10)
+	if len(msgs) != 1 || msgs[0].Channel != "agent" || msgs[0].Content != "**Example title**\n\nExample Domain" {
+		t.Fatalf("messages: %+v", msgs)
+	}
+}
+
+func TestInboxText(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"text":"hello"}`:                           "hello",
+		`{"summary":"done","error":""}`:              "done",
+		`{"error":"site down","name":"Daily check"}`: "**Daily check**\n\nA scheduled job failed: site down",
+		`plain words`:                                "plain words",
+		`{"status":"ok"}`:                            "",
+	} {
+		if got := inboxText([]byte(body)); got != want {
+			t.Errorf("%s: got %q, want %q", body, got, want)
+		}
 	}
 }

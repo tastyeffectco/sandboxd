@@ -16,6 +16,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -163,6 +164,25 @@ func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance,
 	return nil
 }
 
+// writeAgentFile writes a file under the agent's folder, making the folders
+// on the way, all owned by the agent's user.
+func writeAgentFile(root, rel, content string, uid, gid int) error {
+	dir := root
+	for _, part := range strings.Split(path.Dir(rel), "/") {
+		if part == "." || part == "" {
+			continue
+		}
+		dir = filepath.Join(dir, part)
+		if err := os.Mkdir(dir, 0o755); err != nil && !os.IsExist(err) {
+			return err
+		}
+		if err := os.Chown(dir, uid, gid); err != nil && os.Geteuid() == 0 {
+			return err
+		}
+	}
+	return writeOwned(filepath.Join(root, filepath.FromSlash(rel)), content, uid, gid, 0o644)
+}
+
 // writeAgentConfig replaces the config in one step, owned by the agent's user.
 func writeAgentConfig(path, config, user string) error {
 	uid, gid := 0, 0
@@ -170,8 +190,13 @@ func writeAgentConfig(path, config, user string) error {
 		uid, _ = strconv.Atoi(parts[0])
 		gid, _ = strconv.Atoi(parts[1])
 	}
+	return writeOwned(path, config, uid, gid, 0o600)
+}
+
+// writeOwned replaces a file in one step, owned by uid:gid.
+func writeOwned(path, content string, uid, gid int, mode os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(config), 0o600); err != nil {
+	if err := os.WriteFile(tmp, []byte(content), mode); err != nil {
 		return err
 	}
 	// sandboxd runs as root and hands the file to the agent's user; a
@@ -201,8 +226,14 @@ func setupRev(tools []mcpTool) string {
 	return hex.EncodeToString(sum.Sum(nil))[:12]
 }
 
-// containerRev is the label value of an up-to-date agent container.
-func containerRev(pkg agentcatalog.Package) string { return agentSetup + pkg.Revision }
+// containerRev is the label value of an up-to-date agent container: it
+// changes with sandboxd's tools, the skill it gives the agent and the
+// package's own Revision.
+func containerRev(pkg agentcatalog.Package) string {
+	sum := sha256.Sum256([]byte(agentSetup + pkg.Revision +
+		agentcatalog.Skill(pkg, agentcatalog.Config{ProxyURL: "http://sandboxd", AgentID: "agent"})))
+	return hex.EncodeToString(sum[:])[:12]
+}
 
 // uiPassword is the password sandboxd sets for an agent app with its own
 // login, derived from the agent's key so only sandboxd knows it.

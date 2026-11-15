@@ -23,6 +23,7 @@ import (
 //	POST /agents/{id}/v1/chat/completions  the agent's model, through its model connection
 //	GET  /agents/{id}/v1/models            that one model
 //	POST /agents/{id}/mcp                  sandboxd's app tools (MCP, JSON responses)
+//	POST /agents/{id}/inbox                a scheduled job's result, for the person's chat
 //
 // The secret grants nothing else: no other route, no upstream key, no other
 // connection or model.
@@ -48,6 +49,8 @@ func (s *Server) AgentProxy() http.Handler {
 				"data": []map[string]string{{"id": h.Model, "object": "model", "owned_by": "sandboxd"}}})
 		case op == "mcp" && r.Method == http.MethodPost:
 			s.agentMCP(w, r, h)
+		case op == "inbox" && r.Method == http.MethodPost:
+			s.agentInbox(w, r, h)
 		case op == "mcp":
 			// No server-initiated stream: clients fall back to plain POSTs.
 			w.Header().Set("Allow", http.MethodPost)

@@ -1,6 +1,7 @@
 package agentcatalog
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -111,5 +112,41 @@ func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(OpenMausBot.Env, " "), "OMB_BOT_BOX=0") {
 		t.Error("its per-bot sandbox needs user namespaces, which sandboxd's profile does not grant")
+	}
+}
+
+// Each chat agent gets a skill that says how its scheduled jobs reach the
+// person; OpenClaw's go to its sandboxd inbox, signed with its secret.
+func TestScheduledResultsSkill(t *testing.T) {
+	c := Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m", ProxyIP: "172.18.0.2"}
+	if s := Skill(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, "---\nname: sandboxd-scheduled-results\n") {
+		t.Fatalf("hermes skill:\n%s", s)
+	}
+	if s := Skill(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) {
+		t.Fatalf("openclaw skill:\n%s", s)
+	}
+	if Skill(OpenMausBot, c) != "" {
+		t.Fatal("an agent without a sandboxd chat got the skill")
+	}
+	if got := SkillFile(Hermes); got != "skills/sandboxd/sandboxd-scheduled-results/SKILL.md" {
+		t.Fatal(got)
+	}
+	cfg, err := RenderOpenClawConfig(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Cron struct {
+			WebhookToken string `json:"webhookToken"`
+			Policy       struct {
+				Hosts []string `json:"allowedHostnames"`
+			} `json:"webhookSsrfPolicy"`
+		} `json:"cron"`
+	}
+	if err := json.Unmarshal([]byte(cfg), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Cron.WebhookToken != "${"+SecretEnv+"}" || len(out.Cron.Policy.Hosts) != 1 || out.Cron.Policy.Hosts[0] != "sandboxd" {
+		t.Fatalf("cron config: %+v", out.Cron)
 	}
 }
