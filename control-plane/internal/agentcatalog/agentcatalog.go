@@ -175,8 +175,9 @@ var OpenClaw = Package{
 	GuideLater: true,
 	Deliver: func(c Config) string {
 		return "Give every automation, one-time or recurring, this delivery: `{\"mode\": \"webhook\", \"to\": \"" +
-			InboxURL(c) + "\"}`. Its final reply is then posted in the user's chat. Announce delivery and the " +
-			"current session never reach the user here, so never use them; check the delivery when you edit a job."
+			InboxURL(c) + "\"}`. Its final reply is posted in the user's chat, so make that reply the message " +
+			"itself, and do not also send it another way. Announce delivery and the current session never reach " +
+			"the user here, so never use them; check the delivery when you edit a job."
 	},
 	ConfigFile: "openclaw.json",
 	Render:     RenderOpenClawConfig,
