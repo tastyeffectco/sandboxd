@@ -40,6 +40,38 @@ It cannot delete or stop apps, read their files, or use any other sandboxd API.
 Every app it creates or changes shows in that app's activity log ("Hermes
 created this app") and is tagged `created-by:Hermes`.
 
+## What every agent gets from sandboxd
+
+sandboxd works the same way for every agent in its catalog (Hermes,
+OpenClaw, OpenMausBot), so a new agent needs a catalog entry, not new code.
+
+- **Results of scheduled work reach you.** A job that runs later has no one
+  in the chat. Hermes's jobs send their result with the `message_user` tool;
+  OpenClaw's automations deliver to the agent's inbox (`POST /agents/inbox`
+  on the agent port, signed with the agent's secret). Either way it appears
+  in your chat with the agent, marked "Sent on its own" (at most 30 an hour).
+- **sandboxd's guide.** sandboxd keeps a short marked section in the agent's
+  own `AGENTS.md` (read on every turn) saying how scheduled work and files
+  reach you. Your own text in that file is kept; the section is put back if
+  it goes missing.
+- **Files.** An agent gives you a file it made with `share_file`; you
+  download it from the chat. Only files in the agent's own folder can be
+  shared.
+- **A browser.** An agent whose image has no browser (OpenClaw) gets a
+  locked-down headless Chromium next to it, started and removed with it.
+- **One conversation.** sandboxd keeps the conversation and the agent keeps
+  one session for it, started again after a reply that broke off.
+- **Staying up to date.** Agents load sandboxd's tools when they start, so
+  after a sandboxd update their containers are made again (their memory
+  stays) when the engine starts. Settings saved in the agent's own app are
+  kept.
+- **Plain errors.** When an agent's AI model stops answering, the reply ends
+  in about half a minute, saying which connection to check. An agent is not
+  started when the computer clearly lacks free memory for it.
+- **Its own app first, when it is a real chat.** OpenClaw opens on its
+  Control panel; Hermes, whose own chat is a terminal, opens on sandboxd's
+  chat. Both views are one tab apart.
+
 ## How it runs
 
 - **Its own container**, from the image Nous Research publishes, pinned by
