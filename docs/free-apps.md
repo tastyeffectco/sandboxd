@@ -33,7 +33,9 @@ An entry must meet all of these:
 - **Works in the preview frame:** no `X-Frame-Options`/`frame-ancestors`
   refusal, no `SharedArrayBuffer` requirement, and a health path that
   answers 200 without rate-limiting frequent checks (set `health` if `/`
-  redirects or returns 429).
+  redirects or returns 429). The preview proxy sends the sandbox's own
+  address as the Host header, so an app must not build absolute redirects
+  from Host (relative redirects, or honouring X-Forwarded-Host, are fine).
 - **Tested on a real Windows PC through the console:** click Install, the
   app's first screen appears, and its first-run step (`firstRun`) is what
   the person actually sees. For `source: true`, ask the coding agent for a
@@ -43,6 +45,6 @@ Tried and left out (and why): Actual Budget (needs `SharedArrayBuffer`),
 Trilium v0.107.0 (setup page fails, refuses framing), OpenResume (Next.js 13
 fails on Node 22), Puter (needs its own domain), VERT (bun only), copyparty (works, but a cryptic UI
 with files reachable only on this PC), Ghost 6
-(wants MySQL even in local mode), Etherpad 3 (needs Node 24), Grist 1.7 (builds and runs, but
-the preview cannot load its home page redirect), NocoDB (Sustainable Use
+(wants MySQL even in local mode), Etherpad 3 (needs Node 24), Grist 1.7 (redirects to an
+absolute URL built from the Host header), NocoDB (Sustainable Use
 License since 2026).
