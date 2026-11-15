@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { api, App as TApp } from './api'
+import { useEffect, useState } from 'react'
+import { api, App as TApp, AgentCatalogEntry, AgentInstance } from './api'
 import { BuildIntent, defaultChoice } from './AgentPicker'
 import { CATALOG, CatalogApp, catalogTag, installPrompt } from './catalog'
 import { Btn } from './design/kit'
@@ -10,18 +10,29 @@ import { Icon } from './design/Icon'
 // changed by the coding agent). Agents are one click away too.
 export function DiscoverView({
   apps,
+  agents = [],
   onInstalled,
   onOpen,
   goAgents,
+  openAgent,
   onError,
 }: {
   apps: TApp[]
+  agents?: AgentInstance[]
+  openAgent?: (id: string) => void
   onInstalled: (id: string, intent: BuildIntent) => void
   onOpen: (id: string) => void
   goAgents: () => void
   onError: (message: string) => void
 }) {
   const [installing, setInstalling] = useState('')
+  const [agentPackages, setAgentPackages] = useState<AgentCatalogEntry[]>([])
+  useEffect(() => {
+    api
+      .listAgentCatalogEntrys()
+      .then(setAgentPackages)
+      .catch(() => {})
+  }, [])
   const [category, setCategory] = useState('All')
   const categories = ['All', ...Array.from(new Set(CATALOG.map((a) => a.category)))]
   const shown = CATALOG.filter((a) => category === 'All' || a.category === category)
@@ -123,16 +134,46 @@ export function DiscoverView({
 
       <section className="discover-agents">
         <div>
-          <h2>Want an assistant that works for you?</h2>
+          <h2>AI agents that work for you</h2>
           <p>
-            Agents remember what you tell them, browse the web, work on a schedule and build apps for you. Open
-            source, running on this computer.
+            Open-source assistants that remember what you tell them, browse the web, work on a schedule and build apps
+            for you. They run on this computer.
           </p>
         </div>
         <Btn onClick={goAgents} data-testid="discover-agents">
           <Icon name="spark" size={14} /> Add an agent
         </Btn>
       </section>
+      {agentPackages.length > 0 && (
+        <div className="project-grid discover-grid" data-testid="catalog-agents">
+          {agentPackages.map((p) => {
+            const added = agents.find((a) => a.package === p.id)
+            return (
+              <article key={p.id} className="project-card catalog-card" data-testid={`catalog-agent-${p.id}`}>
+                <div className="project-card-body">
+                  <div>
+                    <h3>{p.label}</h3>
+                    <span className="catalog-category">AI agent</span>
+                  </div>
+                  <p className="catalog-pitch">{p.description}</p>
+                  <footer>
+                    {added && openAgent ? (
+                      <Btn sm variant="primary" onClick={() => openAgent(added.id)}>
+                        Open
+                      </Btn>
+                    ) : (
+                      <Btn sm variant="primary" onClick={goAgents}>
+                        Add
+                      </Btn>
+                    )}
+                    <span>Open source · runs here</span>
+                  </footer>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
       <p className="discover-note">
         Each app is installed from its official release or source code, at a version we tested. The first start takes
         a minute or two.

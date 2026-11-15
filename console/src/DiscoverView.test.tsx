@@ -4,7 +4,13 @@ import { DiscoverView } from './DiscoverView'
 import { api } from './api'
 import { CATALOG, catalogManifest, catalogTag, installPrompt } from './catalog'
 
-vi.mock('./api', () => ({ api: { createApp: vi.fn(), createAppSandbox: vi.fn() } }))
+vi.mock('./api', () => ({
+  api: {
+    createApp: vi.fn(),
+    createAppSandbox: vi.fn(),
+    listAgentCatalogEntrys: vi.fn().mockResolvedValue([{ id: 'hermes', label: 'Hermes', description: 'A personal assistant.' }]),
+  },
+}))
 afterEach(cleanup)
 
 const view = (over: Partial<Parameters<typeof DiscoverView>[0]> = {}) => {
@@ -54,6 +60,16 @@ describe('DiscoverView (free apps)', () => {
     expect(screen.getAllByRole('article').length).toBe(CATALOG.filter((a) => a.category === category).length)
     fireEvent.click(screen.getByTestId('discover-agents'))
     expect(props.goAgents).toHaveBeenCalled()
+  })
+})
+
+describe('DiscoverView (agents)', () => {
+  it('shows agents next to apps, and opens one already added', async () => {
+    const openAgent = vi.fn()
+    view({ agents: [{ id: 'h1', package: 'hermes' } as never], openAgent })
+    const card = await screen.findByTestId('catalog-agent-hermes')
+    fireEvent.click(card.querySelector('button')!)
+    expect(openAgent).toHaveBeenCalledWith('h1')
   })
 })
 

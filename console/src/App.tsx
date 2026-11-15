@@ -510,6 +510,8 @@ export default function App({
           {route.name === 'discover' && (
             <DiscoverView
               apps={apps}
+              agents={agents || []}
+              openAgent={(id) => setRoute({ name: 'agent', id })}
               onError={onError}
               onOpen={(id) => goApp(id)}
               goAgents={() => setRoute({ name: 'agents' })}
