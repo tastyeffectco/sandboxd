@@ -458,7 +458,11 @@ When you create such work:
 
 1. ` + p.Deliver(c) + `
 2. Do not deliver to Telegram, Slack or other channels unless the user asked.
-3. Tell the user the result will appear in this chat when it runs.
+3. When the user asks for a limited number of runs ("3 times", "until Friday"),
+   make sure it stops: give the job its scheduler's own run limit or end date
+   if it has one; otherwise schedule one-time jobs, one per run. Never leave a
+   job running that the user expects to end.
+4. Tell the user the result will appear in this chat when it runs.
 
 ## Files for the user
 
