@@ -500,6 +500,7 @@ export default function App({
               reload={loadApps}
               onOpen={(id) => goApp(id)}
               goSettings={() => setRoute({ name: 'settings' })}
+              goDiscover={() => setRoute({ name: 'discover' })}
               onCreated={(id, intent) => {
                 if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
                 goApp(id)
