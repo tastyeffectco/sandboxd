@@ -333,6 +333,10 @@ func (s *Server) Handler() http.Handler {
 	// The agent's own app: pages and its WebSocket (GET), and its forms (POST).
 	mux.HandleFunc("GET /v1/agent-instances/{id}/ui/{path...}", s.observe("GET /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
 	mux.HandleFunc("POST /v1/agent-instances/{id}/ui/{path...}", s.observe("POST /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
+	// Agents' apps also save settings and remove things (Hermes's dashboard).
+	mux.HandleFunc("PUT /v1/agent-instances/{id}/ui/{path...}", s.observe("PUT /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
+	mux.HandleFunc("PATCH /v1/agent-instances/{id}/ui/{path...}", s.observe("PATCH /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
+	mux.HandleFunc("DELETE /v1/agent-instances/{id}/ui/{path...}", s.observe("DELETE /v1/agent-instances/{id}/ui/{path...}", s.v1AgentUI))
 	mux.HandleFunc("GET /v1/apps", s.observe("GET /v1/apps", s.v1ListApps))
 	mux.HandleFunc("GET /v1/apps/{id}", s.observe("GET /v1/apps/{id}", s.v1GetApp))
 	mux.HandleFunc("PATCH /v1/apps/{id}", s.observe("PATCH /v1/apps/{id}", s.v1PatchApp))

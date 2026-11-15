@@ -1934,6 +1934,30 @@ paths:
         "200": { description: The app's response, as the agent sent it }
         "404": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+    put:
+      operationId: putAgentApp
+      tags: [agents]
+      summary: "Saving something in the agent's own app (e.g. a setting), signed in as its owner"
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: patchAgentApp
+      tags: [agents]
+      summary: "Changing something in the agent's own app, signed in as its owner"
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteAgentApp
+      tags: [agents]
+      summary: "Removing something in the agent's own app, signed in as its owner"
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearerAuth:
