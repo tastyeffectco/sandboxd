@@ -15,7 +15,8 @@ export interface CatalogApp {
   stars: string
   repo: string
   color: string
-  // Built from its source code, so the coding agent can change it.
+  // The coding agent can change it: its source code is in the project (or,
+  // for Glance, everything lives in one settings file it reloads).
   source: boolean
   // Shown after installing: what to do on first open.
   firstRun?: string
@@ -90,6 +91,23 @@ export const CATALOG: CatalogApp[] = [
     minutes: 1,
   },
   {
+    id: 'glance',
+    name: 'Glance',
+    pitch: 'Your own start page: news, weather, videos and links on one screen.',
+    category: 'Dashboard',
+    license: 'AGPL-3.0',
+    stars: '38k',
+    repo: 'https://github.com/glanceapp/glance',
+    color: '#c8a35c',
+    source: true,
+    firstRun: 'Ask me to make it yours: your city\'s weather, your favourite sites.',
+    start:
+      '[ -x ./glance ] || curl -fsSL https://github.com/glanceapp/glance/releases/download/v0.8.8/glance-linux-' +
+      ARCH +
+      ".tar.gz | tar xz glance; [ -f glance.yml ] || { printf 'server:\\n  port: 3000\\n\\n' > glance.yml && curl -fsSL https://raw.githubusercontent.com/glanceapp/glance/v0.8.8/docs/glance.yml >> glance.yml; }; exec ./glance --config glance.yml",
+    minutes: 1,
+  },
+  {
     id: 'it-tools',
     name: 'IT Tools',
     pitch: '80+ handy tools: QR codes, passwords, unit and date converters, and more.',
@@ -104,6 +122,24 @@ export const CATALOG: CatalogApp[] = [
       SERVE +
       ' -s dist -l tcp://0.0.0.0:3000',
     minutes: 1,
+  },
+  {
+    id: 'omni-tools',
+    name: 'Omni Tools',
+    pitch: 'Edit images, PDFs, text and lists right in your browser, nothing uploaded.',
+    category: 'Utilities',
+    license: 'MIT',
+    stars: '11k',
+    repo: 'https://github.com/iib0011/omni-tools',
+    color: '#1c7ed6',
+    source: true,
+    git: { repo_url: 'https://github.com/iib0011/omni-tools', branch: 'v0.7.0' },
+    start:
+      '[ -f dist/index.html ] || (npm ci --no-audit --no-fund && npm run build); exec ' +
+      SERVE +
+      ' -s dist -l tcp://0.0.0.0:3000',
+    build: 'npm run build',
+    minutes: 4,
   },
   {
     id: 'bentopdf',
