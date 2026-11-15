@@ -64,14 +64,23 @@ describe('AgentRoom', () => {
       working: false,
       messages: [
         msg({ id: '1', role: 'assistant', content: 'Your answer' }),
-        msg({ id: '2', role: 'assistant', content: 'Daily report ready', channel: 'agent' }),
+        msg({
+          id: '2',
+          role: 'assistant',
+          content: 'Daily report ready',
+          channel: 'agent',
+          attachments: [{ id: '01ABC-report.csv', name: 'report.csv', type: 'text/csv', size: 18 }],
+        }),
       ],
     })
     room()
     expect(await screen.findByText('Daily report ready')).toBeTruthy()
     const tags = screen.getAllByTestId('agent-on-its-own')
     expect(tags).toHaveLength(1)
-    expect(tags[0].closest('[data-testid=agent-reply]')?.textContent).toContain('Daily report ready')
+    const reply = tags[0].closest('[data-testid=agent-reply]') as HTMLElement
+    expect(reply.textContent).toContain('Daily report ready')
+    // A file the agent shared is there to download.
+    expect(reply.querySelector('[data-testid=agent-files]')?.textContent).toContain('report.csv')
   })
 
   it('sends, follows the reply as the engine writes it, and refreshes the sidebar after an app is built', async () => {

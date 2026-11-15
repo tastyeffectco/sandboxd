@@ -33,6 +33,7 @@ Every agent gets these tools from sandboxd, over MCP:
 | `create_app` | A new app from an idea; its coding agent builds it. At most 10 per agent per day |
 | `ask_app` | Asks an app's coding agent for a change |
 | `app_status` | Status, preview link and the latest build's outcome |
+| `share_file` | Gives you a file it made: it shows in your chat with the agent, ready to download (files from its own folders only, up to 25 MB) |
 | `message_user` | Posts in your chat with the agent. Scheduled jobs and background work use it to deliver their results (at most 30 messages an hour) |
 
 It cannot delete or stop apps, read their files, or use any other sandboxd API.

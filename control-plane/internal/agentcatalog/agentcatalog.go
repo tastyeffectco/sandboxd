@@ -452,6 +452,12 @@ When you create such work:
 1. ` + p.Deliver(c) + `
 2. Do not deliver to Telegram, Slack or other channels unless the user asked.
 3. Tell the user the result will appear in this chat when it runs.
+
+## Files for the user
+
+To give the user a file you made, save it in your own folders and send it
+with the sandboxd share_file tool. Attaching it to your reply does not reach
+the user here.
 ` + GuideEnd + "\n"
 }
 

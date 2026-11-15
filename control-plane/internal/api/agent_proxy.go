@@ -138,6 +138,13 @@ var agentTools = []mcpTool{
 		"reminders, background tasks) cannot answer in the chat by itself: when you schedule something, write " +
 		"in its instructions that it must send its result with this tool. In a normal conversation, just reply.",
 		obj(map[string]any{"text": map[string]any{"type": "string", "description": "The message, in plain words"}}, "text")},
+	{"share_file", "Give the user a file you made (a report, a spreadsheet, a picture): it appears in their sandboxd " +
+		"chat with you, ready to download. Save it in your own folders first (not /tmp). This is the only way the " +
+		"user can get a file from you.",
+		obj(map[string]any{
+			"path": map[string]any{"type": "string", "description": "The file's full path on your computer"},
+			"note": map[string]any{"type": "string", "description": "Optional words to send with it"},
+		}, "path")},
 }
 
 func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
@@ -298,6 +305,9 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 
 	case "message_user":
 		return s.agentMessageUser(ctx, h, args["text"])
+
+	case "share_file":
+		return s.agentShareFile(ctx, h, args["path"], args["note"])
 	}
 	return "", fmt.Errorf("unknown tool %q", name)
 }

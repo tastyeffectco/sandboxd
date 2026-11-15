@@ -363,6 +363,13 @@ export function AgentRoom({
                     <Icon name="history" size={12} /> Sent on its own
                   </div>
                 )}
+                {(m.attachments || []).length > 0 && (
+                  <div className="bubble-files" data-testid="agent-files">
+                    {(m.attachments || []).map((f) => (
+                      <AttachedFile key={f.id} agentId={agent.id} file={f} />
+                    ))}
+                  </div>
+                )}
                 {m.thinking && (
                   <details className="bubble-thinking">
                     <summary>{m.state === 'working' && !m.content ? 'Thinking…' : 'How it thought about this'}</summary>

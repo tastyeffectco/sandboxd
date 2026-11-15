@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -171,6 +172,42 @@ func TestAlternatingJoinsTurnsInARow(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("turn %d: %+v", i, got[i])
+		}
+	}
+}
+
+// An agent gives the person a file it made: a copy lands in its
+// conversation's files, attached to a message; nothing outside its own data
+// folder can be shared, also through a link.
+func TestAgentShareFile(t *testing.T) {
+	s, st, secret := agentTestServer(t)
+	s.AgentRoot = t.TempDir()
+	root := s.AgentRoot + "/h1"
+	_ = os.MkdirAll(root+"/workspace", 0o700)
+	_ = os.WriteFile(root+"/workspace/fruits.csv", []byte("fruit,eur\napple,1\n"), 0o600)
+	_ = os.WriteFile(s.AgentRoot+"/secret.txt", []byte("not yours"), 0o600)
+	_ = os.Symlink(s.AgentRoot+"/secret.txt", root+"/workspace/link.txt")
+	p := s.AgentProxy()
+	share := func(path string) map[string]any {
+		_, out := mcpCall(t, p, "/agents/h1/mcp", secret, "tools/call",
+			map[string]any{"name": "share_file", "arguments": map[string]string{"path": path, "note": "Your prices"}})
+		return out
+	}
+	if out := share("/opt/data/workspace/fruits.csv"); out["result"].(map[string]any)["isError"] == true {
+		t.Fatalf("share: %v", out)
+	}
+	msgs, _ := st.ListAgentMessages(context.Background(), "h1", 10)
+	if len(msgs) != 1 || msgs[0].Content != "Your prices" || !strings.Contains(msgs[0].Attachments, `"name":"fruits.csv"`) {
+		t.Fatalf("message: %+v", msgs)
+	}
+	var files []agentAttachment
+	_ = json.Unmarshal([]byte(msgs[0].Attachments), &files)
+	if b, err := os.ReadFile(root + "/uploads/" + files[0].ID); err != nil || string(b) != "fruit,eur\napple,1\n" || files[0].Size != 18 {
+		t.Fatalf("copy: %q %v %+v", b, err, files)
+	}
+	for _, bad := range []string{"/opt/data/workspace/link.txt", "/opt/data/../../etc/passwd", "/tmp/x.csv", "workspace/fruits.csv", "/opt/data/nope.csv"} {
+		if out := share(bad); out["result"].(map[string]any)["isError"] != true {
+			t.Errorf("%s was shared: %v", bad, out)
 		}
 	}
 }
