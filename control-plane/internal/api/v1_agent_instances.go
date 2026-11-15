@@ -51,6 +51,10 @@ const agentAppsPerDay = 10
 
 func agentContainer(id string) string { return "a-" + id }
 
+// browserContainer is the headless browser of an agent whose package has
+// Browser (see agentcatalog.Browser).
+func browserContainer(id string) string { return "b-" + id }
+
 // agentAnswering reports whether the agent's chat API accepts connections.
 func agentAnswering(ctx context.Context, host string, port int) bool {
 	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -303,6 +307,12 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		}
 		env = append(env, "TELEGRAM_BOT_TOKEN="+string(token), "TELEGRAM_ALLOWED_USERS="+h.TelegramAllowedUsers)
 	}
+	if pkg.Browser {
+		if err := s.runAgentBrowser(ctx, h); err != nil {
+			return fmt.Errorf("start the agent's browser: %w", err)
+		}
+		env = append(env, agentcatalog.BrowserUpstreamEnv+"="+browserContainer(h.ID)+":"+agentcatalog.BrowserPort)
+	}
 	tmpfs := []string{"/tmp"}
 	if pkg.ExecRun { // a supervisor such as s6 executes from /run
 		tmpfs = append(tmpfs, "/run:exec,mode=755,uid="+strconv.Itoa(uid))
@@ -355,8 +365,14 @@ func (s *Server) v1StartAgentInstance(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if _, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); ierr != nil {
 		err = s.provisionAgent(r.Context(), h, pkg)
-	} else if err = s.Docker.Start(r.Context(), agentContainer(h.ID)); err == nil {
-		_, err = s.refreshAgent(r.Context(), h, pkg)
+	} else {
+		err = s.startAgentBrowser(r.Context(), h, pkg)
+		if err == nil {
+			err = s.Docker.Start(r.Context(), agentContainer(h.ID))
+		}
+		if err == nil {
+			_, err = s.refreshAgent(r.Context(), h, pkg)
+		}
 	}
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "could not start the agent: "+err.Error())
@@ -375,10 +391,10 @@ func (s *Server) v1StopAgentInstance(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	_ = s.Docker.Stop(r.Context(), browserContainer(h.ID), 5) // only agents with a browser have one
 	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
 }
 
-// DELETE /v1/agent-instances/{id} — removes the agent, its container and its memory.
 // PATCH /v1/agent-instances/{id} {connection_id, model?} — think with another
 // model. The agent is made again with it; its memory and skills stay.
 func (s *Server) v1UpdateAgentInstance(w http.ResponseWriter, r *http.Request) {
@@ -417,6 +433,7 @@ func (s *Server) v1UpdateAgentInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
 }
 
+// DELETE /v1/agent-instances/{id} — removes the agent, its containers and its memory.
 func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.ownAgentInstance(w, r)
 	if !ok {
@@ -426,6 +443,7 @@ func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	_ = s.Docker.Remove(r.Context(), browserContainer(h.ID))
 	if live, ok := s.turns.get(h.ID); ok {
 		live.cancel()
 	}
@@ -553,4 +571,36 @@ func (s *Server) writeGuide(h *store.AgentInstance, pkg agentcatalog.Package) er
 		return fmt.Errorf("give the agent sandboxd's guide: %w", err)
 	}
 	return nil
+}
+
+// runAgentBrowser (re)creates the agent's headless Chromium under the same
+// profile as agents: non-root, no capabilities, read-only root, no new
+// privileges, its own memory limit. Only the agents' network reaches it.
+func (s *Server) runAgentBrowser(ctx context.Context, h *store.AgentInstance) error {
+	name := browserContainer(h.ID)
+	_ = s.Docker.Remove(ctx, name)
+	_, err := s.Docker.Run(ctx, docker.RunSpec{
+		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
+		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
+		Memory: "1g", MemorySwap: "1g", PidsLimit: 512, ShmSize: "512m", Init: true,
+		Tmpfs:   []string{"/tmp"},
+		User:    "1000:1000",
+		Restart: "unless-stopped",
+		Env:     []string{"HOME=/tmp"},
+		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.browser=1"},
+		Image:   agentcatalog.BrowserImage,
+	})
+	return err
+}
+
+// startAgentBrowser starts an agent's browser before the agent, making it
+// again when it is missing.
+func (s *Server) startAgentBrowser(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
+	if !pkg.Browser {
+		return nil
+	}
+	if _, err := s.Docker.Inspect(ctx, browserContainer(h.ID)); err != nil {
+		return s.runAgentBrowser(ctx, h)
+	}
+	return s.Docker.Start(ctx, browserContainer(h.ID))
 }

@@ -174,3 +174,37 @@ func TestWithGuide(t *testing.T) {
 		t.Fatalf("replaced: %q", twice)
 	}
 }
+
+// OpenClaw's image has no browser: it attaches to sandboxd's headless
+// Chromium through a loopback relay (Chromium refuses a container name).
+func TestOpenClawUsesSandboxdsBrowser(t *testing.T) {
+	if !OpenClaw.Browser || len(OpenClaw.Cmd) != 3 || !strings.Contains(OpenClaw.Cmd[2], "process.env."+BrowserUpstreamEnv) ||
+		!strings.Contains(OpenClaw.Cmd[2], `.listen(9222, "127.0.0.1")`) || !strings.HasSuffix(OpenClaw.Cmd[2], "exec node openclaw.mjs gateway") {
+		t.Fatalf("cmd: %q", OpenClaw.Cmd)
+	}
+	if !strings.Contains(ombStart, "process.env.SANDBOXD_MODEL_UPSTREAM") || !strings.Contains(ombStart, `.listen(9101, "127.0.0.1")`) {
+		t.Fatalf("openmausbot relay: %q", ombStart)
+	}
+	cfg, err := RenderOpenClawConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m", ProxyIP: "172.18.0.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Browser struct {
+			Enabled  bool   `json:"enabled"`
+			Default  string `json:"defaultProfile"`
+			Profiles map[string]struct {
+				CDP    string `json:"cdpUrl"`
+				Attach bool   `json:"attachOnly"`
+			} `json:"profiles"`
+		} `json:"browser"`
+	}
+	_ = json.Unmarshal([]byte(cfg), &out)
+	p := out.Browser.Profiles[out.Browser.Default]
+	if !out.Browser.Enabled || p.CDP != "http://127.0.0.1:9222" || !p.Attach {
+		t.Fatalf("browser config: %+v", out.Browser)
+	}
+	if !strings.HasPrefix(BrowserImage, "chromedp/headless-shell@sha256:") {
+		t.Fatal("the browser image is not pinned")
+	}
+}

@@ -67,6 +67,11 @@ type Package struct {
 	// Deliver tells the agent how a scheduled job sends its result to the
 	// person's sandboxd chat (see Skill).
 	Deliver func(Config) string `json:"-"`
+	// Browser: the agent has a browser tool but its image has no browser.
+	// sandboxd runs a headless Chromium next to it (BrowserImage, its own
+	// locked-down container) and the agent reaches it on 127.0.0.1:BrowserPort
+	// through a relay in its start command (BrowserUpstreamEnv says where).
+	Browser bool `json:"-"`
 	// Init runs a minimal init that reaps child processes (browsers).
 	Init bool `json:"-"`
 	// StrongModel: it leans on many tools at once, so the strongest model
@@ -137,7 +142,10 @@ var OpenClaw = Package{
 	Label:       "OpenClaw",
 	Description: "An open-source personal assistant with skills and a memory of its own. Chat with it here and ask it to build apps for you.",
 	Image:       "ghcr.io/openclaw/openclaw@sha256:1a2a3ce113e435039dbeac5ae261759bb4759908563d91c81059e896b38c5d98",
-	Cmd:         []string{"node", "openclaw.mjs", "gateway"},
+	Cmd:         []string{"sh", "-c", loopbackRelay(BrowserUpstreamEnv, BrowserPort) + "exec node openclaw.mjs gateway"},
+	Browser:     true,
+	Init:        true,
+	Revision:    "1", // a browser of its own
 	User:        "1000:1000",
 	StatePath:   "/state",
 	APIPort:     18789,
@@ -171,8 +179,8 @@ var OpenClaw = Package{
 	// It peaks at about 2.4 GB on a chat: with 2 GB and no swap it was killed.
 	Memory:     "3g",
 	ShmSize:    "1g",
-	DiskNote:   "about 2 GB",
-	MemoryNote: "up to 3 GB",
+	DiskNote:   "about 2.2 GB, with its browser",
+	MemoryNote: "up to 4 GB, with its browser",
 }
 
 // OpenMausBot is OpenMausBot's bot workspace, used through its own app.
@@ -213,15 +221,31 @@ var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw, Open
 const ombModelPort = "9101"
 
 // ombStart starts the relay, then OpenMausBot itself.
-const ombStart = `node -e '
-const net = require("net"), [host, port] = process.env.SANDBOXD_MODEL_UPSTREAM.split(":");
+var ombStart = loopbackRelay("SANDBOXD_MODEL_UPSTREAM", ombModelPort) + "exec node dist-server/server-launcher.js"
+
+// The browser sandboxd runs for agents with Browser: headless Chromium,
+// open source, pinned by digest (multi-arch).
+const (
+	BrowserImage       = "chromedp/headless-shell@sha256:830fa77e0602cb42e5cb2cbd9237ba27b649ad69d5fb82b54713aac8b7ab4f29"
+	BrowserPort        = "9222"
+	BrowserUpstreamEnv = "SANDBOXD_BROWSER_UPSTREAM"
+)
+
+// loopbackRelay is a shell line that relays 127.0.0.1:port to the host:port
+// in the environment variable env, in the background. Agents that only trust
+// loopback (OpenMausBot's model calls, Chromium's DevTools, which refuses a
+// container name as Host) reach sandboxd's services through it.
+func loopbackRelay(env, port string) string {
+	return `node -e '
+const net = require("net"), [host, port] = process.env.` + env + `.split(":");
 net.createServer((c) => {
   const u = net.connect(Number(port), host);
   c.on("error", () => u.destroy()); u.on("error", () => c.destroy());
   c.pipe(u).pipe(c);
-}).listen(` + ombModelPort + `, "127.0.0.1");
+}).listen(` + port + `, "127.0.0.1");
 ' &
-exec node dist-server/server-launcher.js`
+`
+}
 
 // RenderOpenMausBotEnv points its built-in OpenAI-compatible engine at
 // sandboxd's model proxy through the loopback relay (the real key never
@@ -358,6 +382,11 @@ func RenderOpenClawConfig(c Config) (string, error) {
 		// (see Deliver), signed with the agent's secret.
 		"cron": map[string]any{"webhookToken": ref,
 			"webhookSsrfPolicy": map[string]any{"allowedHostnames": []string{proxyHost(c.ProxyURL)}}},
+		// Its browser is sandboxd's headless Chromium (see Browser), already
+		// running: OpenClaw attaches to it and never starts one itself.
+		"browser": map[string]any{"enabled": true, "defaultProfile": "sandboxd",
+			"profiles": map[string]any{"sandboxd": map[string]any{
+				"cdpUrl": "http://127.0.0.1:" + BrowserPort, "attachOnly": true}}},
 		"mcp": map[string]any{"servers": map[string]any{"sandboxd": map[string]any{
 			"url": base + "/mcp", "transport": "streamable-http",
 			"headers": map[string]string{"Authorization": "Bearer " + ref},
