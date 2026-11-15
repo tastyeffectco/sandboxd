@@ -11,6 +11,8 @@ vi.mock('./api', () => ({
     listModelProviders: vi.fn(),
     createAgentInstance: vi.fn(),
     saveModelProvider: vi.fn(),
+    getSettings: vi.fn().mockResolvedValue({ editable: ['agents.time_zone'], agents: { time_zone: 'Europe/Paris' } }),
+    patchSettings: vi.fn().mockResolvedValue({ agents: { time_zone: 'Asia/Tokyo' } }),
   },
 }))
 
@@ -61,6 +63,16 @@ describe('AgentsView (catalog)', () => {
     } finally {
       delete window.sandboxdDesktop
     }
+  })
+
+  it('shows the time zone agents use and lets the person change it', async () => {
+    vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
+    render(<AgentsView onError={() => {}} agents={[]} goModels={() => {}} onOpen={() => {}} />)
+    const select = (await screen.findByTestId('agent-time-zone')) as HTMLSelectElement
+    expect(select.value).toBe('Europe/Paris')
+    fireEvent.change(select, { target: { value: 'Asia/Tokyo' } })
+    await waitFor(() => expect(api.patchSettings).toHaveBeenCalledWith({ agents: { time_zone: 'Asia/Tokyo' } }))
+    await waitFor(() => expect(select.value).toBe('Asia/Tokyo'))
   })
 
   it('adds Hermes and opens its own window', async () => {

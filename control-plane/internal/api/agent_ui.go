@@ -79,7 +79,7 @@ func (s *Server) agentProxyIP(ctx context.Context) (string, error) {
 func (s *Server) refreshAgent(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) (bool, error) {
 	if s.Docker != nil {
 		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil &&
-			c.Config.Labels[agentRevLabel] != containerRev(pkg) {
+			c.Config.Labels[agentRevLabel] != containerRev(pkg, s.agentTimeZone()) {
 			s.dropUISession(h.ID)
 			return true, s.provisionAgent(ctx, h, pkg)
 		}
@@ -251,10 +251,14 @@ func setupRev(tools []mcpTool) string {
 }
 
 // containerRev is the label value of an up-to-date agent container: it
-// changes with sandboxd's tools, the guide it gives the agent and the
-// package's own Revision.
-func containerRev(pkg agentcatalog.Package) string {
-	sum := sha256.Sum256([]byte(agentSetup + pkg.Revision +
+// changes with sandboxd's tools, the guide it gives the agent, the
+// package's own Revision and the time zone agents run in.
+func containerRev(pkg agentcatalog.Package, zone string) string {
+	tz := ""
+	if zone != "" {
+		tz = "TZ=" + zone
+	}
+	sum := sha256.Sum256([]byte(agentSetup + pkg.Revision + tz +
 		agentcatalog.Guide(pkg, agentcatalog.Config{ProxyURL: "http://sandboxd", AgentID: "agent"})))
 	return hex.EncodeToString(sum[:])[:12]
 }

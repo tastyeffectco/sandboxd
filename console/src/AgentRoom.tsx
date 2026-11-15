@@ -67,6 +67,14 @@ function linkTitle(url: string) {
   }
 }
 
+// First messages that show what an agent is for: a question, working on its
+// own (a message arrives a couple of minutes later), and building an app.
+export const AGENT_SUGGESTIONS = [
+  'What can you do for me?',
+  "In 2 minutes, send me today's top tech headline with a link",
+  'Build me a recipe app with a shopping list',
+]
+
 export function AgentRoom({
   agent,
   onChanged,
@@ -357,9 +365,12 @@ export function AgentRoom({
               {initial}
             </span>
             <h2>Chat with {agent.name}</h2>
-            <p>It remembers what you tell it, uses tools, and can build and change apps on this computer.</p>
+            <p>
+              It remembers what you tell it, browses the web, works on a schedule and messages you here, and can build
+              and change apps on this computer.
+            </p>
             <div className="agent-suggestions">
-              {['What can you do for me?', 'Build me a recipe app with a shopping list', 'Which apps do I have?'].map((s) => (
+              {AGENT_SUGGESTIONS.map((s) => (
                 <button key={s} disabled={!running} onClick={() => void send(s)} data-testid="agent-suggestion">
                   {s}
                 </button>

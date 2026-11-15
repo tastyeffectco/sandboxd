@@ -311,7 +311,11 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		env = append(env, pkg.APIKeyEnv+"="+string(apiKey))
 	}
 	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
-	labels = append(labels, agentRevLabel+"="+containerRev(pkg))
+	zone := s.agentTimeZone()
+	labels = append(labels, agentRevLabel+"="+containerRev(pkg, zone))
+	if zone != "" { // "every morning at 8" means 8 where the person lives
+		env = append(env, "TZ="+zone)
+	}
 	if pkg.UILogin == "password" {
 		// Only sandboxd knows these: it signs the owner in to the app.
 		env = append(env, "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="+uiPassword(apiKey, "password"),
@@ -639,7 +643,7 @@ func (s *Server) runAgentBrowser(ctx context.Context, h *store.AgentInstance) er
 		Tmpfs:   []string{"/tmp"},
 		User:    "1000:1000",
 		Restart: "unless-stopped",
-		Env:     []string{"HOME=/tmp"},
+		Env:     browserEnv(s.agentTimeZone()),
 		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.browser=1"},
 		Image:   agentcatalog.BrowserImage,
 	})
@@ -656,4 +660,12 @@ func (s *Server) startAgentBrowser(ctx context.Context, h *store.AgentInstance, 
 		return s.runAgentBrowser(ctx, h)
 	}
 	return s.Docker.Start(ctx, browserContainer(h.ID))
+}
+
+// browserEnv shows pages in the person's time zone, like the agent.
+func browserEnv(zone string) []string {
+	if zone == "" {
+		return []string{"HOME=/tmp"}
+	}
+	return []string{"HOME=/tmp", "TZ=" + zone}
 }

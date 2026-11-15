@@ -6,11 +6,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+	_ "time/tzdata" // validates agents.time_zone on any base image
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentprompt"
@@ -97,6 +99,8 @@ type v1SettingsAgents struct {
 	// DefaultModels maps an agent id to its operator-set default model id, used
 	// when a task doesn't specify one. Editable via PATCH. Empty map when unset.
 	DefaultModels map[string]string `json:"default_models"`
+	// TimeZone is the IANA time zone agents run in ("" is UTC). Editable.
+	TimeZone string `json:"time_zone"`
 }
 
 // v1GetSettings — GET /v1/settings. Read-only, tokenless-safe instance summary.
@@ -134,7 +138,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 		Runtime:   v1SettingsRuntime{StorageMode: storageMode, BaseImage: s.Image},
 		Lifecycle: s.lifecycleView(),
 		Egress:    v1SettingsEgress{Mode: egressMode},
-		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{}), DefaultModels: s.agentDefaultModels()},
+		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{}), DefaultModels: s.agentDefaultModels(), TimeZone: s.agentTimeZone()},
 		Presets:   presets,
 		Capabilities: map[string]bool{
 			"snapshots":      s.Snapshot != nil,
@@ -149,6 +153,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 			"lifecycle.idle_threshold_seconds",
 			"lifecycle.keepalive_max_seconds",
 			"agents.default_models",
+			"agents.time_zone",
 		}
 	}
 	if s.Update != nil {
@@ -207,6 +212,9 @@ type v1SettingsPatch struct {
 		// DefaultModels merges into the stored map: a non-empty value sets that
 		// agent's default model, an empty value clears it. Other agents untouched.
 		DefaultModels map[string]string `json:"default_models"`
+		// TimeZone is an IANA name ("Europe/Paris"); "" means UTC. Agents
+		// are made again to pick it up.
+		TimeZone *string `json:"time_zone"`
 	} `json:"agents"`
 }
 
@@ -226,7 +234,7 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 	var req v1SettingsPatch
 	if err := dec.Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			"editable: lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models: "+err.Error())
+			"editable: lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models / agents.time_zone: "+err.Error())
 		return
 	}
 	if req.Lifecycle == nil && req.Agents == nil {
@@ -288,16 +296,35 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 		next.DefaultModels = merged
 	}
 
+	zoneChanged := false
+	if req.Agents != nil && req.Agents.TimeZone != nil {
+		target = "agents.time_zone"
+		zone := strings.TrimSpace(*req.Agents.TimeZone)
+		if zone != "" {
+			if _, err := time.LoadLocation(zone); err != nil || !validZone(zone) {
+				writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown time zone: "+zone)
+				return
+			}
+		}
+		zoneChanged = zone != next.TimeZone
+		next.TimeZone = zone
+	}
+
 	if err := s.Store.SaveInstanceSettings(r.Context(), store.InstanceSettings{
 		IdleReapEnabled:      next.IdleEnabled,
 		IdleThresholdSeconds: next.IdleThresholdSeconds,
 		KeepaliveMaxSeconds:  next.KeepaliveMaxSeconds,
 		AgentDefaultModels:   next.DefaultModels,
+		AgentTimeZone:        next.TimeZone,
 	}); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	s.Live.Set(next) // hot-apply (reaper + keepalive + task-submit read this live)
+	if zoneChanged {
+		// Agents read TZ when they start: make them again, in the background.
+		go s.RefreshAgents(context.WithoutCancel(r.Context()))
+	}
 	s.auditAction(r, audit.Entry{Action: "settings.update", Target: target})
 	s.v1GetSettings(w, r) // echo the updated settings
 }
@@ -310,6 +337,28 @@ func (s *Server) agentDefaultModels() map[string]string {
 		}
 	}
 	return map[string]string{}
+}
+
+// agentTimeZone is the IANA time zone agents run in ("" is UTC).
+func (s *Server) agentTimeZone() string {
+	if s.Live == nil {
+		return ""
+	}
+	return s.Live.TimeZone()
+}
+
+// validZone accepts IANA names only ("Europe/Paris", "UTC"), never "Local"
+// or a path, since the value becomes the agents' TZ.
+func validZone(zone string) bool {
+	if zone == "Local" || len(zone) > 64 || strings.HasPrefix(zone, "/") || strings.Contains(zone, "..") {
+		return false
+	}
+	for _, r := range zone {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("/_+-", r)) {
+			return false
+		}
+	}
+	return true
 }
 
 // previewBase is the scheme://host[:port] previews are reached under, with the

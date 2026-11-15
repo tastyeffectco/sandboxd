@@ -338,6 +338,7 @@ func main() {
 			IdleThresholdSeconds: persisted.IdleThresholdSeconds,
 			KeepaliveMaxSeconds:  persisted.KeepaliveMaxSeconds,
 			DefaultModels:        persisted.AgentDefaultModels,
+			TimeZone:             persisted.AgentTimeZone,
 		})
 		log.Info("instance settings: loaded persisted lifecycle tunables + agent default models")
 	}

@@ -6,6 +6,7 @@ import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { AgentsView } from './AgentsView'
 import { AgentRoom } from './AgentRoom'
+import { syncAgentTimeZone } from './timeZone'
 import { BrainGraph } from './BrainGraph'
 import { SettingsView } from './SettingsView'
 import { BuilderHome, BuilderDraft } from './BuilderHome'
@@ -162,6 +163,7 @@ export default function App({
     if (auth && (auth.authenticated || auth.enabled === false)) {
       loadApps()
       loadAgents()
+      void syncAgentTimeZone().catch(() => {})
     }
   }, [auth, loadApps, loadAgents])
   // A new or restarted agent takes about a minute; refresh until it's ready.

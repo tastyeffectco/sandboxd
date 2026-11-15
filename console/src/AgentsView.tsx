@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
 import { c, font, Btn, Card, Input } from './design/kit'
 import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
+import { browserTimeZone, canSetTimeZone } from './timeZone'
 
 // The agent catalog: add an agent with one click. Each agent you add gets its
 // own window, listed under AGENTS in the sidebar.
@@ -76,7 +77,55 @@ export function AgentsView({
           />
         )
       })}
+      {packages !== null && <AgentTimeZone onError={onError} />}
     </div>
+  )
+}
+
+const zones = () => {
+  try {
+    return (Intl as unknown as { supportedValuesOf(k: string): string[] }).supportedValuesOf('timeZone')
+  } catch {
+    return [browserTimeZone()].filter(Boolean)
+  }
+}
+
+// Agents schedule in this zone: "every morning at 8" is 8 here.
+function AgentTimeZone({ onError }: { onError: (message: string) => void }) {
+  const [zone, setZone] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => setZone(canSetTimeZone(s) ? s.agents.time_zone || 'UTC' : null))
+      .catch(() => {})
+  }, [])
+  if (zone === null) return null
+  const options = zones()
+  if (!options.includes(zone)) options.unshift(zone)
+  const change = async (next: string) => {
+    setBusy(true)
+    try {
+      const s = await api.patchSettings({ agents: { time_zone: next === 'UTC' ? '' : next } })
+      setZone(s.agents.time_zone || 'UTC')
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <label className="form-field" style={{ maxWidth: 680, marginTop: 8 }}>
+      Your time zone (agents use it for reminders and schedules)
+      <select value={zone} disabled={busy} onChange={(e) => void change(e.target.value)} data-testid="agent-time-zone">
+        {options.map((z) => (
+          <option key={z} value={z}>
+            {z.replace(/_/g, ' ')}
+          </option>
+        ))}
+      </select>
+      {busy && <span style={{ color: c.muted2, fontSize: 12 }}>Your agents restart to use it…</span>}
+    </label>
   )
 }
 
