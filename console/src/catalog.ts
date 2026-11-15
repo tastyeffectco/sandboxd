@@ -23,6 +23,9 @@ export interface CatalogApp {
   git?: { repo_url: string; branch: string }
   // sandbox.yaml web.command: install on first start, then serve on :3000.
   start: string
+  // A page that answers 200 once the app is up (default "/"); for apps whose
+  // home page redirects or rate-limits the preview's frequent checks.
+  health?: string
   // Minutes the first start takes on a normal connection.
   minutes: number
 }
@@ -98,36 +101,6 @@ export const CATALOG: CatalogApp[] = [
     minutes: 1,
   },
   {
-    id: 'trilium',
-    name: 'Trilium Notes',
-    pitch: 'A personal wiki for everything you know, organised your way.',
-    category: 'Notes',
-    license: 'AGPL-3.0',
-    stars: '39k',
-    repo: 'https://github.com/TriliumNext/Trilium',
-    color: '#4f6bed',
-    source: false,
-    firstRun: 'On first open, choose a new document and set your password.',
-    start:
-      '[ -x trilium/trilium.sh ] || (mkdir -p trilium && curl -fsSL https://github.com/TriliumNext/Trilium/releases/download/v0.107.0/TriliumNotes-Server-v0.107.0-linux-x64.tar.xz | tar xJ --strip-components=1 -C trilium); mkdir -p data; export TRILIUM_PORT=3000 TRILIUM_DATA_DIR=$PWD/data; cd trilium && exec ./trilium.sh',
-    minutes: 1,
-  },
-  {
-    id: 'actual',
-    name: 'Actual Budget',
-    pitch: 'Budget your money with envelopes. Your numbers stay on your computer.',
-    category: 'Finance',
-    license: 'MIT',
-    stars: '30k',
-    repo: 'https://github.com/actualbudget/actual',
-    color: '#8719e0',
-    source: false,
-    firstRun: 'On first open, set a password, then create your budget.',
-    start:
-      '[ -f node_modules/@actual-app/sync-server/build/bin/actual-server.js ] || npm i --no-audit --no-fund @actual-app/sync-server@26.11.0; mkdir -p data; export ACTUAL_PORT=3000 ACTUAL_DATA_DIR=$PWD/data; exec node node_modules/@actual-app/sync-server/build/bin/actual-server.js',
-    minutes: 1,
-  },
-  {
     id: 'bentopdf',
     name: 'BentoPDF',
     pitch: 'Merge, split, sign and compress PDFs, without uploading them anywhere.',
@@ -149,7 +122,7 @@ export const catalogTag = (id: string) => `catalog:${id}`
 
 // sandbox.yaml for an entry. JSON strings are valid YAML double-quoted scalars.
 export function catalogManifest(app: CatalogApp): string {
-  return `version: 1\nweb:\n  command: ${JSON.stringify(app.start)}\n  port: 3000\n  health_path: "/"\n`
+  return `version: 1\nweb:\n  command: ${JSON.stringify(app.start)}\n  port: 3000\n  health_path: ${JSON.stringify(app.health || '/')}\n`
 }
 
 // The first task: the coding agent only writes sandbox.yaml; the start
