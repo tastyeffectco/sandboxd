@@ -120,7 +120,7 @@ func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
 // person; OpenClaw's go to its sandboxd inbox, signed with its secret.
 func TestScheduledResultsGuide(t *testing.T) {
 	c := Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m", ProxyIP: "172.18.0.2"}
-	if s := Guide(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, GuideMark+"\n") {
+	if s := Guide(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, GuideBegin+"\n") || !strings.HasSuffix(s, GuideEnd+"\n") {
 		t.Fatalf("hermes instructions:\n%s", s)
 	}
 	// Hermes reads AGENTS.md where its terminal works.
@@ -130,7 +130,7 @@ func TestScheduledResultsGuide(t *testing.T) {
 	if cfg, _ := RenderHermesConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s", Model: "m"}); !strings.Contains(cfg, "  cwd: \"/opt/data/workspace\"\n") {
 		t.Fatalf("hermes config:\n%s", cfg)
 	}
-	if s := Guide(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) || strings.HasPrefix(s, "---") {
+	if s := Guide(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) {
 		t.Fatalf("openclaw instructions:\n%s", s)
 	}
 	if Guide(OpenMausBot, c) != "" {
@@ -141,14 +141,6 @@ func TestScheduledResultsGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out struct {
-		Hooks struct {
-			Internal struct {
-				Entries map[string]struct {
-					Enabled bool     `json:"enabled"`
-					Paths   []string `json:"paths"`
-				} `json:"entries"`
-			} `json:"internal"`
-		} `json:"hooks"`
 		Cron struct {
 			WebhookToken string `json:"webhookToken"`
 			Policy       struct {
@@ -162,9 +154,23 @@ func TestScheduledResultsGuide(t *testing.T) {
 	if out.Cron.WebhookToken != "${"+SecretEnv+"}" || len(out.Cron.Policy.Hosts) != 1 || out.Cron.Policy.Hosts[0] != "sandboxd" {
 		t.Fatalf("cron config: %+v", out.Cron)
 	}
-	// The guide is loaded from the workspace on every turn.
-	if e := out.Hooks.Internal.Entries["bootstrap-extra-files"]; !e.Enabled || len(e.Paths) != 1 ||
-		"workspace/"+e.Paths[0] != OpenClaw.GuideFile {
-		t.Fatalf("bootstrap hook: %+v", e)
+}
+
+// sandboxd's section is added once and then replaced in place; the person's
+// own text around it stays as it is.
+func TestWithGuide(t *testing.T) {
+	g1 := GuideBegin + "\nold\n" + GuideEnd + "\n"
+	g2 := GuideBegin + "\nnew\n" + GuideEnd + "\n"
+	if got := WithGuide("", g1); got != g1 {
+		t.Fatalf("empty file: %q", got)
+	}
+	mine := "# My rules\nAnswer in French.\n"
+	once := WithGuide(mine, g1)
+	if once != mine+"\n"+g1 {
+		t.Fatalf("added: %q", once)
+	}
+	twice := WithGuide(once+"## After\n", g2)
+	if twice != mine+"\n"+g2+"## After\n" || WithGuide(twice, g2) != twice {
+		t.Fatalf("replaced: %q", twice)
 	}
 }

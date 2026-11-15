@@ -169,7 +169,7 @@ func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance,
 
 // writeAgentFile writes a file under the agent's folder, making the folders
 // on the way, all owned by the agent's user.
-func writeAgentFile(root, rel, content string, uid, gid int) error {
+func writeAgentFile(root, rel, content string, uid, gid int, mode os.FileMode) error {
 	dir := root
 	for _, part := range strings.Split(path.Dir(rel), "/") {
 		if part == "." || part == "" {
@@ -183,7 +183,7 @@ func writeAgentFile(root, rel, content string, uid, gid int) error {
 			return err
 		}
 	}
-	return writeOwned(filepath.Join(root, filepath.FromSlash(rel)), content, uid, gid, 0o644)
+	return writeOwned(filepath.Join(root, filepath.FromSlash(rel)), content, uid, gid, mode)
 }
 
 // writeAgentConfig replaces the config in one step, owned by the agent's user.
@@ -199,6 +199,7 @@ func writeAgentConfig(path, config, user string) error {
 // writeOwned replaces a file in one step, owned by uid:gid.
 func writeOwned(path, content string, uid, gid int, mode os.FileMode) error {
 	tmp := path + ".tmp"
+	_ = os.Remove(tmp)
 	if err := os.WriteFile(tmp, []byte(content), mode); err != nil {
 		return err
 	}

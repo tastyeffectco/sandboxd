@@ -122,43 +122,37 @@ func TestInboxText(t *testing.T) {
 	}
 }
 
-// sandboxd replaces its own guide but never a file the person wrote there.
-func TestSandboxdGuideLeavesThePersonsFile(t *testing.T) {
-	dir := t.TempDir()
-	file := dir + "/AGENTS.md"
-	if !sandboxdGuide(file) {
-		t.Fatal("a missing file is free")
-	}
-	_ = os.WriteFile(file, []byte(agentcatalog.GuideMark+"\nold guide"), 0o600)
-	if !sandboxdGuide(file) {
-		t.Fatal("sandboxd's own guide is replaced")
-	}
-	_ = os.WriteFile(file, []byte("# My rules\nAlways answer in French."), 0o600)
-	if sandboxdGuide(file) {
-		t.Fatal("the person's AGENTS.md would be overwritten")
-	}
-}
-
-// A guide that went missing comes back; the person's own file stays.
-func TestWriteGuideRestoresSandboxdsGuide(t *testing.T) {
+// sandboxd's section of the agent's AGENTS.md comes back when it goes
+// missing; the person's own text stays. OpenClaw writes its file first.
+func TestWriteGuideKeepsThePersonsText(t *testing.T) {
 	s, st, _ := agentTestServer(t)
 	s.AgentRoot, s.AgentProxyURL = t.TempDir(), "http://sandboxd:9100"
 	h, _ := st.GetAgentInstanceForOwner(context.Background(), "h1", "alice")
-	pkg := agentcatalog.OpenClaw
-	file := s.AgentRoot + "/h1/" + pkg.GuideFile
-	_ = os.Mkdir(s.AgentRoot+"/h1", 0o700)
-	if err := s.writeGuide(h, pkg); err != nil {
+	_ = os.MkdirAll(s.AgentRoot+"/h1/workspace", 0o700)
+	file := s.AgentRoot + "/h1/workspace/AGENTS.md"
+
+	if err := s.writeGuide(h, agentcatalog.OpenClaw); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(file)
-	if err != nil || !strings.Contains(string(b), "/agents/h1/inbox") {
-		t.Fatalf("guide: %q %v", b, err)
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatal("the guide was written before OpenClaw made its own AGENTS.md")
 	}
-	_ = os.WriteFile(file, []byte("# mine"), 0o600)
-	if err := s.writeGuide(h, pkg); err != nil {
+	_ = os.WriteFile(file, []byte("# My rules\n"), 0o600)
+	for i := 0; i < 2; i++ {
+		if err := s.writeGuide(h, agentcatalog.OpenClaw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(file)
+	if !strings.HasPrefix(string(b), "# My rules\n") || strings.Count(string(b), agentcatalog.GuideBegin) != 1 ||
+		!strings.Contains(string(b), "/agents/h1/inbox") {
+		t.Fatalf("AGENTS.md: %q", b)
+	}
+	if st, _ := os.Stat(file); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode changed to %v", st.Mode().Perm())
+	}
+	// Hermes has no file of its own: sandboxd starts one.
+	if err := s.writeGuide(h, agentcatalog.Hermes); err != nil {
 		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(file); string(b) != "# mine" {
-		t.Fatalf("the person's file was replaced: %q", b)
 	}
 }

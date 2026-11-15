@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,10 +56,14 @@ type Package struct {
 	Render     func(Config) (string, error) `json:"-"`
 	// RenderEnv adds per-agent environment (agents configured by variables).
 	RenderEnv func(Config) []string `json:"-"`
-	// GuideFile, under StatePath, is where sandboxd writes its guide for the
-	// agent (how scheduled work reaches the person): a skill (SKILL.md) or
-	// instructions the agent always reads (AGENTS.md).
+	// GuideFile, under StatePath, is the instructions file the agent reads
+	// on every turn (AGENTS.md). sandboxd keeps its guide in a marked section
+	// of it (how scheduled work reaches the person); the rest is the
+	// person's or the agent's own.
 	GuideFile string `json:"-"`
+	// GuideLater: the agent writes GuideFile itself on its first start (its
+	// own template), so sandboxd adds its section once the file exists.
+	GuideLater bool `json:"-"`
 	// Deliver tells the agent how a scheduled job sends its result to the
 	// person's sandboxd chat (see Skill).
 	Deliver func(Config) string `json:"-"`
@@ -154,9 +157,10 @@ var OpenClaw = Package{
 	UploadsDir: "workspace/uploads", // its file tools work in its workspace
 	// Its scheduled jobs cannot use MCP tools, so their result comes back
 	// through its own webhook delivery, to the agent's sandboxd inbox. The
-	// guide is loaded into every conversation (see the bootstrap hook in
-	// RenderOpenClawConfig): it skipped the guide as an optional skill.
-	GuideFile: "workspace/sandboxd/AGENTS.md",
+	// guide sits in its own AGENTS.md: as a skill, or as an extra file, it
+	// was skipped.
+	GuideFile:  "workspace/AGENTS.md",
+	GuideLater: true,
 	Deliver: func(c Config) string {
 		return "Give every automation, one-time or recurring, this delivery: `{\"mode\": \"webhook\", \"to\": \"" +
 			InboxURL(c) + "\"}`. Its final reply is then posted in the user's chat. Announce delivery and the " +
@@ -354,9 +358,6 @@ func RenderOpenClawConfig(c Config) (string, error) {
 		// (see Deliver), signed with the agent's secret.
 		"cron": map[string]any{"webhookToken": ref,
 			"webhookSsrfPolicy": map[string]any{"allowedHostnames": []string{proxyHost(c.ProxyURL)}}},
-		// sandboxd's guide (GuideFile) joins the person's own AGENTS.md.
-		"hooks": map[string]any{"internal": map[string]any{"entries": map[string]any{
-			"bootstrap-extra-files": map[string]any{"enabled": true, "paths": []string{"sandboxd/AGENTS.md"}}}}},
 		"mcp": map[string]any{"servers": map[string]any{"sandboxd": map[string]any{
 			"url": base + "/mcp", "transport": "streamable-http",
 			"headers": map[string]string{"Authorization": "Bearer " + ref},
@@ -398,18 +399,20 @@ func proxyHost(proxyURL string) string {
 // hermesWorkspace is where Hermes's terminal works (StatePath/workspace).
 const hermesWorkspace = "/opt/data/workspace"
 
-// GuideMark starts a guide sandboxd wrote; a file without it is the
-// person's own and is left alone.
-const GuideMark = "<!-- Written by sandboxd; it is replaced when the agent is updated. -->"
+// The guide's section in GuideFile.
+const (
+	GuideBegin = "<!-- sandboxd:begin (written by sandboxd, replaced when the agent is updated) -->"
+	GuideEnd   = "<!-- sandboxd:end -->"
+)
 
-// Guide is what sandboxd writes at GuideFile: work that runs later has no
-// one in the chat, so it must say how its result reaches the person. A
-// SKILL.md (the format Hermes and OpenClaw share) gets the skill header.
+// Guide is sandboxd's section of GuideFile: work that runs later has no one
+// in the chat, so it must say how its result reaches the person.
 func Guide(p Package, c Config) string {
 	if p.Deliver == nil || p.GuideFile == "" {
 		return ""
 	}
-	body := `# Results of scheduled work
+	return GuideBegin + `
+## Results of scheduled work
 
 The user talks to you in sandboxd's chat. Work that runs later (a scheduled
 job, a reminder, a background task) cannot answer in that chat by itself, and
@@ -420,14 +423,20 @@ When you create such work:
 1. ` + p.Deliver(c) + `
 2. Do not deliver to Telegram, Slack or other channels unless the user asked.
 3. Tell the user the result will appear in this chat when it runs.
-`
-	if path.Base(p.GuideFile) != "SKILL.md" {
-		return GuideMark + "\n" + body
-	}
-	return `---
-name: sandboxd-scheduled-results
-description: Use whenever you schedule a job, a reminder or any work that runs later or in the background. Explains how its result reaches the user.
----
+` + GuideEnd + "\n"
+}
 
-` + body
+// WithGuide puts the guide in an instructions file: it replaces sandboxd's
+// section, or adds one at the end, keeping everything else as it is.
+func WithGuide(file, guide string) string {
+	if b := strings.Index(file, GuideBegin); b >= 0 {
+		if e := strings.Index(file[b:], GuideEnd); e >= 0 {
+			rest := strings.TrimPrefix(file[b+e+len(GuideEnd):], "\n")
+			return file[:b] + guide + rest
+		}
+	}
+	if file == "" {
+		return guide
+	}
+	return strings.TrimRight(file, "\n") + "\n\n" + guide
 }

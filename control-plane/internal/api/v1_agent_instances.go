@@ -520,8 +520,8 @@ func hashSecret(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// writeGuide gives the agent sandboxd's guide (see agentcatalog.Guide) when
-// it is missing or out of date, leaving a file the person wrote alone.
+// writeGuide keeps sandboxd's section of the agent's instructions file up
+// to date (see agentcatalog.Guide); the rest of the file is left as it is.
 func (s *Server) writeGuide(h *store.AgentInstance, pkg agentcatalog.Package) error {
 	guide := agentcatalog.Guide(pkg, agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID})
 	if guide == "" || s.AgentRoot == "" {
@@ -532,20 +532,25 @@ func (s *Server) writeGuide(h *store.AgentInstance, pkg agentcatalog.Package) er
 		return nil // not set up yet: provisionAgent makes it first
 	}
 	file := filepath.Join(dir, filepath.FromSlash(pkg.GuideFile))
-	if old, err := os.ReadFile(file); (err == nil && string(old) == guide) || !sandboxdGuide(file) {
+	mode := os.FileMode(0o644)
+	old, err := os.ReadFile(file)
+	switch {
+	case err == nil:
+		if st, err := os.Stat(file); err == nil {
+			mode = st.Mode().Perm()
+		}
+	case os.IsNotExist(err) && pkg.GuideLater:
+		return nil // the agent writes its own first; the next refresh adds the guide
+	case !os.IsNotExist(err):
+		return err
+	}
+	updated := agentcatalog.WithGuide(string(old), guide)
+	if updated == string(old) {
 		return nil
 	}
 	uid, gid := agentOwner(pkg.User)
-	if err := writeAgentFile(dir, pkg.GuideFile, guide, uid, gid); err != nil {
+	if err := writeAgentFile(dir, pkg.GuideFile, updated, uid, gid, mode); err != nil {
 		return fmt.Errorf("give the agent sandboxd's guide: %w", err)
 	}
 	return nil
-}
-
-// sandboxdGuide reports whether the guide's file is free for sandboxd: it
-// is missing, or sandboxd wrote it (the person may have written their own).
-func sandboxdGuide(file string) bool {
-	b, err := os.ReadFile(file)
-	return os.IsNotExist(err) || (err == nil && (!strings.HasSuffix(file, ".md") ||
-		strings.HasPrefix(string(b), agentcatalog.GuideMark) || strings.HasPrefix(string(b), "---\nname: sandboxd-")))
 }
