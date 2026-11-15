@@ -113,8 +113,13 @@ func TestAgentInboxPostsAJobsResult(t *testing.T) {
 		t.Fatalf("short inbox: %d", code)
 	}
 	msgs, _ := st.ListAgentMessages(context.Background(), "h1", 10)
-	if len(msgs) != 2 || msgs[0].Channel != "agent" || msgs[0].Content != "**Example title**\n\nExample Domain" || msgs[1].Content != "second" {
-		t.Fatalf("messages: %+v", msgs)
+	// Two made in the same millisecond can sort either way.
+	got := map[string]string{}
+	for _, m := range msgs {
+		got[m.Content] = m.Channel
+	}
+	if len(msgs) != 2 || got["**Example title**\n\nExample Domain"] != "agent" || got["second"] != "agent" {
+		t.Fatalf("messages: %v", got)
 	}
 }
 
