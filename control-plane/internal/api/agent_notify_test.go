@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 // A scheduled job's result reaches the person through message_user: it shows
@@ -209,5 +210,23 @@ func TestAgentShareFile(t *testing.T) {
 		if out := share(bad); out["result"].(map[string]any)["isError"] != true {
 			t.Errorf("%s was shared: %v", bad, out)
 		}
+	}
+}
+
+// Hermes refuses a session whose reply it lost: after a reply broke off the
+// conversation goes on in a fresh session; otherwise it keeps one.
+func TestAgentSessionStartsAgainAfterABreak(t *testing.T) {
+	done := &store.AgentMessage{ID: "02B", Role: "assistant", State: "done"}
+	cut := &store.AgentMessage{ID: "02C", Role: "assistant", State: "stopped"}
+	user := &store.AgentMessage{ID: "02D", Role: "user", State: "done"}
+	same := agentSession("h1", "01A", []*store.AgentMessage{done, user})
+	if same != "sandboxd-h1-01a" || agentSession("h1", "01A", []*store.AgentMessage{done}) != same {
+		t.Fatalf("steady conversation: %q", same)
+	}
+	if got := agentSession("h1", "01A", []*store.AgentMessage{done, cut, user}); got != "sandboxd-h1-01a-02c" {
+		t.Fatalf("after a break: %q", got)
+	}
+	if agentSession("h1", "03E", nil) == same {
+		t.Fatal("a cleared conversation kept the old session")
 	}
 }

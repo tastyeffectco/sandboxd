@@ -35,6 +35,9 @@ type v1AgentStreamReq struct {
 	v1AgentChatReq
 	// ConversationID, when set, also keys the agent's own session.
 	ConversationID string `json:"conversation_id"`
+	// session keys Hermes's own session for sandboxd's conversation (see
+	// agentSession); sandboxd still sends the whole conversation each turn.
+	session string
 }
 
 type agentUnavailable struct{ error }
@@ -63,6 +66,8 @@ func streamAgentChat(ctx context.Context, url, key, model string, req v1AgentStr
 	if req.ConversationID != "" {
 		up.Header.Set("X-Hermes-Session-Id", req.ConversationID)
 		up.Header.Set("X-Openclaw-Session-Key", req.ConversationID)
+	} else if req.session != "" {
+		up.Header.Set("X-Hermes-Session-Id", req.session)
 	}
 	resp, err := http.DefaultClient.Do(up)
 	if err != nil {

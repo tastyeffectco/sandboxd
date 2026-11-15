@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
 // AgentMessage is one message in an agent's conversation. State is "working"
@@ -52,6 +53,17 @@ func (s *Store) ListAgentMessages(ctx context.Context, agentID string, limit int
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// FirstAgentMessageID is the oldest message of the agent's conversation, or
+// "" when it has none: it changes only when the conversation is cleared.
+func (s *Store) FirstAgentMessageID(ctx context.Context, agentID string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM agent_message WHERE agent_id = ? ORDER BY id LIMIT 1`, agentID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }
 
 func (s *Store) DeleteAgentMessages(ctx context.Context, agentID string) error {

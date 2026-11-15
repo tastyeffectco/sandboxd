@@ -201,6 +201,8 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	turn.Messages = alternating(append(turn.Messages, chatMessage{"user", withAttachments(content, user.Attachments, pkg)}))
+	first, _ := s.Store.FirstAgentMessageID(r.Context(), h.ID)
+	turn.session = agentSession(h.ID, first, history)
 	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort)
 	name := h.Name
 	go s.runAgentTurn(ctx, cancel, h.ID, name, url, string(apiKey), pkg.ChatModel, turn, live)
@@ -309,4 +311,19 @@ func (s *Server) v1ClearAgentMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// agentSession names the agent's own session for this conversation. It
+// starts again after a reply that broke off (stopped, failed, or cut by a
+// restart): Hermes pauses a session whose turn it lost ("unknown_execution")
+// and then refuses every later message in it. sandboxd keeps the whole
+// conversation, so a fresh session loses nothing.
+func agentSession(agentID, first string, history []*store.AgentMessage) string {
+	key := "sandboxd-" + agentID + "-" + strings.ToLower(first)
+	for i := len(history) - 1; i >= 0; i-- {
+		if m := history[i]; m.Role == "assistant" && m.State != "done" && m.State != "working" {
+			return key + "-" + strings.ToLower(m.ID)
+		}
+	}
+	return key
 }
