@@ -117,25 +117,30 @@ func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
 
 // Each chat agent gets a skill that says how its scheduled jobs reach the
 // person; OpenClaw's go to its sandboxd inbox, signed with its secret.
-func TestScheduledResultsSkill(t *testing.T) {
+func TestScheduledResultsGuide(t *testing.T) {
 	c := Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m", ProxyIP: "172.18.0.2"}
-	if s := Skill(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, "---\nname: sandboxd-scheduled-results\n") {
+	if s := Guide(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, "---\nname: sandboxd-scheduled-results\n") {
 		t.Fatalf("hermes skill:\n%s", s)
 	}
-	if s := Skill(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) {
-		t.Fatalf("openclaw skill:\n%s", s)
+	if s := Guide(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) || strings.HasPrefix(s, "---") {
+		t.Fatalf("openclaw instructions:\n%s", s)
 	}
-	if Skill(OpenMausBot, c) != "" {
-		t.Fatal("an agent without a sandboxd chat got the skill")
-	}
-	if got := SkillFile(Hermes); got != "skills/sandboxd/sandboxd-scheduled-results/SKILL.md" {
-		t.Fatal(got)
+	if Guide(OpenMausBot, c) != "" {
+		t.Fatal("an agent without a sandboxd chat got the guide")
 	}
 	cfg, err := RenderOpenClawConfig(c)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out struct {
+		Hooks struct {
+			Internal struct {
+				Entries map[string]struct {
+					Enabled bool     `json:"enabled"`
+					Paths   []string `json:"paths"`
+				} `json:"entries"`
+			} `json:"internal"`
+		} `json:"hooks"`
 		Cron struct {
 			WebhookToken string `json:"webhookToken"`
 			Policy       struct {
@@ -148,5 +153,10 @@ func TestScheduledResultsSkill(t *testing.T) {
 	}
 	if out.Cron.WebhookToken != "${"+SecretEnv+"}" || len(out.Cron.Policy.Hosts) != 1 || out.Cron.Policy.Hosts[0] != "sandboxd" {
 		t.Fatalf("cron config: %+v", out.Cron)
+	}
+	// The guide is loaded from the workspace on every turn.
+	if e := out.Hooks.Internal.Entries["bootstrap-extra-files"]; !e.Enabled || len(e.Paths) != 1 ||
+		"workspace/"+e.Paths[0] != OpenClaw.GuideFile {
+		t.Fatalf("bootstrap hook: %+v", e)
 	}
 }

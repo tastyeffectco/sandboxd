@@ -227,11 +227,11 @@ func setupRev(tools []mcpTool) string {
 }
 
 // containerRev is the label value of an up-to-date agent container: it
-// changes with sandboxd's tools, the skill it gives the agent and the
+// changes with sandboxd's tools, the guide it gives the agent and the
 // package's own Revision.
 func containerRev(pkg agentcatalog.Package) string {
 	sum := sha256.Sum256([]byte(agentSetup + pkg.Revision +
-		agentcatalog.Skill(pkg, agentcatalog.Config{ProxyURL: "http://sandboxd", AgentID: "agent"})))
+		agentcatalog.Guide(pkg, agentcatalog.Config{ProxyURL: "http://sandboxd", AgentID: "agent"})))
 	return hex.EncodeToString(sum[:])[:12]
 }
 

@@ -57,9 +57,10 @@ type Package struct {
 	Render     func(Config) (string, error) `json:"-"`
 	// RenderEnv adds per-agent environment (agents configured by variables).
 	RenderEnv func(Config) []string `json:"-"`
-	// SkillsDir, under StatePath, is where the agent finds skills: sandboxd
-	// writes one there that says how scheduled work reaches the person.
-	SkillsDir string `json:"-"`
+	// GuideFile, under StatePath, is where sandboxd writes its guide for the
+	// agent (how scheduled work reaches the person): a skill (SKILL.md) or
+	// instructions the agent always reads (AGENTS.md).
+	GuideFile string `json:"-"`
 	// Deliver tells the agent how a scheduled job sends its result to the
 	// person's sandboxd chat (see Skill).
 	Deliver func(Config) string `json:"-"`
@@ -102,10 +103,12 @@ var Hermes = Package{
 	UILogin:   "password",
 	Chat:      true,
 	ChatModel: "hermes-agent",
-	APIKeyEnv: "API_SERVER_KEY",
+	// Its scheduled jobs garbled tool calls on a small model (DeepSeek flash).
+	StrongModel: true,
+	APIKeyEnv:   "API_SERVER_KEY",
 	Env: []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642",
 		"HERMES_DASHBOARD=1", "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=" + User},
-	SkillsDir: "skills/sandboxd",
+	GuideFile: "skills/sandboxd/sandboxd-scheduled-results/SKILL.md",
 	Deliver: func(Config) string {
 		return "End its instructions with: \"Send the result to the user with the sandboxd message_user tool.\" " +
 			"Keep its own delivery local."
@@ -148,8 +151,10 @@ var OpenClaw = Package{
 		"OPENCLAW_NO_RESPAWN=1", "NODE_COMPILE_CACHE=/tmp/openclaw-compile-cache"},
 	UploadsDir: "workspace/uploads", // its file tools work in its workspace
 	// Its scheduled jobs cannot use MCP tools, so their result comes back
-	// through its own webhook delivery, to the agent's sandboxd inbox.
-	SkillsDir: "workspace/skills",
+	// through its own webhook delivery, to the agent's sandboxd inbox. The
+	// guide is loaded into every conversation (see the bootstrap hook in
+	// RenderOpenClawConfig): it skipped the guide as an optional skill.
+	GuideFile: "workspace/sandboxd/AGENTS.md",
 	Deliver: func(c Config) string {
 		return "Set its delivery to the sandboxd webhook: `{\"mode\": \"webhook\", \"to\": \"" + InboxURL(c) + "\"}`. " +
 			"Its final reply is then posted in the user's chat. Do not use announce delivery."
@@ -345,6 +350,9 @@ func RenderOpenClawConfig(c Config) (string, error) {
 		// (see Deliver), signed with the agent's secret.
 		"cron": map[string]any{"webhookToken": ref,
 			"webhookSsrfPolicy": map[string]any{"allowedHostnames": []string{proxyHost(c.ProxyURL)}}},
+		// sandboxd's guide (GuideFile) joins the person's own AGENTS.md.
+		"hooks": map[string]any{"internal": map[string]any{"entries": map[string]any{
+			"bootstrap-extra-files": map[string]any{"enabled": true, "paths": []string{"sandboxd/AGENTS.md"}}}}},
 		"mcp": map[string]any{"servers": map[string]any{"sandboxd": map[string]any{
 			"url": base + "/mcp", "transport": "streamable-http",
 			"headers": map[string]string{"Authorization": "Bearer " + ref},
@@ -383,19 +391,14 @@ func proxyHost(proxyURL string) string {
 	return "sandboxd"
 }
 
-// Skill is the skill sandboxd gives an agent (written under SkillsDir), in
-// the SKILL.md format both Hermes and OpenClaw read: work that runs later
-// has no one in the chat, so it must say how its result reaches the person.
-func Skill(p Package, c Config) string {
-	if p.Deliver == nil {
+// Guide is what sandboxd writes at GuideFile: work that runs later has no
+// one in the chat, so it must say how its result reaches the person. A
+// SKILL.md (the format Hermes and OpenClaw share) gets the skill header.
+func Guide(p Package, c Config) string {
+	if p.Deliver == nil || p.GuideFile == "" {
 		return ""
 	}
-	return `---
-name: sandboxd-scheduled-results
-description: Use whenever you schedule a job, a reminder or any work that runs later or in the background. Explains how its result reaches the user.
----
-
-# Results of scheduled work
+	body := `# Results of scheduled work
 
 The user talks to you in sandboxd's chat. Work that runs later (a scheduled
 job, a reminder, a background task) cannot answer in that chat by itself, and
@@ -407,9 +410,13 @@ When you create such work:
 2. Do not deliver to Telegram, Slack or other channels unless the user asked.
 3. Tell the user the result will appear in this chat when it runs.
 `
-}
+	if path.Base(p.GuideFile) != "SKILL.md" {
+		return body
+	}
+	return `---
+name: sandboxd-scheduled-results
+description: Use whenever you schedule a job, a reminder or any work that runs later or in the background. Explains how its result reaches the user.
+---
 
-// SkillFile is the skill's path under StatePath.
-func SkillFile(p Package) string {
-	return path.Join(p.SkillsDir, "sandboxd-scheduled-results", "SKILL.md")
+` + body
 }
