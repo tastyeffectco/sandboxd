@@ -177,7 +177,9 @@ var OpenClaw = Package{
 		return "Give every automation, one-time or recurring, this delivery: `{\"mode\": \"webhook\", \"to\": \"" +
 			InboxURL(c) + "\"}`. Its final reply is posted in the user's chat, so make that reply the message " +
 			"itself, and do not also send it another way. Announce delivery and the current session never reach " +
-			"the user here, so never use them; check the delivery when you edit a job."
+			"the user here, so never use them; check the delivery when you edit a job. Automations here have no " +
+			"run limit, and a counter kept in a trigger script was lost between runs: for a limited number of " +
+			"runs, create one one-time automation per run."
 	},
 	ConfigFile: "openclaw.json",
 	Render:     RenderOpenClawConfig,
