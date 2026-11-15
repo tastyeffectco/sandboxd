@@ -83,6 +83,9 @@ func (s *Server) refreshAgent(ctx context.Context, h *store.AgentInstance, pkg a
 			return true, s.provisionAgent(ctx, h, pkg)
 		}
 	}
+	if err := s.writeGuide(h, pkg); err != nil {
+		return false, err
+	}
 	return false, s.refreshAgentConfig(ctx, h, pkg)
 }
 

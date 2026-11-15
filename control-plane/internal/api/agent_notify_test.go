@@ -138,3 +138,27 @@ func TestSandboxdGuideLeavesThePersonsFile(t *testing.T) {
 		t.Fatal("the person's AGENTS.md would be overwritten")
 	}
 }
+
+// A guide that went missing comes back; the person's own file stays.
+func TestWriteGuideRestoresSandboxdsGuide(t *testing.T) {
+	s, st, _ := agentTestServer(t)
+	s.AgentRoot, s.AgentProxyURL = t.TempDir(), "http://sandboxd:9100"
+	h, _ := st.GetAgentInstanceForOwner(context.Background(), "h1", "alice")
+	pkg := agentcatalog.OpenClaw
+	file := s.AgentRoot + "/h1/" + pkg.GuideFile
+	_ = os.Mkdir(s.AgentRoot+"/h1", 0o700)
+	if err := s.writeGuide(h, pkg); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil || !strings.Contains(string(b), "/agents/h1/inbox") {
+		t.Fatalf("guide: %q %v", b, err)
+	}
+	_ = os.WriteFile(file, []byte("# mine"), 0o600)
+	if err := s.writeGuide(h, pkg); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(file); string(b) != "# mine" {
+		t.Fatalf("the person's file was replaced: %q", b)
+	}
+}

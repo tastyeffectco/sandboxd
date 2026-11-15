@@ -266,10 +266,8 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 			return err
 		}
 	}
-	if guide := agentcatalog.Guide(pkg, cfg); guide != "" && sandboxdGuide(filepath.Join(dir, pkg.GuideFile)) {
-		if err := writeAgentFile(dir, pkg.GuideFile, guide, uid, gid); err != nil {
-			return fmt.Errorf("give the agent sandboxd's guide: %w", err)
-		}
+	if err := s.writeGuide(h, pkg); err != nil {
+		return err
 	}
 	if pkg.ProxyAuth {
 		s.agentCfg.mu.Lock()
@@ -520,6 +518,28 @@ func randomSecret() (string, error) {
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// writeGuide gives the agent sandboxd's guide (see agentcatalog.Guide) when
+// it is missing or out of date, leaving a file the person wrote alone.
+func (s *Server) writeGuide(h *store.AgentInstance, pkg agentcatalog.Package) error {
+	guide := agentcatalog.Guide(pkg, agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID})
+	if guide == "" || s.AgentRoot == "" {
+		return nil
+	}
+	dir := filepath.Join(s.AgentRoot, h.ID)
+	if _, err := os.Stat(dir); err != nil {
+		return nil // not set up yet: provisionAgent makes it first
+	}
+	file := filepath.Join(dir, filepath.FromSlash(pkg.GuideFile))
+	if old, err := os.ReadFile(file); (err == nil && string(old) == guide) || !sandboxdGuide(file) {
+		return nil
+	}
+	uid, gid := agentOwner(pkg.User)
+	if err := writeAgentFile(dir, pkg.GuideFile, guide, uid, gid); err != nil {
+		return fmt.Errorf("give the agent sandboxd's guide: %w", err)
+	}
+	return nil
 }
 
 // sandboxdGuide reports whether the guide's file is free for sandboxd: it
