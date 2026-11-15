@@ -4,9 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
 )
 
 // A scheduled job's result reaches the person through message_user: it shows
@@ -116,5 +119,22 @@ func TestInboxText(t *testing.T) {
 		if got := inboxText([]byte(body)); got != want {
 			t.Errorf("%s: got %q, want %q", body, got, want)
 		}
+	}
+}
+
+// sandboxd replaces its own guide but never a file the person wrote there.
+func TestSandboxdGuideLeavesThePersonsFile(t *testing.T) {
+	dir := t.TempDir()
+	file := dir + "/AGENTS.md"
+	if !sandboxdGuide(file) {
+		t.Fatal("a missing file is free")
+	}
+	_ = os.WriteFile(file, []byte(agentcatalog.GuideMark+"\nold guide"), 0o600)
+	if !sandboxdGuide(file) {
+		t.Fatal("sandboxd's own guide is replaced")
+	}
+	_ = os.WriteFile(file, []byte("# My rules\nAlways answer in French."), 0o600)
+	if sandboxdGuide(file) {
+		t.Fatal("the person's AGENTS.md would be overwritten")
 	}
 }

@@ -2,6 +2,7 @@ package agentcatalog
 
 import (
 	"encoding/json"
+	"path"
 	"strings"
 	"testing"
 )
@@ -119,8 +120,15 @@ func TestOpenMausBotUsesSandboxdModels(t *testing.T) {
 // person; OpenClaw's go to its sandboxd inbox, signed with its secret.
 func TestScheduledResultsGuide(t *testing.T) {
 	c := Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Model: "m", ProxyIP: "172.18.0.2"}
-	if s := Guide(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, "---\nname: sandboxd-scheduled-results\n") {
-		t.Fatalf("hermes skill:\n%s", s)
+	if s := Guide(Hermes, c); !strings.Contains(s, "message_user") || !strings.HasPrefix(s, GuideMark+"\n") {
+		t.Fatalf("hermes instructions:\n%s", s)
+	}
+	// Hermes reads AGENTS.md where its terminal works.
+	if path.Join(Hermes.StatePath, Hermes.GuideFile) != hermesWorkspace+"/AGENTS.md" {
+		t.Fatal("Hermes's guide is not in its workspace")
+	}
+	if cfg, _ := RenderHermesConfig(Config{ProxyURL: "http://sandboxd:9100", AgentID: "a1", Secret: "s", Model: "m"}); !strings.Contains(cfg, "  cwd: \"/opt/data/workspace\"\n") {
+		t.Fatalf("hermes config:\n%s", cfg)
 	}
 	if s := Guide(OpenClaw, c); !strings.Contains(s, `"to": "http://sandboxd:9100/agents/a1/inbox"`) || strings.HasPrefix(s, "---") {
 		t.Fatalf("openclaw instructions:\n%s", s)

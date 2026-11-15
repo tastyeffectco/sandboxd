@@ -108,7 +108,9 @@ var Hermes = Package{
 	APIKeyEnv:   "API_SERVER_KEY",
 	Env: []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642",
 		"HERMES_DASHBOARD=1", "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=" + User},
-	GuideFile: "skills/sandboxd/sandboxd-scheduled-results/SKILL.md",
+	// Its terminal works in its workspace (see RenderHermesConfig), where it
+	// reads AGENTS.md on every turn; it skipped the guide as a skill.
+	GuideFile: "workspace/AGENTS.md", // = hermesWorkspace
 	Deliver: func(Config) string {
 		return "End its instructions with: \"Send the result to the user with the sandboxd message_user tool.\" " +
 			"Keep its own delivery local."
@@ -297,6 +299,7 @@ func RenderHermesConfig(c Config) (string, error) {
 		"  api_key: " + q(c.Secret) + "\n" +
 		"terminal:\n" +
 		"  backend: local\n" +
+		"  cwd: " + q(hermesWorkspace) + "\n" +
 		"mcp_servers:\n" +
 		"  sandboxd:\n" +
 		"    url: " + q(base+"/mcp") + "\n" +
@@ -391,6 +394,13 @@ func proxyHost(proxyURL string) string {
 	return "sandboxd"
 }
 
+// hermesWorkspace is where Hermes's terminal works (StatePath/workspace).
+const hermesWorkspace = "/opt/data/workspace"
+
+// GuideMark starts a guide sandboxd wrote; a file without it is the
+// person's own and is left alone.
+const GuideMark = "<!-- Written by sandboxd; it is replaced when the agent is updated. -->"
+
 // Guide is what sandboxd writes at GuideFile: work that runs later has no
 // one in the chat, so it must say how its result reaches the person. A
 // SKILL.md (the format Hermes and OpenClaw share) gets the skill header.
@@ -411,7 +421,7 @@ When you create such work:
 3. Tell the user the result will appear in this chat when it runs.
 `
 	if path.Base(p.GuideFile) != "SKILL.md" {
-		return body
+		return GuideMark + "\n" + body
 	}
 	return `---
 name: sandboxd-scheduled-results

@@ -266,7 +266,7 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 			return err
 		}
 	}
-	if guide := agentcatalog.Guide(pkg, cfg); guide != "" {
+	if guide := agentcatalog.Guide(pkg, cfg); guide != "" && sandboxdGuide(filepath.Join(dir, pkg.GuideFile)) {
 		if err := writeAgentFile(dir, pkg.GuideFile, guide, uid, gid); err != nil {
 			return fmt.Errorf("give the agent sandboxd's guide: %w", err)
 		}
@@ -520,4 +520,12 @@ func randomSecret() (string, error) {
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// sandboxdGuide reports whether the guide's file is free for sandboxd: it
+// is missing, or sandboxd wrote it (the person may have written their own).
+func sandboxdGuide(file string) bool {
+	b, err := os.ReadFile(file)
+	return os.IsNotExist(err) || (err == nil && (!strings.HasSuffix(file, ".md") ||
+		strings.HasPrefix(string(b), agentcatalog.GuideMark) || strings.HasPrefix(string(b), "---\nname: sandboxd-")))
 }
