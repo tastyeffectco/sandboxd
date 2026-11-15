@@ -197,16 +197,10 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 			if m.Role == "user" {
 				text = withAttachments(m.Content, m.Attachments, pkg)
 			}
-			turn.Messages = append(turn.Messages, struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			}{m.Role, text})
+			turn.Messages = append(turn.Messages, chatMessage{m.Role, text})
 		}
 	}
-	turn.Messages = append(turn.Messages, struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}{"user", withAttachments(content, user.Attachments, pkg)})
+	turn.Messages = alternating(append(turn.Messages, chatMessage{"user", withAttachments(content, user.Attachments, pkg)}))
 	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort)
 	name := h.Name
 	go s.runAgentTurn(ctx, cancel, h.ID, name, url, string(apiKey), pkg.ChatModel, turn, live)

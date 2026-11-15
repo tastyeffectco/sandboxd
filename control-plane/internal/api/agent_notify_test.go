@@ -156,3 +156,21 @@ func TestWriteGuideKeepsThePersonsText(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Scheduled results sit between the person's messages: the agent still gets
+// turns that alternate (Hermes stalled on a history with two in a row).
+func TestAlternatingJoinsTurnsInARow(t *testing.T) {
+	got := alternating([]chatMessage{
+		{"user", "remind me"}, {"assistant", "Set."}, {"assistant", "Reminder: water"},
+		{"assistant", "11:15 UTC"}, {"user", "thanks"}, {"user", "and a CSV?"},
+	})
+	want := []chatMessage{{"user", "remind me"}, {"assistant", "Set.\n\nReminder: water\n\n11:15 UTC"}, {"user", "thanks\n\nand a CSV?"}}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("turn %d: %+v", i, got[i])
+		}
+	}
+}

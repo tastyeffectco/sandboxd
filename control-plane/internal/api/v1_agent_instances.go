@@ -459,10 +459,27 @@ func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1AgentChatReq struct {
-	Messages []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"messages"`
+	Messages []chatMessage `json:"messages"`
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// alternating joins messages in a row from the same side, so the agent gets
+// the turns its API expects (user, assistant, user, ...): what the agent
+// sent on its own (scheduled results) follows its earlier answer.
+func alternating(msgs []chatMessage) []chatMessage {
+	out := make([]chatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if n := len(out); n > 0 && out[n-1].Role == m.Role {
+			out[n-1].Content += "\n\n" + m.Content
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // POST /v1/agent-instances/{id}/chat — one turn with the agent through its own
