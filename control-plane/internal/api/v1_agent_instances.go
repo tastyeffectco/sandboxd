@@ -287,9 +287,7 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 		env = append(env, pkg.APIKeyEnv+"="+string(apiKey))
 	}
 	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
-	if pkg.UIPort != 0 {
-		labels = append(labels, "sandboxd.agent.ui="+containerRev(pkg))
-	}
+	labels = append(labels, agentRevLabel+"="+containerRev(pkg))
 	if pkg.UILogin == "password" {
 		// Only sandboxd knows these: it signs the owner in to the app.
 		env = append(env, "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="+uiPassword(apiKey, "password"),
@@ -355,7 +353,7 @@ func (s *Server) v1StartAgentInstance(w http.ResponseWriter, r *http.Request) {
 	if _, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); ierr != nil {
 		err = s.provisionAgent(r.Context(), h, pkg)
 	} else if err = s.Docker.Start(r.Context(), agentContainer(h.ID)); err == nil {
-		err = s.refreshAgentConfig(r.Context(), h, pkg)
+		_, err = s.refreshAgent(r.Context(), h, pkg)
 	}
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "could not start the agent: "+err.Error())
@@ -463,8 +461,8 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
 		return
 	}
-	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
-		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	if s.agentUpdating(w, r, h, pkg) {
+		return
 	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {

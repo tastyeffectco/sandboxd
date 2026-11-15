@@ -146,8 +146,8 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
 		return
 	}
-	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
-		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	if s.agentUpdating(w, r, h, pkg) {
+		return
 	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {

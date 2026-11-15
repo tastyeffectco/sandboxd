@@ -640,6 +640,9 @@ func main() {
 	gctx, gcancel := context.WithCancel(context.Background())
 	defer gcancel()
 
+	// Agents made by an older sandboxd are brought up to date.
+	go server.RefreshAgents(gctx)
+
 	// --- Anonymous telemetry + update check (internal/telemetry) -------
 	// Keep the release-checker cache warm regardless of the telemetry opt-out:
 	// GET /v1/settings surfaces update_available from it, and no data leaves the

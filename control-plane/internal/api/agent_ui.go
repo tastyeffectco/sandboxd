@@ -69,21 +69,65 @@ func (s *Server) agentProxyIP(ctx context.Context) (string, error) {
 	return ips[0].String(), nil
 }
 
+// refreshAgent brings an agent up to date. A container made by an older
+// sandboxd is made again (its memory and skills stay in its folder): it would
+// lack newer tools, which agents load when they start, or its own app, or
+// carry a shared token that OpenClaw refuses next to proxy sign-in. It
+// reports whether the agent was re-created and is starting again.
+func (s *Server) refreshAgent(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) (bool, error) {
+	if s.Docker != nil {
+		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil &&
+			c.Config.Labels[agentRevLabel] != containerRev(pkg) {
+			s.dropUISession(h.ID)
+			return true, s.provisionAgent(ctx, h, pkg)
+		}
+	}
+	return false, s.refreshAgentConfig(ctx, h, pkg)
+}
+
+// RefreshAgents brings running agents up to date when the engine starts, so
+// their scheduled jobs get sandboxd's newest tools without anyone opening them.
+func (s *Server) RefreshAgents(ctx context.Context) {
+	if s.Docker == nil {
+		return
+	}
+	agents, err := s.Store.ListAgentInstances(ctx)
+	if err != nil {
+		s.Log.Warn("agents: refresh at start", "err", err.Error())
+		return
+	}
+	for _, h := range agents {
+		pkg, ok := agentcatalog.Get(h.Package)
+		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); !ok || err != nil || !c.State.Running {
+			continue
+		}
+		if recreated, err := s.refreshAgent(ctx, h, pkg); err != nil {
+			s.Log.Warn("agents: refresh at start", "agent", h.ID, "err", err.Error())
+		} else if recreated {
+			s.Log.Info("agents: updated", "agent", h.ID, "package", h.Package)
+		}
+	}
+}
+
+// agentUpdating brings the agent up to date before a chat, and answers for it
+// when it had to be made again and is still starting.
+func (s *Server) agentUpdating(w http.ResponseWriter, r *http.Request, h *store.AgentInstance, pkg agentcatalog.Package) bool {
+	recreated, err := s.refreshAgent(r.Context(), h, pkg)
+	if err != nil && s.Log != nil {
+		s.Log.Warn("agent chat: refresh", "agent", h.ID, "err", err.Error())
+	}
+	if recreated && err == nil {
+		writeV1Err(w, http.StatusConflict, "not_running", h.Name+" is getting an update. Try again in a minute.")
+		return true
+	}
+	return false
+}
+
 // refreshAgentConfig rewrites a proxy-sign-in agent's config when sandboxd's
-// address changed, and re-creates one made before proxy sign-in.
+// address changed.
 func (s *Server) refreshAgentConfig(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
 	if !pkg.ProxyAuth || s.AgentRoot == "" {
 		return nil
-	}
-	// An agent made before proxy sign-in still carries a shared token, which
-	// OpenClaw refuses next to proxy sign-in: make its container again (its
-	// memory and skills stay in its folder).
-	if s.Docker != nil {
-		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil &&
-			c.Config.Labels["sandboxd.agent.ui"] != containerRev(pkg) {
-			s.dropUISession(h.ID)
-			return s.provisionAgent(ctx, h, pkg)
-		}
 	}
 	ip, err := s.agentProxyIP(ctx)
 	if err != nil {
@@ -143,11 +187,22 @@ var agentUIHost = func(id string, port int) string { return fmt.Sprintf("%s:%d",
 
 var frameAncestors = regexp.MustCompile(`(?i)\s*frame-ancestors[^;]*;?`)
 
-// uiVersion marks agent containers made with their own app switched on.
-const uiVersion = "1"
+// agentRevLabel marks how up to date an agent's container is.
+const agentRevLabel = "sandboxd.agent.rev"
+
+// agentSetup changes when agents' containers must be made again: with their
+// own app switched on (1), or when sandboxd's tools for agents change.
+var agentSetup = setupRev(agentTools)
+
+func setupRev(tools []mcpTool) string {
+	sum := sha256.New()
+	sum.Write([]byte("1"))
+	_ = json.NewEncoder(sum).Encode(tools)
+	return hex.EncodeToString(sum.Sum(nil))[:12]
+}
 
 // containerRev is the label value of an up-to-date agent container.
-func containerRev(pkg agentcatalog.Package) string { return uiVersion + pkg.Revision }
+func containerRev(pkg agentcatalog.Package) string { return agentSetup + pkg.Revision }
 
 // uiPassword is the password sandboxd sets for an agent app with its own
 // login, derived from the agent's key so only sandboxd knows it.
@@ -273,28 +328,21 @@ func (s *Server) v1AgentUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	label := pkg.UILabel
-	// An agent made before its app was switched on is made again (its
-	// memory and skills stay in its folder).
 	if s.Docker != nil {
 		c, err := s.Docker.Inspect(r.Context(), agentContainer(h.ID))
 		if err != nil || !c.State.Running {
 			uiWait(w, http.StatusServiceUnavailable, h.Name+" is paused. Start it to open its "+label+".")
 			return
 		}
-		if c.Config.Labels["sandboxd.agent.ui"] != containerRev(pkg) {
-			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
-				s.Log.Warn("agent ui: re-create", "agent", h.ID, "err", err.Error())
-				uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" can’t open right now. Try again in a minute.")
-				return
-			}
-			s.dropUISession(h.ID)
-			uiWait(w, http.StatusServiceUnavailable, "Getting "+h.Name+"’s "+label+" ready… this takes about a minute.")
-			return
-		}
 	}
-	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil {
+	recreated, err := s.refreshAgent(r.Context(), h, pkg)
+	if err == nil && recreated {
+		uiWait(w, http.StatusServiceUnavailable, "Getting "+h.Name+"’s "+label+" ready… this takes about a minute.")
+		return
+	}
+	if err != nil {
 		if s.Log != nil {
-			s.Log.Warn("agent ui: refresh config", "agent", h.ID, "err", err.Error())
+			s.Log.Warn("agent ui: refresh", "agent", h.ID, "err", err.Error())
 		}
 		uiWait(w, http.StatusBadGateway, h.Name+"’s "+label+" can’t open right now. Try again in a minute.")
 		return

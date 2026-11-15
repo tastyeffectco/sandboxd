@@ -63,3 +63,15 @@ func TestAgentMessageUserKeepsLongMessagesWhole(t *testing.T) {
 		t.Fatalf("long message: %d runes", len(r))
 	}
 }
+
+// Agents load sandboxd's tools when they start: a new tool must make their
+// containers be made again, or scheduled jobs never see message_user.
+func TestAgentContainersFollowTheTools(t *testing.T) {
+	if setupRev(agentTools) != setupRev(agentTools) || len(agentSetup) != 12 {
+		t.Fatalf("revision is not stable: %q", agentSetup)
+	}
+	fewer := agentTools[:len(agentTools)-1]
+	if setupRev(fewer) == agentSetup {
+		t.Fatal("the revision ignores the tools")
+	}
+}
