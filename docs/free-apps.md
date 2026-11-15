@@ -43,4 +43,4 @@ Tried and left out (and why): Actual Budget (needs `SharedArrayBuffer`),
 Trilium v0.107.0 (setup page fails, refuses framing), OpenResume (Next.js 13
 fails on Node 22), Puter (needs its own domain), VERT (bun only), copyparty (works, but a cryptic UI
 with files reachable only on this PC), Ghost 6
-(wants MySQL even in local mode).
+(wants MySQL even in local mode), Etherpad 3 (needs Node 24).

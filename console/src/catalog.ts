@@ -204,6 +204,39 @@ export const CATALOG: CatalogApp[] = [
     minutes: 1,
   },
   {
+    id: 'vikunja',
+    name: 'Vikunja',
+    pitch: 'To-do lists and Kanban boards for your projects, shopping and chores.',
+    category: 'Tasks',
+    license: 'AGPL-3.0',
+    stars: '6k',
+    repo: 'https://github.com/go-vikunja/vikunja',
+    color: '#1973ff',
+    source: false,
+    firstRun: 'On first open, click Create account to make yours.',
+    start:
+      '[ -x ./vikunja ] || (curl -fsSL -o v.zip https://github.com/go-vikunja/vikunja/releases/download/v2.8.0/vikunja-v2.8.0-linux-' +
+      ARCH +
+      '-full.zip && python3 -m zipfile -e v.zip vk && mv vk/vikunja-v2.8.0-linux-' +
+      ARCH +
+      ' vikunja && chmod +x vikunja && rm -rf v.zip vk); mkdir -p data/files; export VIKUNJA_SERVICE_INTERFACE=:3000 VIKUNJA_CORS_ENABLE=false VIKUNJA_SERVICE_ROOTPATH=$PWD/data VIKUNJA_DATABASE_TYPE=sqlite VIKUNJA_DATABASE_PATH=$PWD/data/vikunja.db VIKUNJA_FILES_BASEPATH=$PWD/data/files; exec ./vikunja',
+    minutes: 1,
+  },
+  {
+    id: 'tiddlywiki',
+    name: 'TiddlyWiki',
+    pitch: 'A personal notebook where every note links to the others.',
+    category: 'Notes',
+    license: 'BSD-3-Clause',
+    stars: '9k',
+    repo: 'https://github.com/TiddlyWiki/TiddlyWiki5',
+    color: '#5778d8',
+    source: false,
+    start:
+      '[ -f node_modules/tiddlywiki/tiddlywiki.js ] || npm i --no-audit --no-fund tiddlywiki@5.4.1; [ -d wiki ] || node node_modules/tiddlywiki/tiddlywiki.js wiki --init server; exec node node_modules/tiddlywiki/tiddlywiki.js wiki --listen host=0.0.0.0 port=3000',
+    minutes: 1,
+  },
+  {
     id: 'bentopdf',
     name: 'BentoPDF',
     pitch: 'Merge, split, sign and compress PDFs, without uploading them anywhere.',
