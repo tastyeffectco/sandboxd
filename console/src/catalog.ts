@@ -57,6 +57,22 @@ export const CATALOG: CatalogApp[] = [
     minutes: 3,
   },
   {
+    id: 'drawio',
+    name: 'draw.io',
+    pitch: 'Flowcharts, org charts and diagrams with drag and drop.',
+    category: 'Diagrams',
+    license: 'Apache-2.0',
+    stars: '9k',
+    repo: 'https://github.com/jgraph/drawio',
+    color: '#f08705',
+    source: false,
+    start:
+      '[ -f site/index.html ] || (curl -fsSL -o draw.war https://github.com/jgraph/drawio/releases/download/v32.6.10/draw.war && python3 -m zipfile -e draw.war site && rm draw.war); exec ' +
+      SERVE +
+      ' site -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
+  {
     id: 'uptime-kuma',
     name: 'Uptime Kuma',
     pitch: 'Watches your websites and tells you the moment one goes down.',
