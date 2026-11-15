@@ -124,6 +124,22 @@ export const CATALOG: CatalogApp[] = [
     minutes: 1,
   },
   {
+    id: 'squoosh',
+    name: 'Squoosh',
+    pitch: 'Shrink photos for the web or email, and compare quality side by side.',
+    category: 'Images',
+    license: 'Apache-2.0',
+    stars: '26k',
+    repo: 'https://github.com/GoogleChromeLabs/squoosh',
+    color: '#ff3385',
+    source: true,
+    git: { repo_url: 'https://github.com/GoogleChromeLabs/squoosh', branch: 'dev' },
+    start:
+      '[ -f build/index.html ] || (npm ci --no-audit --no-fund && npm run build); exec ' + SERVE + ' build -l tcp://0.0.0.0:3000',
+    build: 'npm run build',
+    minutes: 2,
+  },
+  {
     id: 'it-tools',
     name: 'IT Tools',
     pitch: '80+ handy tools: QR codes, passwords, unit and date converters, and more.',
