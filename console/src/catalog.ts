@@ -140,6 +140,22 @@ export const CATALOG: CatalogApp[] = [
     minutes: 1,
   },
   {
+    id: 'cyberchef',
+    name: 'CyberChef',
+    pitch: 'Decode, convert and analyse any data: Base64, hashes, dates, encodings.',
+    category: 'Utilities',
+    license: 'Apache-2.0',
+    stars: '36k',
+    repo: 'https://github.com/gchq/CyberChef',
+    color: '#4a8a2c',
+    source: false,
+    start:
+      '[ -f site/index.html ] || (curl -fsSL -o cc.zip https://github.com/gchq/CyberChef/releases/download/v11.5.0/CyberChef_8cd426dd4f40f1423912d5fad91b578a86a65112.zip && python3 -m zipfile -e cc.zip site && cp site/CyberChef_v11.5.0.html site/index.html && rm cc.zip); exec ' +
+      SERVE +
+      ' site -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
+  {
     id: 'omni-tools',
     name: 'Omni Tools',
     pitch: 'Edit images, PDFs, text and lists right in your browser, nothing uploaded.',
