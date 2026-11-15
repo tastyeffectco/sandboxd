@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/activity"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
@@ -170,5 +171,28 @@ func TestWatchTaskFailsWhenSilentPastWindow(t *testing.T) {
 	}
 	if got.Status != string(runtime.TaskFailed) {
 		t.Errorf("task status = %q; want %q", got.Status, runtime.TaskFailed)
+	}
+}
+
+// While a task runs, its sandbox counts as in use, so the idle and
+// memory-pressure reapers leave it alone; it is released when the task ends.
+func TestWatchTaskHoldsSandboxInUse(t *testing.T) {
+	s, sandboxID, taskID := fakeRuntimed(t, []fakeEvent{
+		{0, statusEvent()},
+		{300 * time.Millisecond, doneEvent(testTaskID, runtime.TaskSucceeded)},
+	})
+	s.Inflight = activity.NewInflightExec()
+	done := make(chan struct{})
+	go func() { s.watchTaskWindow(sandboxID, taskID, 2*time.Second); close(done) }()
+	deadline := time.Now().Add(time.Second)
+	for !s.Inflight.Active(sandboxID) {
+		if time.Now().After(deadline) {
+			t.Fatal("a running task did not mark its sandbox in use")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	<-done
+	if s.Inflight.Active(sandboxID) {
+		t.Error("the sandbox stayed in use after the task ended")
 	}
 }
