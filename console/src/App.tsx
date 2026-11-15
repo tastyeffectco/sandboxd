@@ -5,6 +5,7 @@ import { c, font, mono, Card, Input } from './design/kit'
 import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { AgentsView } from './AgentsView'
+import { DiscoverView } from './DiscoverView'
 import { AgentRoom } from './AgentRoom'
 import { syncAgentTimeZone } from './timeZone'
 import { BrainGraph } from './BrainGraph'
@@ -35,12 +36,13 @@ function readRoute(): Route {
     }
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
-  return { name: ['brain', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
+  return { name: ['brain', 'discover', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
 }
 
 type Route =
   | { name: 'apps' }
   | { name: 'brain' }
+  | { name: 'discover' }
   | { name: 'agents' }
   | { name: 'agent'; id: string }
   | { name: 'settings'; section?: string }
@@ -286,6 +288,7 @@ export default function App({
 
   const nav = [
     { key: 'apps', label: 'Build & projects', icon: 'grid' },
+    { key: 'discover', label: 'Free apps', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
   ]
@@ -499,6 +502,19 @@ export default function App({
               goSettings={() => setRoute({ name: 'settings' })}
               onCreated={(id, intent) => {
                 if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
+                goApp(id)
+              }}
+            />
+          )}
+          {route.name === 'discover' && (
+            <DiscoverView
+              apps={apps}
+              onError={onError}
+              onOpen={(id) => goApp(id)}
+              goAgents={() => setRoute({ name: 'agents' })}
+              onInstalled={(id, intent) => {
+                loadApps()
+                setPendingBuilds((p) => ({ ...p, [id]: intent }))
                 goApp(id)
               }}
             />
@@ -816,6 +832,7 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
   const commands: { label: string; route: Route }[] = [
     { label: 'Build a new project', route: { name: 'apps' } },
     { label: 'Project memory', route: { name: 'brain' } },
+    { label: 'Free apps', route: { name: 'discover' } },
     { label: 'Add an agent', route: { name: 'agents' } },
     { label: 'Model connections', route: { name: 'settings', section: 'models' } },
     { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },
