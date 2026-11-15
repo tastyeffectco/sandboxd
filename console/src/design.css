@@ -3201,3 +3201,17 @@ select.agent-model {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.install-details {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.install-details summary {
+  cursor: pointer;
+  color: var(--muted-2);
+}
+.install-details pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font: 10.5px/1.45 var(--mono);
+  margin: 6px 0 0;
+}
