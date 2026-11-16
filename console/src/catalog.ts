@@ -335,6 +335,22 @@ export const CATALOG: CatalogApp[] = [
       '[ -f site/pkg/anydoc_wasm_bg.wasm ] || (mkdir -p site/pkg site/assets/fonts && cd site && for f in index.html assets/logo.svg assets/logo-light.svg assets/fonts/GeistMono-400.woff2 assets/fonts/GeistMono-500.woff2 assets/fonts/SuisseIntl-400.woff2 assets/fonts/SuisseIntl-450.woff2 assets/fonts/SuisseIntl-500.woff2; do curl -fsSL -o $f https://raw.githubusercontent.com/firecrawl/anydoc/v0.2.4/wasm/www/$f || exit 1; done && npm pack -q @firecrawl/anydoc-wasm@0.2.4 >/dev/null && tar xzf firecrawl-anydoc-wasm-0.2.4.tgz && cp package/anydoc_wasm.js package/anydoc_wasm_bg.wasm pkg/ && rm -rf package firecrawl-anydoc-wasm-0.2.4.tgz); exec npx --yes serve@14.2.4 site -l tcp://0.0.0.0:3000',
     minutes: 1,
   },
+  {
+    id: 'pixelfx',
+    name: 'pixelfx',
+    pitch: '244 animated pixel-art effects (fire, lightning, explosions, magic) to browse and drop into your own game.',
+    category: 'Games',
+    license: 'MIT',
+    stars: '8k',
+    repo: 'https://github.com/patch-gg/pixelfx',
+    color: '#d6336c',
+    source: false,
+    trending: true,
+    start:
+      '[ -f fx/tools/serve.mjs ] || (mkdir -p fx && curl -fsSL https://codeload.github.com/patch-gg/pixelfx/tar.gz/5294518ce7c72e48b6100a744596e0acf57f2826 | tar xz --strip-components=1 -C fx); cd fx && exec node tools/serve.mjs 3000',
+    health: '/gallery/',
+    minutes: 1,
+  },
 ]
 
 export const catalogTag = (id: string) => `catalog:${id}`
