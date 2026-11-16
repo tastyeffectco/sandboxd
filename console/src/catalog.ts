@@ -320,6 +320,21 @@ export const CATALOG: CatalogApp[] = [
       '[ -x .venv/bin/sherlock ] || (uv venv -q .venv && uv pip install -q --python .venv/bin/python sherlock-project==0.16.2); export PORT=3000; exec .venv/bin/python app.py',
     minutes: 1,
   },
+  {
+    id: 'anydoc',
+    name: 'anydoc',
+    pitch: 'Turn any Word, PowerPoint, Excel or PDF file into clean text you can paste into an AI chat. Files never leave this computer.',
+    category: 'Documents',
+    license: 'MIT',
+    stars: '24k',
+    repo: 'https://github.com/firecrawl/anydoc',
+    color: '#f2542d',
+    source: false,
+    trending: true,
+    start:
+      '[ -f site/pkg/anydoc_wasm_bg.wasm ] || (mkdir -p site/pkg site/assets/fonts && cd site && for f in index.html assets/logo.svg assets/logo-light.svg assets/fonts/GeistMono-400.woff2 assets/fonts/GeistMono-500.woff2 assets/fonts/SuisseIntl-400.woff2 assets/fonts/SuisseIntl-450.woff2 assets/fonts/SuisseIntl-500.woff2; do curl -fsSL -o $f https://raw.githubusercontent.com/firecrawl/anydoc/v0.2.4/wasm/www/$f || exit 1; done && npm pack -q @firecrawl/anydoc-wasm@0.2.4 >/dev/null && tar xzf firecrawl-anydoc-wasm-0.2.4.tgz && cp package/anydoc_wasm.js package/anydoc_wasm_bg.wasm pkg/ && rm -rf package firecrawl-anydoc-wasm-0.2.4.tgz); exec npx --yes serve@14.2.4 site -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
 ]
 
 export const catalogTag = (id: string) => `catalog:${id}`
