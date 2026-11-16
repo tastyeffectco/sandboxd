@@ -114,7 +114,7 @@ func TestInstallProjectPromptCarriesTheRules(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(latest, "latest release") || !strings.Contains(pinned, "already in this workspace") {
+	if !strings.Contains(latest, "latest release") || !strings.Contains(latest, "no releases") || !strings.Contains(pinned, "already in this workspace") {
 		t.Error("the prompt should say where the code comes from")
 	}
 }

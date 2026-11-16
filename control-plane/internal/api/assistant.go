@@ -430,7 +430,8 @@ func installProjectPrompt(repo, ref string) string {
 	where := "The repository is already in this workspace (" + repo + " at " + ref + ")."
 	if ref == "" {
 		where = "Get " + repo + " at its latest release (a tagged version, never a moving branch): download the " +
-			"release's prebuilt files when it has them, otherwise its source at that tag."
+			"release's prebuilt files when it has them, otherwise its source at that tag. If it has no releases " +
+			"or tags, use its latest commit, by its full SHA (codeload.github.com/OWNER/NAME/tar.gz/SHA)."
 	}
 	return "Install the open-source project " + repo + " so it runs in this workspace. " + where + "\n\n" +
 		"First read what it needs (README, package.json engines, pyproject.toml, Dockerfile). If it needs " +
