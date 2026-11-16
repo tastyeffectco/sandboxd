@@ -65,7 +65,6 @@ Waiting on a core change: the sandbox image has no headless-browser libraries
 (libnss3, libgbm, libX11 and the rest) and no ffmpeg, and a project cannot
 install them without root. Projects that render video or drive a browser
 (video-shotcraft, rea-video, agent-browser, openfilm) need them in
-`image/Dockerfile` first. MuJoCo's own WebAssembly demo drops 1,000 balls and
-froze the preview; it needs a lighter page of our own. Daily Stock Analysis
+`image/Dockerfile` first. Daily Stock Analysis
 needs the person's own AI connection (OpenCode's free models only work inside
 OpenCode).

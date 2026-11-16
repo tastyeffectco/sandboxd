@@ -4,6 +4,7 @@
 // Every entry here was installed on a real Windows PC before it was added;
 // pin exact versions so an install tomorrow is the install we tested.
 
+import mujocoPage from './catalog-files/mujoco.html?raw'
 import sherlockPage from './catalog-files/sherlock.py?raw'
 
 export interface CatalogApp {
@@ -349,6 +350,22 @@ export const CATALOG: CatalogApp[] = [
     start:
       '[ -f fx/tools/serve.mjs ] || (mkdir -p fx && curl -fsSL https://codeload.github.com/patch-gg/pixelfx/tar.gz/5294518ce7c72e48b6100a744596e0acf57f2826 | tar xz --strip-components=1 -C fx); cd fx && exec node tools/serve.mjs 3000',
     health: '/gallery/',
+    minutes: 1,
+  },
+  {
+    id: 'mujoco',
+    name: 'MuJoCo',
+    pitch: 'Google DeepMind\'s robot physics engine, as a playground: push a robot, drop it, watch it fall in slow motion.',
+    category: 'Science',
+    license: 'Apache-2.0',
+    stars: '18k',
+    repo: 'https://github.com/google-deepmind/mujoco',
+    color: '#2f6fde',
+    source: false,
+    trending: true,
+    files: { 'index.html': mujocoPage },
+    start:
+      '[ -f humanoid.xml ] || curl -fsSL -o humanoid.xml https://raw.githubusercontent.com/google-deepmind/mujoco/4.0.1/model/humanoid/humanoid.xml; [ -f node_modules/@mujoco/mujoco/mujoco.wasm ] || (echo \'{"private":true}\' > package.json && npm i --no-audit --no-fund @mujoco/mujoco@4.0.1 three@0.178.0); exec npx --yes serve@14.2.4 . -l tcp://0.0.0.0:3000',
     minutes: 1,
   },
 ]
