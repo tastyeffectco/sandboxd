@@ -4,7 +4,8 @@
 // Every entry here was installed on a real Windows PC before it was added;
 // pin exact versions so an install tomorrow is the install we tested.
 
-import mujocoPage from './catalog-files/mujoco.html?raw'
+// .txt: Vite would otherwise scan the page's imports as the console's own.
+import mujocoPage from './catalog-files/mujoco.html.txt?raw'
 import sherlockPage from './catalog-files/sherlock.py?raw'
 
 export interface CatalogApp {
