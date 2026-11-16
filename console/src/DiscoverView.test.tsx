@@ -8,6 +8,7 @@ vi.mock('./api', () => ({
   api: {
     createApp: vi.fn(),
     createAppSandbox: vi.fn(),
+    putWorkspaceFile: vi.fn(),
     listAgentCatalogEntrys: vi.fn().mockResolvedValue([{ id: 'hermes', label: 'Hermes', description: 'A personal assistant.' }]),
   },
 }))

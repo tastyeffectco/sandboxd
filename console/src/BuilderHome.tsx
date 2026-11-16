@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
@@ -39,6 +40,7 @@ export function BuilderHome({
   onCreated,
   goSettings,
   goDiscover,
+  featured,
   draft,
   saveDraft,
 }: {
@@ -48,6 +50,8 @@ export function BuilderHome({
   onCreated: (id: string, intent?: BuildIntent) => void
   goSettings: () => void
   goDiscover?: () => void
+  // Shown between the build box and the project list (Trending on GitHub).
+  featured?: React.ReactNode
   draft?: BuilderDraft
   saveDraft: (draft?: BuilderDraft) => void
 }) {
@@ -342,7 +346,7 @@ export function BuilderHome({
         {goDiscover && (
           <p className="free-apps-line">
             Or install a popular free app in one click:{' '}
-            {CATALOG.slice(0, 3).map((a, i) => (
+            {CATALOG.filter((a) => !a.trending).slice(0, 3).map((a, i) => (
               <span key={a.id}>
                 {i > 0 && ', '}
                 <button className="text-button" onClick={goDiscover} data-testid={`home-free-${a.id}`}>
@@ -357,6 +361,7 @@ export function BuilderHome({
           </p>
         )}
       </section>
+      {featured}
       <section className="projects-section">
         <div className="section-heading">
           <div>

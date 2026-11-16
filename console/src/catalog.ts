@@ -4,6 +4,8 @@
 // Every entry here was installed on a real Windows PC before it was added;
 // pin exact versions so an install tomorrow is the install we tested.
 
+import sherlockPage from './catalog-files/sherlock.py?raw'
+
 export interface CatalogApp {
   id: string
   name: string
@@ -32,6 +34,11 @@ export interface CatalogApp {
   build?: string
   // Minutes the first start takes on a normal connection.
   minutes: number
+  // Hyped on GitHub right now: shown under "Trending on GitHub" on the home page.
+  trending?: boolean
+  // Small files (path in the project -> content) written before the install,
+  // e.g. a one-page web front for a command-line tool.
+  files?: Record<string, string>
 }
 
 const SERVE = 'npx --yes serve@14.2.4'
@@ -297,9 +304,27 @@ export const CATALOG: CatalogApp[] = [
       ' site -l tcp://0.0.0.0:3000',
     minutes: 2,
   },
+  {
+    id: 'sherlock',
+    name: 'Sherlock',
+    pitch: 'Type a username and see which of 400+ websites have an account with it.',
+    category: 'Privacy',
+    license: 'MIT',
+    stars: '113k',
+    repo: 'https://github.com/sherlock-project/sherlock',
+    color: '#334e68',
+    source: false,
+    trending: true,
+    files: { 'app.py': sherlockPage },
+    start:
+      '[ -x .venv/bin/sherlock ] || (uv venv -q .venv && uv pip install -q --python .venv/bin/python sherlock-project==0.16.2); export PORT=3000; exec .venv/bin/python app.py',
+    minutes: 1,
+  },
 ]
 
 export const catalogTag = (id: string) => `catalog:${id}`
+
+export const TRENDING = CATALOG.filter((a) => a.trending)
 
 // sandbox.yaml for an entry. JSON strings are valid YAML double-quoted scalars.
 export function catalogManifest(app: CatalogApp): string {

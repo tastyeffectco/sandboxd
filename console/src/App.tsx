@@ -6,6 +6,7 @@ import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { AgentsView } from './AgentsView'
 import { DiscoverView } from './DiscoverView'
+import { TrendingStrip } from './TrendingStrip'
 import { AgentRoom } from './AgentRoom'
 import { syncAgentTimeZone } from './timeZone'
 import { BrainGraph } from './BrainGraph'
@@ -512,6 +513,18 @@ export default function App({
               onOpen={(id) => goApp(id)}
               goSettings={() => setRoute({ name: 'settings' })}
               goDiscover={() => setRoute({ name: 'discover' })}
+              featured={
+                <TrendingStrip
+                  apps={apps}
+                  onError={onError}
+                  onOpen={(id) => goApp(id)}
+                  onInstalled={(id, intent) => {
+                    loadApps()
+                    setPendingBuilds((p) => ({ ...p, [id]: intent }))
+                    goApp(id)
+                  }}
+                />
+              }
               onCreated={(id, intent) => {
                 if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
                 goApp(id)

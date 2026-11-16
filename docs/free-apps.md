@@ -14,6 +14,17 @@ click, each in its own project on the person's engine. It uses only the
    start (guarded, so later starts are instant) and serves it on port 3000.
    runtimed applies the new start command and waits for the app.
 
+Entries can bring small files (`files` in the catalog), written into the
+project through `PUT /v1/sandboxes/{id}/files` before the task: for example
+a one-page web front for a command-line tool (Sherlock).
+
+## Trending on GitHub
+
+Entries marked `trending` are shown on the home page under "Trending on
+GitHub": projects that are hyped right now, made usable by someone who is not
+technical. Same bar as below; a command-line tool needs a plain web page in
+`console/src/catalog-files/`.
+
 Because the agent only writes one file, installs behave the same on any
 model, including OpenCode's free one. Source apps also get a `build`
 command, run after each task, so a change the person asks for shows up.

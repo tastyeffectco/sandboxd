@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, App as TApp, AgentCatalogEntry, AgentInstance } from './api'
 import { BuildIntent, defaultChoice } from './AgentPicker'
 import { CATALOG, CatalogApp, catalogTag, installPrompt } from './catalog'
+import { installCatalogApp } from './catalogInstall'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 
@@ -34,22 +35,17 @@ export function DiscoverView({
       .catch(() => {})
   }, [])
   const [category, setCategory] = useState('All')
-  const categories = ['All', ...Array.from(new Set(CATALOG.map((a) => a.category)))]
-  const shown = CATALOG.filter((a) => category === 'All' || a.category === category)
+  const categories = ['All', 'Trending', ...Array.from(new Set(CATALOG.map((a) => a.category)))]
+  const shown = CATALOG.filter(
+    (a) => category === 'All' || a.category === category || (category === 'Trending' && a.trending),
+  )
 
   const install = async (entry: CatalogApp) => {
     if (installing) return
     setInstalling(entry.id)
     try {
-      const app = await api.createApp({
-        name: entry.name,
-        description: entry.pitch,
-        tags: [catalogTag(entry.id)],
-        ...(entry.git ? { git: entry.git } : {}),
-      })
-      // Downloaded apps start from an empty project; source apps from their code.
-      await api.createAppSandbox(app.id, entry.git ? {} : { template: 'blank' })
-      onInstalled(app.id, { ...defaultChoice, prompt: installPrompt(entry) })
+      const id = await installCatalogApp(entry)
+      onInstalled(id, { ...defaultChoice, prompt: installPrompt(entry) })
     } catch (e) {
       onError((e as Error).message)
     } finally {

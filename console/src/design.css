@@ -3215,3 +3215,8 @@ select.agent-model {
   font: 10.5px/1.45 var(--mono);
   margin: 6px 0 0;
 }
+
+/* Trending on GitHub (home page) */
+.trending-section {
+  margin: 8px 0 36px;
+}
