@@ -98,3 +98,12 @@ describe('catalog', () => {
     }
   })
 })
+
+describe('DiscoverView categories', () => {
+  it('opens on the Trending chip when asked, showing only trending projects', () => {
+    view({ initialCategory: 'Trending' })
+    expect(screen.getByRole('tab', { name: 'Trending' }).getAttribute('aria-selected')).toBe('true')
+    const shown = screen.getAllByTestId(/^catalog-(?!install|open|agent)/).map((e) => e.dataset.testid)
+    expect(shown.length).toBe(CATALOG.filter((a) => a.trending).length)
+  })
+})

@@ -37,13 +37,14 @@ function readRoute(): Route {
     }
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
+  if (parts[0] === 'discover' && parts[1]) return { name: 'discover', category: decodeURIComponent(parts[1]) }
   return { name: ['brain', 'discover', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
 }
 
 type Route =
   | { name: 'apps' }
   | { name: 'brain' }
-  | { name: 'discover' }
+  | { name: 'discover'; category?: string }
   | { name: 'agents' }
   | { name: 'agent'; id: string }
   | { name: 'settings'; section?: string }
@@ -91,7 +92,7 @@ export default function App({
         ? `#/app/${encodeURIComponent(route.id)}${route.tab ? '/' + route.tab : ''}`
         : route.name === 'agent'
           ? `#/agent/${encodeURIComponent(route.id)}`
-          : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}`
+          : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}${route.name === 'discover' && route.category ? '/' + encodeURIComponent(route.category) : ''}`
     if (location.hash !== hash) location.hash = hash
     setMobileNav(false)
   }, [route])
@@ -516,7 +517,7 @@ export default function App({
               featured={
                 <TrendingStrip
                   apps={apps}
-                  onSeeAll={() => setRoute({ name: 'discover' })}
+                  onSeeAll={() => setRoute({ name: 'discover', category: 'Trending' })}
                   onError={onError}
                   onOpen={(id) => goApp(id)}
                   onInstalled={(id, intent) => {
@@ -534,6 +535,8 @@ export default function App({
           )}
           {route.name === 'discover' && (
             <DiscoverView
+              key={route.category || 'All'}
+              initialCategory={route.category}
               apps={apps}
               agents={agents || []}
               openAgent={(id) => setRoute({ name: 'agent', id })}

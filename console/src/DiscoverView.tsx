@@ -17,7 +17,10 @@ export function DiscoverView({
   goAgents,
   openAgent,
   onError,
+  initialCategory,
 }: {
+  // Category chip selected on open ("Trending" from the home page's "See all").
+  initialCategory?: string
   apps: TApp[]
   agents?: AgentInstance[]
   openAgent?: (id: string) => void
@@ -34,7 +37,7 @@ export function DiscoverView({
       .then(setAgentPackages)
       .catch(() => {})
   }, [])
-  const [category, setCategory] = useState('All')
+  const [category, setCategory] = useState(initialCategory || 'All')
   const categories = ['All', 'Trending', ...Array.from(new Set(CATALOG.map((a) => a.category)))]
   const shown = CATALOG.filter(
     (a) => category === 'All' || a.category === category || (category === 'Trending' && a.trending),
