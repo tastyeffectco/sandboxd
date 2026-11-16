@@ -3229,3 +3229,11 @@ select.agent-model {
 .workspace-layout.assistant-layout .workspace-stage[hidden] {
   display: none;
 }
+.workspace-title .assistant-sub {
+  margin-left: 12px;
+  color: var(--muted, #6b7280);
+  font-size: 13px;
+}
+.workspace-actions[hidden] {
+  display: none;
+}
