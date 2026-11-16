@@ -40,6 +40,10 @@ type v1AgentInstance struct {
 	AppsToday    int    `json:"apps_today"`
 	AppsPerDay   int    `json:"apps_per_day"`
 	CreatedAt    string `json:"created_at"`
+	// UILabel names the agent's own app, served at ui/; empty when it has none.
+	UILabel string `json:"ui_label,omitempty"`
+	// Chat: sandboxd's chat can talk to it; otherwise it is used in its app.
+	Chat bool `json:"chat"`
 }
 
 // agentAppsPerDay caps how many apps one agent may create per day.
@@ -80,7 +84,20 @@ func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) 
 	}
 	return v1AgentInstance{ID: h.ID, Package: h.Package, Name: h.Name, ConnectionID: h.ConnectionID, Model: h.Model,
 		Status: status, Telegram: len(h.TelegramCiphertext) > 0, AppsToday: today, AppsPerDay: agentAppsPerDay,
-		CreatedAt: h.CreatedAt}
+		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package), Chat: hasChat(h.Package)}
+}
+
+func hasChat(pkgID string) bool {
+	pkg, ok := agentcatalog.Get(pkgID)
+	return ok && pkg.Chat
+}
+
+// uiLabel names the agent's own app, or "" when it has none.
+func uiLabel(pkgID string) string {
+	if pkg, ok := agentcatalog.Get(pkgID); ok && pkg.UIPort != 0 {
+		return pkg.UILabel
+	}
+	return ""
 }
 
 // GET /v1/agent-catalog
@@ -229,24 +246,55 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	if err := os.Chown(dir, uid, gid); err != nil {
 		return fmt.Errorf("prepare the agent's storage: %w", err)
 	}
-	config, err := pkg.Render(agentcatalog.Config{
-		ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model})
-	if err != nil {
-		return err
+	cfg := agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model,
+		UIOrigin: "http://" + agentUIHost(h.ID, pkg.UIPort)}
+	if pkg.ProxyAuth {
+		if cfg.ProxyIP, err = s.agentProxyIP(ctx); err != nil {
+			return err
+		}
 	}
-	cfgPath := filepath.Join(dir, pkg.ConfigFile)
-	if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
-		return err
+	if pkg.Render != nil {
+		config, err := pkg.Render(cfg)
+		if err != nil {
+			return err
+		}
+		cfgPath := filepath.Join(dir, pkg.ConfigFile)
+		if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
+			return err
+		}
+		if err := os.Chown(cfgPath, uid, gid); err != nil {
+			return err
+		}
 	}
-	if err := os.Chown(cfgPath, uid, gid); err != nil {
-		return err
+	if pkg.ProxyAuth {
+		s.agentCfg.mu.Lock()
+		if s.agentCfg.ip == nil {
+			s.agentCfg.ip = map[string]string{}
+		}
+		s.agentCfg.ip[h.ID] = cfg.ProxyIP
+		s.agentCfg.mu.Unlock()
 	}
 	if err := s.Store.RotateAgentInstanceSecret(ctx, h.ID, hashSecret(secret)); err != nil {
 		return err
 	}
 	h.SecretHash = hashSecret(secret)
 	env := append(append([]string{}, pkg.Env...),
-		pkg.APIKeyEnv+"="+string(apiKey), agentcatalog.SecretEnv+"="+secret)
+		agentcatalog.SecretEnv+"="+secret)
+	if pkg.RenderEnv != nil {
+		env = append(env, pkg.RenderEnv(cfg)...)
+	}
+	if pkg.APIKeyEnv != "" { // proxy sign-in agents take no shared key
+		env = append(env, pkg.APIKeyEnv+"="+string(apiKey))
+	}
+	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
+	if pkg.UIPort != 0 {
+		labels = append(labels, "sandboxd.agent.ui="+containerRev(pkg))
+	}
+	if pkg.UILogin == "password" {
+		// Only sandboxd knows these: it signs the owner in to the app.
+		env = append(env, "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="+uiPassword(apiKey, "password"),
+			"HERMES_DASHBOARD_BASIC_AUTH_SECRET="+uiPassword(apiKey, "session"))
+	}
 	if len(h.TelegramCiphertext) > 0 && pkg.Telegram {
 		token, err := s.Secrets.Open(h.TelegramCiphertext, h.TelegramNonce)
 		if err != nil {
@@ -263,13 +311,13 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	_, err = s.Docker.Run(ctx, docker.RunSpec{
 		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
 		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
-		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize,
+		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize, Init: pkg.Init,
 		Tmpfs:   tmpfs,
 		User:    pkg.User,
 		Restart: "unless-stopped", // always on: survives engine and computer restarts
 		Env:     env,
 		Volumes: []string{dir + ":" + pkg.StatePath},
-		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID},
+		Labels:  labels,
 		Image:   pkg.Image, Cmd: pkg.Cmd,
 	})
 	return err
@@ -306,8 +354,8 @@ func (s *Server) v1StartAgentInstance(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if _, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); ierr != nil {
 		err = s.provisionAgent(r.Context(), h, pkg)
-	} else {
-		err = s.Docker.Start(r.Context(), agentContainer(h.ID))
+	} else if err = s.Docker.Start(r.Context(), agentContainer(h.ID)); err == nil {
+		err = s.refreshAgentConfig(r.Context(), h, pkg)
 	}
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "could not start the agent: "+err.Error())
@@ -330,6 +378,44 @@ func (s *Server) v1StopAgentInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 // DELETE /v1/agent-instances/{id} — removes the agent, its container and its memory.
+// PATCH /v1/agent-instances/{id} {connection_id, model?} — think with another
+// model. The agent is made again with it; its memory and skills stay.
+func (s *Server) v1UpdateAgentInstance(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.ownAgentInstance(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ConnectionID string `json:"connection_id"`
+		Model        string `json:"model"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil || req.ConnectionID == "" {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "choose a model connection")
+		return
+	}
+	model, err := s.agentModel(r.Context(), req.ConnectionID, req.Model)
+	if err != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if err := s.Store.SetAgentInstanceModel(r.Context(), h.ID, req.ConnectionID, model); err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	h.ConnectionID, h.Model = req.ConnectionID, model
+	if s.Docker != nil {
+		if _, err := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); err == nil {
+			pkg, _ := agentcatalog.Get(h.Package)
+			s.dropUISession(h.ID)
+			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
+				writeV1Err(w, http.StatusInternalServerError, "internal", "could not restart the agent: "+err.Error())
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
+}
+
 func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.ownAgentInstance(w, r)
 	if !ok {
@@ -373,6 +459,13 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if !pkg.Chat {
+		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
+		return
+	}
+	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
+		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")
@@ -384,6 +477,7 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 	up, _ := http.NewRequestWithContext(ctx, http.MethodPost,
 		fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort), bytes.NewReader(body))
 	up.Header.Set("Authorization", "Bearer "+string(apiKey))
+	setAgentIdentity(up.Header)
 	up.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(up)
 	if err != nil {

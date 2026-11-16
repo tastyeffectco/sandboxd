@@ -57,6 +57,7 @@ func streamAgentChat(ctx context.Context, url, key, model string, req v1AgentStr
 	body, _ := json.Marshal(payload)
 	up, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	up.Header.Set("Authorization", "Bearer "+key)
+	setAgentIdentity(up.Header)
 	up.Header.Set("Content-Type", "application/json")
 	up.Header.Set("Accept", "text/event-stream")
 	if req.ConversationID != "" {

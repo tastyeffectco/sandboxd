@@ -12,6 +12,8 @@ vi.mock('./api', () => ({
     sendAgentMessage: vi.fn(),
     stopAgentMessage: vi.fn(),
     clearAgentMessages: vi.fn(),
+    uploadAgentFile: vi.fn(),
+    agentFileUrl: (id: string, f: string) => `/v1/agent-instances/${id}/files/${f}`,
   },
 }))
 
@@ -85,7 +87,7 @@ describe('AgentRoom', () => {
     await screen.findByText('Chat with Hermes')
     fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'Build me a tip calculator' } })
     fireEvent.click(screen.getByTestId('agent-send'))
-    await waitFor(() => expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Build me a tip calculator'))
+    await waitFor(() => expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Build me a tip calculator', []))
     expect(await screen.findByText('Creating your app', {}, { timeout: 3000 })).toBeTruthy()
     expect(screen.getByTestId('agent-stop')).toBeTruthy()
     expect(screen.getByTestId('agent-steps').textContent).not.toContain('describe')
@@ -117,7 +119,7 @@ describe('AgentRoom', () => {
     room()
     expect((await screen.findByRole('alert')).textContent).toMatch(/couldn't finish this reply/)
     fireEvent.click(screen.getByText('Try again'))
-    await waitFor(() => expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Again'))
+    await waitFor(() => expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Again', []))
   })
 
   it('waits while the agent is getting ready', async () => {
@@ -137,5 +139,36 @@ describe('stepLabel', () => {
     expect(stepLabel({ tool: 'terminal' })).toBe('Running a command')
     expect(stepLabel({ tool: 'tool_search' })).toBeNull()
     expect(stepLabel({ tool: 'weather_lookup' })).toBe('Weather lookup')
+  })
+
+  it('attaches files, sends them with the message and shows them in the conversation', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({ working: false, messages: [] })
+    vi.mocked(api.uploadAgentFile).mockResolvedValue({ id: '01AAAAAAAAAAAAAAAAAAAAAAAA-notes.txt', name: 'notes.txt', type: 'text/plain', size: 2048 })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue({
+      messages: [
+        msg({
+          id: '1',
+          role: 'user',
+          content: 'Summarize this',
+          attachments: [{ id: '01AAAAAAAAAAAAAAAAAAAAAAAA-notes.txt', name: 'notes.txt', type: 'text/plain', size: 2048 }],
+        }),
+        msg({ id: '2', role: 'assistant', state: 'working' }),
+      ],
+    })
+    room()
+    await screen.findByText('Chat with Hermes')
+    const file = new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    fireEvent.change(screen.getByTestId('agent-file-input'), { target: { files: [file] } })
+    expect(await screen.findByText('notes.txt')).toBeTruthy()
+    await waitFor(() => expect(api.uploadAgentFile).toHaveBeenCalledWith('h1', file, 'notes.txt'))
+    await waitFor(() => expect((screen.getByTestId('agent-send') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.change(screen.getByTestId('agent-input'), { target: { value: 'Summarize this' } })
+    fireEvent.click(screen.getByTestId('agent-send'))
+    await waitFor(() =>
+      expect(api.sendAgentMessage).toHaveBeenCalledWith('h1', 'Summarize this', ['01AAAAAAAAAAAAAAAAAAAAAAAA-notes.txt']),
+    )
+    const sent = await screen.findByTestId('agent-files')
+    expect(sent.querySelector('a')?.getAttribute('href')).toBe('/v1/agent-instances/h1/files/01AAAAAAAAAAAAAAAAAAAAAAAA-notes.txt')
+    expect(screen.queryByTestId('agent-attachments')).toBeNull()
   })
 })

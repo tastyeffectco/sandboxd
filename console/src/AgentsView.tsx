@@ -74,7 +74,7 @@ function AddAgent({
   const [users, setUsers] = useState('')
   const [busy, setBusy] = useState(false)
   const [warning, setWarning] = useState('')
-  const chosen = connection || models[0]?.id || ''
+  const chosen = connection || suggestedConnection(models, pkg.strong_model) || ''
   const add = async () => {
     setBusy(true)
     setWarning('')
@@ -152,4 +152,15 @@ function AddAgent({
       )}
     </Card>
   )
+}
+
+// Small or fast models garble the nested tool calls some agents make; for
+// those, the strongest model connected is suggested first.
+const SMALL_MODEL = /flash|mini|lite|nano|haiku|small|:\d+(\.\d+)?b\b|\b\d+(\.\d+)?b\b/i
+export function suggestedConnection(models: ModelProvider[], strong?: boolean): string | undefined {
+  if (strong) {
+    const big = models.find((m) => !SMALL_MODEL.test(m.models[0]?.id || ''))
+    if (big) return big.id
+  }
+  return models[0]?.id
 }

@@ -49,6 +49,8 @@ type v1AgentMessage struct {
 	Error     string          `json:"error,omitempty"`
 	Channel   string          `json:"channel"`
 	CreatedAt string          `json:"created_at"`
+	// Attachments are the files sent with the message: {id, name, type, size}.
+	Attachments json.RawMessage `json:"attachments"`
 }
 
 func agentMessageView(m *store.AgentMessage) v1AgentMessage {
@@ -57,7 +59,15 @@ func agentMessageView(m *store.AgentMessage) v1AgentMessage {
 		steps = json.RawMessage("[]")
 	}
 	return v1AgentMessage{ID: m.ID, Role: m.Role, Content: m.Content, Thinking: m.Thinking, Steps: steps,
-		State: m.State, Error: m.Error, Channel: m.Channel, CreatedAt: m.CreatedAt}
+		State: m.State, Error: m.Error, Channel: m.Channel, CreatedAt: m.CreatedAt,
+		Attachments: json.RawMessage(attachmentsOrEmpty(m.Attachments))}
+}
+
+func attachmentsOrEmpty(v string) string {
+	if !json.Valid([]byte(v)) || v == "null" {
+		return "[]"
+	}
+	return v
 }
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
@@ -104,17 +114,24 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Content string `json:"content"`
+		Content     string   `json:"content"`
+		Attachments []string `json:"attachments"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "send a message")
 		return
 	}
 	content := strings.TrimSpace(req.Content)
-	if content == "" || utf8.RuneCountInString(content) > 8000 {
+	if (content == "" && len(req.Attachments) == 0) || utf8.RuneCountInString(content) > 8000 {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "a message is 1 to 8000 characters")
 		return
 	}
+	files, err := s.takeAttachments(h, req.Attachments)
+	if err != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	attached, _ := json.Marshal(files)
 	if v := s.agentInstanceView(r.Context(), h); v.Status != "running" {
 		writeV1Err(w, http.StatusConflict, "not_running", h.Name+" isn't running yet. Start it, or wait until it's ready.")
 		return
@@ -125,13 +142,20 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if !pkg.Chat {
+		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
+		return
+	}
+	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
+		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")
 		return
 	}
 	user := &store.AgentMessage{ID: newULID(), AgentID: h.ID, Role: "user", Content: content, Steps: "[]",
-		State: "done", Channel: "app", CreatedAt: now()}
+		State: "done", Channel: "app", CreatedAt: now(), Attachments: string(attached)}
 	user.UpdatedAt = user.CreatedAt
 	reply := &store.AgentMessage{ID: newULID(), AgentID: h.ID, Role: "assistant", Steps: "[]",
 		State: "working", Channel: "app", CreatedAt: now()}
@@ -169,16 +193,20 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 	var turn v1AgentStreamReq
 	for _, m := range history {
 		if m.Role == "user" || (m.Role == "assistant" && m.State == "done" && m.Content != "") {
+			text := m.Content
+			if m.Role == "user" {
+				text = withAttachments(m.Content, m.Attachments, pkg)
+			}
 			turn.Messages = append(turn.Messages, struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
-			}{m.Role, m.Content})
+			}{m.Role, text})
 		}
 	}
 	turn.Messages = append(turn.Messages, struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
-	}{"user", content})
+	}{"user", withAttachments(content, user.Attachments, pkg)})
 	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort)
 	name := h.Name
 	go s.runAgentTurn(ctx, cancel, h.ID, name, url, string(apiKey), pkg.ChatModel, turn, live)

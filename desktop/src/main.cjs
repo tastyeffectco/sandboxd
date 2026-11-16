@@ -264,23 +264,48 @@ async function start() {
     })
     await localEngine.load().catch(() => {})
   }
+  const portFile = path.join(app.getPath('userData'), 'gateway-port')
+  const savedPort = Number(await fs.readFile(portFile, 'utf8').catch(() => '')) || 0
   gateway = await createGateway({
+    port: savedPort >= 1024 && savedPort < 65536 ? savedPort : 0,
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
     onUnreachable: healEngine,
   })
-  desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
+  await fs.writeFile(portFile, new URL(gateway.origin).port).catch(() => {})
+  // Kept across launches: agents' own apps save their setup and sign-in in
+  // the browser. sandboxd's own login never lives here (the gateway holds it).
+  desktopSession = session.fromPartition('persist:sandboxd')
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   desktopSession.setPermissionCheckHandler(() => false)
   // Cookies are shared across ports. Use a main-process-only header so a
   // local preview cannot receive the gateway capability by sharing its host.
   desktopSession.webRequest.onBeforeSendHeaders((details, callback) => {
     const target = new URL(details.url)
-    const isGateway =
-      target.host === new URL(gateway.origin).host && ['http:', 'ws:'].includes(target.protocol)
+    const gatewayHost = new URL(gateway.origin).host
+    const isGateway = target.host === gatewayHost && ['http:', 'ws:'].includes(target.protocol)
     const ownFrame = details.webContentsId === window?.webContents.id
+    // An agent's own app (ui-<id>.localhost on the gateway's port): opened by
+    // the workspace in a frame, then loading its own files and connections.
+    const isAgentApp =
+      /^ui-[0-9a-z]{6,40}\.localhost$/.test(target.hostname) &&
+      target.port === gatewayHost.split(':')[1] &&
+      ['http:', 'ws:'].includes(target.protocol)
+    if (isAgentApp) {
+      const appOrigin = `http://${target.host}`
+      const allowed =
+        ownFrame &&
+        (details.initiatorOrigin === gateway.origin ||
+          details.initiatorOrigin === appOrigin ||
+          details.initiatorOrigin === appOrigin.replace('http:', 'ws:'))
+      if (!allowed) return callback({ cancel: true })
+      const headers = { ...details.requestHeaders }
+      for (const key of Object.keys(headers))
+        if (key.toLowerCase() === 'x-sandboxd-desktop') delete headers[key]
+      return callback({ requestHeaders: { ...headers, ...gateway.authorization } })
+    }
     const ownOrigin = details.initiatorOrigin === gateway.origin
     const navigation = details.resourceType === 'mainFrame' && !details.initiatorOrigin
     const download = !details.initiatorOrigin && /^\/v1\/sandboxes\/[^/]+\/export$/.test(target.pathname)
