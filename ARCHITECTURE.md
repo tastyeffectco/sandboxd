@@ -22,6 +22,15 @@ High level:
   [Runtime model](#runtime-model)).
 - **Console** — a React SPA that talks **only** to `/v1`; never touches the DB or
   workspaces.
+- **Desktop** (`desktop/`, Electron) — bundles the console as a native app;
+  also a pure `/v1` client. On Windows it provisions its own engine in a
+  dedicated WSL distribution.
+- **Agents** (`internal/agentcatalog`) — always-on assistants (Hermes, OpenClaw,
+  OpenMausBot), each a hardened container next to the sandboxes, reaching
+  sandboxd's tools over MCP on the **agent proxy** port (9100).
+- **The sandboxd agent** ("Ask sandboxd") — the person's main assistant: the
+  coding agent of a hidden app, with tools over the same port to act on apps
+  and agents.
 - **Auth proxy** (`internal/authproxy`) — agents reach their model provider
   through it, so **no credential ever enters a sandbox** (see `docs/agent-auth.md`).
 - **App config/secrets**, an **event timeline**, and **snapshots/fork/restore**
@@ -33,6 +42,8 @@ High level:
                          │            │      ▲  dev server :3000            │
    API/CLI ──HTTP──▶ :9090  sandboxd ─┼──────┘  (docker run/stop/exec)      │
                          │     │      └─▶ /forward-auth, /wake (catch-all)  │
+                         │     │◀── :9100 agent proxy (MCP tools, inbox)    │
+                         │     │      ▲ a-<id> agent containers (Hermes…)   │
                          │  SQLite (source of truth)                        │
                          │  reapers: idle (stop) + pressure (mem)           │
                          │  workspaces/  <id>/ … (bind-mounted, persist)    │
@@ -97,6 +108,52 @@ with inline git status/diff), **reviews and pushes with Git** (diff viewer,
 commit, push), manages config/secrets, shows the events timeline and per-process
 logs, does snapshot/fork/restore, connects agents, and reads settings (editing
 only the lifecycle tunables). Contract: `docs/openapi.yaml`.
+
+### Desktop (Electron)
+`desktop/` wraps the same console in a native window. Its main process runs a
+small local gateway that forwards the console's `/v1` calls to the chosen engine
+(local or remote), keeps sign-ins out of the renderer, and imports a coding
+agent's existing login (ChatGPT/Codex, OpenCode, Pi) only after a native
+confirmation. On Windows, **Install & open workspace** creates a dedicated WSL 2
+distribution, installs Docker Engine there and runs the engine; each desktop
+release pins one engine release and moves the managed engine to it, with a
+backup and automatic rollback. Details: `docs/desktop.md`.
+
+### Free apps catalog
+A list of open-source projects in the console (`console/src/catalog.ts`), each
+pinned to a tested release, with a `sandbox.yaml` the console writes itself.
+Installing one is plain `/v1` calls — create the app and sandbox, write the
+manifest (and any small helper files), restart — so it needs no AI and no core
+support. Entries marked `trending` appear on the home page. Rules for adding
+one: `docs/free-apps.md`.
+
+### Agents (operator agents)
+Assistants that work *across* apps, unlike the coding agents that build one app
+inside its workspace. `internal/agentcatalog` describes each kind as data (pinned
+image digest, user, ports, config renderer), so a new agent is a catalog entry,
+not new code. Each instance is a container `a-<id>`: non-root, all
+capabilities dropped, read-only root filesystem, memory-limited, with its state
+in `SANDBOXD_DATA_DIR/agents/<id>`. It reaches its model only through the auth
+proxy, and sandboxd's tools (`list_apps`, `create_app`, `ask_app`,
+`app_status`, `share_file`, `message_user`) only with its own secret, over MCP
+on the agent proxy port (`/agents/…`). The control plane keeps the conversation
+(`/v1/agent-instances/{id}/messages`), delivers scheduled results to the inbox,
+and can show the agent's own web app. Details: `docs/operator-agents.md`.
+
+### The sandboxd agent
+One per person (table `assistant`, `GET|POST /v1/assistant`). It is the coding
+agent of a hidden app (tag `sandboxd:assistant`), so it runs on whatever the
+person picks — OpenCode, Claude Code, Codex, a subscription or a model
+connection — with no agent runtime of its own. `POST /v1/assistant` writes that
+workspace's MCP settings for each coding agent (`opencode.json`, `.mcp.json`,
+`.codex/config.toml`) and its guide (`AGENTS.md`) with a fresh secret. Its tools,
+served at `/assistant/mcp` on the agent proxy port, act as the owner through
+`/v1`: the app tools above plus `install_project`, `remove_app`, `list_agents`,
+`add_agent`, `remove_agent`, `message_agent`, `read_memory`,
+`read_agent_memory`, `read_agent_conversation`. Builds and installs it starts
+use the AI the person chose for it. Removing something the person made needs
+their yes in their next message, enforced by the engine. Details:
+`docs/sandboxd-agent.md`.
 
 ### App subsystems
 - **App config & secrets** — per-app key/values. Sensitive values are write-only:
@@ -181,8 +238,8 @@ workspace by copying its directory; back up state by copying the SQLite file.
 ## Optional workflows on top of core
 
 The core engine is just sandboxes + previews + the `/v1` API. Everything else —
-durable **apps**, coding **agents**, and the **Git** workflow — is an optional
-layer a client opts into; none of it is required to run a sandbox, and the console
+durable **apps**, coding **agents**, operator **agents** and the sandboxd agent,
+and the **Git** workflow — is an optional layer a client opts into; none of it is required to run a sandbox, and the console
 is just one such `/v1` client.
 
 **Git** (optional; see [`docs/git-workflow.md`](docs/git-workflow.md)) follows the
