@@ -6,15 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelprovider"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -264,6 +268,15 @@ var assistantTools = append(agentToolsNamed("list_apps", "create_app", "ask_app"
 			"agent_id": map[string]any{"type": "string"},
 			"text":     map[string]any{"type": "string", "description": "The task or question, in plain words"},
 		}, "agent_id", "text")},
+	mcpTool{"read_agent_memory", "Read what one of the user's agents remembers: its memory notes (facts about the " +
+		"user, preferences, ongoing work).",
+		obj(map[string]any{"agent_id": map[string]any{"type": "string"}}, "agent_id")},
+	mcpTool{"add_agent", "Add an agent for the user from sandboxd's agent catalog (call it without package to see " +
+		"the catalog). It starts on the user's AI model connection.",
+		obj(map[string]any{
+			"package": map[string]any{"type": "string", "description": "Catalog id, e.g. hermes or openclaw"},
+			"name":    map[string]any{"type": "string", "description": "Optional name for the agent"},
+		})},
 	mcpTool{"read_agent_conversation", "Read the latest messages between the user and one of their agents: " +
 		"what it was asked and what it did.",
 		obj(map[string]any{"agent_id": map[string]any{"type": "string"}}, "agent_id")},
@@ -363,6 +376,12 @@ func (s *Server) assistantTool(ctx context.Context, h *store.AgentInstance, name
 
 	case "message_agent":
 		return s.assistantMessageAgent(ctx, h, args["agent_id"], args["text"])
+
+	case "read_agent_memory":
+		return s.assistantAgentMemory(ctx, h, args["agent_id"])
+
+	case "add_agent":
+		return s.assistantAddAgent(ctx, h, strings.TrimSpace(args["package"]), strings.TrimSpace(args["name"]))
 
 	case "read_agent_conversation":
 		msgs, _, err := s.agentConversation(ctx, h, args["agent_id"])
@@ -522,6 +541,113 @@ func (s *Server) agentReadFile(ctx context.Context, h *store.AgentInstance, sand
 	return rec.Body.String(), nil
 }
 
+// assistantAgentMemory reads an agent's memory notes from its own folder:
+// Markdown files named like memory (MEMORY.md, USER.md, memories/, memory/).
+func (s *Server) assistantAgentMemory(ctx context.Context, h *store.AgentInstance, agentID string) (string, error) {
+	a, err := s.Store.GetAgentInstanceForOwner(ctx, agentID, h.OwnerToken)
+	if err != nil {
+		return "", errors.New("no such agent (see list_agents)")
+	}
+	if s.AgentRoot == "" {
+		return "", errors.New("agents' folders are not available on this engine")
+	}
+	root := filepath.Join(s.AgentRoot, a.ID)
+	var b strings.Builder
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || b.Len() > 24000 {
+			return filepath.SkipDir
+		}
+		rel, _ := filepath.Rel(root, path)
+		if d.IsDir() {
+			if strings.Count(rel, string(filepath.Separator)) >= 4 || skipMemoryDir[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !isMemoryNote(rel) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err == nil && len(bytes.TrimSpace(data)) > 0 {
+			fmt.Fprintf(&b, "--- %s ---\n%s\n\n", filepath.ToSlash(rel), truncate(string(data), 6000))
+		}
+		return nil
+	})
+	if b.Len() == 0 {
+		return a.Name + " has no memory notes yet.", nil
+	}
+	return b.String(), nil
+}
+
+var skipMemoryDir = map[string]bool{"node_modules": true, ".git": true, "sessions": true, "cache": true, ".cache": true,
+	"logs": true, "uploads": true, "skills": true}
+
+func isMemoryNote(rel string) bool {
+	rel = filepath.ToSlash(strings.ToLower(rel))
+	if !strings.HasSuffix(rel, ".md") {
+		return false
+	}
+	base := rel[strings.LastIndex(rel, "/")+1:]
+	return base == "memory.md" || base == "user.md" || strings.Contains(rel, "memories/") || strings.Contains(rel, "memory/")
+}
+
+// assistantAddAgent adds an agent from the catalog on the person's first AI
+// connection that agents can use.
+func (s *Server) assistantAddAgent(ctx context.Context, h *store.AgentInstance, pkg, name string) (string, error) {
+	var catalog struct {
+		Packages []struct {
+			ID          string `json:"id"`
+			Label       string `json:"label"`
+			Description string `json:"description"`
+		} `json:"packages"`
+	}
+	if err := s.agentCall(ctx, h, http.MethodGet, "/v1/agent-catalog", nil, &catalog); err != nil {
+		return "", err
+	}
+	if pkg == "" {
+		var b strings.Builder
+		for _, c := range catalog.Packages {
+			fmt.Fprintf(&b, "- %s (package %s): %s\n", c.Label, c.ID, c.Description)
+		}
+		return "Agents the user can add:\n" + b.String(), nil
+	}
+	if s.ModelProviders == nil {
+		return "", errors.New("agents are not available on this engine")
+	}
+	conns, err := s.ModelProviders.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	connection := ""
+	for _, c := range conns {
+		if c.Protocol == modelprovider.OpenAI && len(c.Models) > 0 {
+			connection = c.ID
+			break
+		}
+	}
+	if connection == "" {
+		return "", errors.New("agents need an AI model connection first. Tell the user to click Connect OpenRouter " +
+			"under Agents (free to start), then ask again")
+	}
+	var out struct {
+		Agent struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Status string `json:"status"`
+		} `json:"agent"`
+		Warning string `json:"warning"`
+	}
+	if err := s.agentCall(ctx, h, http.MethodPost, "/v1/agent-instances",
+		map[string]any{"package": pkg, "name": name, "connection_id": connection}, &out); err != nil {
+		return "", err
+	}
+	if out.Warning != "" {
+		return fmt.Sprintf("Added %s (id %s), but it could not start: %s", out.Agent.Name, out.Agent.ID, out.Warning), nil
+	}
+	return fmt.Sprintf("Added %s (id %s). It is starting; it appears under Agents in the sidebar and can take tasks "+
+		"with message_agent in a minute or two.", out.Agent.Name, out.Agent.ID), nil
+}
+
 const assistantGuide = `# You are the user's sandboxd agent
 
 This workspace is not an app. It is where you, the user's main assistant on
@@ -531,8 +657,9 @@ technical. You act on their sandboxd through the **sandboxd** tools (MCP):
 - **Apps**: list_apps, create_app (build a new app from an idea), ask_app (ask an
   app's coding agent for a change), app_status, read_memory (an app's notes).
 - **Open-source projects**: install_project installs a GitHub project as an app.
-- **Agents** (Hermes, OpenClaw...): list_agents, message_agent (give one a task
-  and get its answer), read_agent_conversation (what it was asked and did).
+- **Agents** (Hermes, OpenClaw...): list_agents, add_agent, message_agent (give
+  one a task and get its answer), read_agent_conversation (what it was asked
+  and did), read_agent_memory (what it remembers about the user).
 
 Use the tools rather than building things inside this workspace.
 

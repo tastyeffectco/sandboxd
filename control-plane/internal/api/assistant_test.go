@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -205,5 +207,51 @@ func TestAssistantBuildsRunOnTheAIThePersonChose(t *testing.T) {
 	}
 	if b := s.buildRequest(assistantActor("bob"), "go"); b["provider"] != nil {
 		t.Errorf("another person's assistant: %v", b)
+	}
+}
+
+func TestAssistantReadsAnAgentsMemoryNotes(t *testing.T) {
+	s, st, secret := assistantTestServer(t)
+	s.AgentRoot = t.TempDir()
+	write := func(rel, text string) {
+		p := filepath.Join(s.AgentRoot, "h1", filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("memories/USER.md", "The user is Abdel; prefers short answers.")
+	write("workspace/MEMORY.md", "Watching flight prices to Lisbon every morning.")
+	write("sessions/memory/old.md", "a session transcript, not a note")
+	write("notes.txt", "not memory")
+	_, out := mcpCall(t, s.AgentProxy(), "/assistant/mcp", secret, "tools/call",
+		map[string]any{"name": "read_agent_memory", "arguments": map[string]string{"agent_id": "h1"}})
+	text, isErr := assistantToolText(t, out)
+	if isErr || !strings.Contains(text, "prefers short answers") || !strings.Contains(text, "flight prices to Lisbon") {
+		t.Errorf("memory: %q", text)
+	}
+	if strings.Contains(text, "session transcript") || strings.Contains(text, "not memory") {
+		t.Errorf("memory has more than the notes: %q", text)
+	}
+	// Another person's agent stays private.
+	if err := st.CreateAgentInstance(context.Background(), &store.AgentInstance{ID: "h2", OwnerToken: "bob", Package: "hermes",
+		Name: "Bob's", ConnectionID: "c1", Model: "m1", SecretHash: hashSecret("y"), CreatedAt: "now"}); err != nil {
+		t.Fatal(err)
+	}
+	_, out = mcpCall(t, s.AgentProxy(), "/assistant/mcp", secret, "tools/call",
+		map[string]any{"name": "read_agent_memory", "arguments": map[string]string{"agent_id": "h2"}})
+	if _, isErr := assistantToolText(t, out); !isErr {
+		t.Error("another owner's agent memory: want an error")
+	}
+}
+
+func TestAssistantListsTheAgentCatalog(t *testing.T) {
+	s, _, secret := assistantTestServer(t)
+	_, out := mcpCall(t, s.AgentProxy(), "/assistant/mcp", secret, "tools/call",
+		map[string]any{"name": "add_agent", "arguments": map[string]string{}})
+	if text, isErr := assistantToolText(t, out); isErr || !strings.Contains(text, "(package hermes)") {
+		t.Errorf("catalog: %q", text)
 	}
 }
