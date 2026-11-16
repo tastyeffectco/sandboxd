@@ -345,13 +345,33 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 	return "", fmt.Errorf("unknown tool %q", name)
 }
 
+// buildRequest is the task an agent's build runs: OpenCode's default (its free
+// model when nothing is connected), or for the sandboxd agent the same AI the
+// person chose for it.
+func (s *Server) buildRequest(h *store.AgentInstance, prompt string) map[string]any {
+	body := map[string]any{"prompt": prompt, "agent": "opencode"}
+	if h.ID != assistantID {
+		return body
+	}
+	c := s.assistants.choice(h.OwnerToken)
+	if c.Agent != "" {
+		body["agent"] = c.Agent
+	}
+	if c.Provider != "" {
+		body["provider"] = c.Provider
+	}
+	if c.Model != "" {
+		body["model"] = c.Model
+	}
+	return body
+}
+
 // agentBuild starts a coding task with the default agent (OpenCode's free
 // model when nothing is connected), waiting briefly for a new workspace.
 func (s *Server) agentBuild(ctx context.Context, h *store.AgentInstance, sandboxID, prompt string) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		err := s.agentCall(ctx, h, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/tasks",
-			map[string]any{"prompt": prompt, "agent": "opencode"}, nil)
+		err := s.agentCall(ctx, h, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/tasks", s.buildRequest(h, prompt), nil)
 		// A new workspace is still starting: "sandbox is creating — cannot run a
 		// task", or its supervisor's socket is not up yet ("runtimed: …").
 		starting := err != nil && (strings.Contains(err.Error(), "cannot run a task") || strings.HasPrefix(err.Error(), "runtimed:"))

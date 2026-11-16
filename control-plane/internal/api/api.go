@@ -40,6 +40,8 @@ type Server struct {
 	agentNotes   agentNotes
 	modelTrouble modelTroubles
 	agentLocks   agentLocks
+	// assistants: each person's sandboxd agent workspace and its chosen AI.
+	assistants assistantRegistry
 	// turns are the agents' replies being written right now.
 	turns          agentTurns
 	ModelProviders *modelprovider.Service

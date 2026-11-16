@@ -24,7 +24,14 @@ and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-age
   | `list_apps`, `create_app`, `ask_app`, `app_status` | Same as the agents' tools (no daily app limit: it acts on the person's direct request) |
   | `install_project` | New app from a GitHub repo; its coding agent writes `sandbox.yaml` under the Free apps rules, or says why it can't run |
   | `read_memory` | An app's `BRAIN.md` and `brain/*.md` |
+  | `remove_app` | Only apps it installed or created itself (tag `created-by:sandboxd`): it cleans up an install that failed or was refused |
   | `list_agents`, `message_agent`, `read_agent_conversation` | The person's agents; a task sent to one shows in that agent's chat as "From the user's sandboxd agent: ..." and its answer comes back (waits up to 4 minutes) |
+
+Builds and installs it starts run on the same AI the person chose for it (the
+engine remembers the agent, connection and model of the latest message sent to
+it), not on the free tier. Before installing, it reads the project's
+requirements; the install task stops at once, with a reason, when the project
+can't run in a workspace (for example JSON Crack 5 needs Node 24).
 
 ## Verified (Windows PC, OpenCode free model)
 

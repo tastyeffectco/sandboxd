@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/auth"
@@ -33,6 +35,48 @@ const assistantID = "sandboxd-assistant"
 // AssistantTag marks the assistant's hidden project; the console keeps it out
 // of the project list.
 const assistantTag = "sandboxd:assistant"
+
+// assistantRegistry remembers, in memory, which workspace is whose sandboxd
+// agent and which AI the person last chose for it, so the builds and installs
+// it starts run on that same AI (a subscription or model connection) instead
+// of the free tier. After an engine restart it is filled again when the
+// assistant is opened (POST /v1/assistant) and talked to.
+type assistantRegistry struct {
+	mu        sync.Mutex
+	sandboxes map[string]string          // workspace id -> owner
+	choices   map[string]assistantChoice // owner -> latest choice
+}
+
+type assistantChoice struct{ Agent, Provider, Model string }
+
+func (a *assistantRegistry) addSandbox(sandboxID, owner string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sandboxes == nil {
+		a.sandboxes = map[string]string{}
+	}
+	a.sandboxes[sandboxID] = owner
+}
+
+// note records the AI of a task sent to a sandboxd agent's workspace.
+func (a *assistantRegistry) note(sandboxID string, c assistantChoice) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	owner, ok := a.sandboxes[sandboxID]
+	if !ok {
+		return
+	}
+	if a.choices == nil {
+		a.choices = map[string]assistantChoice{}
+	}
+	a.choices[owner] = c
+}
+
+func (a *assistantRegistry) choice(owner string) assistantChoice {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.choices[owner]
+}
 
 func assistantActor(owner string) *store.AgentInstance {
 	return &store.AgentInstance{ID: assistantID, OwnerToken: owner, Name: "sandboxd"}
@@ -97,6 +141,7 @@ func (s *Server) ensureAssistant(ctx context.Context, owner string) (string, err
 		}
 		app.CurrentSandboxID = sb.ID
 	}
+	s.assistants.addSandbox(app.CurrentSandboxID, owner)
 	mcpURL, err := s.assistantMCPURL(ctx)
 	if err != nil {
 		return "", err
@@ -202,6 +247,9 @@ var assistantTools = append(agentToolsNamed("list_apps", "create_app", "ask_app"
 			"ref":      map[string]any{"type": "string", "description": "Release tag or branch to install; the latest release when omitted"},
 			"name":     map[string]any{"type": "string", "description": "Optional app name"},
 		}, "repo_url")},
+	mcpTool{"remove_app", "Remove an app that you installed or created yourself and that does not work (an install " +
+		"that failed or was refused). You cannot remove the user's other apps.",
+		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
 	mcpTool{"read_memory", "Read an app's project memory (BRAIN.md and its notes).",
 		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
 	mcpTool{"list_agents", "List the user's agents (Hermes, OpenClaw...) with their status.", obj(map[string]any{})},
@@ -235,6 +283,23 @@ func (s *Server) assistantTool(ctx context.Context, h *store.AgentInstance, name
 
 	case "install_project":
 		return s.assistantInstall(ctx, h, args)
+
+	case "remove_app":
+		var app struct {
+			Name string   `json:"name"`
+			Tags []string `json:"tags"`
+		}
+		id := strings.TrimSpace(args["app_id"])
+		if id == "" || s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+id, nil, &app) != nil {
+			return "", errors.New("no such app (see list_apps)")
+		}
+		if !slices.Contains(app.Tags, "created-by:"+h.Name) {
+			return "", errors.New("you can only remove apps you installed or created yourself; ask the user to remove this one")
+		}
+		if err := s.agentCall(ctx, h, http.MethodDelete, "/v1/apps/"+id, nil, nil); err != nil {
+			return "", err
+		}
+		return "Removed " + app.Name + ".", nil
 
 	case "read_memory":
 		sbID, err := s.agentAppSandbox(ctx, h, args["app_id"])
@@ -363,7 +428,10 @@ func installProjectPrompt(repo, ref string) string {
 			"release's prebuilt files when it has them, otherwise its source at that tag."
 	}
 	return "Install the open-source project " + repo + " so it runs in this workspace. " + where + "\n\n" +
-		"Write sandbox.yaml so `web.command` installs on the first start only (guard it with a file check, so later " +
+		"First read what it needs (README, package.json engines, pyproject.toml, Dockerfile). If it needs " +
+		"something this workspace lacks (see the rules below; for example Node newer than 22, Docker or a " +
+		"database server), stop at once and say why in one plain sentence. Don't spend more than a few " +
+		"minutes trying.\n\nWrite sandbox.yaml so `web.command` installs on the first start only (guard it with a file check, so later " +
 		"starts are instant) and serves the app on 0.0.0.0 port 3000; set health_path to a page that answers 200. " +
 		"Rules of this workspace: Linux without root, Node 22, Python 3.13 with uv, no Docker, no Postgres, MySQL, " +
 		"Redis or MongoDB (SQLite and files are fine), no GPU, no headless browser, about 4 GB of memory. Pin " +
@@ -476,12 +544,18 @@ Use the tools rather than building things inside this workspace.
 
 ## Installing a project the user names
 
-1. Check it can run here: an OSI open-source license; Node, Python or a
-   prebuilt Linux build; none of the blockers above; useful without an account
-   or key. If it can't, say why in one sentence and suggest an alternative.
+1. Check it can run here before installing: read its README and
+   package.json (engines) or pyproject.toml with curl from
+   raw.githubusercontent.com. It needs an OSI open-source license; Node 22 or
+   older, Python, or a prebuilt Linux build; none of the blockers above; and
+   to be useful without an account or key. If it can't run, say why in one
+   sentence and suggest an alternative. Don't install it.
 2. install_project with its GitHub address (and a release tag when you know
-   one). Then app_status until it is running, or report what went wrong.
-3. Tell the user the app's name and what they will see first.
+   one). Check app_status every 30 seconds for at most 3 minutes.
+3. When it runs, tell the user the app's name and what they will see first.
+   If it is still installing after 3 minutes, say so: it will appear in their
+   projects when ready. If it failed or was refused, say why in plain words
+   and remove that app with remove_app, so no broken project is left behind.
 
 ## Talking with the user
 
