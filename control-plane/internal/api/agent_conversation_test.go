@@ -24,6 +24,9 @@ func listMessages(t *testing.T, s *Server) (msgs []v1AgentMessage, working bool)
 	req.SetPathValue("id", "h1")
 	rec := httptest.NewRecorder()
 	s.v1ListAgentMessages(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list messages: %d %s", rec.Code, rec.Body.String())
+	}
 	var out struct {
 		Messages []v1AgentMessage `json:"messages"`
 		Working  bool             `json:"working"`
