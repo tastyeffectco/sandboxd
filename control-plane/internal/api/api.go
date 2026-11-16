@@ -317,6 +317,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/api-keys/{id}", s.observe("DELETE /v1/api-keys/{id}", s.v1DeleteAPIKey))
 	mux.HandleFunc("POST /v1/apps", s.observe("POST /v1/apps", s.v1CreateApp))
 	mux.HandleFunc("GET /v1/agent-catalog", s.observe("GET /v1/agent-catalog", s.v1ListAgentCatalog))
+	mux.HandleFunc("GET /v1/assistant", s.observe("GET /v1/assistant", s.v1GetAssistant))
+	mux.HandleFunc("POST /v1/assistant", s.observe("POST /v1/assistant", s.v1EnsureAssistant))
 	mux.HandleFunc("GET /v1/agent-instances", s.observe("GET /v1/agent-instances", s.v1ListAgentInstances))
 	mux.HandleFunc("POST /v1/agent-instances", s.observe("POST /v1/agent-instances", s.v1CreateAgentInstance))
 	mux.HandleFunc("GET /v1/agent-instances/{id}", s.observe("GET /v1/agent-instances/{id}", s.v1GetAgentInstance))

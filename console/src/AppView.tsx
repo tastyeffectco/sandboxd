@@ -104,7 +104,10 @@ export function AppView({
   consumeBuild,
   chatDraft,
   saveChatDraft,
+  assistant,
 }: {
+  // The person's sandboxd agent: only the chat, no workspace tools.
+  assistant?: boolean
   chatDraft?: BuildIntent
   saveChatDraft?: (draft: BuildIntent) => void
   initialBuild?: BuildIntent
@@ -418,7 +421,7 @@ export function AppView({
           Workspace
         </button>
       </div>
-      <div className={`workspace-layout mobile-${mobilePane}`}>
+      <div className={`workspace-layout mobile-${mobilePane}${assistant ? ' assistant-layout' : ''}`}>
         <div className="workspace-chat">
           <AgentChat
             draft={chatDraft}
@@ -433,7 +436,7 @@ export function AppView({
             ready={!preparing && (!app.git || autoRef.current === sb?.id)}
           />
         </div>
-        <div className="workspace-stage">
+        <div className="workspace-stage" hidden={assistant}>
           <nav className="workspace-tabs" aria-label="Project tools">
             {primary.map((t) => (
               <button

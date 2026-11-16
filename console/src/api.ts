@@ -630,6 +630,8 @@ export const api = {
   // Full delete: the app AND everything it owns (sandbox container, workspace
   // image, snapshots, and all app rows). Irreversible.
   deleteApp: (id: string) => req<unknown>('DELETE', `/v1/apps/${id}`),
+  // The person's sandboxd agent: made on first use; each call refreshes its tool settings.
+  ensureAssistant: () => req<{ app_id: string }>('POST', '/v1/assistant'),
   createAppSandbox: (id: string, body: { template?: string; runtime_preset?: string } = {}) =>
     req<Sandbox>('POST', `/v1/apps/${id}/sandbox`, body),
 

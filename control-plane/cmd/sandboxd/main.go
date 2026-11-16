@@ -626,6 +626,8 @@ func main() {
 	// authenticated by their own agent secret.
 	if proxyMux != nil {
 		proxyMux.Handle("/agents/", server.AgentProxy())
+		// The person's sandboxd agent reaches its tools here too, from its workspace.
+		proxyMux.Handle("/assistant/", server.AgentProxy())
 	}
 	root := hostDispatch(wakeHandler, apiMux, log)
 	root = logging.Middleware(log, root)

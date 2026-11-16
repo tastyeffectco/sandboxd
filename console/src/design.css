@@ -3220,3 +3220,12 @@ select.agent-model {
 .trending-section {
   margin: 8px 0 36px;
 }
+
+/* Ask sandboxd: the main agent's chat, centred, without the workspace tools. */
+.workspace-layout.assistant-layout {
+  grid-template-columns: minmax(0, 820px);
+  justify-content: center;
+}
+.workspace-layout.assistant-layout .workspace-stage[hidden] {
+  display: none;
+}

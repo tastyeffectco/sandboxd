@@ -6,6 +6,7 @@ import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { AgentsView } from './AgentsView'
 import { DiscoverView } from './DiscoverView'
+import { AssistantView, ASSISTANT_TAG } from './AssistantView'
 import { TrendingStrip } from './TrendingStrip'
 import { AgentRoom } from './AgentRoom'
 import { syncAgentTimeZone } from './timeZone'
@@ -38,13 +39,16 @@ function readRoute(): Route {
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
   if (parts[0] === 'discover' && parts[1]) return { name: 'discover', category: decodeURIComponent(parts[1]) }
-  return { name: ['brain', 'discover', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
+  return {
+    name: ['brain', 'discover', 'agents', 'settings', 'assistant'].includes(parts[0]) ? parts[0] : 'apps',
+  } as Route
 }
 
 type Route =
   | { name: 'apps' }
   | { name: 'brain' }
   | { name: 'discover'; category?: string }
+  | { name: 'assistant' }
   | { name: 'agents' }
   | { name: 'agent'; id: string }
   | { name: 'settings'; section?: string }
@@ -129,7 +133,7 @@ export default function App({
     () =>
       api
         .listApps()
-        .then(setApps)
+        .then((list) => setApps(list.filter((a) => !(a.tags || []).includes(ASSISTANT_TAG))))
         .catch(() => {}),
     [],
   )
@@ -300,6 +304,7 @@ export default function App({
   const goApp = (id: string, tab?: string) => setRoute({ name: 'app', id, tab })
 
   const nav = [
+    { key: 'assistant', label: 'Ask sandboxd', icon: 'spark' },
     { key: 'apps', label: 'Build & projects', icon: 'grid' },
     { key: 'discover', label: 'Free apps', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
@@ -548,6 +553,16 @@ export default function App({
                 setPendingBuilds((p) => ({ ...p, [id]: intent }))
                 goApp(id)
               }}
+            />
+          )}
+          {route.name === 'assistant' && (
+            <AssistantView
+              onError={onError}
+              toast={toast}
+              goApps={() => setRoute({ name: 'apps' })}
+              goSettings={() => setRoute({ name: 'settings' })}
+              apps={apps}
+              onOpenApp={(id, tab) => goApp(id, tab)}
             />
           )}
           {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}

@@ -461,11 +461,13 @@ export function plainTaskError(message?: string) {
 // A free-app install sends the coding agent its exact setup; people see one
 // line, with the details a click away.
 export function UserPrompt({ text }: { text: string }) {
-  const install = /^Install (.+?) from sandboxd's app catalog/.exec(text)
-  if (!install) return <div className="user-message">{text}</div>
+  const catalog = /^Install (.+?) from sandboxd's app catalog/.exec(text)
+  // An install the sandboxd agent started (install_project).
+  const project = /^Install the open-source project https:\/\/github\.com\/[^/\s]+\/([^\s/]+?) so it runs/.exec(text)
+  if (!catalog && !project) return <div className="user-message">{text}</div>
   return (
     <div className="user-message" data-testid="catalog-install-message">
-      <span>Install {install[1]} from Free apps</span>
+      <span>{catalog ? `Install ${catalog[1]} from Free apps` : `Install ${project![1]} from GitHub`}</span>
       <details className="install-details">
         <summary>Details</summary>
         <pre>{text}</pre>
