@@ -47,4 +47,5 @@ fails on Node 22), Puter (needs its own domain), VERT (bun only), copyparty (wor
 with files reachable only on this PC), Ghost 6
 (wants MySQL even in local mode), Etherpad 3 (needs Node 24), Grist 1.7 (redirects to an
 absolute URL built from the Host header), NocoDB (Sustainable Use
-License since 2026).
+License since 2026), PairDrop (sends files between devices, but the preview
+opens only on this PC), Mermaid Live Editor (needs Node 24, no release tags).
