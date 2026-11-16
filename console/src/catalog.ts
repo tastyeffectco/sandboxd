@@ -268,6 +268,20 @@ export const CATALOG: CatalogApp[] = [
     minutes: 1,
   },
   {
+    id: 'silverbullet',
+    name: 'SilverBullet',
+    pitch: 'Notes you write in plain text, with links, quick notes and a daily journal.',
+    category: 'Notes',
+    license: 'MIT',
+    stars: '6.5k',
+    repo: 'https://github.com/silverbulletmd/silverbullet',
+    color: '#4f6bed',
+    source: false,
+    start:
+      '[ -x ./silverbullet ] || (curl -fsSL -o sb.zip https://github.com/silverbulletmd/silverbullet/releases/download/2.12.1/silverbullet-server-linux-$(uname -m).zip && python3 -m zipfile -e sb.zip . && chmod +x silverbullet && rm sb.zip); mkdir -p notes; export SB_HOSTNAME=0.0.0.0 SB_PORT=3000; exec ./silverbullet --single notes',
+    minutes: 1,
+  },
+  {
     id: 'bentopdf',
     name: 'BentoPDF',
     pitch: 'Merge, split, sign and compress PDFs, without uploading them anywhere.',
