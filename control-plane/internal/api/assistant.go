@@ -520,6 +520,42 @@ func installProjectPrompt(repo, ref string) string {
 }
 
 // assistantMessageAgent sends a task to an agent and waits for its answer.
+// assistantWakeAgent starts a paused agent (after a restart, or stopped by the
+// person) and waits until it can take a message, so the person never has to
+// click Start for their sandboxd agent's request to get through.
+func (s *Server) assistantWakeAgent(ctx context.Context, h *store.AgentInstance, agentID string) error {
+	var a struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	path := "/v1/agent-instances/" + agentID
+	if err := s.agentCall(ctx, h, http.MethodGet, path, nil, &a); err != nil {
+		return err
+	}
+	if a.Status == "running" {
+		return nil
+	}
+	if a.Status != "starting" {
+		if err := s.agentCall(ctx, h, http.MethodPost, path+"/start", nil, nil); err != nil {
+			return fmt.Errorf("%s is paused and could not be started: %w", a.Name, err)
+		}
+	}
+	deadline := time.Now().Add(assistantWakeWait)
+	for {
+		if err := s.agentCall(ctx, h, http.MethodGet, path, nil, &a); err == nil && a.Status == "running" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s is still starting; try again in a minute", a.Name)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(assistantPoll):
+		}
+	}
+}
+
 func (s *Server) assistantMessageAgent(ctx context.Context, h *store.AgentInstance, agentID, text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if agentID == "" || text == "" {
@@ -527,6 +563,9 @@ func (s *Server) assistantMessageAgent(ctx context.Context, h *store.AgentInstan
 	}
 	before, _, err := s.agentConversation(ctx, h, agentID)
 	if err != nil {
+		return "", err
+	}
+	if err := s.assistantWakeAgent(ctx, h, agentID); err != nil {
 		return "", err
 	}
 	if err := s.agentCall(ctx, h, http.MethodPost, "/v1/agent-instances/"+agentID+"/messages",
@@ -564,6 +603,8 @@ func (s *Server) assistantMessageAgent(ctx context.Context, h *store.AgentInstan
 var (
 	assistantWait = 4 * time.Minute
 	assistantPoll = 2 * time.Second
+	// assistantWakeWait: how long a paused agent may take to start.
+	assistantWakeWait = 90 * time.Second
 )
 
 func (s *Server) agentConversation(ctx context.Context, h *store.AgentInstance, agentID string) ([]v1AgentMessage, bool, error) {

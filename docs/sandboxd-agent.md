@@ -29,7 +29,7 @@ and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-age
   | `remove_agent` | One of the person's agents, only after they say yes |
   | `add_agent` | Adds an agent from the agent catalog (without a package: lists the catalog), on the person's first AI connection agents can use |
   | `read_agent_memory` | An agent's memory notes from its own folder (MEMORY.md, USER.md, memories/, memory/), read-only and size-limited |
-  | `list_agents`, `message_agent`, `read_agent_conversation` | The person's agents; a task sent to one shows in that agent's chat as "From the user's sandboxd agent: ..." and its answer comes back (waits up to 4 minutes) |
+  | `list_agents`, `message_agent`, `read_agent_conversation` | The person's agents (`message_agent` starts a paused agent first); a task sent to one shows in that agent's chat as "From the user's sandboxd agent: ..." and its answer comes back (waits up to 4 minutes) |
 
 Builds and installs it starts run on the same AI the person chose for it (the
 engine remembers the agent, connection and model of the latest message sent to
@@ -62,7 +62,10 @@ itself within one turn (the engine counts the messages sent to it).
   same for an agent ("remove the agent Temp" → asked, then removed after "Yes.").
 - Codex: with the generated `.codex/config.toml`, `codex exec` (0.162.1, as
   runtimed runs it) connects with the secret, lists the tools and calls them
-  (checked against a stand-in model and tool server; no ChatGPT login on the PC).
+  (checked against a stand-in model and tool server), then for real on the
+  Windows PC with the person's ChatGPT login (GPT-5.6-Luna): "Which agents do I
+  have, and how many apps?" → the three agents and 14 apps; "Ask Hermes the
+  capital of Japan" → started the paused Hermes itself, then "Tokyo." (49 s).
 
 ## Not yet
 
