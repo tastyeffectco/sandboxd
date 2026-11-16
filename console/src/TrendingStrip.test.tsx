@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { TrendingStrip } from './TrendingStrip'
 import { api } from './api'
-import { CATALOG, TRENDING } from './catalog'
+import { CATALOG, TRENDING, starCount } from './catalog'
 
 vi.mock('./api', () => ({
   api: { createApp: vi.fn(), createAppSandbox: vi.fn(), putWorkspaceFile: vi.fn() },
@@ -16,10 +16,13 @@ const strip = (over: Partial<Parameters<typeof TrendingStrip>[0]> = {}) => {
 }
 
 describe('TrendingStrip (home page)', () => {
-  it('lists the trending entries of the catalog', () => {
-    strip()
-    expect(TRENDING.length).toBeGreaterThan(0)
-    for (const e of TRENDING) expect(screen.getByTestId(`trending-${e.id}`).textContent).toContain(e.pitch)
+  it('lists the most-starred trending entries, and links to the rest', () => {
+    strip({ onSeeAll: vi.fn() })
+    expect(TRENDING.length).toBeGreaterThan(6)
+    for (const e of TRENDING.slice(0, 6)) expect(screen.getByTestId(`trending-${e.id}`).textContent).toContain(e.pitch)
+    expect(screen.queryByTestId(`trending-${TRENDING[6].id}`)).toBeNull()
+    expect(starCount(TRENDING[0].stars)).toBeGreaterThanOrEqual(starCount(TRENDING[1].stars))
+    expect(screen.getByTestId('trending-all').textContent).toContain(String(TRENDING.length))
   })
 
   it('writes the entry files into the new project before the install task', async () => {

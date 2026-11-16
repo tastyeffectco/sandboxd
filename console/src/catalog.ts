@@ -398,11 +398,60 @@ export const CATALOG: CatalogApp[] = [
       '[ -f pdfcraft-web-0.21.1/index.html ] || (curl -fsSL -o pc.zip https://github.com/storytold/pdfcraft/releases/download/v0.21.1/pdfcraft-web-0.21.1.zip && python3 -m zipfile -e pc.zip . && rm pc.zip); exec npx --yes serve@14.2.4 pdfcraft-web-0.21.1 -l tcp://0.0.0.0:3000',
     minutes: 1,
   },
+  {
+    id: 'filmcraft',
+    name: 'FilmCraft',
+    pitch: 'A video editor with a timeline, titles and audio mixing. Opens with a demo project to play with.',
+    category: 'Video',
+    license: 'Apache-2.0',
+    stars: '18k',
+    repo: 'https://github.com/storytold/filmcraft',
+    color: '#7048e8',
+    source: false,
+    trending: true,
+    start:
+      '[ -f filmcraft-web-0.20.1/index.html ] || (curl -fsSL -o w.zip https://github.com/storytold/filmcraft/releases/download/v0.20.1/filmcraft-web-0.20.1.zip && python3 -m zipfile -e w.zip . && rm w.zip && if [ -d filmcraft-web-0.20.1/app ] && [ ! -d filmcraft-web-0.20.1/app/snippets ]; then cp -r filmcraft-web-0.20.1/snippets filmcraft-web-0.20.1/app/; fi); exec npx --yes serve@14.2.4 filmcraft-web-0.20.1 -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
+  {
+    id: 'gridcraft',
+    name: 'GridCraft',
+    pitch: 'A spreadsheet with formulas, charts and Excel files, free and private.',
+    category: 'Documents',
+    license: 'Apache-2.0',
+    stars: '8k',
+    repo: 'https://github.com/storytold/gridcraft',
+    color: '#2b8a3e',
+    source: false,
+    trending: true,
+    start:
+      '[ -f gridcraft-web-0.19.1/index.html ] || (curl -fsSL -o w.zip https://github.com/storytold/gridcraft/releases/download/v0.19.1/gridcraft-web-0.19.1.zip && python3 -m zipfile -e w.zip . && rm w.zip && if [ -d gridcraft-web-0.19.1/app ] && [ ! -d gridcraft-web-0.19.1/app/snippets ]; then cp -r gridcraft-web-0.19.1/snippets gridcraft-web-0.19.1/app/; fi); exec npx --yes serve@14.2.4 gridcraft-web-0.19.1 -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
+  {
+    id: 'deckcraft',
+    name: 'DeckCraft',
+    pitch: 'Make slide presentations with transitions and present them, like PowerPoint but free.',
+    category: 'Documents',
+    license: 'Apache-2.0',
+    stars: '5k',
+    repo: 'https://github.com/storytold/deckcraft',
+    color: '#f76707',
+    source: false,
+    trending: true,
+    start:
+      '[ -f deckcraft-web-0.18.1/index.html ] || (curl -fsSL -o w.zip https://github.com/storytold/deckcraft/releases/download/v0.18.1/deckcraft-web-0.18.1.zip && python3 -m zipfile -e w.zip . && rm w.zip && if [ -d deckcraft-web-0.18.1/app ] && [ ! -d deckcraft-web-0.18.1/app/snippets ]; then cp -r deckcraft-web-0.18.1/snippets deckcraft-web-0.18.1/app/; fi); exec npx --yes serve@14.2.4 deckcraft-web-0.18.1 -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
 ]
 
 export const catalogTag = (id: string) => `catalog:${id}`
 
-export const TRENDING = CATALOG.filter((a) => a.trending)
+// "113k" -> 113000, for ordering by popularity.
+export const starCount = (stars: string) => parseFloat(stars) * (/k$/i.test(stars) ? 1000 : 1)
+
+// Most-starred first.
+export const TRENDING = CATALOG.filter((a) => a.trending).sort((a, b) => starCount(b.stars) - starCount(a.stars))
 
 // sandbox.yaml for an entry. JSON strings are valid YAML double-quoted scalars.
 export function catalogManifest(app: CatalogApp): string {

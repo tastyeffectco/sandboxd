@@ -13,12 +13,17 @@ export function TrendingStrip({
   onOpen,
   onError,
   items = TRENDING,
+  limit = 6,
+  onSeeAll,
 }: {
   apps: TApp[]
   onInstalled: (id: string, intent: BuildIntent) => void
   onOpen: (id: string) => void
   onError: (message: string) => void
   items?: CatalogApp[]
+  // How many to show; "See all" opens the rest.
+  limit?: number
+  onSeeAll?: () => void
 }) {
   const [installing, setInstalling] = useState('')
   if (items.length === 0) return null
@@ -43,9 +48,14 @@ export function TrendingStrip({
           <h2>Trending on GitHub</h2>
           <p>Open-source projects everyone is talking about, ready to use in one click. No setup.</p>
         </div>
+        {onSeeAll && items.length > limit && (
+          <button className="text-button" onClick={onSeeAll} data-testid="trending-all">
+            See all {items.length}
+          </button>
+        )}
       </div>
       <div className="project-grid discover-grid">
-        {items.map((entry) => {
+        {items.slice(0, limit).map((entry) => {
           const installed = apps.find((a) => (a.tags || []).includes(catalogTag(entry.id)))
           return (
             <article key={entry.id} className="project-card catalog-card" data-testid={`trending-${entry.id}`}>

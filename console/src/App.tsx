@@ -516,6 +516,7 @@ export default function App({
               featured={
                 <TrendingStrip
                   apps={apps}
+                  onSeeAll={() => setRoute({ name: 'discover' })}
                   onError={onError}
                   onOpen={(id) => goApp(id)}
                   onInstalled={(id, intent) => {
