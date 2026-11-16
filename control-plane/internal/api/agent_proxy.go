@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,10 @@ import (
 // connection or model.
 func (s *Server) AgentProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/assistant/mcp" {
+			s.assistantProxy(w, r)
+			return
+		}
 		rest, ok := strings.CutPrefix(r.URL.Path, "/agents/")
 		id, op, _ := strings.Cut(rest, "/")
 		if rest == "inbox" { // the short form: the secret says which agent
@@ -127,6 +132,14 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return o
 }
 
+// agentAppRow is the part of an app the tools read.
+type agentAppRow struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	CurrentSandboxID string   `json:"current_sandbox_id"`
+	Tags             []string `json:"tags"`
+}
+
 var agentTools = []mcpTool{
 	{"list_apps", "List the user's sandboxd apps with their status and preview links.", obj(map[string]any{})},
 	{"create_app", "Create a new web app on sandboxd from an idea. A coding agent builds it in its own workspace; " +
@@ -158,6 +171,18 @@ var agentTools = []mcpTool{
 }
 
 func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
+	s.serveMCP(w, r, agentTools, "Use these tools to build and change web apps on the user's sandboxd. "+
+		"Building takes minutes: after create_app or ask_app, check app_status. "+
+		"Scheduled and background work reaches the user only through message_user.",
+		func(ctx context.Context, name string, args map[string]string) (string, error) {
+			return s.agentTool(ctx, h, name, args)
+		})
+}
+
+// serveMCP answers one MCP request (JSON responses, no streaming) with the
+// given tools.
+func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request, tools []mcpTool, instructions string,
+	call func(ctx context.Context, name string, args map[string]string) (string, error)) {
 	var req mcpRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusOK, mcpError(nil, -32700, "invalid JSON"))
@@ -178,14 +203,12 @@ func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.Agent
 			version = p.ProtocolVersion
 		}
 		result = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}},
-			"serverInfo": map[string]string{"name": "sandboxd", "version": "1"},
-			"instructions": "Use these tools to build and change web apps on the user's sandboxd. " +
-				"Building takes minutes: after create_app or ask_app, check app_status. " +
-				"Scheduled and background work reaches the user only through message_user."}
+			"serverInfo":   map[string]string{"name": "sandboxd", "version": "1"},
+			"instructions": instructions}
 	case "ping":
 		result = map[string]any{}
 	case "tools/list":
-		result = map[string]any{"tools": agentTools}
+		result = map[string]any{"tools": tools}
 	case "tools/call":
 		var p struct {
 			Name      string            `json:"name"`
@@ -195,7 +218,7 @@ func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.Agent
 			writeJSON(w, http.StatusOK, mcpError(req.ID, -32602, "invalid tool arguments"))
 			return
 		}
-		text, err := s.agentTool(r.Context(), h, p.Name, p.Arguments)
+		text, err := call(r.Context(), p.Name, p.Arguments)
 		if err != nil {
 			result = map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": err.Error()}}}
 		} else {
@@ -218,15 +241,13 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 	switch name {
 	case "list_apps":
 		var out struct {
-			Apps []struct {
-				ID               string `json:"id"`
-				Name             string `json:"name"`
-				CurrentSandboxID string `json:"current_sandbox_id"`
-			} `json:"apps"`
+			Apps []agentAppRow `json:"apps"`
 		}
 		if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps", nil, &out); err != nil {
 			return "", err
 		}
+		// The sandboxd agent's own workspace is not one of the person's apps.
+		out.Apps = slices.DeleteFunc(out.Apps, func(a agentAppRow) bool { return slices.Contains(a.Tags, assistantTag) })
 		if len(out.Apps) == 0 {
 			return "No apps yet.", nil
 		}
@@ -243,7 +264,9 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 			return "", errors.New("describe the app in idea")
 		}
 		day := time.Now().UTC().Format("2006-01-02")
-		if ok, err := s.Store.TakeAgentAppSlot(ctx, h.ID, day, agentAppsPerDay); err != nil {
+		if h.ID == assistantID {
+			// The person's own assistant acts on their direct request: no daily limit.
+		} else if ok, err := s.Store.TakeAgentAppSlot(ctx, h.ID, day, agentAppsPerDay); err != nil {
 			return "", err
 		} else if !ok {
 			return "", fmt.Errorf("the daily limit of %d new apps is reached; the user can create more in sandboxd", agentAppsPerDay)
@@ -322,13 +345,33 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 	return "", fmt.Errorf("unknown tool %q", name)
 }
 
+// buildRequest is the task an agent's build runs: OpenCode's default (its free
+// model when nothing is connected), or for the sandboxd agent the same AI the
+// person chose for it.
+func (s *Server) buildRequest(h *store.AgentInstance, prompt string) map[string]any {
+	body := map[string]any{"prompt": prompt, "agent": "opencode"}
+	if h.ID != assistantID {
+		return body
+	}
+	c := s.assistants.choice(h.OwnerToken)
+	if c.Agent != "" {
+		body["agent"] = c.Agent
+	}
+	if c.Provider != "" {
+		body["provider"] = c.Provider
+	}
+	if c.Model != "" {
+		body["model"] = c.Model
+	}
+	return body
+}
+
 // agentBuild starts a coding task with the default agent (OpenCode's free
 // model when nothing is connected), waiting briefly for a new workspace.
 func (s *Server) agentBuild(ctx context.Context, h *store.AgentInstance, sandboxID, prompt string) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		err := s.agentCall(ctx, h, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/tasks",
-			map[string]any{"prompt": prompt, "agent": "opencode"}, nil)
+		err := s.agentCall(ctx, h, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/tasks", s.buildRequest(h, prompt), nil)
 		// A new workspace is still starting: "sandbox is creating — cannot run a
 		// task", or its supervisor's socket is not up yet ("runtimed: …").
 		starting := err != nil && (strings.Contains(err.Error(), "cannot run a task") || strings.HasPrefix(err.Error(), "runtimed:"))

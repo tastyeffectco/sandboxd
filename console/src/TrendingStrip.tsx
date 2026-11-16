@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { App as TApp } from './api'
-import { BuildIntent, defaultChoice } from './AgentPicker'
-import { CatalogApp, TRENDING, catalogTag, installPrompt } from './catalog'
+import { CatalogApp, TRENDING, catalogTag } from './catalog'
 import { installCatalogApp } from './catalogInstall'
 import { Btn } from './design/kit'
 
@@ -17,7 +16,7 @@ export function TrendingStrip({
   onSeeAll,
 }: {
   apps: TApp[]
-  onInstalled: (id: string, intent: BuildIntent) => void
+  onInstalled: (id: string) => void
   onOpen: (id: string) => void
   onError: (message: string) => void
   items?: CatalogApp[]
@@ -33,7 +32,7 @@ export function TrendingStrip({
     setInstalling(entry.id)
     try {
       const id = await installCatalogApp(entry)
-      onInstalled(id, { ...defaultChoice, prompt: installPrompt(entry) })
+      onInstalled(id)
     } catch (e) {
       onError((e as Error).message)
     } finally {

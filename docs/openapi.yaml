@@ -1671,6 +1671,46 @@ paths:
                         label: { type: string }
                         description: { type: string }
                         download: { type: string, description: approximate image size }
+  /v1/assistant:
+    get:
+      operationId: getAssistant
+      tags: [agents]
+      summary: The person's sandboxd agent (main assistant)
+      description: >
+        The sandboxd agent is the coding agent of a hidden project (tagged
+        `sandboxd:assistant`) that can use sandboxd's tools: apps, open-source
+        installs, agents and their conversations. The person chats with it like
+        with any project's coding agent, on any agent and model.
+      responses:
+        "200":
+          description: Its project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_id: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: ensureAssistant
+      tags: [agents]
+      summary: Make the person's sandboxd agent, or refresh its tool settings
+      description: >
+        Creates the hidden project on first use. Every call writes the project's
+        tool settings again (opencode.json, .mcp.json) with a fresh secret and
+        sandboxd's current address, so it is safe to call whenever the
+        assistant is opened.
+      responses:
+        "200":
+          description: Its project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_id: { type: string }
+        "500": { $ref: "#/components/responses/Error" }
+
   /v1/agent-instances:
     get:
       operationId: listAgentInstances

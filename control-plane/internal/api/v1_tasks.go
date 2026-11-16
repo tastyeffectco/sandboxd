@@ -108,6 +108,11 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "prompt is required")
 		return
 	}
+	if s.assistants.note(id, assistantChoice{Agent: req.Agent, Provider: req.Provider, Model: req.Model}) && req.TimeoutS == 0 {
+		// The sandboxd agent orchestrates (installs, other agents' answers),
+		// which outlasts a normal build.
+		req.TimeoutS = assistantTaskTimeoutS
+	}
 	agent := req.Agent
 	if agent == "" {
 		agent = s.DefaultAgent // operator default (SANDBOXD_DEFAULT_AGENT)

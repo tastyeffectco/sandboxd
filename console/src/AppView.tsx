@@ -104,7 +104,10 @@ export function AppView({
   consumeBuild,
   chatDraft,
   saveChatDraft,
+  assistant,
 }: {
+  // The person's sandboxd agent: only the chat, no workspace tools.
+  assistant?: boolean
   chatDraft?: BuildIntent
   saveChatDraft?: (draft: BuildIntent) => void
   initialBuild?: BuildIntent
@@ -265,12 +268,19 @@ export function AppView({
         <button className="icon-button workspace-back" onClick={goApps} aria-label="Back to projects">
           <Icon name="grid" />
         </button>
-        <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename app">
-          <h1>{app.name}</h1>
-          <Icon name="chevron" size={14} />
-        </button>
-        <StatusPill status={sb?.status || 'not started'} />
-        <div className="workspace-actions">
+        {assistant ? (
+          <div className="workspace-title">
+            <h1>Ask sandboxd</h1>
+            <span className="assistant-sub">Builds and installs apps, and works with your agents</span>
+          </div>
+        ) : (
+          <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename app">
+            <h1>{app.name}</h1>
+            <Icon name="chevron" size={14} />
+          </button>
+        )}
+        {!assistant && <StatusPill status={sb?.status || 'not started'} />}
+        <div className="workspace-actions" hidden={assistant}>
           {!sb && (
             <Btn variant="primary" disabled={busy} onClick={() => act(() => api.createAppSandbox(appId))}>
               Create workspace
@@ -418,9 +428,10 @@ export function AppView({
           Workspace
         </button>
       </div>
-      <div className={`workspace-layout mobile-${mobilePane}`}>
+      <div className={`workspace-layout mobile-${mobilePane}${assistant ? ' assistant-layout' : ''}`}>
         <div className="workspace-chat">
           <AgentChat
+            assistant={assistant}
             draft={chatDraft}
             saveDraft={saveChatDraft}
             sb={sb}
@@ -433,7 +444,7 @@ export function AppView({
             ready={!preparing && (!app.git || autoRef.current === sb?.id)}
           />
         </div>
-        <div className="workspace-stage">
+        <div className="workspace-stage" hidden={assistant}>
           <nav className="workspace-tabs" aria-label="Project tools">
             {primary.map((t) => (
               <button

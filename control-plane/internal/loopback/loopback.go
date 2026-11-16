@@ -34,6 +34,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // sandbox user/group inside the base image (`useradd -u 1000 -g 1000`). The OSS
@@ -183,12 +184,19 @@ func (m *Manager) ProvisionFromTemplate(ctx context.Context, id, templatePath st
 func (m *Manager) NormalizeOwnership(dir string) error { return m.normalizeOwnership(dir) }
 
 func (m *Manager) normalizeOwnership(dir string) error {
-	n := 0
-	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
+	n, skipped := 0, 0
+	if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if cerr := lchownFn(path, sandboxUID, sandboxGID); cerr != nil {
+		if cerr := chownEntry(path, d); cerr != nil {
+			// The coding agents' own state (.runtimed: session history, its
+			// read-only git objects) is not needed to restore the app, so a
+			// file there that can't be chowned does not fail the restore.
+			if rel, _ := filepath.Rel(dir, path); rel == ".runtimed" || strings.HasPrefix(rel, ".runtimed"+string(filepath.Separator)) {
+				skipped++
+				return nil
+			}
 			return cerr
 		}
 		n++
@@ -198,9 +206,45 @@ func (m *Manager) normalizeOwnership(dir string) error {
 	}
 	if m.Log != nil {
 		m.Log.Info("normalized workspace ownership for snapshot/template restore",
-			"dir", dir, "uid", sandboxUID, "gid", sandboxGID, "entries", n)
+			"dir", dir, "uid", sandboxUID, "gid", sandboxGID, "entries", n, "skipped_agent_state", skipped)
 	}
 	return nil
+}
+
+// ownedBySandboxFn reports whether path already belongs to the sandbox user;
+// overridable in tests (the test process's own uid may be 1000).
+var ownedBySandboxFn = func(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	return ok && st.Uid == sandboxUID && st.Gid == sandboxGID
+}
+
+// chownEntry gives one entry to the sandbox user. An entry that already
+// belongs to it is left alone: a snapshot copied with cp -a usually does, and
+// Docker Desktop's macOS file sharing refuses to chown some read-only files
+// even to their current owner (issue #173). A refused read-only file is made
+// writable for its owner, chowned, and given its mode back.
+func chownEntry(path string, d fs.DirEntry) error {
+	if ownedBySandboxFn(path) {
+		return nil
+	}
+	err := lchownFn(path, sandboxUID, sandboxGID)
+	if err == nil || d.Type()&fs.ModeSymlink != 0 {
+		return err
+	}
+	info, serr := os.Lstat(path)
+	if serr != nil || info.Mode().Perm()&0o200 != 0 {
+		return err
+	}
+	if os.Chmod(path, info.Mode().Perm()|0o200) != nil {
+		return err
+	}
+	err = lchownFn(path, sandboxUID, sandboxGID)
+	_ = os.Chmod(path, info.Mode().Perm())
+	return err
 }
 
 // Release is a no-op for directory storage — there is no loopback to
