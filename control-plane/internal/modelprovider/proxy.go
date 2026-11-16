@@ -42,8 +42,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	suffix := "/chat/completions"
-	if c.Protocol == Anthropic {
+	// Codex speaks only OpenAI's Responses API, which OpenAI-compatible
+	// gateways such as OpenRouter also serve next to Chat Completions.
+	responses := c.Protocol != Anthropic && r.URL.Path == "/providers/"+g.Provider+"/v1/responses"
+	switch {
+	case c.Protocol == Anthropic:
 		suffix = "/messages"
+	case responses:
+		suffix = "/responses"
 	}
 	allowedQuery := r.URL.RawQuery == "" || (c.Protocol == Anthropic && r.URL.RawQuery == "beta=true")
 	if r.Method != http.MethodPost || r.URL.Path != "/providers/"+g.Provider+"/v1"+suffix ||
@@ -66,7 +72,13 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Permit inference fields only, and normalize duplicate JSON keys before
 	// forwarding so the model check and upstream parser cannot disagree.
 	fields := " model messages stream tools tool_choice temperature top_p "
-	if c.Protocol == Anthropic {
+	if responses {
+		// Codex's request (0.162): input instead of messages. Client metadata
+		// stays here; nothing else changes where the request goes.
+		delete(input, "client_metadata")
+		fields = " model input instructions stream tools tool_choice parallel_tool_calls reasoning store include " +
+			"prompt_cache_key text max_output_tokens temperature top_p "
+	} else if c.Protocol == Anthropic {
 		fields += " system max_tokens thinking top_k stop_sequences "
 	} else {
 		// Reasoning switches differ per model family: OpenAI reasoning_effort,

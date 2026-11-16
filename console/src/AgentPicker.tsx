@@ -57,7 +57,8 @@ export function AgentPicker({
       active = false
     }
   }, [value.agent, value.provider, reload, account?.status, account?.method, freeOpencode])
-  const selected = providers.find((p) => p.id === value.provider)
+  const usable = connectionsFor(value.agent, providers)
+  const selected = usable.find((p) => p.id === value.provider)
   return (
     <div className="agent-picker">
       <label>
@@ -70,7 +71,9 @@ export function AgentPicker({
             onChange({
               agent: e.target.value,
               model: '',
-              provider: ['claude-code', 'codex'].includes(e.target.value) ? '' : value.provider,
+              provider: connectionsFor(e.target.value, providers).some((p) => p.id === value.provider)
+                ? value.provider
+                : '',
             })
           }
         >
@@ -80,7 +83,7 @@ export function AgentPicker({
           <option value="codex">Codex</option>
         </select>
       </label>
-      {!['claude-code', 'codex'].includes(value.agent) && (
+      {value.agent !== 'claude-code' && (value.agent !== 'codex' || usable.length > 0) && (
         <label>
           Connection
           <select
@@ -91,7 +94,7 @@ export function AgentPicker({
             onChange={(e) => onChange({ ...value, provider: e.target.value, model: '' })}
           >
             <option value="">Connected account</option>
-            {providers.map((p) => (
+            {usable.map((p) => (
               <option value={p.id} key={p.id}>
                 {p.name}
               </option>
@@ -157,6 +160,15 @@ export function AgentPicker({
       </p>
     </div>
   )
+}
+
+// Codex speaks only OpenAI's API, so it can use OpenAI-compatible connections
+// (OpenRouter, OpenAI, Ollama...) but not Anthropic ones; Claude Code uses its
+// own sign-in or key.
+export function connectionsFor(agent: string, providers: ModelProvider[]) {
+  if (agent === 'claude-code') return []
+  if (agent === 'codex') return providers.filter((p) => p.protocol !== 'anthropic-messages')
+  return providers
 }
 
 export function choiceBlocked(choice: AgentChoice, providers: ModelProvider[], agents: Agent[]) {
