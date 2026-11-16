@@ -368,6 +368,36 @@ export const CATALOG: CatalogApp[] = [
       '[ -f humanoid.xml ] || curl -fsSL -o humanoid.xml https://raw.githubusercontent.com/google-deepmind/mujoco/4.0.1/model/humanoid/humanoid.xml; [ -f node_modules/@mujoco/mujoco/mujoco.wasm ] || (echo \'{"private":true}\' > package.json && npm i --no-audit --no-fund @mujoco/mujoco@4.0.1 three@0.178.0); exec npx --yes serve@14.2.4 . -l tcp://0.0.0.0:3000',
     minutes: 1,
   },
+  {
+    id: 'photocraft',
+    name: 'PhotoCraft',
+    pitch: 'A full photo editor with layers, filters and Photoshop files, running in your browser. Nothing to install.',
+    category: 'Images',
+    license: 'Apache-2.0',
+    stars: '80k',
+    repo: 'https://github.com/storytold/photocraft',
+    color: '#2f7bf5',
+    source: false,
+    trending: true,
+    start:
+      '[ -f photocraft-web-0.23.1/index.html ] || (curl -fsSL -o pc.zip https://github.com/storytold/photocraft/releases/download/v0.23.1/photocraft-web-0.23.1.zip && python3 -m zipfile -e pc.zip . && cp -r photocraft-web-0.23.1/snippets photocraft-web-0.23.1/app/ && rm pc.zip); exec npx --yes serve@14.2.4 photocraft-web-0.23.1 -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
+  {
+    id: 'pdfcraft',
+    name: 'PdfCraft',
+    pitch: 'Edit, sign, combine and compress PDFs, privately on this computer. Reads scanned pages too.',
+    category: 'Documents',
+    license: 'Apache-2.0',
+    stars: '21k',
+    repo: 'https://github.com/storytold/pdfcraft',
+    color: '#e8590c',
+    source: false,
+    trending: true,
+    start:
+      '[ -f pdfcraft-web-0.21.1/index.html ] || (curl -fsSL -o pc.zip https://github.com/storytold/pdfcraft/releases/download/v0.21.1/pdfcraft-web-0.21.1.zip && python3 -m zipfile -e pc.zip . && rm pc.zip); exec npx --yes serve@14.2.4 pdfcraft-web-0.21.1 -l tcp://0.0.0.0:3000',
+    minutes: 1,
+  },
 ]
 
 export const catalogTag = (id: string) => `catalog:${id}`
