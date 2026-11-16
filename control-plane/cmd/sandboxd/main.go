@@ -338,6 +338,7 @@ func main() {
 			IdleThresholdSeconds: persisted.IdleThresholdSeconds,
 			KeepaliveMaxSeconds:  persisted.KeepaliveMaxSeconds,
 			DefaultModels:        persisted.AgentDefaultModels,
+			TimeZone:             persisted.AgentTimeZone,
 		})
 		log.Info("instance settings: loaded persisted lifecycle tunables + agent default models")
 	}
@@ -625,6 +626,8 @@ func main() {
 	// authenticated by their own agent secret.
 	if proxyMux != nil {
 		proxyMux.Handle("/agents/", server.AgentProxy())
+		// The person's sandboxd agent reaches its tools here too, from its workspace.
+		proxyMux.Handle("/assistant/", server.AgentProxy())
 	}
 	root := hostDispatch(wakeHandler, apiMux, log)
 	root = logging.Middleware(log, root)
@@ -639,6 +642,9 @@ func main() {
 	// --- Phase 5 background goroutines ---------------------------------
 	gctx, gcancel := context.WithCancel(context.Background())
 	defer gcancel()
+
+	// Agents made by an older sandboxd are brought up to date.
+	go server.RefreshAgents(gctx)
 
 	// --- Anonymous telemetry + update check (internal/telemetry) -------
 	// Keep the release-checker cache warm regardless of the telemetry opt-out:

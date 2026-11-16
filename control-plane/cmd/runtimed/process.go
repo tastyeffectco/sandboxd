@@ -10,14 +10,19 @@ import (
 	"time"
 )
 
+// After maxFastFails consecutive fast failures the supervisor stops
+// restarting (a hopelessly broken process — reported down, not crash-looped).
 const (
-	// A run shorter than this counts as a fast failure.
-	fastFailWindow = 10 * time.Second
-	// After this many consecutive fast failures the supervisor stops
-	// restarting (a hopelessly broken process — reported down, not
-	// crash-looped).
 	maxFastFails = 5
 	maxBackoff   = 30 * time.Second
+)
+
+// Variables so tests can run the supervisor quickly.
+var (
+	// A run shorter than this counts as a fast failure.
+	fastFailWindow = 10 * time.Second
+	// The first backoff; it doubles with each consecutive fast failure.
+	backoffUnit = time.Second
 )
 
 // process supervises one long-running child — the web dev server OR a
@@ -40,44 +45,65 @@ type process struct {
 	running     bool
 	restarts    int
 	supervising bool // a supervise loop owns this process
+	// replaced: replace() swapped the command and stopped the child on
+	// purpose; that exit is not a failure. wake ends a backoff early.
+	replaced bool
+	wake     chan struct{}
 }
 
 func newProcess(name, kind, appDir, command, logPath string, log *slog.Logger) *process {
 	return &process{name: name, kind: kind, appDir: appDir, command: command, logPath: logPath,
-		log: log.With("process", name, "kind", kind)}
+		log: log.With("process", name, "kind", kind), wake: make(chan struct{}, 1)}
 }
 
 // supervise is the process's whole lifecycle; it runs until ctx is cancelled
-// (runtimed shutdown).
+// (runtimed shutdown) or the child keeps failing fast.
 func (p *process) supervise(ctx context.Context) {
 	p.mu.Lock()
 	p.supervising = true
 	p.mu.Unlock()
-	defer func() {
-		p.mu.Lock()
-		p.supervising = false
-		p.mu.Unlock()
-	}()
 	fastFails := 0
 	for {
 		if ctx.Err() != nil {
+			p.quit()
 			return
 		}
 		start := time.Now()
 		p.runOnce()
 		if ctx.Err() != nil {
-			return // intentional shutdown — do not restart
+			p.quit() // intentional shutdown — do not restart
+			return
 		}
 		p.mu.Lock()
 		p.restarts++
 		restarts := p.restarts
+		replaced := p.replaced
+		p.replaced = false
 		p.mu.Unlock()
+		if replaced {
+			// Stopped to run a new command: run it now, with a fresh count.
+			p.drainWake()
+			fastFails = 0
+			continue
+		}
 		if time.Since(start) < fastFailWindow {
 			fastFails++
 		} else {
 			fastFails = 0
 		}
 		if fastFails >= maxFastFails {
+			// Give up under the lock replace() checks, so a new command
+			// that arrives now starts a new supervisor instead of being lost.
+			p.mu.Lock()
+			if p.replaced {
+				p.replaced = false
+				p.mu.Unlock()
+				p.drainWake()
+				fastFails = 0
+				continue
+			}
+			p.supervising = false
+			p.mu.Unlock()
 			p.log.Error("process failing repeatedly — giving up until next start", "restarts", restarts)
 			return
 		}
@@ -85,9 +111,28 @@ func (p *process) supervise(ctx context.Context) {
 		p.log.Warn("process exited; restarting after backoff", "delay", delay.String(), "restarts", restarts)
 		select {
 		case <-time.After(delay):
+		case <-p.wake: // a new command arrived while waiting: run it now
+			p.mu.Lock()
+			p.replaced = false
+			p.mu.Unlock()
+			fastFails = 0
 		case <-ctx.Done():
+			p.quit()
 			return
 		}
+	}
+}
+
+func (p *process) quit() {
+	p.mu.Lock()
+	p.supervising = false
+	p.mu.Unlock()
+}
+
+func (p *process) drainWake() {
+	select {
+	case <-p.wake:
+	default:
 	}
 }
 
@@ -158,9 +203,20 @@ func (p *process) replace(ctx context.Context, command string, restartAfterTask 
 	p.command = command
 	p.restartAfterTask = restartAfterTask
 	supervising := p.supervising
+	if supervising {
+		p.replaced = true
+	} else {
+		p.supervising = true // claimed here, so two replaces start one supervisor
+	}
 	p.mu.Unlock()
 	if supervising {
-		p.stop() // the supervisor re-runs the (new) command after its backoff
+		// The supervisor runs the new command at once: after this stop, or
+		// right away if it was waiting out a backoff.
+		select {
+		case p.wake <- struct{}{}:
+		default:
+		}
+		p.stop()
 		return
 	}
 	go p.supervise(ctx)
@@ -181,7 +237,7 @@ func backoff(fastFails int) time.Duration {
 	if fastFails < 1 {
 		fastFails = 1
 	}
-	d := time.Second << (fastFails - 1)
+	d := backoffUnit << (fastFails - 1)
 	if d <= 0 || d > maxBackoff {
 		return maxBackoff
 	}

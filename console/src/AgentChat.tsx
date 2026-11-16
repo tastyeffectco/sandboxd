@@ -20,7 +20,10 @@ export function AgentChat({
   ready = true,
   draft,
   saveDraft,
+  assistant,
 }: {
+  // The sandboxd agent's chat: its own words and suggestions.
+  assistant?: boolean
   sb: Sandbox | null
   onError: (m: string) => void
   toast: (m: string) => void
@@ -223,7 +226,7 @@ export function AgentChat({
         </span>
         <div>
           <strong>
-            Build with{' '}
+            {assistant ? 'Your sandboxd agent, on' : 'Build with'}{' '}
             {choice.agent === 'opencode'
               ? 'OpenCode'
               : choice.agent === 'pi'
@@ -232,7 +235,7 @@ export function AgentChat({
                   ? 'Codex'
                   : 'Claude'}
           </strong>
-          <span>{active ? 'Working on your app' : 'Your coding partner'}</span>
+          <span>{active ? (assistant ? 'Working on it' : 'Working on your app') : assistant ? 'Pick any agent and model below' : 'Your coding partner'}</span>
         </div>
         <span className={`connection-dot ${active ? 'working' : ''}`} />
       </header>
@@ -270,16 +273,21 @@ export function AgentChat({
             <span className="welcome-icon">
               <Icon name="spark" size={28} />
             </span>
-            <h3>Let’s make it yours.</h3>
+            <h3>{assistant ? 'What can I do for you?' : 'Let’s make it yours.'}</h3>
             <p>
-              Describe what to build or change. Your agent can edit files, install packages and run your app.
+              {assistant
+                ? 'Ask for an app, an open-source project from GitHub, or a task for one of your agents. I take care of the rest.'
+                : 'Describe what to build or change. Your agent can edit files, install packages and run your app.'}
             </p>
             <div className="chat-suggestions">
-              {[
-                'Improve the layout and typography',
-                'Explain this project’s structure',
-                'Find and fix bugs in this app',
-              ].map((p) => (
+              {(assistant
+                ? [
+                    'Install the 2048 game for me',
+                    'What did my agents do today?',
+                    'Build me a recipe app with a shopping list',
+                  ]
+                : ['Improve the layout and typography', 'Explain this project’s structure', 'Find and fix bugs in this app']
+              ).map((p) => (
                 <button key={p} onClick={() => setText(p)}>
                   {p}
                   <Icon name="arrow" size={13} />
@@ -292,13 +300,13 @@ export function AgentChat({
           .filter((t) => terminal(t.status))
           .map((t) => (
             <article className="chat-turn" key={t.id}>
-              {t.prompt && <div className="user-message">{t.prompt}</div>}
+              {t.prompt && <UserPrompt text={t.prompt} />}
               <div className="agent-message">
                 <span className="message-label">
                   <Icon name="spark" size={13} />
                   {t.agent || 'Agent'}
                 </span>
-                <AgentMessage text={t.agent_message || t.error_message || `Task ${t.status}`} />
+                <AgentMessage text={plainTaskError(t.agent_message || t.error_message) || `Task ${t.status}`} />
               </div>
               {t.run_settings && (
                 <p
@@ -342,7 +350,7 @@ export function AgentChat({
           ))}
         {active && (
           <article className="chat-turn">
-            <div className="user-message">{active.prompt || 'Task in progress'}</div>
+            <UserPrompt text={active.prompt || 'Task in progress'} />
             <div className="agent-message">
               <span className="message-label">
                 <Icon name="spark" size={13} />
@@ -447,5 +455,31 @@ export function AgentChat({
         </Dialog>
       )}
     </section>
+  )
+}
+
+// The engine's task errors are written for operators; say them plainly here.
+export function plainTaskError(message?: string) {
+  if (!message) return message
+  if (/did not finish within the task timeout/i.test(message))
+    return 'This took longer than the time limit, so the agent paused. Everything it made so far is saved: send “Please continue” to let it finish.'
+  return message
+}
+
+// A free-app install sends the coding agent its exact setup; people see one
+// line, with the details a click away.
+export function UserPrompt({ text }: { text: string }) {
+  const catalog = /^Install (.+?) from sandboxd's app catalog/.exec(text)
+  // An install the sandboxd agent started (install_project).
+  const project = /^Install the open-source project https:\/\/github\.com\/[^/\s]+\/([^\s/]+?) so it runs/.exec(text)
+  if (!catalog && !project) return <div className="user-message">{text}</div>
+  return (
+    <div className="user-message" data-testid="catalog-install-message">
+      <span>{catalog ? `Install ${catalog[1]} from Free apps` : `Install ${project![1]} from GitHub`}</span>
+      <details className="install-details">
+        <summary>Details</summary>
+        <pre>{text}</pre>
+      </details>
+    </div>
   )
 }

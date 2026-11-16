@@ -4,6 +4,8 @@ const fs = require('node:fs/promises')
 const { createGateway } = require('./gateway.cjs')
 const { createAgentLogins } = require('./agent-login.cjs')
 const agentLogins = createAgentLogins()
+const { createOpenRouterSignIn } = require('./openrouter.cjs')
+const openRouter = createOpenRouterSignIn({ open: (url) => shell.openExternal(url) })
 const { normalizeEngineURL, externalURL } = require('./connection.cjs')
 const { createWindowsEngine, ENGINE_URL } = require('./windows-engine.cjs')
 const { signInManagedEngine } = require('./local-auth.cjs')
@@ -16,6 +18,20 @@ let config = { connections: [], selected: '', sessions: {} }
 let writes = Promise.resolve()
 let connecting = false
 let localEngine
+let lastHeal = 0
+// The local engine can stop while the app is open (Windows sleep, WSL
+// updates, a lost keepalive). Start it again instead of leaving the user
+// with an error; setup only probes when the engine is in fact running.
+function healEngine() {
+  if (!localEngine || config.selected !== ENGINE_URL) return ''
+  const state = localEngine.state()
+  if (!state.installed) return ''
+  if (!state.busy && Date.now() - lastHeal > 30000) {
+    lastHeal = Date.now()
+    void probeEngine(ENGINE_URL, false).catch(() => localEngine.start())
+  }
+  return 'Your engine stopped. Starting it again, this takes about a minute…'
+}
 const memorySessions = new Map()
 const configPath = () => path.join(app.getPath('userData'), 'connections.json')
 const canRemember = () =>
@@ -250,22 +266,48 @@ async function start() {
     })
     await localEngine.load().catch(() => {})
   }
+  const portFile = path.join(app.getPath('userData'), 'gateway-port')
+  const savedPort = Number(await fs.readFile(portFile, 'utf8').catch(() => '')) || 0
   gateway = await createGateway({
+    port: savedPort >= 1024 && savedPort < 65536 ? savedPort : 0,
     uiRoot: path.join(__dirname, '../ui'),
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
+    onUnreachable: healEngine,
   })
-  desktopSession = session.fromPartition(`sandboxd-${process.pid}`)
+  await fs.writeFile(portFile, new URL(gateway.origin).port).catch(() => {})
+  // Kept across launches: agents' own apps save their setup and sign-in in
+  // the browser. sandboxd's own login never lives here (the gateway holds it).
+  desktopSession = session.fromPartition('persist:sandboxd')
   desktopSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   desktopSession.setPermissionCheckHandler(() => false)
   // Cookies are shared across ports. Use a main-process-only header so a
   // local preview cannot receive the gateway capability by sharing its host.
   desktopSession.webRequest.onBeforeSendHeaders((details, callback) => {
     const target = new URL(details.url)
-    const isGateway =
-      target.host === new URL(gateway.origin).host && ['http:', 'ws:'].includes(target.protocol)
+    const gatewayHost = new URL(gateway.origin).host
+    const isGateway = target.host === gatewayHost && ['http:', 'ws:'].includes(target.protocol)
     const ownFrame = details.webContentsId === window?.webContents.id
+    // An agent's own app (ui-<id>.localhost on the gateway's port): opened by
+    // the workspace in a frame, then loading its own files and connections.
+    const isAgentApp =
+      /^ui-[0-9a-z]{6,40}\.localhost$/.test(target.hostname) &&
+      target.port === gatewayHost.split(':')[1] &&
+      ['http:', 'ws:'].includes(target.protocol)
+    if (isAgentApp) {
+      const appOrigin = `http://${target.host}`
+      const allowed =
+        ownFrame &&
+        (details.initiatorOrigin === gateway.origin ||
+          details.initiatorOrigin === appOrigin ||
+          details.initiatorOrigin === appOrigin.replace('http:', 'ws:'))
+      if (!allowed) return callback({ cancel: true })
+      const headers = { ...details.requestHeaders }
+      for (const key of Object.keys(headers))
+        if (key.toLowerCase() === 'x-sandboxd-desktop') delete headers[key]
+      return callback({ requestHeaders: { ...headers, ...gateway.authorization } })
+    }
     const ownOrigin = details.initiatorOrigin === gateway.origin
     const navigation = details.resourceType === 'mainFrame' && !details.initiatorOrigin
     const download = !details.initiatorOrigin && /^\/v1\/sandboxes\/[^/]+\/export$/.test(target.pathname)
@@ -384,6 +426,14 @@ async function start() {
     if (answer.response !== 1) return { imported: false }
     await gateway.importAgentLogin(agent, await agentLogins.credential(agent), engine)
     return { imported: true }
+  })
+  // The key goes back to the console, which saves it as a model connection.
+  ipcMain.handle('desktop:openrouter-sign-in', async (event) => {
+    trusted(event)
+    const result = await openRouter.signIn()
+    if (window?.isMinimized()) window.restore()
+    window?.focus()
+    return result
   })
   ipcMain.handle('desktop:external', async (event, url) => {
     trusted(event)

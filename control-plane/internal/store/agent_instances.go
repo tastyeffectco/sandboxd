@@ -56,8 +56,17 @@ func (s *Store) GetAgentInstanceBySecretHash(ctx context.Context, hash string) (
 }
 
 func (s *Store) ListAgentInstancesForOwner(ctx context.Context, owner string) ([]*AgentInstance, error) {
+	return s.listAgentInstances(ctx, `WHERE owner_token = ?`, owner)
+}
+
+// ListAgentInstances is every agent, for engine-wide upkeep.
+func (s *Store) ListAgentInstances(ctx context.Context) ([]*AgentInstance, error) {
+	return s.listAgentInstances(ctx, ``)
+}
+
+func (s *Store) listAgentInstances(ctx context.Context, where string, args ...any) ([]*AgentInstance, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+agentInstanceColumns+` FROM agent_instance WHERE owner_token = ? ORDER BY created_at`, owner)
+		`SELECT `+agentInstanceColumns+` FROM agent_instance `+where+` ORDER BY created_at`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +87,14 @@ func (s *Store) ListAgentInstancesForOwner(ctx context.Context, owner string) ([
 func (s *Store) RotateAgentInstanceSecret(ctx context.Context, id, hash string) error {
 	return s.submit(ctx, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET secret_hash = ? WHERE id = ?`, hash, id)
+		return err
+	})
+}
+
+// SetAgentInstanceModel changes the model connection an agent thinks with.
+func (s *Store) SetAgentInstanceModel(ctx context.Context, id, connectionID, model string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET connection_id = ?, model = ? WHERE id = ?`, connectionID, model, id)
 		return err
 	})
 }

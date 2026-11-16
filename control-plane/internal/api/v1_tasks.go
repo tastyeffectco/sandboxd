@@ -15,6 +15,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/authproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelprovider"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
@@ -108,6 +109,11 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "prompt is required")
 		return
 	}
+	if s.assistants.note(id, assistantChoice{Agent: req.Agent, Provider: req.Provider, Model: req.Model}) && req.TimeoutS == 0 {
+		// The sandboxd agent orchestrates (installs, other agents' answers),
+		// which outlasts a normal build.
+		req.TimeoutS = assistantTaskTimeoutS
+	}
 	agent := req.Agent
 	if agent == "" {
 		agent = s.DefaultAgent // operator default (SANDBOXD_DEFAULT_AGENT)
@@ -168,8 +174,8 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 
 	var connection *modelconfig.Connection
 	if req.Provider != "" {
-		if agent != "opencode" && agent != "pi" {
-			writeV1Err(w, 400, "invalid_request", "configured model connections support OpenCode and Pi")
+		if agent != "opencode" && agent != "pi" && agent != "codex" {
+			writeV1Err(w, 400, "invalid_request", "configured model connections support OpenCode, Pi and Codex")
 			return
 		}
 		if s.ModelProviders == nil || s.AgentProxyURL == "" {
@@ -183,6 +189,10 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		connection, err = s.ModelProviders.Connection(r.Context(), req.Provider, req.Model, s.AgentProxyURL, ttl+time.Minute)
 		if err != nil {
 			writeV1Err(w, 400, "invalid_request", "cannot use model connection: "+err.Error())
+			return
+		}
+		if agent == "codex" && connection.Protocol == modelprovider.Anthropic {
+			writeV1Err(w, 400, "invalid_request", "Codex needs an OpenAI-compatible model connection (OpenRouter, OpenAI...); use OpenCode or Pi for this one")
 			return
 		}
 		req.Model = connection.Model.ID

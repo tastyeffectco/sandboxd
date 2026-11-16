@@ -84,8 +84,11 @@ instead of a VM each. Under the hood it's deliberately small: **one Go program
 driving Docker**, Traefik for URLs, SQLite for state — no Kubernetes, no separate
 database, no queue.
 
-**Bring your own models.** Run **OpenCode or Pi** against local or remote
-**OpenAI-compatible** and **Anthropic-compatible** endpoints. Add connections,
+**Bring your own models.** Apps are built by **OpenCode, Claude Code, Codex or
+Pi**: OpenCode's free models need no account, a Claude or ChatGPT subscription
+works as is, and OpenCode and Pi also run against local or remote
+**OpenAI-compatible** and **Anthropic-compatible** endpoints (Codex against
+OpenAI-compatible ones, such as OpenRouter). Add connections,
 model aliases and token limits in the console; provider keys stay encrypted on
 the control plane. Use your local model server or a LiteLLM gateway, including
 gateways routing to AWS Bedrock. [Set up model connections →](docs/model-providers.md)
@@ -128,6 +131,32 @@ your own subscription or models whenever you like.
   <a href="https://sandboxd.io/guides/images-stacks-presets">Base image, stacks &amp; presets</a> &nbsp;·&nbsp;
   <a href="https://sandboxd.io/reference/architecture">Architecture</a>
 </p>
+
+## New: apps in one click, agents, and one assistant for everything
+
+The desktop app (and the console) now goes beyond building your own apps:
+
+- **🧩 Free apps** — install popular open-source projects in one click, with
+  no AI and no setup: a CAD modeler, a physics simulator (MuJoCo), a username
+  finder (Sherlock), design, PDF and slide tools… A **Trending** strip on the
+  home page shows what's hot on GitHub. Each is pinned to a tested release and
+  runs in its own sandbox. [Free apps →](docs/free-apps.md)
+- **🤖 Agents** — open-source assistants that live next to your apps:
+  [Hermes](https://github.com/NousResearch/hermes-agent), OpenClaw and
+  OpenMausBot. They remember you, run scheduled jobs, browse, reach you on
+  Telegram, and can create and change apps. Each runs in its own locked-down
+  container, with no keys inside. [Agents →](docs/operator-agents.md)
+- **💬 Ask sandboxd** — one assistant for all of it, at the top of the
+  sidebar. Ask in plain words: *"install JSON Crack from GitHub"*, *"ask
+  Hermes to watch flight prices"*, *"what does Hermes remember about me?"*,
+  *"add a Researcher agent"*. It checks a project can run before installing
+  it, hands tasks to your agents and brings their answers back, and deletes
+  nothing without your yes. It runs on whichever AI you pick: the free model,
+  your Claude or ChatGPT subscription, or a model connection.
+  [The sandboxd agent →](docs/sandboxd-agent.md)
+- **🖥️ Zero setup on Windows** — the desktop app installs its own engine in
+  one click (no Docker Desktop, no terminal), and keeps it updated.
+  [Desktop →](docs/desktop.md)
 
 > **Dev → prod, never shorter:** prompt an app into a sandbox, iterate on a live
 > preview, then self-host it on your own server in [one command](#-deploy-to-a-vps-in-one-click).
@@ -216,9 +245,14 @@ Full per-provider walkthrough: [deploy/DEPLOY.md](deploy/DEPLOY.md).
 
 - **Isolated sandboxes** — a hardened container per app with a workspace + live
   preview URL; sleep/wake so idle apps cost nothing.
-- **Built-in agents** — OpenCode & Claude Code. **No credential ever enters a
-  sandbox** (a proxy injects it on the wire), and every task is **checkpointed &
-  revertible**.
+- **Built-in coding agents** — OpenCode, Claude Code, Codex & Pi. **No credential
+  ever enters a sandbox** (a proxy injects it on the wire), and every task is
+  **checkpointed & revertible**.
+- **Free apps, agents & Ask sandboxd** — one-click open-source projects,
+  always-on assistants (Hermes, OpenClaw, OpenMausBot) with their own memory, and
+  one assistant that drives all of them. All through the same `/v1` API.
+- **Desktop app** — the same builder as a native Windows/macOS app; on Windows it
+  provisions and updates its own engine.
 - **Runtime presets** — React/Vite, Next.js, Node/Express, FastAPI, Worker; boot
   to a preview and reload after agent edits.
 - **Files, Git & secrets** — in-browser editor + diffs, commit & push, per-app
@@ -262,6 +296,10 @@ Full docs live at **[sandboxd.io](https://sandboxd.io)**:
 | [Quickstart](https://sandboxd.io/quickstart) | [Coding agents](https://sandboxd.io/guides/agents) | [Configuration](https://sandboxd.io/reference/configuration) |
 | [Core concepts](https://sandboxd.io/concepts) | [Base image, stacks &amp; presets](https://sandboxd.io/guides/images-stacks-presets) | [Architecture](https://sandboxd.io/reference/architecture) |
 | [Roadmap](https://sandboxd.io/roadmap) | [Presets &amp; `sandbox.yaml`](https://sandboxd.io/guides/images-stacks-presets) · [Auto-detection &amp; App Store](https://sandboxd.io/guides/runtime-and-store) · [Undo a task](https://sandboxd.io/guides/tasks) · [Production / TLS](https://sandboxd.io/guides/production-tls) · [Hardening](https://sandboxd.io/guides/hardening) · [Uninstall](https://sandboxd.io/guides/uninstall) | [`AGENTS.md`](AGENTS.md) · [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+
+In this repository: [desktop](docs/desktop.md) · [free apps](docs/free-apps.md) ·
+[agents](docs/operator-agents.md) · [the sandboxd agent](docs/sandboxd-agent.md) ·
+[model connections](docs/model-providers.md) · [agent auth](docs/agent-auth.md).
 
 Building on it from your own agent? **[`AGENTS.md`](AGENTS.md)** is a
 copy-pasteable runbook.

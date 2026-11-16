@@ -58,8 +58,8 @@ paths:
       tags: [apps]
       summary: Edit the runtime-editable settings (allowlisted)
       description: >
-        Accepts ONLY the allowlisted editable fields: lifecycle tunables and
-        agents.default_models. Any other key (auth, egress, networking, secrets,
+        Accepts ONLY the allowlisted editable fields: lifecycle tunables,
+        agents.default_models and agents.time_zone. Any other key (auth, egress, networking, secrets,
         version, …) is rejected with 400. Persisted and hot-applied.
       requestBody:
         required: true
@@ -84,6 +84,11 @@ paths:
                         Per-agent default model id (agent -> model). Merges into the
                         stored map; an empty value clears that agent's default. Only
                         runnable agents are accepted.
+                    time_zone:
+                      type: string
+                      description: >
+                        IANA time zone agents run in (TZ), e.g. "Europe/Paris"; ""
+                        means UTC. Agents are made again to pick up a change.
       responses:
         "200":
           description: Updated settings.
@@ -1666,6 +1671,46 @@ paths:
                         label: { type: string }
                         description: { type: string }
                         download: { type: string, description: approximate image size }
+  /v1/assistant:
+    get:
+      operationId: getAssistant
+      tags: [agents]
+      summary: The person's sandboxd agent (main assistant)
+      description: >
+        The sandboxd agent is the coding agent of a hidden project (tagged
+        `sandboxd:assistant`) that can use sandboxd's tools: apps, open-source
+        installs, agents and their conversations. The person chats with it like
+        with any project's coding agent, on any agent and model.
+      responses:
+        "200":
+          description: Its project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_id: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: ensureAssistant
+      tags: [agents]
+      summary: Make the person's sandboxd agent, or refresh its tool settings
+      description: >
+        Creates the hidden project on first use. Every call writes the project's
+        tool settings again (opencode.json, .mcp.json) with a fresh secret and
+        sandboxd's current address, so it is safe to call whenever the
+        assistant is opened.
+      responses:
+        "200":
+          description: Its project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_id: { type: string }
+        "500": { $ref: "#/components/responses/Error" }
+
   /v1/agent-instances:
     get:
       operationId: listAgentInstances
@@ -1736,6 +1781,27 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateAgentInstance
+      tags: [agents]
+      summary: Change the model an agent thinks with (it restarts; memory stays)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connection_id]
+              properties:
+                connection_id: { type: string }
+                model: { type: string, description: "Defaults to the connection's first model" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentInstance" }
+        "400": { $ref: "#/components/responses/Error" }
   /v1/agent-instances/{id}/start:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
@@ -1790,7 +1856,153 @@ paths:
             application/json:
               schema: { type: object, properties: { reply: { type: string } } }
         "502": { $ref: "#/components/responses/Error" }
-
+  /v1/agent-instances/{id}/messages:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: listAgentMessages
+      tags: [agents]
+      summary: The agent's conversation (one thread per agent), oldest first
+      description: |
+        Includes a reply still being written (state `working`), with its steps so far.
+        Each agent's own stream is translated into the same shape: content, thinking,
+        and steps `{id, tool, label?, status: running|done|failed}`.
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  working: { type: boolean }
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        role: { type: string, enum: [user, assistant] }
+                        content: { type: string }
+                        thinking: { type: string }
+                        steps: { type: array, items: { type: object } }
+                        state: { type: string, enum: [working, done, stopped, error] }
+                        error: { type: string }
+                        channel:
+                          type: string
+                          description: "`app` for the chat in sandboxd, `agent` for a message the agent sent on its own (a scheduled job's result), or a messaging channel such as `telegram`."
+                        created_at: { type: string }
+    post:
+      operationId: sendAgentMessage
+      tags: [agents]
+      summary: Send a message; the reply is written by the engine in the background
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content: { type: string, maxLength: 8000, description: Required unless files are attached }
+                attachments: { type: array, maxItems: 10, items: { type: string }, description: Ids of files uploaded to files/ }
+      responses:
+        "202": { description: The message and the reply being written }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: clearAgentMessages
+      tags: [agents]
+      summary: Clear the conversation (the agent keeps its own memory)
+      responses:
+        "204": { description: Cleared }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/messages/stop:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    post:
+      operationId: stopAgentMessage
+      tags: [agents]
+      summary: Stop the reply being written
+      responses:
+        "204": { description: Stopped }
+  /v1/agent-instances/{id}/files:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: query, name: name, required: true, schema: { type: string }, description: The file's name }
+    post:
+      operationId: uploadAgentFile
+      tags: [agents]
+      summary: Attach a file (up to 25 MB) for the next message
+      description: >-
+        The body is the file. It is saved in the agent's own uploads folder,
+        where its tools can open it; send its id in a message's attachments.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: { schema: { type: string, format: binary } }
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/AgentAttachment" } }
+        "413": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/files/{file}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: path, name: file, required: true, schema: { type: string } }
+    get:
+      operationId: getAgentFile
+      tags: [agents]
+      summary: A file attached in the conversation (pictures inline, others as downloads)
+      responses:
+        "200": { description: The file }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/agent-instances/{id}/ui/{path...}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - { in: path, name: path, required: true, schema: { type: string }, description: Any path of the agent's app, empty for its start page }
+    get:
+      operationId: openAgentApp
+      tags: [agents]
+      summary: The agent's own app (e.g. OpenClaw's Control panel), signed in as its owner
+      description: >-
+        Pages, files and WebSocket upgrades are passed to the agent's own web
+        app. sandboxd signs the owner in with an identity header the agent
+        accepts from sandboxd's address only; sandboxd's credentials are never
+        passed on. Only agents whose instance has ui_label have an app.
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: postAgentApp
+      tags: [agents]
+      summary: A form or action of the agent's own app, signed in as its owner
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    put:
+      operationId: putAgentApp
+      tags: [agents]
+      summary: "Saving something in the agent's own app (e.g. a setting), signed in as its owner"
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: patchAgentApp
+      tags: [agents]
+      summary: "Changing something in the agent's own app, signed in as its owner"
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteAgentApp
+      tags: [agents]
+      summary: "Removing something in the agent's own app, signed in as its owner"
+      responses:
+        "200": { description: The app's response, as the agent sent it }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearerAuth:
@@ -1809,6 +2021,13 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    AgentAttachment:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        size: { type: integer }
     AgentInstance:
       type: object
       properties:
@@ -1817,11 +2036,13 @@ components:
         name: { type: string }
         connection_id: { type: string }
         model: { type: string }
-        status: { type: string, enum: [running, stopped, missing] }
+        status: { type: string, enum: [running, starting, stopped, missing] }
         telegram: { type: boolean }
         apps_today: { type: integer }
         apps_per_day: { type: integer }
         created_at: { type: string, format: date-time }
+        ui_label: { type: string, description: "Name of the agent's own app, served at ui/; absent when it has none" }
+        app_first: { type: boolean, description: "Its own app is a full chat: clients open it first and offer sandboxd's chat second" }
     ClaudeSignIn:
       type: object
       properties:
@@ -1911,6 +2132,7 @@ components:
               type: object
               additionalProperties: { type: string }
               description: "Per-agent default model id (agent -> model), used when a task doesn't specify one. Editable via PATCH agents.default_models."
+            time_zone: { type: string, description: "IANA time zone agents run in (\"\" is UTC). Editable via PATCH agents.time_zone." }
         presets:
           type: array
           items: { $ref: "#/components/schemas/Preset" }

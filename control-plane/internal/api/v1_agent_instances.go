@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,6 +40,12 @@ type v1AgentInstance struct {
 	AppsToday    int    `json:"apps_today"`
 	AppsPerDay   int    `json:"apps_per_day"`
 	CreatedAt    string `json:"created_at"`
+	// UILabel names the agent's own app, served at ui/; empty when it has none.
+	UILabel string `json:"ui_label,omitempty"`
+	// Chat: sandboxd's chat can talk to it; otherwise it is used in its app.
+	Chat bool `json:"chat"`
+	// AppFirst: it opens on its own app; sandboxd's chat is the other tab.
+	AppFirst bool `json:"app_first,omitempty"`
 }
 
 // agentAppsPerDay caps how many apps one agent may create per day.
@@ -46,13 +53,34 @@ const agentAppsPerDay = 10
 
 func agentContainer(id string) string { return "a-" + id }
 
+// browserContainer is the headless browser of an agent whose package has
+// Browser (see agentcatalog.Browser).
+func browserContainer(id string) string { return "b-" + id }
+
+// agentAnswering reports whether the agent's chat API accepts connections.
+func agentAnswering(ctx context.Context, host string, port int) bool {
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) v1AgentInstance {
 	status := "missing"
 	if s.Docker != nil {
 		if c, err := s.Docker.Inspect(ctx, agentContainer(h.ID)); err == nil {
 			status = "stopped"
 			if c.State.Running {
-				status = "running"
+				// The container runs well before the agent can chat (Hermes and
+				// OpenClaw take up to a minute to load); say so until it answers.
+				status = "starting"
+				if pkg, ok := agentcatalog.Get(h.Package); ok && agentAnswering(ctx, agentContainer(h.ID), pkg.APIPort) {
+					status = "running"
+				}
 			}
 		}
 	}
@@ -62,7 +90,26 @@ func (s *Server) agentInstanceView(ctx context.Context, h *store.AgentInstance) 
 	}
 	return v1AgentInstance{ID: h.ID, Package: h.Package, Name: h.Name, ConnectionID: h.ConnectionID, Model: h.Model,
 		Status: status, Telegram: len(h.TelegramCiphertext) > 0, AppsToday: today, AppsPerDay: agentAppsPerDay,
-		CreatedAt: h.CreatedAt}
+		CreatedAt: h.CreatedAt, UILabel: uiLabel(h.Package), Chat: hasChat(h.Package),
+		AppFirst: uiLabel(h.Package) != "" && appFirst(h.Package)}
+}
+
+func hasChat(pkgID string) bool {
+	pkg, ok := agentcatalog.Get(pkgID)
+	return ok && pkg.Chat
+}
+
+func appFirst(pkgID string) bool {
+	pkg, ok := agentcatalog.Get(pkgID)
+	return ok && pkg.AppFirst
+}
+
+// uiLabel names the agent's own app, or "" when it has none.
+func uiLabel(pkgID string) string {
+	if pkg, ok := agentcatalog.Get(pkgID); ok && pkg.UIPort != 0 {
+		return pkg.UILabel
+	}
+	return ""
 }
 
 // GET /v1/agent-catalog
@@ -112,6 +159,10 @@ func (s *Server) v1CreateAgentInstance(w http.ResponseWriter, r *http.Request) {
 	model, err := s.agentModel(r.Context(), req.ConnectionID, req.Model)
 	if err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if err := roomForAgent(pkg); err != nil {
+		writeV1Err(w, http.StatusConflict, "low_memory", err.Error())
 		return
 	}
 	users := strings.TrimSpace(req.TelegramAllowedUsers)
@@ -191,6 +242,12 @@ func (s *Server) agentModel(ctx context.Context, connectionID, model string) (st
 // secret: it writes the agent's config into its state directory and starts
 // the pinned image under sandboxd's hardened profile.
 func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
+	defer s.agentLocks.lock(h.ID)()
+	return s.provisionAgentLocked(ctx, h, pkg)
+}
+
+// provisionAgentLocked makes the agent's container; the caller holds its lock.
+func (s *Server) provisionAgentLocked(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
 	secret, err := randomSecret()
 	if err != nil {
 		return err
@@ -211,30 +268,77 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	if err := os.Chown(dir, uid, gid); err != nil {
 		return fmt.Errorf("prepare the agent's storage: %w", err)
 	}
-	config, err := pkg.Render(agentcatalog.Config{
-		ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model})
-	if err != nil {
+	cfg := agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID, Secret: secret, Model: h.Model,
+		UIOrigin: "http://" + agentUIHost(h.ID, pkg.UIPort)}
+	if pkg.ProxyAuth {
+		if cfg.ProxyIP, err = s.agentProxyIP(ctx); err != nil {
+			return err
+		}
+	}
+	if pkg.Render != nil {
+		config, err := pkg.Render(cfg)
+		if err != nil {
+			return err
+		}
+		cfgPath := filepath.Join(dir, pkg.ConfigFile)
+		if current, err := os.ReadFile(cfgPath); err == nil && pkg.KeepSettings != nil {
+			if config, err = pkg.KeepSettings(string(current), config); err != nil {
+				return err
+			}
+		}
+		if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
+			return err
+		}
+		if err := os.Chown(cfgPath, uid, gid); err != nil {
+			return err
+		}
+	}
+	if err := s.writeGuide(h, pkg); err != nil {
 		return err
 	}
-	cfgPath := filepath.Join(dir, pkg.ConfigFile)
-	if err := os.WriteFile(cfgPath, []byte(config), 0o600); err != nil {
-		return err
-	}
-	if err := os.Chown(cfgPath, uid, gid); err != nil {
-		return err
+	if pkg.ProxyAuth {
+		s.agentCfg.mu.Lock()
+		if s.agentCfg.ip == nil {
+			s.agentCfg.ip = map[string]string{}
+		}
+		s.agentCfg.ip[h.ID] = cfg.ProxyIP
+		s.agentCfg.mu.Unlock()
 	}
 	if err := s.Store.RotateAgentInstanceSecret(ctx, h.ID, hashSecret(secret)); err != nil {
 		return err
 	}
 	h.SecretHash = hashSecret(secret)
 	env := append(append([]string{}, pkg.Env...),
-		pkg.APIKeyEnv+"="+string(apiKey), agentcatalog.SecretEnv+"="+secret)
+		agentcatalog.SecretEnv+"="+secret)
+	if pkg.RenderEnv != nil {
+		env = append(env, pkg.RenderEnv(cfg)...)
+	}
+	if pkg.APIKeyEnv != "" { // proxy sign-in agents take no shared key
+		env = append(env, pkg.APIKeyEnv+"="+string(apiKey))
+	}
+	labels := []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID}
+	zone := s.agentTimeZone()
+	labels = append(labels, agentRevLabel+"="+containerRev(pkg, zone))
+	if zone != "" { // "every morning at 8" means 8 where the person lives
+		env = append(env, "TZ="+zone)
+	}
+	if pkg.UILogin == "password" {
+		// Only sandboxd knows these: it signs the owner in to the app.
+		env = append(env, "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="+uiPassword(apiKey, "password"),
+			"HERMES_DASHBOARD_BASIC_AUTH_SECRET="+uiPassword(apiKey, "session"))
+	}
 	if len(h.TelegramCiphertext) > 0 && pkg.Telegram {
 		token, err := s.Secrets.Open(h.TelegramCiphertext, h.TelegramNonce)
 		if err != nil {
 			return errors.New("the Telegram token cannot be read")
 		}
 		env = append(env, "TELEGRAM_BOT_TOKEN="+string(token), "TELEGRAM_ALLOWED_USERS="+h.TelegramAllowedUsers)
+	}
+	if pkg.Browser {
+		if err := s.runAgentBrowser(ctx, h); err != nil {
+			return fmt.Errorf("start the agent's browser: %w", err)
+		}
+		env = append(env, agentcatalog.BrowserUpstreamEnv+"="+browserContainer(h.ID)+":"+agentcatalog.BrowserPort)
 	}
 	tmpfs := []string{"/tmp"}
 	if pkg.ExecRun { // a supervisor such as s6 executes from /run
@@ -245,15 +349,18 @@ func (s *Server) provisionAgent(ctx context.Context, h *store.AgentInstance, pkg
 	_, err = s.Docker.Run(ctx, docker.RunSpec{
 		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
 		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
-		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize,
+		Memory: pkg.Memory, MemorySwap: pkg.Memory, PidsLimit: 1024, ShmSize: pkg.ShmSize, Init: pkg.Init,
 		Tmpfs:   tmpfs,
 		User:    pkg.User,
 		Restart: "unless-stopped", // always on: survives engine and computer restarts
 		Env:     env,
 		Volumes: []string{dir + ":" + pkg.StatePath},
-		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.package=" + pkg.ID},
+		Labels:  labels,
 		Image:   pkg.Image, Cmd: pkg.Cmd,
 	})
+	if err == nil && pkg.GuideSeed != "" {
+		_ = s.writeGuide(h, pkg) // now its template can be read
+	}
 	return err
 }
 
@@ -285,11 +392,24 @@ func (s *Server) v1StartAgentInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	c, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID))
+	if ierr != nil || !c.State.Running {
+		if err := roomForAgent(pkg); err != nil {
+			writeV1Err(w, http.StatusConflict, "low_memory", err.Error())
+			return
+		}
+	}
 	var err error
-	if _, ierr := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); ierr != nil {
+	if ierr != nil {
 		err = s.provisionAgent(r.Context(), h, pkg)
 	} else {
-		err = s.Docker.Start(r.Context(), agentContainer(h.ID))
+		err = s.startAgentBrowser(r.Context(), h, pkg)
+		if err == nil {
+			err = s.Docker.Start(r.Context(), agentContainer(h.ID))
+		}
+		if err == nil {
+			_, err = s.refreshAgent(r.Context(), h, pkg)
+		}
 	}
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "could not start the agent: "+err.Error())
@@ -308,10 +428,49 @@ func (s *Server) v1StopAgentInstance(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	_ = s.Docker.Stop(r.Context(), browserContainer(h.ID), 5) // only agents with a browser have one
 	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
 }
 
-// DELETE /v1/agent-instances/{id} — removes the agent, its container and its memory.
+// PATCH /v1/agent-instances/{id} {connection_id, model?} — think with another
+// model. The agent is made again with it; its memory and skills stay.
+func (s *Server) v1UpdateAgentInstance(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.ownAgentInstance(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ConnectionID string `json:"connection_id"`
+		Model        string `json:"model"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil || req.ConnectionID == "" {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", "choose a model connection")
+		return
+	}
+	model, err := s.agentModel(r.Context(), req.ConnectionID, req.Model)
+	if err != nil {
+		writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if err := s.Store.SetAgentInstanceModel(r.Context(), h.ID, req.ConnectionID, model); err != nil {
+		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	h.ConnectionID, h.Model = req.ConnectionID, model
+	if s.Docker != nil {
+		if _, err := s.Docker.Inspect(r.Context(), agentContainer(h.ID)); err == nil {
+			pkg, _ := agentcatalog.Get(h.Package)
+			s.dropUISession(h.ID)
+			if err := s.provisionAgent(r.Context(), h, pkg); err != nil {
+				writeV1Err(w, http.StatusInternalServerError, "internal", "could not restart the agent: "+err.Error())
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
+}
+
+// DELETE /v1/agent-instances/{id} — removes the agent, its containers and its memory.
 func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.ownAgentInstance(w, r)
 	if !ok {
@@ -321,6 +480,11 @@ func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	_ = s.Docker.Remove(r.Context(), browserContainer(h.ID))
+	if live, ok := s.turns.get(h.ID); ok {
+		live.cancel()
+	}
+	_ = s.Store.DeleteAgentMessages(r.Context(), h.ID)
 	if err := s.Store.DeleteAgentInstance(r.Context(), h.ID); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -332,10 +496,27 @@ func (s *Server) v1DeleteAgentInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1AgentChatReq struct {
-	Messages []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"messages"`
+	Messages []chatMessage `json:"messages"`
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// alternating joins messages in a row from the same side, so the agent gets
+// the turns its API expects (user, assistant, user, ...): what the agent
+// sent on its own (scheduled results) follows its earlier answer.
+func alternating(msgs []chatMessage) []chatMessage {
+	out := make([]chatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if n := len(out); n > 0 && out[n-1].Role == m.Role {
+			out[n-1].Content += "\n\n" + m.Content
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // POST /v1/agent-instances/{id}/chat — one turn with the agent through its own
@@ -351,6 +532,13 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkg, _ := agentcatalog.Get(h.Package)
+	if !pkg.Chat {
+		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
+		return
+	}
+	if s.agentUpdating(w, r, h, pkg) {
+		return
+	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", "the agent's API key cannot be read")
@@ -362,10 +550,11 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 	up, _ := http.NewRequestWithContext(ctx, http.MethodPost,
 		fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort), bytes.NewReader(body))
 	up.Header.Set("Authorization", "Bearer "+string(apiKey))
+	setAgentIdentity(up.Header)
 	up.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(up)
 	if err != nil {
-		writeV1Err(w, http.StatusBadGateway, "unavailable", "the agent is not answering; start it and try again")
+		writeV1Err(w, http.StatusBadGateway, "unavailable", h.Name+" isn't answering. If it was just started, wait a minute and try again.")
 		return
 	}
 	defer resp.Body.Close()
@@ -379,7 +568,12 @@ func (s *Server) v1AgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode != http.StatusOK || json.Unmarshal(raw, &out) != nil || len(out.Choices) == 0 {
-		writeV1Err(w, http.StatusBadGateway, "agent_error", "the agent could not answer: "+strings.TrimSpace(string(raw[:min(len(raw), 300)])))
+		// The agent's own error is technical ("run openclaw logs", "/model");
+		// keep it in the engine log and tell the person what to do.
+		s.Log.Warn("agent chat failed", "agent", h.ID, "status", resp.StatusCode,
+			"error", strings.TrimSpace(string(raw[:min(len(raw), 600)])))
+		writeV1Err(w, http.StatusBadGateway, "agent_error",
+			h.Name+" couldn't finish this reply. Try again, or ask in a simpler way. If it keeps happening, choose another AI model for it.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"reply": out.Choices[0].Message.Content})
@@ -396,4 +590,88 @@ func randomSecret() (string, error) {
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// writeGuide keeps sandboxd's section of the agent's instructions file up
+// to date (see agentcatalog.Guide); the rest of the file is left as it is.
+func (s *Server) writeGuide(h *store.AgentInstance, pkg agentcatalog.Package) error {
+	guide := agentcatalog.Guide(pkg, agentcatalog.Config{ProxyURL: s.AgentProxyURL, AgentID: h.ID})
+	if guide == "" || s.AgentRoot == "" {
+		return nil
+	}
+	dir := filepath.Join(s.AgentRoot, h.ID)
+	if _, err := os.Stat(dir); err != nil {
+		return nil // not set up yet: provisionAgent makes it first
+	}
+	file := filepath.Join(dir, filepath.FromSlash(pkg.GuideFile))
+	mode := os.FileMode(0o644)
+	old, err := os.ReadFile(file)
+	switch {
+	case err == nil:
+		if st, err := os.Stat(file); err == nil {
+			mode = st.Mode().Perm()
+		}
+	case os.IsNotExist(err) && pkg.GuideSeed != "":
+		// Start from the agent's own template, read from its running container.
+		if s.Docker == nil {
+			return nil
+		}
+		res, xerr := s.Docker.Exec(context.Background(), agentContainer(h.ID), []string{"cat", pkg.GuideSeed})
+		if xerr != nil || res.ExitCode != 0 || strings.TrimSpace(res.Stdout) == "" {
+			return nil // not running yet: a later refresh starts it
+		}
+		old = []byte(agentcatalog.SeedText(res.Stdout))
+		mode = 0o600
+	case !os.IsNotExist(err):
+		return err
+	}
+	updated := agentcatalog.WithGuide(string(old), guide)
+	if updated == string(old) {
+		return nil
+	}
+	uid, gid := agentOwner(pkg.User)
+	if err := writeAgentFile(dir, pkg.GuideFile, updated, uid, gid, mode); err != nil {
+		return fmt.Errorf("give the agent sandboxd's guide: %w", err)
+	}
+	return nil
+}
+
+// runAgentBrowser (re)creates the agent's headless Chromium under the same
+// profile as agents: non-root, no capabilities, read-only root, no new
+// privileges, its own memory limit. Only the agents' network reaches it.
+func (s *Server) runAgentBrowser(ctx context.Context, h *store.AgentInstance) error {
+	name := browserContainer(h.ID)
+	_ = s.Docker.Remove(ctx, name)
+	_, err := s.Docker.Run(ctx, docker.RunSpec{
+		Name: name, Hostname: name, Network: s.Network, Userns: s.Userns, Runtime: s.Runtime,
+		ReadOnly: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"},
+		Memory: "1g", MemorySwap: "1g", PidsLimit: 512, ShmSize: "512m", Init: true,
+		Tmpfs:   []string{"/tmp"},
+		User:    "1000:1000",
+		Restart: "unless-stopped",
+		Env:     browserEnv(s.agentTimeZone()),
+		Labels:  []string{"sandboxd.agent=" + h.ID, "sandboxd.agent.browser=1"},
+		Image:   agentcatalog.BrowserImage,
+	})
+	return err
+}
+
+// startAgentBrowser starts an agent's browser before the agent, making it
+// again when it is missing.
+func (s *Server) startAgentBrowser(ctx context.Context, h *store.AgentInstance, pkg agentcatalog.Package) error {
+	if !pkg.Browser {
+		return nil
+	}
+	if _, err := s.Docker.Inspect(ctx, browserContainer(h.ID)); err != nil {
+		return s.runAgentBrowser(ctx, h)
+	}
+	return s.Docker.Start(ctx, browserContainer(h.ID))
+}
+
+// browserEnv shows pages in the person's time zone, like the agent.
+func browserEnv(zone string) []string {
+	if zone == "" {
+		return []string{"HOME=/tmp"}
+	}
+	return []string{"HOME=/tmp", "TZ=" + zone}
 }

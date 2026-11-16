@@ -1,52 +1,131 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
-import { AgentMessage } from './AgentMessage'
-import { c, font, Btn, Card, Input, StatusPill } from './design/kit'
+import { c, font, Btn, Card, Input } from './design/kit'
+import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
+import { browserTimeZone, canSetTimeZone } from './timeZone'
 
-// Agents are assistants (Hermes first) that sandboxd runs for you. They talk
-// to you here or on Telegram and can create and change apps on this sandboxd.
+// The agent catalog: add an agent with one click. Each agent you add gets its
+// own window, listed under AGENTS in the sidebar.
 export function AgentsView({
   onError,
-  reloadApps,
+  agents,
   goModels,
+  onOpen,
 }: {
   onError: (message: string) => void
-  reloadApps: () => void
+  agents: AgentInstance[]
   goModels: () => void
+  onOpen: (id: string) => void
 }) {
-  const [packages, setPackages] = useState<AgentCatalogEntry[]>([])
-  const [agents, setAgents] = useState<AgentInstance[] | null>(null)
+  const [packages, setPackages] = useState<AgentCatalogEntry[] | null>(null)
   const [models, setModels] = useState<ModelProvider[]>([])
-  const load = useCallback(() => {
-    Promise.all([api.listAgentCatalogEntrys(), api.listAgentInstances(), api.listModelProviders()])
-      .then(([p, h, m]) => {
+  const [notice, setNotice] = useState('')
+  const connected = (p: ModelProvider, free: boolean) => {
+    setModels((m) => [p, ...m])
+    setNotice(
+      free
+        ? 'OpenRouter is connected with its free models. They have a daily limit and can be slow; adding a few dollars of credit on openrouter.ai unlocks the stronger model.'
+        : 'OpenRouter is connected.',
+    )
+  }
+  useEffect(() => {
+    Promise.all([api.listAgentCatalogEntrys(), api.listModelProviders()])
+      .then(([p, m]) => {
         setPackages(p)
-        setAgents(h)
         // Agents speak the OpenAI chat protocol.
         setModels(m.filter((x) => x.protocol === 'openai-completions' && x.models.length > 0))
       })
       .catch((e) => onError((e as Error).message))
   }, [onError])
-  useEffect(load, [load])
 
   return (
     <div className="content-page">
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Agents</h1>
+      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Add an agent</h1>
       <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 620 }}>
-        Assistants that work for you around the clock. Chat with them here or on Telegram; they remember what
-        you tell them and can create and change apps on this sandboxd.
+        Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
+        remember what you tell them and can create and change apps on this computer.
       </p>
-      {agents === null && <p style={{ color: c.muted2 }}>Loading…</p>}
-      {agents?.map((h) => (
-        <AgentInstanceCard key={h.id} agent={h} onChange={load} onError={onError} reloadApps={reloadApps} />
-      ))}
-      {agents !== null &&
-        packages
-          .filter((p) => !agents.some((h) => h.package === p.id))
-          .map((p) => (
-            <AddAgent key={p.id} pkg={p} models={models} goModels={goModels} onAdded={load} onError={onError} />
-          ))}
+      {notice && (
+        <p role="status" className="chat-notice" style={{ maxWidth: 680 }} data-testid="openrouter-connected">
+          {notice}
+        </p>
+      )}
+      {packages === null && <p style={{ color: c.muted2 }}>Loading…</p>}
+      {packages?.map((p) => {
+        const added = agents.find((a) => a.package === p.id)
+        return added ? (
+          <Card key={p.id} pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`added-agent-${p.id}`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <strong style={{ fontSize: 16 }}>{p.label}</strong>
+              <span style={{ color: c.muted2, fontSize: 12 }}>Added</span>
+              <span style={{ flex: 1 }} />
+              <Btn sm variant="primary" onClick={() => onOpen(added.id)} data-testid="open-agent">
+                Open {added.name}
+              </Btn>
+            </div>
+            <p style={{ color: c.muted, margin: '6px 0 0' }}>{p.description}</p>
+          </Card>
+        ) : (
+          <AddAgent
+            key={p.id}
+            pkg={p}
+            models={models}
+            goModels={goModels}
+            onConnected={connected}
+            onAdded={onOpen}
+            onError={onError}
+          />
+        )
+      })}
+      {packages !== null && <AgentTimeZone onError={onError} />}
     </div>
+  )
+}
+
+const zones = () => {
+  try {
+    return (Intl as unknown as { supportedValuesOf(k: string): string[] }).supportedValuesOf('timeZone')
+  } catch {
+    return [browserTimeZone()].filter(Boolean)
+  }
+}
+
+// Agents schedule in this zone: "every morning at 8" is 8 here.
+function AgentTimeZone({ onError }: { onError: (message: string) => void }) {
+  const [zone, setZone] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => setZone(canSetTimeZone(s) ? s.agents.time_zone || 'UTC' : null))
+      .catch(() => {})
+  }, [])
+  if (zone === null) return null
+  const options = zones()
+  if (!options.includes(zone)) options.unshift(zone)
+  const change = async (next: string) => {
+    setBusy(true)
+    try {
+      const s = await api.patchSettings({ agents: { time_zone: next === 'UTC' ? '' : next } })
+      setZone(s.agents.time_zone || 'UTC')
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <label className="form-field" style={{ maxWidth: 680, marginTop: 8 }}>
+      Your time zone (agents use it for reminders and schedules)
+      <select value={zone} disabled={busy} onChange={(e) => void change(e.target.value)} data-testid="agent-time-zone">
+        {options.map((z) => (
+          <option key={z} value={z}>
+            {z.replace(/_/g, ' ')}
+          </option>
+        ))}
+      </select>
+      {busy && <span style={{ color: c.muted2, fontSize: 12 }}>Your agents restart to use it…</span>}
+    </label>
   )
 }
 
@@ -54,13 +133,15 @@ function AddAgent({
   pkg,
   models,
   goModels,
+  onConnected,
   onAdded,
   onError,
 }: {
   pkg: AgentCatalogEntry
   models: ModelProvider[]
   goModels: () => void
-  onAdded: () => void
+  onConnected: (p: ModelProvider, free: boolean) => void
+  onAdded: (id: string) => void
   onError: (message: string) => void
 }) {
   const [connection, setConnection] = useState('')
@@ -68,7 +149,7 @@ function AddAgent({
   const [users, setUsers] = useState('')
   const [busy, setBusy] = useState(false)
   const [warning, setWarning] = useState('')
-  const chosen = connection || models[0]?.id || ''
+  const chosen = connection || suggestedConnection(models, pkg.strong_model) || ''
   const add = async () => {
     setBusy(true)
     setWarning('')
@@ -80,7 +161,7 @@ function AddAgent({
         telegram_allowed_users: users.trim() || undefined,
       })
       if (res.warning) setWarning(res.warning)
-      onAdded()
+      onAdded(res.agent.id)
     } catch (e) {
       onError((e as Error).message)
     } finally {
@@ -91,7 +172,21 @@ function AddAgent({
     <Card pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`add-agent-${pkg.id}`}>
       <strong style={{ fontSize: 16 }}>{pkg.label}</strong>
       <p style={{ color: c.muted, margin: '6px 0 14px' }}>{pkg.description}</p>
-      {models.length === 0 ? (
+      {models.length === 0 && canConnectOpenRouter() ? (
+        <>
+          <p style={{ margin: '0 0 12px' }}>
+            {pkg.label} needs an AI model to think with. The easiest way is a free OpenRouter account: sign in with
+            Google, GitHub or email and you're back here in a minute.
+          </p>
+          <ConnectOpenRouter onConnected={onConnected} onError={onError} />
+          <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
+            Prefer another model, or one running on this computer?{' '}
+            <button className="text-button" onClick={goModels}>
+              Settings → Model connections
+            </button>
+          </p>
+        </>
+      ) : models.length === 0 ? (
         <p style={{ margin: 0 }}>
           {pkg.label} needs an AI model to think with. Add one (for example an OpenRouter key) in{' '}
           <button className="text-button" onClick={goModels}>
@@ -148,125 +243,13 @@ function AddAgent({
   )
 }
 
-type Turn = { role: 'user' | 'assistant'; content: string }
-
-function AgentInstanceCard({
-  agent,
-  onChange,
-  onError,
-  reloadApps,
-}: {
-  agent: AgentInstance
-  onChange: () => void
-  onError: (message: string) => void
-  reloadApps: () => void
-}) {
-  const [turns, setTurns] = useState<Turn[]>([])
-  const [text, setText] = useState('')
-  const [thinking, setThinking] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    try {
-      await fn()
-      onChange()
-    } catch (e) {
-      onError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+// Small or fast models garble the nested tool calls some agents make; for
+// those, the strongest model connected is suggested first.
+const SMALL_MODEL = /flash|mini|lite|nano|haiku|small|:\d+(\.\d+)?b\b|\b\d+(\.\d+)?b\b/i
+export function suggestedConnection(models: ModelProvider[], strong?: boolean): string | undefined {
+  if (strong) {
+    const big = models.find((m) => !SMALL_MODEL.test(m.models[0]?.id || ''))
+    if (big) return big.id
   }
-  const send = async () => {
-    const content = text.trim()
-    if (!content || thinking) return
-    const next: Turn[] = [...turns, { role: 'user', content }]
-    setTurns(next)
-    setText('')
-    setThinking(true)
-    try {
-      const { reply } = await api.chatWithAgent(agent.id, next)
-      setTurns([...next, { role: 'assistant', content: reply }])
-      reloadApps() // it may have created an app
-    } catch (e) {
-      setTurns(turns)
-      setText(content)
-      onError((e as Error).message)
-    } finally {
-      setThinking(false)
-    }
-  }
-  const running = agent.status === 'running'
-  return (
-    <Card pad={20} style={{ marginBottom: 16, maxWidth: 820 }} data-testid={`agent-${agent.id}`}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 16 }}>{agent.name}</strong>
-        <StatusPill status={agent.status === 'missing' ? 'not started' : agent.status} />
-        <span style={{ color: c.muted2, fontSize: 12 }}>
-          {agent.apps_today}/{agent.apps_per_day} new apps today{agent.telegram ? ' · on Telegram' : ''}
-        </span>
-        <span style={{ flex: 1 }} />
-        {running ? (
-          <Btn sm disabled={busy} onClick={() => void act(() => api.stopAgentInstance(agent.id))}>
-            Pause
-          </Btn>
-        ) : (
-          <Btn sm disabled={busy} onClick={() => void act(() => api.startAgentInstance(agent.id))}>
-            Start
-          </Btn>
-        )}
-        <Btn
-          sm
-          disabled={busy}
-          onClick={() => {
-            if (window.confirm(`Remove ${agent.name}? Its memory and skills are deleted. Your apps stay.`))
-              void act(() => api.deleteAgentInstance(agent.id))
-          }}
-        >
-          Remove
-        </Btn>
-      </div>
-      <div style={{ margin: '16px 0', display: 'grid', gap: 10 }} data-testid="agent-chat">
-        {turns.length === 0 && (
-          <p style={{ color: c.muted, margin: 0 }}>
-            Try: “Build me a recipe app with a shopping list” or “What can you do?”
-          </p>
-        )}
-        {turns.map((t, i) =>
-          t.role === 'user' ? (
-            <div key={i} className="user-message">
-              {t.content}
-            </div>
-          ) : (
-            <div key={i} className="agent-message">
-              <AgentMessage text={t.content} />
-            </div>
-          ),
-        )}
-        {thinking && (
-          <p role="status" style={{ color: c.muted, margin: 0 }}>
-            {agent.name} is working… building an app can take a few minutes.
-          </p>
-        )}
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void send()
-        }}
-        style={{ display: 'flex', gap: 8 }}
-      >
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={running ? `Message ${agent.name}` : `Start ${agent.name} to chat`}
-          disabled={!running || thinking}
-          data-testid="agent-chat-input"
-          style={{ flex: 1 }}
-        />
-        <Btn type="submit" variant="primary" disabled={!running || thinking || !text.trim()}>
-          Send
-        </Btn>
-      </form>
-    </Card>
-  )
+  return models[0]?.id
 }

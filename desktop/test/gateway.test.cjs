@@ -200,6 +200,27 @@ test('task event streams survive quiet agent steps while other requests still ti
   assert.equal((await request('/v1/apps')).status, 502)
 })
 
+test('agent chats wait through a long silent reply, but not forever', async (t) => {
+  const { request } = await fixture(
+    t,
+    (req, res) => {
+      if (req.url === '/v1/agent-instances/abc/chat' || req.url === '/v1/agent-instances/abc/chat/stream') {
+        // Silent for longer than the normal idle limit, like an agent building an app.
+        setTimeout(() => res.end('{"reply":"done"}'), 400)
+        return
+      }
+      // An agent that never answers.
+    },
+    { idleTimeout: 150, agentChatTimeout: 1000 },
+  )
+  const chat = await request('/v1/agent-instances/abc/chat', {}, 'POST')
+  assert.equal(chat.status, 200)
+  assert.equal(chat.body, '{"reply":"done"}')
+  assert.equal((await request('/v1/agent-instances/abc/chat/stream', {}, 'POST')).status, 200)
+  assert.equal((await request('/v1/agent-instances/xyz/chat', {}, 'POST')).status, 502)
+  assert.equal((await request('/v1/apps')).status, 502)
+})
+
 test('native account import is bound to the chosen engine and never follows redirects', async (t) => {
   let received
   const { gateway, origin } = await fixture(t, (req, res) => {
@@ -230,4 +251,96 @@ test('native account import is bound to the chosen engine and never follows redi
     res.end()
   })
   await assert.rejects(redirected.gateway.importAgentLogin('codex', 'private-login', redirected.origin))
+})
+
+test('a stopped engine reports the restart message only when the connection is refused', async (t) => {
+  let asked = 0
+  const { request, engine } = await fixture(t, (_req, _res) => {}, {
+    idleTimeout: 150,
+    onUnreachable: () => (++asked, 'Your engine stopped. Starting it again…'),
+  })
+  // A slow engine is not a stopped one.
+  const slow = await request('/v1/apps')
+  assert.equal(slow.status, 502)
+  assert.doesNotMatch(slow.body, /Starting it again/)
+  assert.equal(asked, 0)
+  await new Promise((r) => engine.close(r))
+  engine.closeAllConnections()
+  const stopped = await request('/v1/apps')
+  assert.equal(stopped.status, 502)
+  assert.match(stopped.body, /Starting it again/)
+  assert.equal(asked, 1)
+})
+
+test('an agent app has its own origin that reaches only that agent app', async (t) => {
+  const seen = []
+  const { request, gateway, saved } = await fixture(
+    t,
+    (req, res) => {
+      seen.push({ url: req.url, cookie: req.headers.cookie })
+      res.setHeader('set-cookie', 'sbx_session=stolen; Path=/')
+      res.setHeader('content-security-policy', "default-src 'self'")
+      res.end('<h1>Control</h1>')
+    },
+    { session: 'engine-login' },
+  )
+  const port = new URL(gateway.origin).port
+  const appHost = `ui-o1abc2.localhost:${port}`
+  const page = await request('/chat?x=1', { host: appHost })
+  assert.equal(page.status, 200)
+  assert.equal(page.body, '<h1>Control</h1>')
+  assert.deepEqual(seen.at(-1), { url: '/v1/agent-instances/o1abc2/ui/chat?x=1', cookie: 'sbx_session=engine-login' })
+  assert.deepEqual(saved, [], 'an agent app must never set the engine login')
+  const csp = [page.headers['content-security-policy']].flat().join(', ')
+  assert.match(csp, /default-src 'self'/)
+  assert.match(csp, new RegExp(`frame-ancestors ${gateway.origin}`))
+  // Its own scripts may call it; nothing else may, and it cannot climb out.
+  assert.equal((await request('/x', { host: appHost, origin: `http://${appHost}` })).status, 200)
+  assert.equal((await request('/x', { host: appHost, origin: gateway.origin })).status, 403)
+  assert.equal((await request('/x', { host: appHost, 'x-sandboxd-desktop': 'nope' })).status, 403)
+  const count = seen.length
+  const raw = (rawPath) =>
+    new Promise((resolve, reject) => {
+      const { port: p } = new URL(gateway.origin)
+      http
+        .request({ host: '127.0.0.1', port: p, path: rawPath, headers: { ...gateway.authorization, host: appHost } }, (r) => {
+          r.resume()
+          resolve(r.statusCode)
+        })
+        .on('error', reject)
+        .end()
+    })
+  assert.equal(await raw('/../../../apps'), 503)
+  assert.equal(await raw('/%2e%2e/%2e%2e/%2e%2e/apps'), 503)
+  assert.equal(seen.length, count)
+  // Another port's ui- host is not ours.
+  assert.equal((await request('/x', { host: 'ui-o1abc2.localhost:1' })).status, 403)
+})
+
+test('an agent app may redirect within itself, never elsewhere', async (t) => {
+  const { request, gateway } = await fixture(t, (req, res) => {
+    const to = { '/v1/agent-instances/o1abc2/ui/': '/chat', '/v1/agent-instances/o1abc2/ui/away': '//evil.example/x', '/v1/agent-instances/o1abc2/ui/abs': 'http://evil.example/' }[req.url]
+    res.writeHead(302, { location: to })
+    res.end()
+  })
+  const host = `ui-o1abc2.localhost:${new URL(gateway.origin).port}`
+  const inside = await request('/', { host })
+  assert.equal(inside.status, 302)
+  assert.equal(inside.headers.location, '/chat')
+  assert.equal((await request('/away', { host })).status, 502)
+  assert.equal((await request('/abs', { host })).status, 502)
+  // The workspace itself still never follows engine redirects.
+  assert.equal((await request('/v1/agent-instances/o1abc2/ui/')).status, 502)
+})
+
+test('the gateway reuses its port so agent apps keep their address, or takes a free one', async (t) => {
+  const first = await fixture(t)
+  const port = Number(new URL(first.gateway.origin).port)
+  // That port is busy now: another one is used.
+  const second = await fixture(t, undefined, { port })
+  assert.notEqual(Number(new URL(second.gateway.origin).port), port)
+  const free = Number(new URL(second.gateway.origin).port)
+  await second.gateway.close()
+  const third = await fixture(t, undefined, { port: free })
+  assert.equal(Number(new URL(third.gateway.origin).port), free)
 })

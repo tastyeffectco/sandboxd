@@ -163,7 +163,26 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 
 	args := []string{"exec", "--json", "--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox", "-C", spec.workDir, "-o", outPath}
-	if proxy := strings.TrimRight(os.Getenv("RUNTIMED_ANTHROPIC_PROXY"), "/"); proxy != "" {
+	var connectionKey string
+	if c := spec.provider; c != nil {
+		// A model connection (OpenRouter...): Codex speaks the Responses API to
+		// sandboxd's connection proxy, which checks the task's capability token
+		// and adds the real key.
+		base, err := ipBaseURL(c.BaseURL)
+		if err != nil {
+			return "", usage, err
+		}
+		connectionKey = c.Token
+		args = append(args,
+			"-c", `model_provider="sandboxd"`,
+			"-c", `model_providers.sandboxd.name="sandboxd"`,
+			"-c", "model_providers.sandboxd.base_url="+strconv.Quote(base),
+			"-c", `model_providers.sandboxd.wire_api="responses"`,
+			"-c", `model_providers.sandboxd.env_key="SANDBOXD_CONNECTION_KEY"`,
+			"-c", `model_providers.sandboxd.supports_websockets=false`,
+		)
+		spec.model = c.Model.ID
+	} else if proxy := strings.TrimRight(os.Getenv("RUNTIMED_ANTHROPIC_PROXY"), "/"); proxy != "" {
 		args = append(args,
 			"-c", `model_provider="sandboxd"`,
 			"-c", `model_providers.sandboxd.name="sandboxd"`,
@@ -193,7 +212,10 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 	// Scrub inherited secrets and keep proxy-mode conversation state separate
 	// for each model. Subscription credentials stay in the control plane.
 	cmd.Env = agentEnv(c.name(), spec.env)
-	if os.Getenv("RUNTIMED_ANTHROPIC_PROXY") != "" {
+	if connectionKey != "" {
+		cmd.Env = append(cmd.Env, "SANDBOXD_CONNECTION_KEY="+connectionKey)
+	}
+	if spec.provider != nil || os.Getenv("RUNTIMED_ANTHROPIC_PROXY") != "" {
 		dir := connectionSessionDir(spec, c.name())
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return "", usage, err

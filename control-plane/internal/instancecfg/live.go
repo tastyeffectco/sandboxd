@@ -17,6 +17,7 @@ type Snapshot struct {
 	IdleThresholdSeconds int
 	KeepaliveMaxSeconds  int
 	DefaultModels        map[string]string // agent id -> default model id
+	TimeZone             string            // IANA zone agents run in; "" is UTC
 }
 
 // Live is the shared, mutable holder. Construct with New; read via the
@@ -46,6 +47,13 @@ func (l *Live) DefaultModel(agent string) string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.snap.DefaultModels[agent]
+}
+
+// TimeZone is the IANA time zone agents run in ("" is UTC).
+func (l *Live) TimeZone() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.snap.TimeZone
 }
 
 // cloneSnap deep-copies the map so a stored Snapshot never shares mutable state

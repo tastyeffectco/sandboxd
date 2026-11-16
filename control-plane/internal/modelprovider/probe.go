@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -68,11 +69,17 @@ func (s *Service) Probe(ctx context.Context, id, model string) error {
 	}
 	resp, err := s.transport.RoundTrip(req)
 	if err != nil {
-		return errors.New("cannot reach provider; check the URL and network access from the control plane")
+		if isOllama(c.BaseURL) {
+			// Seen on Windows: Ollama answers only on the PC itself by
+			// default, so sandboxd's engine cannot reach it.
+			return errors.New("sandboxd can't reach Ollama. Make sure Ollama is running. On Windows, set " +
+				"OLLAMA_HOST to 0.0.0.0 in your environment variables and restart Ollama, so sandboxd can reach it")
+		}
+		return errors.New("sandboxd can't reach this AI service. Check its address, and that it is running")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("provider rejected the test; check URL, API key, model and quota")
+		return errors.New("the AI service refused the test. Check its address, API key, model and credit")
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	var result struct {
@@ -84,4 +91,10 @@ func (s *Service) Probe(ctx context.Context, id, model string) error {
 		return errors.New("provider returned an unexpected inference response")
 	}
 	return nil
+}
+
+// isOllama: the address is Ollama's (its default port).
+func isOllama(baseURL string) bool {
+	u, err := url.Parse(baseURL)
+	return err == nil && u.Port() == "11434"
 }

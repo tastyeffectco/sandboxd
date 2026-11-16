@@ -183,6 +183,20 @@ func TestProxyProtocolsAndBoundaries(t *testing.T) {
 			if requests != 1 {
 				t.Fatalf("invalid request reached upstream: %d", requests)
 			}
+			// Agents send their model family's reasoning switch (OpenClaw sends
+			// DeepSeek's thinking and Qwen's chat_template_kwargs, Hermes sends
+			// reasoning_effort); those are inference fields and pass.
+			if protocol == OpenAI {
+				for _, body := range []string{
+					`{"model":"team/model","thinking":{"type":"enabled"}}`,
+					`{"model":"team/model","reasoning":{"effort":"low"},"reasoning_effort":"low"}`,
+					`{"model":"team/model","chat_template_kwargs":{"enable_thinking":false},"enable_thinking":false}`,
+				} {
+					if w := call(path, body, conn.Token); w.Code != 200 {
+						t.Fatalf("rejected reasoning field %s: %d %s", body, w.Code, w.Body.String())
+					}
+				}
+			}
 		})
 	}
 }
@@ -328,5 +342,123 @@ func TestProbeUsesSelectedModelAndRedactsUpstreamErrors(t *testing.T) {
 				t.Fatalf("unexpected inference requests: %d", requests.Load())
 			}
 		})
+	}
+}
+
+// A model that can't reason (Ollama's qwen2.5 refuses reasoning_effort with
+// 400) still answers: the proxy retries once without the reasoning switches.
+func TestProxyRetriesWithoutReasoningWhenRefused(t *testing.T) {
+	s, _ := testService(t)
+	var bodies []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		if strings.Contains(string(body), "reasoning_effort") {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"error":"model does not support thinking"}`)
+			return
+		}
+		io.WriteString(w, `{"choices":[{"message":{"content":"hi"}}]}`)
+	}))
+	defer upstream.Close()
+	c, err := s.Save(context.Background(), "", Input{Name: "Ollama", Protocol: OpenAI, BaseURL: upstream.URL + "/v1", Models: []Model{{ID: "qwen2.5:7b"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := s.Connection(context.Background(), c.ID, "", "http://proxy", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/providers/"+c.ID+"/v1/chat/completions", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+conn.Token)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	w := send(`{"model":"qwen2.5:7b","messages":[],"reasoning_effort":"medium","temperature":0.2}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "hi") {
+		t.Fatalf("not retried: %d %s", w.Code, w.Body.String())
+	}
+	if len(bodies) != 2 || strings.Contains(bodies[1], "reasoning_effort") || !strings.Contains(bodies[1], "temperature") {
+		t.Fatalf("retry should drop only the reasoning switch: %q", bodies)
+	}
+	// Other refusals are not retried.
+	bodies = nil
+	if w := send(`{"model":"qwen2.5:7b","messages":[]}`); w.Code != 200 || len(bodies) != 1 {
+		t.Fatalf("plain request: %d, %d calls", w.Code, len(bodies))
+	}
+}
+
+// Ollama on Windows answers only on the PC itself by default: the test says
+// how to let sandboxd reach it.
+func TestProbeExplainsAnUnreachableOllama(t *testing.T) {
+	s, _ := testService(t)
+	if !isOllama("http://172.31.208.1:11434/v1") || isOllama("https://openrouter.ai/api/v1") {
+		t.Fatal("isOllama")
+	}
+	c, err := s.Save(context.Background(), "", Input{Name: "Ollama", Protocol: OpenAI,
+		BaseURL: "http://127.0.0.1:11434/v1", Models: []Model{{ID: "qwen3:4b"}}})
+	if err != nil {
+		t.Skip("this address is not accepted here: ", err)
+	}
+	if err := s.Probe(context.Background(), c.ID, ""); err == nil || !strings.Contains(err.Error(), "OLLAMA_HOST") {
+		t.Fatalf("probe: %v", err)
+	}
+}
+
+// Codex reaches an OpenAI-compatible connection (OpenRouter...) through the
+// Responses API: the proxy forwards /responses with Codex's fields, keeps the
+// same model and credential rules, and drops client metadata.
+func TestProxyForwardsCodexResponsesRequests(t *testing.T) {
+	s, _ := testService(t)
+	key := "upstream-only-secret"
+	var got map[string]any
+	var path string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		if r.Header.Get("Authorization") != "Bearer "+key {
+			t.Error("missing upstream auth")
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: response.completed\ndata: {}\n\n")
+	}))
+	defer upstream.Close()
+	c, err := s.Save(context.Background(), "", Input{Name: "OpenRouter", Protocol: OpenAI, BaseURL: upstream.URL + "/api/v1", APIKey: &key, Models: []Model{{ID: "deepseek/deepseek-v4.1-flash"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := s.Connection(context.Background(), c.ID, "", "http://proxy", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path, body string) int {
+		r := httptest.NewRequest("POST", path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+conn.Token)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w.Code
+	}
+	codex := `{"model":"deepseek/deepseek-v4.1-flash","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],` +
+		`"tools":[],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,` +
+		`"include":["reasoning.encrypted_content"],"prompt_cache_key":"t1","client_metadata":{"x":"y"}}`
+	if code := call("/providers/"+c.ID+"/v1/responses", codex); code != 200 {
+		t.Fatalf("codex request: %d", code)
+	}
+	if path != "/api/v1/responses" || got["input"] == nil || got["client_metadata"] != nil {
+		t.Errorf("forwarded %s %v", path, got)
+	}
+	for _, bad := range []string{
+		`{"model":"other","input":[]}`,
+		`{"model":"deepseek/deepseek-v4.1-flash","input":[],"api_base":"http://evil.invalid"}`,
+		`{"model":"deepseek/deepseek-v4.1-flash","input":[],"previous_response_id":"r1"}`,
+	} {
+		if code := call("/providers/"+c.ID+"/v1/responses", bad); code < 400 {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+	if code := call("/providers/"+c.ID+"/v1/embeddings", `{"model":"deepseek/deepseek-v4.1-flash"}`); code < 400 {
+		t.Error("accepted another operation")
 	}
 }

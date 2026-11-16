@@ -5,21 +5,30 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"fmt"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelprovider"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"path/filepath"
 )
 
 func agentTestServer(t *testing.T) (*Server, *store.Store, string) {
 	t.Helper()
-	st, err := store.Open(context.Background(), "file::memory:?_fk=1", "../../migrations")
+	// A file, not "file::memory:": the store's pool opens more than one
+	// connection when a turn writes while the test reads, and each in-memory
+	// connection is its own empty database (the list came back empty in CI).
+	st, err := store.Open(context.Background(), "file:"+filepath.Join(t.TempDir(), "agents.db")+"?_fk=1", "../../migrations")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	s := &Server{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	s.Handler() // sets the inner router the tools call
 	const secret = "agent-secret-for-tests"
@@ -88,7 +97,7 @@ func TestAgentMCPHandshakeAndTools(t *testing.T) {
 			t.Errorf("%v: required is null (strict MCP clients reject the tool list)", tl.(map[string]any)["name"])
 		}
 	}
-	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status" {
+	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status,message_user,share_file" {
 		t.Fatalf("tools: %v (an agent must not get delete or other tools)", names)
 	}
 
@@ -141,4 +150,66 @@ func toolText(out map[string]any) string {
 	}
 	s, _ := c[0].(map[string]any)["text"].(string)
 	return s
+}
+
+// An agent counts as running only once its chat API accepts connections.
+func TestAgentAnsweringProbe(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	if !agentAnswering(context.Background(), "127.0.0.1", port) {
+		t.Fatal("listening agent reported as not answering")
+	}
+	l.Close()
+	if agentAnswering(context.Background(), "127.0.0.1", port) {
+		t.Fatal("closed port reported as answering")
+	}
+}
+
+// An agent always thinks with the model it was given: a model name it kept
+// from before the person changed its model is replaced, not refused.
+func TestAgentModelRequestUsesTheAgentsModel(t *testing.T) {
+	s, st, _ := agentTestServer(t)
+	cipher, err := secrets.Load("", filepath.Join(t.TempDir(), "key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ModelProviders, err = modelprovider.New(st, cipher); err != nil {
+		t.Fatal(err)
+	}
+	s.AgentProxyURL = "http://sandboxd:9100"
+	got := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		got <- fmt.Sprint(b["model"])
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	defer upstream.Close()
+	key := "k"
+	c, err := s.ModelProviders.Save(context.Background(), "", modelprovider.Input{Name: "Pro", Protocol: "openai-completions",
+		BaseURL: upstream.URL + "/v1", Models: []modelprovider.Model{{ID: "deepseek/pro"}}, APIKey: &key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const secret = "agent-secret-3"
+	if err := st.CreateAgentInstance(context.Background(), &store.AgentInstance{ID: "h3", OwnerToken: "alice", Package: "openmausbot",
+		Name: "OpenMausBot", ConnectionID: c.ID, Model: "deepseek/pro", SecretHash: hashSecret(secret), CreatedAt: "now"}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/agents/h3/v1/chat/completions",
+		strings.NewReader(`{"model":"deepseek/flash-it-remembered","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer "+secret)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.AgentProxy().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("HTTP %d %s", rec.Code, rec.Body.String())
+	}
+	if m := <-got; m != "deepseek/pro" {
+		t.Errorf("upstream got model %q", m)
+	}
 }

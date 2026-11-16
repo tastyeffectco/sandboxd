@@ -52,7 +52,7 @@ export interface Settings {
   runtime: { storage_mode: string; base_image: string }
   lifecycle: { idle_reap_enabled: boolean; idle_threshold_seconds: number; keepalive_max_seconds: number }
   egress: { mode: string }
-  agents: { providers: string[]; system_prompt?: string; default_models: Record<string, string> }
+  agents: { providers: string[]; system_prompt?: string; default_models: Record<string, string>; time_zone?: string }
   presets: Preset[]
   capabilities: Record<string, boolean>
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
@@ -80,7 +80,7 @@ export interface SettingsPatch {
     keepalive_max_seconds?: number
   }
   // Per-agent default model id (merges; empty value clears one).
-  agents?: { default_models?: Record<string, string> }
+  agents?: { default_models?: Record<string, string>; time_zone?: string }
 }
 
 // Advisory runtime detection (GET /v1/apps/{id}/runtime-inspect). Suggestions
@@ -312,6 +312,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
+  return answer<T>(res)
+}
+
+async function answer<T>(res: Response): Promise<T> {
   if (!res.ok) {
     if (res.status === 401 && onUnauthorized) onUnauthorized()
     let message = `${res.status} ${res.statusText}`
@@ -364,6 +368,10 @@ export interface AgentCatalogEntry {
   download: string
   memory: string
   telegram: boolean
+  /** It leans on many tools at once: suggest the strongest model connected. */
+  strong_model?: boolean
+  ui_label?: string
+  chat?: boolean
 }
 export interface AgentInstance {
   id: string
@@ -371,12 +379,41 @@ export interface AgentInstance {
   name: string
   connection_id: string
   model: string
-  status: 'running' | 'stopped' | 'missing'
+  status: 'running' | 'starting' | 'stopped' | 'missing'
   telegram: boolean
   apps_today: number
   apps_per_day: number
   created_at: string
+  /** The agent's own app (e.g. OpenClaw's Control panel), when it has one. */
+  ui_label?: string
+  /** sandboxd's chat can talk to it; otherwise it is used in its own app. */
+  chat?: boolean
+  /** Its own app is a full chat: open there first, sandboxd's chat second. */
+  app_first?: boolean
 }
+// One conversation per agent, kept by the engine like a chat app: replies keep
+// going when the window closes. Every agent's stream becomes the same shape.
+export type AgentStep = { id: string; tool: string; label?: string; status: 'running' | 'done' | 'failed' }
+export interface AgentMessageRow {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking?: string
+  steps: AgentStep[]
+  state: 'working' | 'done' | 'stopped' | 'error'
+  error?: string
+  channel: string
+  created_at: string
+  attachments?: AgentAttachment[]
+}
+/** A file the person attached in an agent's chat. */
+export interface AgentAttachment {
+  id: string
+  name: string
+  type: string
+  size: number
+}
+
 export interface AgentInstanceInput {
   package: string
   connection_id: string
@@ -394,6 +431,27 @@ export const api = {
   startAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/start`),
   stopAgentInstance: (id: string) => req<AgentInstance>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/stop`),
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
+  setAgentModel: (id: string, connection_id: string) =>
+    req<AgentInstance>('PATCH', `/v1/agent-instances/${encodeURIComponent(id)}`, { connection_id }),
+  listAgentMessages: (id: string) =>
+    req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
+  sendAgentMessage: (id: string, content: string, attachments: string[] = []) =>
+    req<{ messages: AgentMessageRow[] }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages`, {
+      content,
+      attachments,
+    }),
+  uploadAgentFile: async (id: string, file: Blob, name: string) =>
+    answer<AgentAttachment>(
+      await fetch(`/v1/agent-instances/${encodeURIComponent(id)}/files?name=${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      }),
+    ),
+  agentFileUrl: (id: string, fileId: string) =>
+    `/v1/agent-instances/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}`,
+  stopAgentMessage: (id: string) => req<void>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/messages/stop`),
+  clearAgentMessages: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   chatWithAgent: (id: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
     req<{ reply: string }>('POST', `/v1/agent-instances/${encodeURIComponent(id)}/chat`, { messages }),
   listModelProviders: () =>
@@ -572,6 +630,8 @@ export const api = {
   // Full delete: the app AND everything it owns (sandbox container, workspace
   // image, snapshots, and all app rows). Irreversible.
   deleteApp: (id: string) => req<unknown>('DELETE', `/v1/apps/${id}`),
+  // The person's sandboxd agent: made on first use; each call refreshes its tool settings.
+  ensureAssistant: () => req<{ app_id: string }>('POST', '/v1/assistant'),
   createAppSandbox: (id: string, body: { template?: string; runtime_preset?: string } = {}) =>
     req<Sandbox>('POST', `/v1/apps/${id}/sandbox`, body),
 
