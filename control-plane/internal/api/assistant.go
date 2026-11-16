@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,8 @@ type assistantRegistry struct {
 	mu        sync.Mutex
 	sandboxes map[string]string          // workspace id -> owner
 	choices   map[string]assistantChoice // owner -> latest choice
+	turns     map[string]int             // owner -> messages sent to their sandboxd agent
+	pending   map[string]map[string]int  // owner -> thing to remove -> turn it was asked in
 }
 
 type assistantChoice struct{ Agent, Provider, Model string }
@@ -78,7 +81,33 @@ func (a *assistantRegistry) note(sandboxID string, c assistantChoice) bool {
 		a.choices = map[string]assistantChoice{}
 	}
 	a.choices[owner] = c
+	if a.turns == nil {
+		a.turns = map[string]int{}
+	}
+	a.turns[owner]++
 	return true
+}
+
+// confirmRemoval guards removing the person's own apps and agents: the first
+// call records the request and returns false, so the sandboxd agent asks the
+// person; a later call returns true only in the person's very next message,
+// so the agent cannot confirm on its own within one turn.
+func (a *assistantRegistry) confirmRemoval(owner, target string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	turn := a.turns[owner]
+	if asked, ok := a.pending[owner][target]; ok && turn == asked+1 {
+		delete(a.pending[owner], target)
+		return true
+	}
+	if a.pending == nil {
+		a.pending = map[string]map[string]int{}
+	}
+	if a.pending[owner] == nil {
+		a.pending[owner] = map[string]int{}
+	}
+	a.pending[owner][target] = turn
+	return false
 }
 
 func (a *assistantRegistry) choice(owner string) assistantChoice {
@@ -206,9 +235,12 @@ func assistantFiles(mcpURL, secret string) map[string]string {
 		"opencode.json":         string(opencode) + "\n",
 		".mcp.json":             string(claude) + "\n",
 		".claude/settings.json": "{\n  \"enableAllProjectMcpServers\": true\n}\n",
-		"AGENTS.md":             assistantGuide,
-		"CLAUDE.md":             "@AGENTS.md\n",
-		".gitignore":            "opencode.json\n.mcp.json\n",
+		// Codex: `codex exec` loads a project's .codex/config.toml.
+		".codex/config.toml": "[mcp_servers.sandboxd]\nurl = " + strconv.Quote(mcpURL) +
+			"\nhttp_headers = { Authorization = " + strconv.Quote("Bearer "+secret) + " }\n",
+		"AGENTS.md":  assistantGuide,
+		"CLAUDE.md":  "@AGENTS.md\n",
+		".gitignore": "opencode.json\n.mcp.json\n.codex/\n",
 	}
 }
 
@@ -256,9 +288,15 @@ var assistantTools = append(agentToolsNamed("list_apps", "create_app", "ask_app"
 			"ref":      map[string]any{"type": "string", "description": "Release tag or branch to install; the latest release when omitted"},
 			"name":     map[string]any{"type": "string", "description": "Optional app name"},
 		}, "repo_url")},
-	mcpTool{"remove_app", "Remove an app that you installed or created yourself and that does not work (an install " +
-		"that failed or was refused). You cannot remove the user's other apps.",
+	mcpTool{"remove_app", "Remove an app and its files. An app you installed or created yourself is removed at once " +
+		"(use it for installs that failed). For the user's other apps, call it as soon as they ask (don't ask them " +
+		"first yourself): the first call only records the request and tells you what to ask; end your reply with " +
+		"that question, and call it again after they say yes.",
 		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
+	mcpTool{"remove_agent", "Remove one of the user's agents and what it remembers. Call it as soon as they ask " +
+		"(don't ask them first yourself): the first call only records the request and tells you what to ask; end " +
+		"your reply with that question, and call it again after they say yes.",
+		obj(map[string]any{"agent_id": map[string]any{"type": "string"}}, "agent_id")},
 	mcpTool{"read_memory", "Read an app's project memory (BRAIN.md and its notes).",
 		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
 	mcpTool{"list_agents", "List the user's agents (Hermes, OpenClaw...) with their status.", obj(map[string]any{})},
@@ -311,13 +349,29 @@ func (s *Server) assistantTool(ctx context.Context, h *store.AgentInstance, name
 		if id == "" || s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+id, nil, &app) != nil {
 			return "", errors.New("no such app (see list_apps)")
 		}
-		if !slices.Contains(app.Tags, "created-by:"+h.Name) {
-			return "", errors.New("you can only remove apps you installed or created yourself; ask the user to remove this one")
+		if !slices.Contains(app.Tags, "created-by:"+h.Name) && !s.assistants.confirmRemoval(h.OwnerToken, "app:"+id) {
+			return "Not removed yet. Ask the user: \"Remove " + app.Name + "? Its files are deleted for good.\" " +
+				"End your reply there, and call remove_app again only if they say yes.", nil
 		}
 		if err := s.agentCall(ctx, h, http.MethodDelete, "/v1/apps/"+id, nil, nil); err != nil {
 			return "", err
 		}
 		return "Removed " + app.Name + ".", nil
+
+	case "remove_agent":
+		id := strings.TrimSpace(args["agent_id"])
+		ag, err := s.Store.GetAgentInstanceForOwner(ctx, id, h.OwnerToken)
+		if err != nil {
+			return "", errors.New("no such agent (see list_agents)")
+		}
+		if !s.assistants.confirmRemoval(h.OwnerToken, "agent:"+id) {
+			return "Not removed yet. Ask the user: \"Remove the agent " + ag.Name + "? What it remembers is deleted " +
+				"for good.\" End your reply there, and call remove_agent again only if they say yes.", nil
+		}
+		if err := s.agentCall(ctx, h, http.MethodDelete, "/v1/agent-instances/"+id, nil, nil); err != nil {
+			return "", err
+		}
+		return "Removed the agent " + ag.Name + ".", nil
 
 	case "read_memory":
 		sbID, err := s.agentAppSandbox(ctx, h, args["app_id"])
@@ -660,6 +714,10 @@ technical. You act on their sandboxd through the **sandboxd** tools (MCP):
 - **Agents** (Hermes, OpenClaw...): list_agents, add_agent, message_agent (give
   one a task and get its answer), read_agent_conversation (what it was asked
   and did), read_agent_memory (what it remembers about the user).
+- **Removing**: remove_app and remove_agent. When the user asks to delete
+  something, call the tool right away, without asking them yourself first: the
+  first call removes nothing and gives you the question to ask. Ask it, end
+  your reply, and call again only after they answer yes.
 
 Use the tools rather than building things inside this workspace.
 
@@ -695,5 +753,6 @@ Use the tools rather than building things inside this workspace.
 - Short, plain sentences. No jargon (no "MCP", "sandbox.yaml", "port").
 - Say what you did and what happens next ("I asked Hermes; it will answer in a
   minute").
-- Ask before deleting anything or doing something that costs money.
+- Ask before doing something that costs money. For deleting, let remove_app
+  and remove_agent ask (above).
 `

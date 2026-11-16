@@ -14,7 +14,8 @@ and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-age
 - `POST /v1/assistant` makes it on first use and, on every call, writes the
   project's tool settings again with a fresh secret and sandboxd's current
   address: `opencode.json` (OpenCode), `.mcp.json` + `.claude/settings.json`
-  (Claude Code), plus `AGENTS.md` (how sandboxd works) and `CLAUDE.md`.
+  (Claude Code), `.codex/config.toml` (Codex: `codex exec` loads a project's
+  config), plus `AGENTS.md` (how sandboxd works) and `CLAUDE.md`.
 - Its tools are served over MCP on the agent proxy port at `/assistant/mcp`,
   authenticated by that secret (only its hash is stored, table `assistant`).
   They act as the owner through sandboxd's own `/v1` routes:
@@ -24,7 +25,8 @@ and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-age
   | `list_apps`, `create_app`, `ask_app`, `app_status` | Same as the agents' tools (no daily app limit: it acts on the person's direct request) |
   | `install_project` | New app from a GitHub repo; its coding agent writes `sandbox.yaml` under the Free apps rules, or says why it can't run |
   | `read_memory` | An app's `BRAIN.md` and `brain/*.md` |
-  | `remove_app` | Only apps it installed or created itself (tag `created-by:sandboxd`): it cleans up an install that failed or was refused |
+  | `remove_app` | Apps it installed or created itself (tag `created-by:sandboxd`) go at once, to clean up a failed install. Any other app only after the person says yes (below) |
+  | `remove_agent` | One of the person's agents, only after they say yes |
   | `add_agent` | Adds an agent from the agent catalog (without a package: lists the catalog), on the person's first AI connection agents can use |
   | `read_agent_memory` | An agent's memory notes from its own folder (MEMORY.md, USER.md, memories/, memory/), read-only and size-limited |
   | `list_agents`, `message_agent`, `read_agent_conversation` | The person's agents; a task sent to one shows in that agent's chat as "From the user's sandboxd agent: ..." and its answer comes back (waits up to 4 minutes) |
@@ -34,6 +36,11 @@ engine remembers the agent, connection and model of the latest message sent to
 it), not on the free tier. Before installing, it reads the project's
 requirements; the install task stops at once, with a reason, when the project
 can't run in a workspace (for example JSON Crack 5 needs Node 24).
+
+Removing what the person made needs their yes: the first `remove_app` or
+`remove_agent` call removes nothing and tells the agent to ask; a second call
+works only during the person's very next message, so the agent can't confirm by
+itself within one turn (the engine counts the messages sent to it).
 
 ## Verified (Windows PC, OpenCode free model)
 
@@ -50,9 +57,13 @@ can't run in a workspace (for example JSON Crack 5 needs Node 24).
 - "What does Hermes remember about me?" → two facts from Hermes's memory notes.
 - "Add a new Hermes agent for me called Researcher" → added and running in 15 s.
 - CADCraft from Free apps: running 13 s after the click, with no AI involved.
+- "Please delete my app Old notes" → asked "Remove Old notes? Its files are
+  deleted for good." and kept it; after "Yes, delete it." the app was gone. The
+  same for an agent ("remove the agent Temp" → asked, then removed after "Yes.").
+- Codex: with the generated `.codex/config.toml`, `codex exec` (0.162.1, as
+  runtimed runs it) connects with the secret, lists the tools and calls them
+  (checked against a stand-in model and tool server; no ChatGPT login on the PC).
 
 ## Not yet
 
-- Codex reads MCP servers only from its global config, so the tools reach
-  OpenCode and Claude Code for now.
-- Removing the person's own apps or agents (with their confirmation).
+- Pi has no MCP support, so on Pi the agent can talk but not use the tools.

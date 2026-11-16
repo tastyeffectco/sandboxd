@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -51,7 +52,7 @@ func TestAssistantToolsNeedItsOwnSecret(t *testing.T) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
 	got := strings.Join(names, ",")
-	for _, want := range []string{"create_app", "install_project", "read_memory", "list_agents", "message_agent", "read_agent_conversation"} {
+	for _, want := range []string{"create_app", "install_project", "read_memory", "list_agents", "message_agent", "read_agent_conversation", "remove_agent"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("tools %s: missing %s", got, want)
 		}
@@ -147,12 +148,16 @@ func TestAssistantFilesPointEachCodingAgentAtTheTools(t *testing.T) {
 	if !strings.Contains(files[".claude/settings.json"], "enableAllProjectMcpServers") || files["CLAUDE.md"] != "@AGENTS.md\n" {
 		t.Error("Claude Code must load the project's MCP server and guide")
 	}
+	if files[".codex/config.toml"] != "[mcp_servers.sandboxd]\nurl = \"http://172.18.0.2:7681/assistant/mcp\"\n"+
+		"http_headers = { Authorization = \"Bearer s3cret\" }\n" || !strings.Contains(files[".gitignore"], ".codex/") {
+		t.Errorf("Codex config: %q", files[".codex/config.toml"])
+	}
 	if !strings.Contains(files["AGENTS.md"], "install_project") || !strings.Contains(files[".gitignore"], "opencode.json") {
 		t.Error("the guide names the tools, and the secret stays out of git")
 	}
 }
 
-func TestAssistantRemovesOnlyAppsItMade(t *testing.T) {
+func TestAssistantRemovesTheUsersAppsOnlyAfterTheySayYes(t *testing.T) {
 	s, _, secret := assistantTestServer(t)
 	ctx := context.Background()
 	h := assistantActor("alice")
@@ -170,17 +175,68 @@ func TestAssistantRemovesOnlyAppsItMade(t *testing.T) {
 			map[string]any{"name": "remove_app", "arguments": map[string]string{"app_id": id}})
 		return assistantToolText(t, out)
 	}
-	if text, isErr := call(theirs.ID); !isErr || !strings.Contains(text, "only remove apps you installed") {
-		t.Errorf("the person's own app: %q (error %v)", text, isErr)
-	}
+	s.assistants.addSandbox("sb-assistant", "alice")
+	s.assistants.note("sb-assistant", assistantChoice{}) // the user's message
 	if text, isErr := call(mine.ID); isErr || text != "Removed JSON Crack." {
 		t.Errorf("its own app: %q (error %v)", text, isErr)
 	}
 	if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+mine.ID, nil, nil); err == nil {
 		t.Error("the app is still there")
 	}
-	if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+theirs.ID, nil, nil); err != nil {
-		t.Errorf("the person's app is gone: %v", err)
+	theirsKept := func(when string) {
+		if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+theirs.ID, nil, nil); err != nil {
+			t.Errorf("%s: the person's app is gone: %v", when, err)
+		}
+	}
+	if text, isErr := call(theirs.ID); isErr || !strings.Contains(text, "Ask the user") || !strings.Contains(text, "My shop") {
+		t.Errorf("the person's app, first call: %q (error %v)", text, isErr)
+	}
+	theirsKept("first call")
+	// Calling again in the same turn does not count as the user's yes.
+	if text, _ := call(theirs.ID); !strings.Contains(text, "Ask the user") {
+		t.Errorf("same turn: %q", text)
+	}
+	theirsKept("same turn")
+	s.assistants.note("sb-assistant", assistantChoice{}) // "yes"
+	if text, isErr := call(theirs.ID); isErr || text != "Removed My shop." {
+		t.Errorf("after the user's yes: %q (error %v)", text, isErr)
+	}
+	if err := s.agentCall(ctx, h, http.MethodGet, "/v1/apps/"+theirs.ID, nil, nil); err == nil {
+		t.Error("the person's app is still there after they said yes")
+	}
+}
+
+func TestAssistantRemovesAnAgentOnlyAfterTheUserSaysYes(t *testing.T) {
+	s, _, secret := assistantTestServer(t)
+	ctx := context.Background()
+	s.Docker = &docker.Client{Bin: "true"} // removing the agent's container always works
+	s.assistants.addSandbox("sb-assistant", "alice")
+	call := func(id string) (string, bool) {
+		_, out := mcpCall(t, s.AgentProxy(), "/assistant/mcp", secret, "tools/call",
+			map[string]any{"name": "remove_agent", "arguments": map[string]string{"agent_id": id}})
+		return assistantToolText(t, out)
+	}
+	s.assistants.note("sb-assistant", assistantChoice{}) // "remove Hermes"
+	if text, isErr := call("h1"); isErr || !strings.Contains(text, "Remove the agent Hermes?") {
+		t.Errorf("first call: %q (error %v)", text, isErr)
+	}
+	s.assistants.note("sb-assistant", assistantChoice{}) // "no, wait, something else"
+	s.assistants.note("sb-assistant", assistantChoice{}) // a later message is not the answer
+	if text, _ := call("h1"); !strings.Contains(text, "Ask the user") {
+		t.Errorf("stale confirmation accepted: %q", text)
+	}
+	if _, err := s.Store.GetAgentInstanceForOwner(ctx, "h1", "alice"); err != nil {
+		t.Fatalf("the agent is gone too early: %v", err)
+	}
+	s.assistants.note("sb-assistant", assistantChoice{}) // "yes"
+	if text, isErr := call("h1"); isErr || text != "Removed the agent Hermes." {
+		t.Errorf("after yes: %q (error %v)", text, isErr)
+	}
+	if _, err := s.Store.GetAgentInstanceForOwner(ctx, "h1", "alice"); err == nil {
+		t.Error("the agent is still there")
+	}
+	if _, isErr := call("nope"); !isErr {
+		t.Error("unknown agent: want an error")
 	}
 }
 
