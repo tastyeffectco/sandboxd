@@ -19,18 +19,20 @@ type InstanceSettings struct {
 	// id used when a task doesn't specify one. Opaque, operator-supplied. Never nil
 	// on read (empty map when unset).
 	AgentDefaultModels map[string]string
+	// AgentTimeZone is the IANA time zone agents run in ("" is UTC).
+	AgentTimeZone string
 }
 
 // GetInstanceSettings returns the singleton row, or ErrNotFound if unset (the
 // caller then falls back to env defaults).
 func (s *Store) GetInstanceSettings(ctx context.Context) (*InstanceSettings, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models
+		`SELECT idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, agent_time_zone
 		   FROM instance_settings WHERE id = 1`)
 	var enabled int
 	var modelsJSON string
 	out := &InstanceSettings{}
-	err := row.Scan(&enabled, &out.IdleThresholdSeconds, &out.KeepaliveMaxSeconds, &modelsJSON)
+	err := row.Scan(&enabled, &out.IdleThresholdSeconds, &out.KeepaliveMaxSeconds, &modelsJSON, &out.AgentTimeZone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -62,15 +64,16 @@ func (s *Store) SaveInstanceSettings(ctx context.Context, v InstanceSettings) er
 			return err
 		}
 		_, err = db.ExecContext(ctx, `
-			INSERT INTO instance_settings (id, idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, updated_at)
-			VALUES (1, ?, ?, ?, ?, ?)
+			INSERT INTO instance_settings (id, idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, agent_time_zone, updated_at)
+			VALUES (1, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 			  idle_reap_enabled = excluded.idle_reap_enabled,
 			  idle_threshold_seconds = excluded.idle_threshold_seconds,
 			  keepalive_max_seconds = excluded.keepalive_max_seconds,
 			  agent_default_models = excluded.agent_default_models,
+			  agent_time_zone = excluded.agent_time_zone,
 			  updated_at = excluded.updated_at`,
-			enabled, v.IdleThresholdSeconds, v.KeepaliveMaxSeconds, string(modelsJSON), time.Now().Unix())
+			enabled, v.IdleThresholdSeconds, v.KeepaliveMaxSeconds, string(modelsJSON), v.AgentTimeZone, time.Now().Unix())
 		return err
 	})
 }

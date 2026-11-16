@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -21,10 +22,15 @@ import (
 
 const agentHistoryLimit = 60 // messages sent to the agent with each turn
 
+// agentRetryDelays: waits before trying a turn again when the agent failed
+// before saying anything (a test sets them short).
+var agentRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second}
+
 type liveTurn struct {
 	cancel context.CancelFunc
 	msg    store.AgentMessage
 	steps  []agentStep
+	conn   string // the model connection's name, for plain errors
 }
 
 type agentTurns struct {
@@ -133,7 +139,7 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	attached, _ := json.Marshal(files)
 	if v := s.agentInstanceView(r.Context(), h); v.Status != "running" {
-		writeV1Err(w, http.StatusConflict, "not_running", h.Name+" isn't running yet. Start it, or wait until it's ready.")
+		writeV1Err(w, http.StatusConflict, "not_running", notRunningText(h.Name, v.Status))
 		return
 	}
 	history, err := s.Store.ListAgentMessages(r.Context(), h.ID, agentHistoryLimit)
@@ -146,8 +152,8 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusConflict, "no_chat", "Use "+h.Name+" in its own app.")
 		return
 	}
-	if err := s.refreshAgentConfig(r.Context(), h, pkg); err != nil && s.Log != nil {
-		s.Log.Warn("agent chat: refresh config", "agent", h.ID, "err", err.Error())
+	if s.agentUpdating(w, r, h, pkg) {
+		return
 	}
 	apiKey, err := s.Secrets.Open(h.APIKeyCiphertext, h.APIKeyNonce)
 	if err != nil {
@@ -177,7 +183,7 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusConflict, "busy", h.Name+" is still answering. Wait for it, or stop it.")
 		return
 	}
-	live := &liveTurn{cancel: cancel, msg: *reply, steps: []agentStep{}}
+	live := &liveTurn{cancel: cancel, msg: *reply, steps: []agentStep{}, conn: s.connectionName(r.Context(), h.ConnectionID)}
 	s.turns.live[h.ID] = live
 	s.turns.mu.Unlock()
 
@@ -197,16 +203,12 @@ func (s *Server) v1SendAgentMessage(w http.ResponseWriter, r *http.Request) {
 			if m.Role == "user" {
 				text = withAttachments(m.Content, m.Attachments, pkg)
 			}
-			turn.Messages = append(turn.Messages, struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			}{m.Role, text})
+			turn.Messages = append(turn.Messages, chatMessage{m.Role, text})
 		}
 	}
-	turn.Messages = append(turn.Messages, struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}{"user", withAttachments(content, user.Attachments, pkg)})
+	turn.Messages = alternating(append(turn.Messages, chatMessage{"user", withAttachments(content, user.Attachments, pkg)}))
+	first, _ := s.Store.FirstAgentMessageID(r.Context(), h.ID)
+	turn.session = agentSession(h.ID, first, history)
 	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", agentContainer(h.ID), pkg.APIPort)
 	name := h.Name
 	go s.runAgentTurn(ctx, cancel, h.ID, name, url, string(apiKey), pkg.ChatModel, turn, live)
@@ -228,7 +230,12 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 		s.turns.mu.Unlock()
 		_ = s.Store.UpdateAgentMessage(context.Background(), &m)
 	}
-	err := streamAgentChat(ctx, url, key, model, turn, func(e agentEvent) {
+	var heard atomic.Bool // the agent said something: no more retries
+	var modelStatus atomic.Int32
+	go s.watchModel(ctx, cancel, agentID, time.Now(), agentModelWatch, func() bool { return !heard.Load() },
+		func(status int) { modelStatus.Store(int32(status)) })
+	emit := func(e agentEvent) {
+		heard.Store(true)
 		s.turns.mu.Lock()
 		switch e.name {
 		case "text":
@@ -253,11 +260,33 @@ func (s *Server) runAgentTurn(ctx context.Context, cancel context.CancelFunc, ag
 		live.msg.UpdatedAt = now()
 		s.turns.mu.Unlock()
 		persist(e.name == "step")
-	})
+	}
+	// An agent that fails at once, before saying anything, is often still
+	// starting (OpenClaw recovers its database for a while after a restart,
+	// already answering with errors): try again a little later. A slower
+	// failure may follow silent work (OpenClaw streams no tool steps), which
+	// must not be done twice.
+	var err error
+	for attempt := 0; ; attempt++ {
+		start := time.Now()
+		err = streamAgentChat(ctx, url, key, model, turn, emit)
+		if err == nil || heard.Load() || ctx.Err() != nil || attempt >= len(agentRetryDelays) ||
+			time.Since(start) > 10*time.Second {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(agentRetryDelays[attempt]):
+		}
+	}
 	s.turns.mu.Lock()
 	switch {
 	case err == nil:
 		live.msg.State = "done"
+	case modelStatus.Load() != 0:
+		live.msg.State = "error"
+		live.msg.Error = modelFailureText(name, live.conn, int(modelStatus.Load()))
+		s.Log.Warn("agent turn: its model keeps failing", "agent", agentID, "status", modelStatus.Load())
 	case ctx.Err() == context.Canceled:
 		live.msg.State = "stopped"
 	default:
@@ -315,4 +344,45 @@ func (s *Server) v1ClearAgentMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// agentSession names the agent's own session for this conversation (Hermes
+// and OpenClaw keep their tools' state, such as scheduled jobs, per session). It
+// starts again after a reply that broke off (stopped, failed, or cut by a
+// restart): Hermes pauses a session whose turn it lost ("unknown_execution")
+// and then refuses every later message in it. sandboxd keeps the whole
+// conversation, so a fresh session loses nothing.
+func agentSession(agentID, first string, history []*store.AgentMessage) string {
+	key := "sandboxd-" + agentID + "-" + strings.ToLower(first)
+	for i := len(history) - 1; i >= 0; i-- {
+		if m := history[i]; m.Role == "assistant" && m.State != "done" && m.State != "working" {
+			return key + "-" + strings.ToLower(m.ID)
+		}
+	}
+	return key
+}
+
+// connectionName is a model connection's name as the person sees it.
+func (s *Server) connectionName(ctx context.Context, id string) string {
+	if s.ModelProviders == nil {
+		return ""
+	}
+	conns, err := s.ModelProviders.List(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, c := range conns {
+		if c.ID == id {
+			return c.Name
+		}
+	}
+	return ""
+}
+
+// notRunningText says why an agent can't take a message, and what to do.
+func notRunningText(name, status string) string {
+	if status == "starting" {
+		return name + " is starting up (after an update or a restart). Try again in a minute."
+	}
+	return name + " is paused. Click Start, then send your message again."
 }

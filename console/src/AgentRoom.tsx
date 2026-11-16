@@ -18,11 +18,12 @@ export function agentAppUrl(agent: Pick<AgentInstance, 'id' | 'ui_label'>): stri
 
 type View = 'chat' | 'app'
 const viewKey = (id: string) => `sandboxd.agent-view.${id}`
-function savedView(id: string): View {
+function savedView(id: string, first: View): View {
   try {
-    return localStorage.getItem(viewKey(id)) === 'app' ? 'app' : 'chat'
+    const saved = localStorage.getItem(viewKey(id))
+    return saved === 'app' || saved === 'chat' ? saved : first
   } catch {
-    return 'chat'
+    return first
   }
 }
 
@@ -66,6 +67,14 @@ function linkTitle(url: string) {
   }
 }
 
+// First messages that show what an agent is for: a question, working on its
+// own (a message arrives a couple of minutes later), and building an app.
+export const AGENT_SUGGESTIONS = [
+  'What can you do for me?',
+  "In 2 minutes, send me today's top tech headline with a link",
+  'Build me a recipe app with a shopping list',
+]
+
 export function AgentRoom({
   agent,
   onChanged,
@@ -88,10 +97,14 @@ export function AgentRoom({
   const [busy, setBusy] = useState(false)
   const [sending, setSending] = useState(false)
   const end = useRef<HTMLDivElement>(null)
+  const log = useRef<HTMLDivElement>(null)
+  // Follow the conversation while the person is at its end; not when they
+  // scrolled up to read.
+  const following = useRef(true)
   const seen = useRef<Record<string, string>>({})
   const appUrl = agentAppUrl(agent)
   const chatless = agent.chat === false
-  const [view, setView] = useState<View>(() => (chatless ? 'app' : appUrl ? savedView(agent.id) : 'chat'))
+  const [view, setView] = useState<View>(() => (chatless ? 'app' : appUrl ? savedView(agent.id, agent.app_first ? 'app' : 'chat') : 'chat'))
   const [appOpened, setAppOpened] = useState(view === 'app' || chatless)
   const choose = (next: View) => {
     setView(next)
@@ -137,8 +150,23 @@ export function AgentRoom({
   // Braces: Chromium's scrollIntoView now returns a Promise, which React would
   // take for a clean-up function.
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end' })
+    if (following.current) end.current?.scrollIntoView?.({ block: 'end' })
   }, [count, lastLength])
+  // A message can grow after it arrives (formatting, a file it carries, a
+  // reply streaming in): keep the end in view.
+  useEffect(() => {
+    const el = log.current
+    if (!el || typeof MutationObserver === 'undefined') return
+    const observer = new MutationObserver(() => {
+      if (following.current) end.current?.scrollIntoView?.({ block: 'end' })
+    })
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [])
+  const onLogScroll = () => {
+    const el = log.current
+    if (el) following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
 
   // Attach: the paperclip, dropping files on the window, or pasting.
   const attach = (list: FileList | File[] | null) => {
@@ -179,6 +207,7 @@ export function AgentRoom({
     const content = text.trim()
     const attached = withFiles ? files.filter((f) => f.file) : []
     if ((!content && !attached.length) || working || !running || (withFiles && uploading)) return
+    following.current = true // their own message: show it and the answer
     setDraft('')
     if (withFiles) setFiles([])
     setSending(true)
@@ -195,6 +224,7 @@ export function AgentRoom({
       setDraft(content)
       if (withFiles) setFiles(attached)
       onError((e as Error).message)
+      onChanged() // it may be starting or paused: show that now
     } finally {
       setSending(false)
     }
@@ -320,7 +350,15 @@ export function AgentRoom({
         </div>
       )}
 
-      <div className="agent-room-log" hidden={view !== 'chat'} role="log" aria-live="polite" data-testid="agent-log">
+      <div
+        className="agent-room-log"
+        hidden={view !== 'chat'}
+        role="log"
+        aria-live="polite"
+        data-testid="agent-log"
+        ref={log}
+        onScroll={onLogScroll}
+      >
         {messages === null && <p className="bubble-note" style={{ margin: 'auto' }}>Loading the conversation…</p>}
         {messages?.length === 0 && (
           <div className="agent-room-empty">
@@ -328,9 +366,12 @@ export function AgentRoom({
               {initial}
             </span>
             <h2>Chat with {agent.name}</h2>
-            <p>It remembers what you tell it, uses tools, and can build and change apps on this computer.</p>
+            <p>
+              It remembers what you tell it, browses the web, works on a schedule and messages you here, and can build
+              and change apps on this computer.
+            </p>
             <div className="agent-suggestions">
-              {['What can you do for me?', 'Build me a recipe app with a shopping list', 'Which apps do I have?'].map((s) => (
+              {AGENT_SUGGESTIONS.map((s) => (
                 <button key={s} disabled={!running} onClick={() => void send(s)} data-testid="agent-suggestion">
                   {s}
                 </button>
@@ -358,6 +399,18 @@ export function AgentRoom({
                 {initial}
               </span>
               <div className="bubble theirs" data-testid="agent-reply">
+                {m.channel === 'agent' && (
+                  <div className="bubble-tag" data-testid="agent-on-its-own">
+                    <Icon name="history" size={12} /> Sent on its own
+                  </div>
+                )}
+                {(m.attachments || []).length > 0 && (
+                  <div className="bubble-files" data-testid="agent-files">
+                    {(m.attachments || []).map((f) => (
+                      <AttachedFile key={f.id} agentId={agent.id} file={f} />
+                    ))}
+                  </div>
+                )}
                 {m.thinking && (
                   <details className="bubble-thinking">
                     <summary>{m.state === 'working' && !m.content ? 'Thinking…' : 'How it thought about this'}</summary>

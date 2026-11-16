@@ -3084,3 +3084,139 @@ select.agent-model {
   padding: 2px 4px;
   background: var(--panel);
 }
+.bubble-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  color: var(--muted-2);
+  font-size: 12px;
+}
+
+/* Free apps (DiscoverView) */
+.discover-hero {
+  text-align: center;
+  max-width: 760px;
+  margin: 0 auto 30px;
+  padding-top: 14px;
+}
+.discover-hero > .eyebrow {
+  justify-content: center;
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+.discover-hero h1 {
+  font-size: clamp(30px, 3.4vw, 46px);
+  line-height: 1.1;
+  letter-spacing: -2px;
+  font-weight: 500;
+  margin: 16px 0 12px;
+  color: #233a2e;
+}
+.discover-hero p {
+  color: var(--muted);
+  font-size: 14.5px;
+  margin: 0;
+}
+.discover-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 0 0 24px;
+}
+.discover-filters .chip {
+  cursor: pointer;
+}
+.catalog-art {
+  height: 104px;
+}
+.catalog-art > span:first-child {
+  background: #ffffffa8;
+}
+.project-art > span.catalog-stars {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  width: auto;
+  height: auto;
+  display: inline-block;
+  font: 600 11px var(--sans);
+  background: #ffffffd0;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #3f3f46;
+}
+.catalog-category {
+  font-size: 10px;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+.project-card p.catalog-pitch {
+  white-space: normal;
+  line-height: 1.45;
+  min-height: 32px;
+  font-size: 11.5px;
+}
+.catalog-card footer a {
+  color: inherit;
+}
+.discover-agents {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 34px 0 12px;
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: var(--accent-soft, #e7efe9);
+  border: 1px solid #d5e2d7;
+}
+.discover-agents h2 {
+  font: 600 17px var(--display);
+  margin: 0 0 4px;
+}
+.discover-agents p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 620px;
+}
+.discover-note {
+  color: var(--muted-2);
+  font-size: 11.5px;
+  text-align: center;
+}
+.free-apps-line {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.free-apps-line .text-button {
+  background: none;
+  padding: 0;
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.install-details {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.install-details summary {
+  cursor: pointer;
+  color: var(--muted-2);
+}
+.install-details pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font: 10.5px/1.45 var(--mono);
+  margin: 6px 0 0;
+}
+
+/* Trending on GitHub (home page) */
+.trending-section {
+  margin: 8px 0 36px;
+}

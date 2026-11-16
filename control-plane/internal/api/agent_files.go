@@ -75,12 +75,7 @@ func (s *Server) v1UploadAgentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := cleanFileName(r.URL.Query().Get("name"))
-	uid, gid := agentOwner(pkg.User)
-	for _, d := range []string{filepath.Dir(dir), dir} {
-		if err := os.MkdirAll(d, 0o700); err == nil {
-			_ = os.Chown(d, uid, gid)
-		}
-	}
+	uid, gid := makeUploadsDir(dir, pkg.User)
 	id := newULID() + "-" + name
 	if !fileID.MatchString(id) {
 		id = newULID() + "-file"
@@ -206,6 +201,18 @@ func humanSize(n int64) string {
 		return fmt.Sprintf("%d KB", n>>10)
 	}
 	return fmt.Sprintf("%d bytes", n)
+}
+
+// makeUploadsDir makes the agent's uploads folder, owned by the agent's
+// user, and returns that user.
+func makeUploadsDir(dir, user string) (int, int) {
+	uid, gid := agentOwner(user)
+	for _, d := range []string{filepath.Dir(dir), dir} {
+		if err := os.MkdirAll(d, 0o700); err == nil {
+			_ = os.Chown(d, uid, gid)
+		}
+	}
+	return uid, gid
 }
 
 func agentOwner(user string) (int, int) {

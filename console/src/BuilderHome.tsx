@@ -1,6 +1,8 @@
+import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { CATALOG } from './catalog'
 import { Icon } from './design/Icon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
@@ -37,6 +39,8 @@ export function BuilderHome({
   onOpen,
   onCreated,
   goSettings,
+  goDiscover,
+  featured,
   draft,
   saveDraft,
 }: {
@@ -45,6 +49,9 @@ export function BuilderHome({
   onOpen: (id: string) => void
   onCreated: (id: string, intent?: BuildIntent) => void
   goSettings: () => void
+  goDiscover?: () => void
+  // Shown between the build box and the project list (Trending on GitHub).
+  featured?: React.ReactNode
   draft?: BuilderDraft
   saveDraft: (draft?: BuilderDraft) => void
 }) {
@@ -336,7 +343,25 @@ export function BuilderHome({
             </button>
           ))}
         </div>
+        {goDiscover && (
+          <p className="free-apps-line">
+            Or install a popular free app in one click:{' '}
+            {CATALOG.filter((a) => !a.trending).slice(0, 3).map((a, i) => (
+              <span key={a.id}>
+                {i > 0 && ', '}
+                <button className="text-button" onClick={goDiscover} data-testid={`home-free-${a.id}`}>
+                  {a.name}
+                </button>
+              </span>
+            ))}
+            {' … '}
+            <button className="text-button" onClick={goDiscover} data-testid="home-free-apps">
+              see all free apps
+            </button>
+          </p>
+        )}
       </section>
+      {featured}
       <section className="projects-section">
         <div className="section-heading">
           <div>

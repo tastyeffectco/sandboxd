@@ -14,6 +14,7 @@ if (process.isMainFrame) {
       connect: (connection) => ipcRenderer.invoke('desktop:connect', connection),
       disconnect: (forget = false) => ipcRenderer.invoke('desktop:disconnect', forget),
       openExternal: (url) => ipcRenderer.invoke('desktop:external', url),
+      openRouterSignIn: () => ipcRenderer.invoke('desktop:openrouter-sign-in'),
       installEngine: () => ipcRenderer.invoke('desktop:install-engine'),
       signIn: () => ipcRenderer.invoke('desktop:sign-in'),
       onEngineProgress: (callback) => subscribe('desktop:engine-progress', callback),

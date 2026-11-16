@@ -389,3 +389,20 @@ func TestProxyRetriesWithoutReasoningWhenRefused(t *testing.T) {
 		t.Fatalf("plain request: %d, %d calls", w.Code, len(bodies))
 	}
 }
+
+// Ollama on Windows answers only on the PC itself by default: the test says
+// how to let sandboxd reach it.
+func TestProbeExplainsAnUnreachableOllama(t *testing.T) {
+	s, _ := testService(t)
+	if !isOllama("http://172.31.208.1:11434/v1") || isOllama("https://openrouter.ai/api/v1") {
+		t.Fatal("isOllama")
+	}
+	c, err := s.Save(context.Background(), "", Input{Name: "Ollama", Protocol: OpenAI,
+		BaseURL: "http://127.0.0.1:11434/v1", Models: []Model{{ID: "qwen3:4b"}}})
+	if err != nil {
+		t.Skip("this address is not accepted here: ", err)
+	}
+	if err := s.Probe(context.Background(), c.ID, ""); err == nil || !strings.Contains(err.Error(), "OLLAMA_HOST") {
+		t.Fatalf("probe: %v", err)
+	}
+}

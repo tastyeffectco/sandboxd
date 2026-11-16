@@ -6,6 +6,7 @@ package agentcatalog
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,8 +54,29 @@ type Package struct {
 	// ConfigFile is written into StatePath by Render before every start.
 	ConfigFile string                       `json:"-"`
 	Render     func(Config) (string, error) `json:"-"`
+	// KeepSettings merges a new render into the agent's current config when
+	// the agent's own app saves settings in that file; nil replaces it.
+	KeepSettings func(current, rendered string) (string, error) `json:"-"`
 	// RenderEnv adds per-agent environment (agents configured by variables).
 	RenderEnv func(Config) []string `json:"-"`
+	// GuideFile, under StatePath, is the instructions file the agent reads
+	// on every turn (AGENTS.md). sandboxd keeps its guide in a marked section
+	// of it (how scheduled work reaches the person); the rest is the
+	// person's or the agent's own.
+	GuideFile string `json:"-"`
+	// GuideSeed, a path in the agent's image: the agent writes GuideFile
+	// from this template only on its first conversation, so sandboxd starts
+	// the file from it (its own text first) and adds its section from the
+	// first message on.
+	GuideSeed string `json:"-"`
+	// Deliver tells the agent how a scheduled job sends its result to the
+	// person's sandboxd chat (see Skill).
+	Deliver func(Config) string `json:"-"`
+	// Browser: the agent has a browser tool but its image has no browser.
+	// sandboxd runs a headless Chromium next to it (BrowserImage, its own
+	// locked-down container) and the agent reaches it on 127.0.0.1:BrowserPort
+	// through a relay in its start command (BrowserUpstreamEnv says where).
+	Browser bool `json:"-"`
 	// Init runs a minimal init that reaps child processes (browsers).
 	Init bool `json:"-"`
 	// StrongModel: it leans on many tools at once, so the strongest model
@@ -63,6 +85,9 @@ type Package struct {
 	// Revision changes when its container must be made again (new
 	// command or environment); the agent's data stays.
 	Revision string `json:"-"`
+	// AppFirst: its own app is a full chat (tool steps, files, its own
+	// automations), so it opens there; sandboxd's chat is the other tab.
+	AppFirst bool `json:"app_first"`
 	// Chat: sandboxd's own chat window can talk to it. Agents without it
 	// open on their own app.
 	Chat bool `json:"chat"`
@@ -94,18 +119,29 @@ var Hermes = Package{
 	UILogin:   "password",
 	Chat:      true,
 	ChatModel: "hermes-agent",
-	APIKeyEnv: "API_SERVER_KEY",
+	// Its scheduled jobs garbled tool calls on a small model (DeepSeek flash).
+	StrongModel: true,
+	APIKeyEnv:   "API_SERVER_KEY",
 	Env: []string{"API_SERVER_ENABLED=true", "API_SERVER_HOST=0.0.0.0", "API_SERVER_PORT=8642",
 		"HERMES_DASHBOARD=1", "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=" + User},
+	// Its terminal works in its workspace (see RenderHermesConfig), where it
+	// reads AGENTS.md on every turn; it skipped the guide as a skill.
+	GuideFile: "workspace/AGENTS.md", // = hermesWorkspace
+	Deliver: func(Config) string {
+		return "End its instructions with: \"Send the result to the user with the sandboxd message_user tool.\" " +
+			"Keep its own delivery local."
+	},
 	ExecRun:    true,
 	UploadsDir: "uploads",
 	ConfigFile: "config.yaml",
 	Render:     RenderHermesConfig,
-	Telegram:   true,
-	Memory:     "2g",
-	ShmSize:    "1g",
-	DiskNote:   "about 3 GB",
-	MemoryNote: "up to 2 GB",
+	// Its dashboard saves settings in config.yaml too.
+	KeepSettings: KeepYAMLSettings,
+	Telegram:     true,
+	Memory:       "2g",
+	ShmSize:      "1g",
+	DiskNote:     "about 3 GB",
+	MemoryNote:   "up to 2 GB",
 }
 
 // OpenClaw is the OpenClaw personal assistant. Tested in its official image
@@ -116,7 +152,10 @@ var OpenClaw = Package{
 	Label:       "OpenClaw",
 	Description: "An open-source personal assistant with skills and a memory of its own. Chat with it here and ask it to build apps for you.",
 	Image:       "ghcr.io/openclaw/openclaw@sha256:1a2a3ce113e435039dbeac5ae261759bb4759908563d91c81059e896b38c5d98",
-	Cmd:         []string{"node", "openclaw.mjs", "gateway"},
+	Cmd:         []string{"sh", "-c", loopbackRelay(BrowserUpstreamEnv, BrowserPort) + "exec node openclaw.mjs gateway"},
+	Browser:     true,
+	Init:        true,
+	Revision:    "1", // a browser of its own
 	User:        "1000:1000",
 	StatePath:   "/state",
 	APIPort:     18789,
@@ -124,6 +163,7 @@ var OpenClaw = Package{
 	UILabel:     "Control panel",
 	ProxyAuth:   true,
 	Chat:        true,
+	AppFirst:    true,
 	StrongModel: true,
 	ChatModel:   "openclaw",
 	// No shared token: OpenClaw refuses one next to proxy sign-in.
@@ -134,13 +174,27 @@ var OpenClaw = Package{
 		"OPENCLAW_CONFIG_PATH=/state/openclaw.json", "OPENCLAW_CONFIG_READONLY=1",
 		"OPENCLAW_NO_RESPAWN=1", "NODE_COMPILE_CACHE=/tmp/openclaw-compile-cache"},
 	UploadsDir: "workspace/uploads", // its file tools work in its workspace
+	// Its scheduled jobs cannot use MCP tools, so their result comes back
+	// through its own webhook delivery, to the agent's sandboxd inbox. The
+	// guide sits in its own AGENTS.md: as a skill, or as an extra file, it
+	// was skipped.
+	GuideFile: "workspace/AGENTS.md",
+	GuideSeed: "/app/docs/reference/templates/AGENTS.md",
+	Deliver: func(c Config) string {
+		return "Give every automation, one-time or recurring, this delivery: `{\"mode\": \"webhook\", \"to\": \"" +
+			InboxURL(c) + "\"}`. Its final reply is posted in the user's chat, so make that reply the message " +
+			"itself, and do not also send it another way. Announce delivery and the current session never reach " +
+			"the user here, so never use them; check the delivery when you edit a job. Automations here have no " +
+			"run limit, and a counter kept in a trigger script was lost between runs: for a limited number of " +
+			"runs, create one one-time automation per run."
+	},
 	ConfigFile: "openclaw.json",
 	Render:     RenderOpenClawConfig,
 	// It peaks at about 2.4 GB on a chat: with 2 GB and no swap it was killed.
 	Memory:     "3g",
 	ShmSize:    "1g",
-	DiskNote:   "about 2 GB",
-	MemoryNote: "up to 3 GB",
+	DiskNote:   "about 2.2 GB, with its browser",
+	MemoryNote: "up to 4 GB, with its browser",
 }
 
 // OpenMausBot is OpenMausBot's bot workspace, used through its own app.
@@ -181,15 +235,31 @@ var packages = map[string]Package{Hermes.ID: Hermes, OpenClaw.ID: OpenClaw, Open
 const ombModelPort = "9101"
 
 // ombStart starts the relay, then OpenMausBot itself.
-const ombStart = `node -e '
-const net = require("net"), [host, port] = process.env.SANDBOXD_MODEL_UPSTREAM.split(":");
+var ombStart = loopbackRelay("SANDBOXD_MODEL_UPSTREAM", ombModelPort) + "exec node dist-server/server-launcher.js"
+
+// The browser sandboxd runs for agents with Browser: headless Chromium,
+// open source, pinned by digest (multi-arch).
+const (
+	BrowserImage       = "chromedp/headless-shell@sha256:830fa77e0602cb42e5cb2cbd9237ba27b649ad69d5fb82b54713aac8b7ab4f29"
+	BrowserPort        = "9222"
+	BrowserUpstreamEnv = "SANDBOXD_BROWSER_UPSTREAM"
+)
+
+// loopbackRelay is a shell line that relays 127.0.0.1:port to the host:port
+// in the environment variable env, in the background. Agents that only trust
+// loopback (OpenMausBot's model calls, Chromium's DevTools, which refuses a
+// container name as Host) reach sandboxd's services through it.
+func loopbackRelay(env, port string) string {
+	return `node -e '
+const net = require("net"), [host, port] = process.env.` + env + `.split(":");
 net.createServer((c) => {
   const u = net.connect(Number(port), host);
   c.on("error", () => u.destroy()); u.on("error", () => c.destroy());
   c.pipe(u).pipe(c);
-}).listen(` + ombModelPort + `, "127.0.0.1");
+}).listen(` + port + `, "127.0.0.1");
 ' &
-exec node dist-server/server-launcher.js`
+`
+}
 
 // RenderOpenMausBotEnv points its built-in OpenAI-compatible engine at
 // sandboxd's model proxy through the loopback relay (the real key never
@@ -263,8 +333,8 @@ func RenderHermesConfig(c Config) (string, error) {
 		}
 	}
 	q := strconv.Quote // YAML accepts JSON-style double-quoted strings
-	return "# Written by sandboxd. Changes to model, terminal and mcp_servers are\n" +
-		"# replaced when the agent is re-created.\n" +
+	return "# sandboxd sets model, terminal and mcp_servers.sandboxd here when the\n" +
+		"# agent is updated; everything else is kept.\n" +
 		"model:\n" +
 		"  provider: custom\n" +
 		"  default: " + q(c.Model) + "\n" +
@@ -272,6 +342,7 @@ func RenderHermesConfig(c Config) (string, error) {
 		"  api_key: " + q(c.Secret) + "\n" +
 		"terminal:\n" +
 		"  backend: local\n" +
+		"  cwd: " + q(hermesWorkspace) + "\n" +
 		"mcp_servers:\n" +
 		"  sandboxd:\n" +
 		"    url: " + q(base+"/mcp") + "\n" +
@@ -321,6 +392,15 @@ func RenderOpenClawConfig(c Config) (string, error) {
 		// private container, where nobody can open them. Its other tools stay.
 		"tools": map[string]any{"deny": []string{"portal", "canvas"},
 			"toolSearch": map[string]any{"enabled": false}},
+		// Scheduled jobs post their result to the agent's sandboxd inbox
+		// (see Deliver), signed with the agent's secret.
+		"cron": map[string]any{"webhookToken": ref,
+			"webhookSsrfPolicy": map[string]any{"allowedHostnames": []string{proxyHost(c.ProxyURL)}}},
+		// Its browser is sandboxd's headless Chromium (see Browser), already
+		// running: OpenClaw attaches to it and never starts one itself.
+		"browser": map[string]any{"enabled": true, "defaultProfile": "sandboxd",
+			"profiles": map[string]any{"sandboxd": map[string]any{
+				"cdpUrl": "http://127.0.0.1:" + BrowserPort, "attachOnly": true}}},
 		"mcp": map[string]any{"servers": map[string]any{"sandboxd": map[string]any{
 			"url": base + "/mcp", "transport": "streamable-http",
 			"headers": map[string]string{"Authorization": "Bearer " + ref},
@@ -344,4 +424,91 @@ func disabledSkills(names []string) map[string]any {
 		out[n] = map[string]bool{"enabled": false}
 	}
 	return out
+}
+
+// InboxURL is where an agent posts what its scheduled jobs found; sandboxd
+// adds it to the agent's conversation. It is short and the same for every
+// agent (the agent's secret says which one): a model copied a longer one
+// with a typo.
+func InboxURL(c Config) string {
+	return strings.TrimRight(c.ProxyURL, "/") + "/agents/inbox"
+}
+
+func proxyHost(proxyURL string) string {
+	if u, err := url.Parse(proxyURL); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return "sandboxd"
+}
+
+// hermesWorkspace is where Hermes's terminal works (StatePath/workspace).
+const hermesWorkspace = "/opt/data/workspace"
+
+// The guide's section in GuideFile.
+const (
+	GuideBegin = "<!-- sandboxd:begin (written by sandboxd, replaced when the agent is updated) -->"
+	GuideEnd   = "<!-- sandboxd:end -->"
+)
+
+// Guide is sandboxd's section of GuideFile: work that runs later has no one
+// in the chat, so it must say how its result reaches the person.
+func Guide(p Package, c Config) string {
+	if p.Deliver == nil || p.GuideFile == "" {
+		return ""
+	}
+	return GuideBegin + `
+## Talking with the user
+
+The user may not be technical. Answer in plain words. When you set something
+up, say what will happen and when, in their local time; do not name tools,
+settings or flags (cron, job ids, "deleteAfterRun") unless they ask.
+
+## Results of scheduled work
+
+The user talks to you in sandboxd's chat. Work that runs later (a scheduled
+job, a reminder, a background task) cannot answer in that chat by itself, and
+no other channel reaches the user unless they connected one.
+
+When you create such work:
+
+1. ` + p.Deliver(c) + `
+2. Do not deliver to Telegram, Slack or other channels unless the user asked.
+3. When the user asks for a limited number of runs ("3 times", "until Friday"),
+   make sure it stops: give the job its scheduler's own run limit or end date
+   if it has one; otherwise schedule one-time jobs, one per run. Never leave a
+   job running that the user expects to end.
+4. Tell the user the result will appear in this chat when it runs.
+
+## Files for the user
+
+To give the user a file you made, save it in your own folders and send it
+with the sandboxd share_file tool. Attaching it to your reply does not reach
+the user here.
+` + GuideEnd + "\n"
+}
+
+// WithGuide puts the guide in an instructions file: it replaces sandboxd's
+// section, or adds one at the end, keeping everything else as it is.
+func WithGuide(file, guide string) string {
+	if b := strings.Index(file, GuideBegin); b >= 0 {
+		if e := strings.Index(file[b:], GuideEnd); e >= 0 {
+			rest := strings.TrimPrefix(file[b+e+len(GuideEnd):], "\n")
+			return file[:b] + guide + rest
+		}
+	}
+	if file == "" {
+		return guide
+	}
+	return strings.TrimRight(file, "\n") + "\n\n" + guide
+}
+
+// SeedText is a template from an agent's image as the agent itself writes
+// it into its workspace: without the YAML front matter.
+func SeedText(template string) string {
+	if rest, ok := strings.CutPrefix(template, "---\n"); ok {
+		if i := strings.Index(rest, "\n---\n"); i >= 0 {
+			template = rest[i+len("\n---\n"):]
+		}
+	}
+	return strings.TrimLeft(template, "\n")
 }

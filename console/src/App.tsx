@@ -5,7 +5,10 @@ import { c, font, mono, Card, Input } from './design/kit'
 import { AppView } from './AppView'
 import { AppBrain, brainExcerpt, buildBrainGraph } from './brain'
 import { AgentsView } from './AgentsView'
+import { DiscoverView } from './DiscoverView'
+import { TrendingStrip } from './TrendingStrip'
 import { AgentRoom } from './AgentRoom'
+import { syncAgentTimeZone } from './timeZone'
 import { BrainGraph } from './BrainGraph'
 import { SettingsView } from './SettingsView'
 import { BuilderHome, BuilderDraft } from './BuilderHome'
@@ -34,12 +37,14 @@ function readRoute(): Route {
     }
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
-  return { name: ['brain', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
+  if (parts[0] === 'discover' && parts[1]) return { name: 'discover', category: decodeURIComponent(parts[1]) }
+  return { name: ['brain', 'discover', 'agents', 'settings'].includes(parts[0]) ? parts[0] : 'apps' } as Route
 }
 
 type Route =
   | { name: 'apps' }
   | { name: 'brain' }
+  | { name: 'discover'; category?: string }
   | { name: 'agents' }
   | { name: 'agent'; id: string }
   | { name: 'settings'; section?: string }
@@ -87,7 +92,7 @@ export default function App({
         ? `#/app/${encodeURIComponent(route.id)}${route.tab ? '/' + route.tab : ''}`
         : route.name === 'agent'
           ? `#/agent/${encodeURIComponent(route.id)}`
-          : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}`
+          : `#/${route.name}${route.name === 'settings' && route.section ? '/' + route.section : ''}${route.name === 'discover' && route.category ? '/' + encodeURIComponent(route.category) : ''}`
     if (location.hash !== hash) location.hash = hash
     setMobileNav(false)
   }, [route])
@@ -162,6 +167,7 @@ export default function App({
     if (auth && (auth.authenticated || auth.enabled === false)) {
       loadApps()
       loadAgents()
+      void syncAgentTimeZone().catch(() => {})
     }
   }, [auth, loadApps, loadAgents])
   // A new or restarted agent takes about a minute; refresh until it's ready.
@@ -171,6 +177,28 @@ export default function App({
     const t = setInterval(loadAgents, 3000)
     return () => clearInterval(t)
   }, [agentStarting, loadAgents])
+  // Apps change elsewhere too (another device, an agent building one): keep
+  // the list current, and catch up when the window is back in front.
+  useEffect(() => {
+    if (!auth || !(auth.authenticated || auth.enabled === false)) return
+    const t = setInterval(loadApps, 30000)
+    window.addEventListener('focus', loadApps)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('focus', loadApps)
+    }
+  }, [auth, loadApps])
+  // Agents also stop or start on their own (engine restart, low memory, a crash):
+  // keep the list honest, and catch up as soon as the window is back in front.
+  useEffect(() => {
+    if (!agents?.length) return
+    const t = setInterval(loadAgents, 15000)
+    window.addEventListener('focus', loadAgents)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('focus', loadAgents)
+    }
+  }, [agents?.length, loadAgents])
   // 'failed' falls back to the password form (e.g. the user changed it).
   const [hostSignIn, setHostSignIn] = useState<'idle' | 'trying' | 'failed'>('idle')
   useEffect(() => {
@@ -273,6 +301,7 @@ export default function App({
 
   const nav = [
     { key: 'apps', label: 'Build & projects', icon: 'grid' },
+    { key: 'discover', label: 'Free apps', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
   ]
@@ -484,8 +513,39 @@ export default function App({
               reload={loadApps}
               onOpen={(id) => goApp(id)}
               goSettings={() => setRoute({ name: 'settings' })}
+              goDiscover={() => setRoute({ name: 'discover' })}
+              featured={
+                <TrendingStrip
+                  apps={apps}
+                  onSeeAll={() => setRoute({ name: 'discover', category: 'Trending' })}
+                  onError={onError}
+                  onOpen={(id) => goApp(id)}
+                  onInstalled={(id, intent) => {
+                    loadApps()
+                    setPendingBuilds((p) => ({ ...p, [id]: intent }))
+                    goApp(id)
+                  }}
+                />
+              }
               onCreated={(id, intent) => {
                 if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
+                goApp(id)
+              }}
+            />
+          )}
+          {route.name === 'discover' && (
+            <DiscoverView
+              key={route.category || 'All'}
+              initialCategory={route.category}
+              apps={apps}
+              agents={agents || []}
+              openAgent={(id) => setRoute({ name: 'agent', id })}
+              onError={onError}
+              onOpen={(id) => goApp(id)}
+              goAgents={() => setRoute({ name: 'agents' })}
+              onInstalled={(id, intent) => {
+                loadApps()
+                setPendingBuilds((p) => ({ ...p, [id]: intent }))
                 goApp(id)
               }}
             />
@@ -803,6 +863,7 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
   const commands: { label: string; route: Route }[] = [
     { label: 'Build a new project', route: { name: 'apps' } },
     { label: 'Project memory', route: { name: 'brain' } },
+    { label: 'Free apps', route: { name: 'discover' } },
     { label: 'Add an agent', route: { name: 'agents' } },
     { label: 'Model connections', route: { name: 'settings', section: 'models' } },
     { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },

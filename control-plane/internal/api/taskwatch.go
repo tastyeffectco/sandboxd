@@ -64,6 +64,16 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 	log := s.Log.With("component", "taskwatch", "task", taskID)
 	ctx, cancel := context.WithTimeout(context.Background(), window)
 	defer cancel()
+	// A running task is live work, like an open exec or terminal: the idle
+	// and memory-pressure reapers leave the sandbox alone until it ends
+	// (only the <5% emergency still may stop it). Without this, low memory
+	// stopped a sandbox 19 s into a task, since its last request was older.
+	if s.Inflight != nil {
+		s.Inflight.Enter(sandboxID)
+		defer s.Inflight.Exit(sandboxID)
+		_ = s.Store.BumpLastActive(ctx, sandboxID, time.Now().UTC())
+		defer func() { _ = s.Store.BumpLastActive(context.Background(), sandboxID, time.Now().UTC()) }()
+	}
 
 	rc := s.runtimeClientFor(sandboxID)
 	var body io.ReadCloser

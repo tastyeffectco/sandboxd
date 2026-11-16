@@ -59,6 +59,81 @@ describe('AgentRoom', () => {
     expect(screen.getByTestId('agent-you').textContent).toBe('Call me Abdel')
   })
 
+  it('opens on the agent’s own app when that is its best chat, and remembers the choice', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({ working: false, messages: [] })
+    ;(window as { sandboxdDesktop?: unknown }).sandboxdDesktop = {}
+    localStorage.clear()
+    try {
+      const claw = { ...agent, id: 'oc1234567', package: 'openclaw', ui_label: 'Control panel', chat: true, app_first: true }
+      room(claw)
+      expect(screen.getByTestId('agent-view-app').getAttribute('aria-selected')).toBe('true')
+      fireEvent.click(screen.getByTestId('agent-view-chat'))
+      cleanup()
+      room(claw)
+      expect(screen.getByTestId('agent-view-chat').getAttribute('aria-selected')).toBe('true')
+      cleanup()
+      // Hermes's app is a dashboard: it opens on the chat.
+      room({ ...agent, id: 'he1234567', ui_label: 'Dashboard', chat: true })
+      expect(screen.getByTestId('agent-view-chat').getAttribute('aria-selected')).toBe('true')
+    } finally {
+      delete (window as { sandboxdDesktop?: unknown }).sandboxdDesktop
+      localStorage.clear()
+    }
+  })
+
+  it('keeps the end of the conversation in view, unless the person scrolled up to read', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: false,
+      messages: [msg({ id: '1', role: 'assistant', content: 'Hello' })],
+    })
+    try {
+      room()
+      await screen.findByText('Hello')
+      const log = screen.getByTestId('agent-log')
+      scroll.mockClear()
+      // A message grows after it arrived (a file chip, formatting).
+      log.appendChild(document.createElement('p'))
+      await waitFor(() => expect(scroll).toHaveBeenCalled())
+      // The person scrolls up to read: new content no longer pulls them down.
+      Object.defineProperty(log, 'scrollHeight', { value: 3000, configurable: true })
+      Object.defineProperty(log, 'clientHeight', { value: 500, configurable: true })
+      log.scrollTop = 1000
+      fireEvent.scroll(log)
+      scroll.mockClear()
+      log.appendChild(document.createElement('p'))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(scroll).not.toHaveBeenCalled()
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+
+  it('marks what the agent sent on its own, like a scheduled job', async () => {
+    vi.mocked(api.listAgentMessages).mockResolvedValue({
+      working: false,
+      messages: [
+        msg({ id: '1', role: 'assistant', content: 'Your answer' }),
+        msg({
+          id: '2',
+          role: 'assistant',
+          content: 'Daily report ready',
+          channel: 'agent',
+          attachments: [{ id: '01ABC-report.csv', name: 'report.csv', type: 'text/csv', size: 18 }],
+        }),
+      ],
+    })
+    room()
+    expect(await screen.findByText('Daily report ready')).toBeTruthy()
+    const tags = screen.getAllByTestId('agent-on-its-own')
+    expect(tags).toHaveLength(1)
+    const reply = tags[0].closest('[data-testid=agent-reply]') as HTMLElement
+    expect(reply.textContent).toContain('Daily report ready')
+    // A file the agent shared is there to download.
+    expect(reply.querySelector('[data-testid=agent-files]')?.textContent).toContain('report.csv')
+  })
+
   it('sends, follows the reply as the engine writes it, and refreshes the sidebar after an app is built', async () => {
     const reloadApps = vi.fn()
     const you = msg({ id: '1', role: 'user', content: 'Build me a tip calculator' })

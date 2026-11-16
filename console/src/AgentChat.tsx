@@ -292,7 +292,7 @@ export function AgentChat({
           .filter((t) => terminal(t.status))
           .map((t) => (
             <article className="chat-turn" key={t.id}>
-              {t.prompt && <div className="user-message">{t.prompt}</div>}
+              {t.prompt && <UserPrompt text={t.prompt} />}
               <div className="agent-message">
                 <span className="message-label">
                   <Icon name="spark" size={13} />
@@ -342,7 +342,7 @@ export function AgentChat({
           ))}
         {active && (
           <article className="chat-turn">
-            <div className="user-message">{active.prompt || 'Task in progress'}</div>
+            <UserPrompt text={active.prompt || 'Task in progress'} />
             <div className="agent-message">
               <span className="message-label">
                 <Icon name="spark" size={13} />
@@ -456,4 +456,20 @@ export function plainTaskError(message?: string) {
   if (/did not finish within the task timeout/i.test(message))
     return 'This took longer than the time limit, so the agent paused. Everything it made so far is saved: send “Please continue” to let it finish.'
   return message
+}
+
+// A free-app install sends the coding agent its exact setup; people see one
+// line, with the details a click away.
+export function UserPrompt({ text }: { text: string }) {
+  const install = /^Install (.+?) from sandboxd's app catalog/.exec(text)
+  if (!install) return <div className="user-message">{text}</div>
+  return (
+    <div className="user-message" data-testid="catalog-install-message">
+      <span>Install {install[1]} from Free apps</span>
+      <details className="install-details">
+        <summary>Details</summary>
+        <pre>{text}</pre>
+      </details>
+    </div>
+  )
 }

@@ -23,6 +23,8 @@ import (
 //	POST /agents/{id}/v1/chat/completions  the agent's model, through its model connection
 //	GET  /agents/{id}/v1/models            that one model
 //	POST /agents/{id}/mcp                  sandboxd's app tools (MCP, JSON responses)
+//	POST /agents/{id}/inbox                a scheduled job's result, for the person's chat
+//	POST /agents/inbox                     the same; the secret says which agent
 //
 // The secret grants nothing else: no other route, no upstream key, no other
 // connection or model.
@@ -30,13 +32,16 @@ func (s *Server) AgentProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rest, ok := strings.CutPrefix(r.URL.Path, "/agents/")
 		id, op, _ := strings.Cut(rest, "/")
-		if !ok || id == "" {
+		if rest == "inbox" { // the short form: the secret says which agent
+			id, op = "", "inbox"
+		}
+		if !ok || (id == "" && op != "inbox") {
 			http.NotFound(w, r)
 			return
 		}
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		h, err := s.Store.GetAgentInstanceBySecretHash(r.Context(), hashSecret(token))
-		if token == "" || err != nil || h.ID != id {
+		if token == "" || err != nil || (id != "" && h.ID != id) {
 			http.Error(w, "invalid agent credentials", http.StatusUnauthorized)
 			return
 		}
@@ -48,6 +53,8 @@ func (s *Server) AgentProxy() http.Handler {
 				"data": []map[string]string{{"id": h.Model, "object": "model", "owned_by": "sandboxd"}}})
 		case op == "mcp" && r.Method == http.MethodPost:
 			s.agentMCP(w, r, h)
+		case op == "inbox" && r.Method == http.MethodPost:
+			s.agentInbox(w, r, h)
 		case op == "mcp":
 			// No server-initiated stream: clients fall back to plain POSTs.
 			w.Header().Set("Allow", http.MethodPost)
@@ -63,6 +70,7 @@ func (s *Server) AgentProxy() http.Handler {
 func (s *Server) agentModelRequest(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
 	conn, err := s.ModelProviders.Connection(r.Context(), h.ConnectionID, h.Model, s.AgentProxyURL, 15*time.Minute)
 	if err != nil {
+		s.modelTrouble.record(h.ID, http.StatusBadGateway)
 		http.Error(w, "the agent's model connection is unavailable: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -86,7 +94,12 @@ func (s *Server) agentModelRequest(w http.ResponseWriter, r *http.Request, h *st
 	r2.URL.RawPath = ""
 	r2.URL.RawQuery = ""
 	r2.Header.Set("Authorization", "Bearer "+conn.Token)
-	s.ModelProviders.ServeHTTP(w, r2)
+	sw := &statusWriter{ResponseWriter: w}
+	s.ModelProviders.ServeHTTP(sw, r2)
+	if r.Context().Err() != nil && sw.status == 0 {
+		sw.status = 499 // the agent hung up
+	}
+	s.modelTrouble.record(h.ID, sw.status)
 }
 
 // --- MCP ---------------------------------------------------------------
@@ -131,6 +144,17 @@ var agentTools = []mcpTool{
 		}, "app_id", "request")},
 	{"app_status", "An app's status, preview link and the outcome of its latest build.",
 		obj(map[string]any{"app_id": map[string]any{"type": "string"}}, "app_id")},
+	{"message_user", "Post a message in the user's sandboxd chat with you. Work that runs later (scheduled jobs, " +
+		"reminders, background tasks) cannot answer in the chat by itself: when you schedule something, write " +
+		"in its instructions that it must send its result with this tool. In a normal conversation, just reply.",
+		obj(map[string]any{"text": map[string]any{"type": "string", "description": "The message, in plain words"}}, "text")},
+	{"share_file", "Give the user a file you made (a report, a spreadsheet, a picture): it appears in their sandboxd " +
+		"chat with you, ready to download. Save it in your own folders first (not /tmp). This is the only way the " +
+		"user can get a file from you.",
+		obj(map[string]any{
+			"path": map[string]any{"type": "string", "description": "The file's full path on your computer"},
+			"note": map[string]any{"type": "string", "description": "Optional words to send with it"},
+		}, "path")},
 }
 
 func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.AgentInstance) {
@@ -156,7 +180,8 @@ func (s *Server) agentMCP(w http.ResponseWriter, r *http.Request, h *store.Agent
 		result = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}},
 			"serverInfo": map[string]string{"name": "sandboxd", "version": "1"},
 			"instructions": "Use these tools to build and change web apps on the user's sandboxd. " +
-				"Building takes minutes: after create_app or ask_app, check app_status."}
+				"Building takes minutes: after create_app or ask_app, check app_status. " +
+				"Scheduled and background work reaches the user only through message_user."}
 	case "ping":
 		result = map[string]any{}
 	case "tools/list":
@@ -287,6 +312,12 @@ func (s *Server) agentTool(ctx context.Context, h *store.AgentInstance, name str
 			}
 		}
 		return fmt.Sprintf("Workspace: %s. Preview: %s\nLatest build: %s", status, preview, last), nil
+
+	case "message_user":
+		return s.agentMessageUser(ctx, h, args["text"])
+
+	case "share_file":
+		return s.agentShareFile(ctx, h, args["path"], args["note"])
 	}
 	return "", fmt.Errorf("unknown tool %q", name)
 }

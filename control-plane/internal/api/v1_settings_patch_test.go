@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/instancecfg"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
@@ -180,5 +181,52 @@ func TestPatchSettingsUnavailableWithoutLive(t *testing.T) {
 	s := &Server{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if w := patchSettings(s, `{"lifecycle":{"idle_threshold_seconds":600}}`); w.Code != http.StatusServiceUnavailable {
 		t.Errorf("got %d, want 503", w.Code)
+	}
+}
+
+// Agents run in the person's time zone: an IANA name is saved and shown, a
+// bad one is refused, "" goes back to UTC, and the container revision moves
+// with it so agents are made again.
+func TestPatchAgentTimeZone(t *testing.T) {
+	s := newSettingsServer(t)
+	w := patchSettings(s, `{"agents":{"time_zone":"Europe/Paris"}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("set: got %d: %s", w.Code, w.Body)
+	}
+	if s.agentTimeZone() != "Europe/Paris" {
+		t.Errorf("live zone = %q", s.agentTimeZone())
+	}
+	if p, _ := s.Store.GetInstanceSettings(context.Background()); p == nil || p.AgentTimeZone != "Europe/Paris" {
+		t.Errorf("not persisted: %+v", p)
+	}
+	var resp struct {
+		Agents struct {
+			TimeZone string `json:"time_zone"`
+		} `json:"agents"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Agents.TimeZone != "Europe/Paris" {
+		t.Errorf("echo time_zone = %q", resp.Agents.TimeZone)
+	}
+	for _, bad := range []string{"Mars/Olympus", "Local", "../../etc/passwd", "Europe/Paris; rm"} {
+		if w := patchSettings(s, `{"agents":{"time_zone":"`+bad+`"}}`); w.Code != http.StatusBadRequest {
+			t.Errorf("%q: got %d, want 400", bad, w.Code)
+		}
+	}
+	if s.agentTimeZone() != "Europe/Paris" {
+		t.Errorf("a refused zone changed the setting: %q", s.agentTimeZone())
+	}
+	if w := patchSettings(s, `{"agents":{"time_zone":""}}`); w.Code != http.StatusOK || s.agentTimeZone() != "" {
+		t.Errorf("clear: %d %q", w.Code, s.agentTimeZone())
+	}
+}
+
+func TestContainerRevFollowsTimeZone(t *testing.T) {
+	pkg, _ := agentcatalog.Get("hermes")
+	if containerRev(pkg, "") == containerRev(pkg, "Europe/Paris") {
+		t.Error("a new time zone must make agents again")
+	}
+	if got := browserEnv("Asia/Tokyo"); !reflect.DeepEqual(got, []string{"HOME=/tmp", "TZ=Asia/Tokyo"}) {
+		t.Errorf("browserEnv = %v", got)
 	}
 }

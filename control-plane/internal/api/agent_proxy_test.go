@@ -21,10 +21,14 @@ import (
 
 func agentTestServer(t *testing.T) (*Server, *store.Store, string) {
 	t.Helper()
-	st, err := store.Open(context.Background(), "file::memory:?_fk=1", "../../migrations")
+	// A file, not "file::memory:": the store's pool opens more than one
+	// connection when a turn writes while the test reads, and each in-memory
+	// connection is its own empty database (the list came back empty in CI).
+	st, err := store.Open(context.Background(), "file:"+filepath.Join(t.TempDir(), "agents.db")+"?_fk=1", "../../migrations")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	s := &Server{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	s.Handler() // sets the inner router the tools call
 	const secret = "agent-secret-for-tests"
@@ -93,7 +97,7 @@ func TestAgentMCPHandshakeAndTools(t *testing.T) {
 			t.Errorf("%v: required is null (strict MCP clients reject the tool list)", tl.(map[string]any)["name"])
 		}
 	}
-	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status" {
+	if strings.Join(names, ",") != "list_apps,create_app,ask_app,app_status,message_user,share_file" {
 		t.Fatalf("tools: %v (an agent must not get delete or other tools)", names)
 	}
 

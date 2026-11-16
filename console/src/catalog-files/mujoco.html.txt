@@ -1,0 +1,169 @@
+<!doctype html>
+<!-- A small, friendly page for MuJoCo (github.com/google-deepmind/mujoco): the
+     physics runs as WebAssembly in this browser, three.js draws the bodies. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MuJoCo</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1720; color: #e6edf3; font-family: system-ui, sans-serif; }
+      #view { position: fixed; inset: 0; }
+      header { position: fixed; top: 16px; left: 20px; right: 20px; pointer-events: none; }
+      h1 { margin: 0; font-size: 22px; }
+      header p { margin: 4px 0 0; color: #9fb0c0; font-size: 14px; max-width: 560px; }
+      nav { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+      button { font: inherit; font-size: 15px; padding: 9px 16px; border-radius: 999px; border: 1px solid #33495c; background: #16212c; color: #e6edf3; cursor: pointer; }
+      button.main { background: #f08c2e; border-color: #f08c2e; color: #111; font-weight: 600; }
+      #status { position: fixed; bottom: 70px; width: 100%; text-align: center; color: #9fb0c0; font-size: 13px; }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "./node_modules/three/build/three.module.js",
+                     "three/addons/": "./node_modules/three/examples/jsm/",
+                     "@mujoco/mujoco": "./node_modules/@mujoco/mujoco/mujoco.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="view"></div>
+    <header>
+      <h1>MuJoCo robot playground</h1>
+      <p>A real physics engine from Google DeepMind, running in your browser. Push the robot and watch it fall. Drag to look around.</p>
+    </header>
+    <div id="status">Loading the physics engine…</div>
+    <nav>
+      <button class="main" id="push">Push the robot</button>
+      <button id="drop">Drop it from higher</button>
+      <button id="slow">Slow motion</button>
+      <button id="reset">Start again</button>
+    </nav>
+    <script type="module">
+      import * as THREE from 'three'
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+      import loadMujoco from '@mujoco/mujoco'
+
+      const status = document.getElementById('status')
+      try {
+        const mujoco = await loadMujoco()
+        const xml = await (await fetch('humanoid.xml')).text()
+        const model = mujoco.MjModel.from_xml_string(xml)
+        const data = new mujoco.MjData(model)
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true })
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+        renderer.shadowMap.enabled = true
+        document.getElementById('view').append(renderer.domElement)
+        const scene = new THREE.Scene()
+        scene.background = new THREE.Color(0x0f1720)
+        scene.fog = new THREE.Fog(0x0f1720, 8, 20)
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100)
+        camera.up.set(0, 0, 1) // MuJoCo is z-up
+        camera.position.set(2.6, -3.2, 1.6)
+        const controls = new OrbitControls(camera, renderer.domElement)
+        controls.target.set(0, 0, 0.9)
+        scene.add(new THREE.HemisphereLight(0xdde8f0, 0x223040, 1.6))
+        const sun = new THREE.DirectionalLight(0xffffff, 2.2)
+        sun.position.set(3, -2, 6)
+        sun.castShadow = true
+        sun.shadow.mapSize.set(1024, 1024)
+        Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 })
+        scene.add(sun)
+
+        // One mesh per geom, built once; moved every frame from geom_xpos/xmat.
+        const T = mujoco.mjtGeom
+        const body = new THREE.MeshStandardMaterial({ color: 0xd99a5b, roughness: 0.55 })
+        const meshes = []
+        for (let i = 0; i < model.ngeom; i++) {
+          const type = model.geom_type[i].value ?? model.geom_type[i]
+          const s = [model.geom_size[3 * i], model.geom_size[3 * i + 1], model.geom_size[3 * i + 2]]
+          let geo
+          if (type === T.mjGEOM_PLANE.value) {
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x1d2c3a, roughness: 0.9 }))
+            floor.receiveShadow = true
+            scene.add(floor)
+            const grid = new THREE.GridHelper(40, 80, 0x2f4558, 0x2f4558)
+            grid.rotation.x = Math.PI / 2
+            grid.position.z = 0.001
+            scene.add(grid)
+            meshes.push(null)
+            continue
+          } else if (type === T.mjGEOM_SPHERE.value) geo = new THREE.SphereGeometry(s[0], 24, 16)
+          else if (type === T.mjGEOM_CAPSULE.value) geo = new THREE.CapsuleGeometry(s[0], 2 * s[1], 8, 16).rotateX(Math.PI / 2)
+          else if (type === T.mjGEOM_CYLINDER.value) geo = new THREE.CylinderGeometry(s[0], s[0], 2 * s[1], 20).rotateX(Math.PI / 2)
+          else if (type === T.mjGEOM_BOX.value) geo = new THREE.BoxGeometry(2 * s[0], 2 * s[1], 2 * s[2])
+          else if (type === T.mjGEOM_ELLIPSOID.value) geo = new THREE.SphereGeometry(1, 24, 16).scale(s[0], s[1], s[2])
+          else { meshes.push(null); continue }
+          const m = new THREE.Mesh(geo, body)
+          m.castShadow = true
+          m.matrixAutoUpdate = false
+          scene.add(m)
+          meshes.push(m)
+        }
+
+        let slow = false, pushUntil = 0
+        const resize = () => {
+          renderer.setSize(innerWidth, innerHeight)
+          camera.aspect = innerWidth / innerHeight
+          camera.updateProjectionMatrix()
+        }
+        addEventListener('resize', resize)
+        resize()
+
+        const torso = 1
+        const reset = (height = 0) => {
+          mujoco.mj_resetData(model, data)
+          data.qpos[2] += height
+          mujoco.mj_forward(model, data)
+        }
+        reset()
+        document.getElementById('reset').onclick = () => reset()
+        document.getElementById('drop').onclick = () => reset(1.5)
+        document.getElementById('slow').onclick = (e) => {
+          slow = !slow
+          e.target.textContent = slow ? 'Normal speed' : 'Slow motion'
+        }
+        document.getElementById('push').onclick = () => {
+          const a = Math.random() * Math.PI * 2
+          const f = data.xfrc_applied
+          f[6 * torso] = 260 * Math.cos(a)
+          f[6 * torso + 1] = 260 * Math.sin(a)
+          pushUntil = data.time + 0.12
+        }
+        status.textContent = ''
+
+        let last = performance.now()
+        const frame = (now) => {
+          let dt = Math.min((now - last) / 1000, 1 / 20) * (slow ? 0.2 : 1)
+          last = now
+          // Cap the steps per frame so a slow computer slows the motion
+          // instead of freezing the page.
+          const steps = Math.min(Math.round(dt / model.opt.timestep), 12)
+          for (let k = 0; k < steps; k++) {
+            if (pushUntil && data.time > pushUntil) {
+              const f = data.xfrc_applied
+              f[6 * torso] = f[6 * torso + 1] = 0
+              pushUntil = 0
+            }
+            mujoco.mj_step(model, data)
+          }
+          const pos = data.geom_xpos, mat = data.geom_xmat
+          for (let i = 0; i < meshes.length; i++) {
+            const m = meshes[i]
+            if (!m) continue
+            const p = 3 * i, r = 9 * i
+            m.matrix.set(mat[r], mat[r + 1], mat[r + 2], pos[p], mat[r + 3], mat[r + 4], mat[r + 5], pos[p + 1], mat[r + 6], mat[r + 7], mat[r + 8], pos[p + 2], 0, 0, 0, 1)
+            m.matrixWorldNeedsUpdate = true
+          }
+          const tp = data.xpos
+          controls.target.lerp(new THREE.Vector3(tp[3 * torso], tp[3 * torso + 1], Math.max(tp[3 * torso + 2] * 0.8, 0.3)), 0.05)
+          controls.update()
+          renderer.render(scene, camera)
+          requestAnimationFrame(frame)
+        }
+        requestAnimationFrame(frame)
+      } catch (e) {
+        status.textContent = 'The simulator could not start in this browser: ' + (e?.message || e)
+        console.error(e)
+      }
+    </script>
+  </body>
+</html>
