@@ -58,18 +58,23 @@ func (a *assistantRegistry) addSandbox(sandboxID, owner string) {
 	a.sandboxes[sandboxID] = owner
 }
 
-// note records the AI of a task sent to a sandboxd agent's workspace.
-func (a *assistantRegistry) note(sandboxID string, c assistantChoice) {
+// assistantTaskTimeoutS: a message to the sandboxd agent may run 30 minutes.
+const assistantTaskTimeoutS = 1800
+
+// note records the AI of a task sent to a sandboxd agent's workspace, and
+// reports whether the workspace is one.
+func (a *assistantRegistry) note(sandboxID string, c assistantChoice) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	owner, ok := a.sandboxes[sandboxID]
 	if !ok {
-		return
+		return false
 	}
 	if a.choices == nil {
 		a.choices = map[string]assistantChoice{}
 	}
 	a.choices[owner] = c
+	return true
 }
 
 func (a *assistantRegistry) choice(owner string) assistantChoice {
