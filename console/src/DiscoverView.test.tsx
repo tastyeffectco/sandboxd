@@ -9,6 +9,9 @@ vi.mock('./api', () => ({
     createApp: vi.fn(),
     createAppSandbox: vi.fn(),
     putWorkspaceFile: vi.fn(),
+    getSandbox: vi.fn(),
+    stopSandbox: vi.fn(),
+    startSandbox: vi.fn(),
     listAgentCatalogEntrys: vi.fn().mockResolvedValue([{ id: 'hermes', label: 'Hermes', description: 'A personal assistant.' }]),
   },
 }))
@@ -21,19 +24,20 @@ const view = (over: Partial<Parameters<typeof DiscoverView>[0]> = {}) => {
 }
 
 describe('DiscoverView (free apps)', () => {
-  it('installs a downloaded app into an empty project and hands its install to the coding agent', async () => {
+  it('installs a downloaded app into an empty project and writes its sandbox.yaml (no AI needed)', async () => {
     vi.mocked(api.createApp).mockResolvedValue({ id: 'a1' } as never)
-    vi.mocked(api.createAppSandbox).mockResolvedValue({} as never)
+    vi.mocked(api.createAppSandbox).mockResolvedValue({ id: 's1', status: 'running' } as never)
+    vi.mocked(api.putWorkspaceFile).mockClear().mockResolvedValue()
+    vi.mocked(api.startSandbox).mockResolvedValue({} as never)
+    vi.mocked(api.stopSandbox).mockResolvedValue({} as never)
     const props = view()
     fireEvent.click(screen.getByTestId('catalog-memos').querySelector('[data-testid=catalog-install]')!)
-    await waitFor(() => expect(props.onInstalled).toHaveBeenCalled())
+    await waitFor(() => expect(props.onInstalled).toHaveBeenCalledWith('a1'))
     expect(vi.mocked(api.createApp).mock.calls[0][0]).toMatchObject({ name: 'Memos', tags: ['catalog:memos'] })
     expect(vi.mocked(api.createApp).mock.calls[0][0].git).toBeUndefined()
     expect(api.createAppSandbox).toHaveBeenCalledWith('a1', { template: 'blank' })
-    const [id, intent] = props.onInstalled.mock.calls[0]
-    expect(id).toBe('a1')
-    expect(intent.agent).toBe('opencode')
-    expect(intent.prompt).toContain('sandbox.yaml')
+    const memos = CATALOG.find((a) => a.id === 'memos')!
+    expect(api.putWorkspaceFile).toHaveBeenCalledWith('s1', 'sandbox.yaml', catalogManifest(memos))
   })
 
   it('copies a source app from its repository at the tested version', async () => {

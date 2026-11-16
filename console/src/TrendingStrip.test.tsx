@@ -5,7 +5,14 @@ import { api } from './api'
 import { CATALOG, TRENDING, starCount } from './catalog'
 
 vi.mock('./api', () => ({
-  api: { createApp: vi.fn(), createAppSandbox: vi.fn(), putWorkspaceFile: vi.fn() },
+  api: {
+    createApp: vi.fn(),
+    createAppSandbox: vi.fn(),
+    putWorkspaceFile: vi.fn(),
+    getSandbox: vi.fn(),
+    stopSandbox: vi.fn(),
+    startSandbox: vi.fn(),
+  },
 }))
 afterEach(cleanup)
 
@@ -25,18 +32,20 @@ describe('TrendingStrip (home page)', () => {
     expect(screen.getByTestId('trending-all').textContent).toContain(String(TRENDING.length))
   })
 
-  it('writes the entry files into the new project before the install task', async () => {
+  it('writes the entry files and its sandbox.yaml into the new project', async () => {
     vi.mocked(api.createApp).mockResolvedValue({ id: 'a1' } as never)
-    vi.mocked(api.createAppSandbox).mockResolvedValue({ id: 's1' } as never)
+    vi.mocked(api.createAppSandbox).mockResolvedValue({ id: 's1', status: 'running' } as never)
     vi.mocked(api.putWorkspaceFile).mockResolvedValue()
+    vi.mocked(api.startSandbox).mockResolvedValue({} as never)
+    vi.mocked(api.stopSandbox).mockResolvedValue({} as never)
     const props = strip()
     fireEvent.click(screen.getByTestId('trending-sherlock').querySelector('[data-testid=trending-try]')!)
-    await waitFor(() => expect(props.onInstalled).toHaveBeenCalled())
+    await waitFor(() => expect(props.onInstalled).toHaveBeenCalledWith('a1'))
     expect(api.createAppSandbox).toHaveBeenCalledWith('a1', { template: 'blank' })
-    const [sandbox, path, content] = vi.mocked(api.putWorkspaceFile).mock.calls[0]
-    expect([sandbox, path]).toEqual(['s1', 'app.py'])
-    expect(content).toContain('sherlock')
-    expect(props.onInstalled.mock.calls[0][1].prompt).toContain('sherlock-project==0.16.2')
+    const writes = vi.mocked(api.putWorkspaceFile).mock.calls.map((c) => c[1])
+    expect(writes).toEqual(['app.py', 'sandbox.yaml'])
+    expect(vi.mocked(api.putWorkspaceFile).mock.calls[0][2]).toContain('sherlock')
+    expect(vi.mocked(api.putWorkspaceFile).mock.calls[1][2]).toContain('sherlock-project==0.16.2')
   })
 
   it('opens an entry that is already installed', () => {

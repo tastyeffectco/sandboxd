@@ -8,15 +8,17 @@ click, each in its own project on the person's engine. It uses only the
 
 1. `POST /v1/apps` with the app's name, pitch and the tag `catalog:<id>`.
    Apps built from source pass `git` (the upstream repo at a pinned tag).
-2. `POST /v1/apps/{id}/sandbox` (`template: blank` for downloaded releases).
-3. The first task asks the coding agent for one thing: write the entry's
-   `sandbox.yaml`. Its `web.command` downloads or builds the app on first
+2. `POST /v1/apps/{id}/sandbox` (`template: blank` for downloaded releases),
+   then wait until the workspace runs (a source app's repo is copied first).
+3. `PUT /v1/sandboxes/{id}/files` writes the entry's small files (`files`,
+   for example a one-page web front for a command-line tool) and its
+   `sandbox.yaml`, whose `web.command` downloads or builds the app on first
    start (guarded, so later starts are instant) and serves it on port 3000.
-   runtimed applies the new start command and waits for the app.
+4. Stop and start the workspace, so it starts with that `sandbox.yaml`.
 
-Entries can bring small files (`files` in the catalog), written into the
-project through `PUT /v1/sandboxes/{id}/files` before the task: for example
-a one-page web front for a command-line tool (Sherlock).
+No AI is involved, so an install works the same when the free model is used
+up. Source apps also get a `build` command, run after each task, so a change
+the person asks the coding agent for shows up.
 
 ## Trending on GitHub
 

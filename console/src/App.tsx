@@ -525,9 +525,8 @@ export default function App({
                   onSeeAll={() => setRoute({ name: 'discover', category: 'Trending' })}
                   onError={onError}
                   onOpen={(id) => goApp(id)}
-                  onInstalled={(id, intent) => {
+                  onInstalled={(id) => {
                     loadApps()
-                    setPendingBuilds((p) => ({ ...p, [id]: intent }))
                     goApp(id)
                   }}
                 />
@@ -548,9 +547,8 @@ export default function App({
               onError={onError}
               onOpen={(id) => goApp(id)}
               goAgents={() => setRoute({ name: 'agents' })}
-              onInstalled={(id, intent) => {
+              onInstalled={(id) => {
                 loadApps()
-                setPendingBuilds((p) => ({ ...p, [id]: intent }))
                 goApp(id)
               }}
             />

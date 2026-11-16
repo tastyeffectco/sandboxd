@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, App as TApp, AgentCatalogEntry, AgentInstance } from './api'
-import { BuildIntent, defaultChoice } from './AgentPicker'
-import { CATALOG, CatalogApp, catalogTag, installPrompt } from './catalog'
+import { CATALOG, CatalogApp, catalogTag } from './catalog'
 import { installCatalogApp } from './catalogInstall'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
@@ -24,7 +23,7 @@ export function DiscoverView({
   apps: TApp[]
   agents?: AgentInstance[]
   openAgent?: (id: string) => void
-  onInstalled: (id: string, intent: BuildIntent) => void
+  onInstalled: (id: string) => void
   onOpen: (id: string) => void
   goAgents: () => void
   onError: (message: string) => void
@@ -48,7 +47,7 @@ export function DiscoverView({
     setInstalling(entry.id)
     try {
       const id = await installCatalogApp(entry)
-      onInstalled(id, { ...defaultChoice, prompt: installPrompt(entry) })
+      onInstalled(id)
     } catch (e) {
       onError((e as Error).message)
     } finally {
