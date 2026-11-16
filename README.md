@@ -87,7 +87,8 @@ database, no queue.
 **Bring your own models.** Apps are built by **OpenCode, Claude Code, Codex or
 Pi**: OpenCode's free models need no account, a Claude or ChatGPT subscription
 works as is, and OpenCode and Pi also run against local or remote
-**OpenAI-compatible** and **Anthropic-compatible** endpoints. Add connections,
+**OpenAI-compatible** and **Anthropic-compatible** endpoints (Codex against
+OpenAI-compatible ones, such as OpenRouter). Add connections,
 model aliases and token limits in the console; provider keys stay encrypted on
 the control plane. Use your local model server or a LiteLLM gateway, including
 gateways routing to AWS Bedrock. [Set up model connections →](docs/model-providers.md)

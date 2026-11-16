@@ -406,3 +406,59 @@ func TestProbeExplainsAnUnreachableOllama(t *testing.T) {
 		t.Fatalf("probe: %v", err)
 	}
 }
+
+// Codex reaches an OpenAI-compatible connection (OpenRouter...) through the
+// Responses API: the proxy forwards /responses with Codex's fields, keeps the
+// same model and credential rules, and drops client metadata.
+func TestProxyForwardsCodexResponsesRequests(t *testing.T) {
+	s, _ := testService(t)
+	key := "upstream-only-secret"
+	var got map[string]any
+	var path string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		if r.Header.Get("Authorization") != "Bearer "+key {
+			t.Error("missing upstream auth")
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: response.completed\ndata: {}\n\n")
+	}))
+	defer upstream.Close()
+	c, err := s.Save(context.Background(), "", Input{Name: "OpenRouter", Protocol: OpenAI, BaseURL: upstream.URL + "/api/v1", APIKey: &key, Models: []Model{{ID: "deepseek/deepseek-v4.1-flash"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := s.Connection(context.Background(), c.ID, "", "http://proxy", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path, body string) int {
+		r := httptest.NewRequest("POST", path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+conn.Token)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w.Code
+	}
+	codex := `{"model":"deepseek/deepseek-v4.1-flash","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],` +
+		`"tools":[],"tool_choice":"auto","parallel_tool_calls":true,"reasoning":{"effort":"medium"},"store":false,"stream":true,` +
+		`"include":["reasoning.encrypted_content"],"prompt_cache_key":"t1","client_metadata":{"x":"y"}}`
+	if code := call("/providers/"+c.ID+"/v1/responses", codex); code != 200 {
+		t.Fatalf("codex request: %d", code)
+	}
+	if path != "/api/v1/responses" || got["input"] == nil || got["client_metadata"] != nil {
+		t.Errorf("forwarded %s %v", path, got)
+	}
+	for _, bad := range []string{
+		`{"model":"other","input":[]}`,
+		`{"model":"deepseek/deepseek-v4.1-flash","input":[],"api_base":"http://evil.invalid"}`,
+		`{"model":"deepseek/deepseek-v4.1-flash","input":[],"previous_response_id":"r1"}`,
+	} {
+		if code := call("/providers/"+c.ID+"/v1/responses", bad); code < 400 {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+	if code := call("/providers/"+c.ID+"/v1/embeddings", `{"model":"deepseek/deepseek-v4.1-flash"}`); code < 400 {
+		t.Error("accepted another operation")
+	}
+}

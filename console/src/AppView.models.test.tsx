@@ -100,4 +100,20 @@ describe('account model picker', () => {
     await screen.findByRole('option', { name: 'Connected model' })
     expect(screen.queryByText(/Connect this account/)).toBeNull()
   })
+  it('offers Codex only the OpenAI-compatible connections', () => {
+    const conn = (id: string, protocol: 'openai-completions' | 'anthropic-messages') =>
+      ({ id, name: id, protocol, base_url: 'https://x', models: [{ id: 'm' }] }) as never
+    const providers = [conn('openrouter', 'openai-completions'), conn('anthropic', 'anthropic-messages')]
+    render(
+      <AgentPicker
+        value={{ agent: 'codex', provider: 'openrouter', model: '' }}
+        onChange={() => {}}
+        providers={providers}
+        agents={[]}
+      />,
+    )
+    const picker = screen.getByTestId('task-provider') as HTMLSelectElement
+    expect(Array.from(picker.options).map((o) => o.value)).toEqual(['', 'openrouter'])
+    expect(picker.value).toBe('openrouter')
+  })
 })

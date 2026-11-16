@@ -28,6 +28,29 @@ no restart.
 Pi requires a connection. OpenCode also retains its existing built-in
 provider/free-tier flow when **Built-in provider** is selected.
 
+## Codex on a model connection
+
+**Codex** can also use an **OpenAI-compatible** connection (OpenRouter, OpenAI,
+or any gateway that serves OpenAI's **Responses API** at `<base URL>/responses`).
+Codex speaks only that API, so it is not offered Anthropic-format connections,
+and a gateway that only serves Chat Completions answers its requests with an
+error. Choose **Codex**, then the connection and model, in the app's Agent panel
+or in Ask sandboxd's picker.
+
+runtimed starts `codex exec` with a `sandboxd` model provider pointing at the
+connection proxy (`wire_api="responses"`), and gives Codex only the task's
+short-lived capability token. The proxy accepts `POST …/v1/responses` with the
+fields Codex sends (`model input instructions stream tools tool_choice
+parallel_tool_calls reasoning store include prompt_cache_key text
+max_output_tokens temperature top_p`), drops `client_metadata`, checks the model,
+and adds the real key. As with the other agents, the key never enters a
+workspace.
+
+Verified with the real Codex 0.162.1 CLI, runtimed's adapter and the real proxy
+against a local Responses fixture, including a sandboxd tool call
+(`SANDBOXD_TEST_REAL_AGENTS=1 go test ./cmd/runtimed -run TestRealCodexConnection`).
+Not yet checked against OpenRouter's live Responses API.
+
 ## Endpoint examples
 
 These are examples of addresses reachable **from the control-plane container**,
