@@ -2308,7 +2308,7 @@ components:
       properties:
         prompt: { type: string }
         agent: { type: string, enum: [opencode, pi, claude-code, codex], default: opencode }
-        provider: { type: string, description: "Configured model connection ID, supported by OpenCode and Pi. Required for Pi. With a connection, model is an exact configured ID; omitted selects its first model." }
+        provider: { type: string, description: "Configured model connection ID, supported by OpenCode, Pi and Codex (Codex needs an OpenAI-compatible connection). Required for Pi. With a connection, model is an exact configured ID; omitted selects its first model." }
         continue: { type: boolean, default: true, description: Resume this agent session when available }
         model:
           type: string

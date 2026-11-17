@@ -1,4 +1,4 @@
-# Local and remote models with OpenCode and Pi
+# Local and remote models with OpenCode, Pi and Codex
 
 Choose the coding agent independently of the model server. **OpenCode** and
 **Pi** can both use operator-configured **OpenAI-compatible Chat Completions**
@@ -22,8 +22,8 @@ no restart.
    match your server.
 5. Save, then choose a model and click **Test model**. This explicitly sends a
    small inference request; remote provider charges can apply.
-6. Open an app's **Agent** panel. Choose **OpenCode** or **Pi**, then the
-   connection and model. Send a prompt as usual.
+6. Open an app's **Agent** panel. Choose **OpenCode**, **Pi** or **Codex**
+   (OpenAI-compatible connections only), then the connection and model. Send a prompt as usual.
 
 Pi requires a connection. OpenCode also retains its existing built-in
 provider/free-tier flow when **Built-in provider** is selected.
