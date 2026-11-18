@@ -10,7 +10,8 @@ stay in the control plane and are injected into requests by the auth proxy.
 
 For **local models, remote compatible APIs, and LiteLLM**, use
 [Model connections](model-providers.md). OpenCode and Pi support both
-OpenAI-compatible and Anthropic-compatible endpoints through that API.
+OpenAI-compatible and Anthropic-compatible endpoints through that API;
+Codex supports OpenAI-compatible ones.
 These connections store keys encrypted in SQLite and use temporary proxy
 capabilities. The built-in agent-auth flows described below use the existing
 opaque credential-file store.
