@@ -311,3 +311,13 @@ func TestAssistantListsTheAgentCatalog(t *testing.T) {
 		t.Errorf("catalog: %q", text)
 	}
 }
+
+// The guide the assistant reads on every turn names each of its tools, so a
+// new tool is not left unexplained (and a removed one is not still promised).
+func TestAssistantGuideNamesEveryTool(t *testing.T) {
+	for _, tool := range assistantTools {
+		if !strings.Contains(assistantGuide, tool.Name) {
+			t.Errorf("assistantGuide does not mention the %s tool", tool.Name)
+		}
+	}
+}
