@@ -128,7 +128,7 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
         className="dc-hoverborder"
         onClick={() => setOpen((o) => !o)}
         title="Version, release notes and upgrades"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '3px 10px', borderRadius: 999, border: `1px solid ${failed ? c.bad : c.border}`, background: c.panel, color: failed ? c.bad : c.muted, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,.06)', userSelect: 'none' }}>
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '3px 10px', borderRadius: 999, border: `1px solid ${failed ? c.bad : c.border}`, background: c.panel, color: failed ? c.bad : c.muted, cursor: 'pointer', userSelect: 'none' }}>
         {showDot && <span data-testid="version-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: c.good, flexShrink: 0 }} />}
         <span style={{ ...mono, fontSize: 11.5 }}>{pillText}</span>
       </div>

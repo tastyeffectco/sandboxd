@@ -47,7 +47,7 @@ export function renderInline(text: string): ReactNode[] {
     const at = m.index ?? 0
     if (at > last) out.push(text.slice(last, at))
     const tok = m[0]
-    if (m[1]) out.push(<code key={k++} style={{ fontFamily: 'ui-monospace,monospace', fontSize: '0.92em', padding: '0 4px', borderRadius: 3, background: 'rgba(0,0,0,.06)' }}>{tok.slice(1, -1)}</code>)
+    if (m[1]) out.push(<code key={k++} style={{ fontFamily: 'var(--mono)', fontSize: '0.92em', padding: '0 5px', borderRadius: 5, background: 'rgba(255,255,255,.07)' }}>{tok.slice(1, -1)}</code>)
     else if (m[2]) out.push(<b key={k++}>{tok.slice(2, -2)}</b>)
     else if (m[3]) out.push(<a key={k++} href={m[4]} target="_blank" rel="noreferrer">{tok.slice(1, tok.indexOf(']'))}</a>)
     else out.push(<a key={k++} href={tok} target="_blank" rel="noreferrer">{shortUrl(tok)}</a>)
