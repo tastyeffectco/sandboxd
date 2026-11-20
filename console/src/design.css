@@ -390,15 +390,6 @@ hr {
   margin: auto;
   padding: 44px 40px 70px;
 }
-.page-heading h1 {
-  font-size: 32px;
-  letter-spacing: -1.2px;
-  margin: 7px 0;
-}
-.page-heading p {
-  color: var(--muted);
-  margin: 0;
-}
 .eyebrow {
   font: 600 11px var(--sans);
   letter-spacing: 1.4px;
@@ -932,16 +923,6 @@ hr {
   display: flex;
   gap: 12px;
   font-size: 13px;
-}
-.step-number {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-radius: 50%;
-  width: 25px;
-  height: 25px;
-  display: grid;
-  place-items: center;
-  flex: none;
 }
 .workspace-main {
   overflow: hidden;
@@ -1806,9 +1787,6 @@ hr {
     font-size: 43px;
     letter-spacing: -2px;
   }
-  .hero-break {
-    display: block;
-  }
   .build-hero > p {
     font-size: 13px;
     margin-bottom: 22px;
@@ -2079,15 +2057,6 @@ hr {
   gap: 12px;
   align-items: start;
 }
-.library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
-  gap: 18px;
-}
-.library-page h1 {
-  font-size: 32px !important;
-  letter-spacing: -1px;
-}
 .auth-page {
   height: 100dvh;
   display: grid;
@@ -2178,9 +2147,6 @@ hr {
   font-size: 12px !important;
   margin: 12px 0 !important;
 }
-.library-page > div:nth-of-type(1) {
-  gap: 8px !important;
-}
 .agent-account-header > span:last-child {
   margin-left: auto;
 }
@@ -2217,9 +2183,6 @@ hr {
     font: 600 22px var(--display);
     color: var(--ink);
     margin-bottom: 35px;
-  }
-  .library-grid {
-    grid-template-columns: 1fr;
   }
   .chip {
     font-size: 10px;

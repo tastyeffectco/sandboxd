@@ -177,9 +177,6 @@ select option {
     opacity: 0.45;
   }
 }
-.sbx-rise {
-  animation: sbx-rise 0.45s var(--ease) both;
-}
 .sbx-skeleton {
   background: linear-gradient(90deg, var(--panel-2) 25%, var(--panel-3) 50%, var(--panel-2) 75%);
   background-size: 200% 100%;
