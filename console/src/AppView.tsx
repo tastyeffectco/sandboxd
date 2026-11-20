@@ -14,6 +14,7 @@ import { c, font, mono, Card, H, Btn, Pill, StatusPill, Input } from './design/k
 import { AgentChat } from './AgentChat'
 import { BuildIntent } from './AgentPicker'
 import { Icon } from './design/Icon'
+import { Bot } from './design/Bot'
 import { Dialog } from './design/Dialog'
 import { useUnsavedChanges } from './unsavedChanges'
 import { VersionsPanel } from './VersionsPanel'
@@ -270,11 +271,13 @@ export function AppView({
         </button>
         {assistant ? (
           <div className="workspace-title">
+            <Bot who="sandboxd" size={30} />
             <h1>Ask sandboxd</h1>
             <span className="assistant-sub">Builds and installs apps, and works with your agents</span>
           </div>
         ) : (
           <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename app">
+            <Bot who={app.name} size={30} still />
             <h1>{app.name}</h1>
             <Icon name="chevron" size={14} />
           </button>
@@ -491,7 +494,7 @@ export function AppView({
             </details>
           </nav>
           <div className={`workspace-content content-${tabName}`}>
-            {tabName === 'overview' && <PreviewPane sb={sb} reloadKey={previewKey} />}
+            {tabName === 'overview' && <PreviewPane sb={sb} reloadKey={previewKey} name={app?.name} />}
             {tabName === 'runtime' && (
               <div className="runtime-panels">
                 <ProcessesCard
@@ -623,7 +626,16 @@ export function AppView({
   )
 }
 
-export function PreviewPane({ sb, reloadKey = 0 }: { sb: Sandbox | null; reloadKey?: number }) {
+export function PreviewPane({
+  sb,
+  reloadKey = 0,
+  name = 'app',
+}: {
+  sb: Sandbox | null
+  reloadKey?: number
+  // The project's name picks its bot.
+  name?: string
+}) {
   const [size, setSize] = useState<'desktop' | 'mobile'>('desktop')
   const [nonce, setNonce] = useState(0)
   const [blocked, setBlocked] = useState(false)
@@ -701,7 +713,15 @@ export function PreviewPane({ sb, reloadKey = 0 }: { sb: Sandbox | null; reloadK
             }
           >
             <span className="preview-placeholder-icon">
-              <Icon name={blocked ? 'external' : 'monitor'} size={32} />
+              {blocked ? (
+                <Icon name="external" size={32} />
+              ) : (
+                <Bot
+                  who={name}
+                  size={96}
+                  mood={!sb ? 'happy' : sb.status !== 'running' ? 'sleeping' : sb.preview?.status === 'none' ? 'idle' : 'working'}
+                />
+              )}
             </span>
             <h2>
               {blocked
@@ -1266,13 +1286,13 @@ function ProcessesCard({
             ref={logRef}
             data-testid="process-log-output"
             style={{
-              background: '#0a0a0a',
+              background: 'var(--bg-2)',
               border: `1px solid ${c.border2}`,
-              borderRadius: 7,
+              borderRadius: 12,
               padding: '10px 12px',
               ...mono,
               fontSize: 11.5,
-              color: '#d4d4d8',
+              color: 'var(--fg-2)',
               lineHeight: 1.6,
               maxHeight: 260,
               overflow: 'auto',
@@ -1360,7 +1380,7 @@ function RuntimeCard({
             sm
             variant="primary"
             disabled={!canApply}
-            title={canApply ? '' : 'Start the sandbox first'}
+            title={canApply ? '' : 'Start the workspace first'}
             onClick={onApplyRuntime}
             data-testid="apply-runtime"
             style={{ marginLeft: 'auto' }}
@@ -1859,7 +1879,7 @@ function GitTab({
       <Card style={{ padding: 16, color: c.muted2, fontSize: 13 }}>
         {st.reason === 'not_a_git_repo'
           ? 'This app is not a Git repository.'
-          : 'Git is unavailable — start the sandbox.'}
+          : 'Start the workspace to see its history and changes.'}
       </Card>
     )
 

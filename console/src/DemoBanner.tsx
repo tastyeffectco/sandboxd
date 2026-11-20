@@ -6,17 +6,17 @@ export default function DemoBanner() {
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
         flexWrap: 'wrap', padding: '7px 16px', fontSize: 13,
-        fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
-        background: '#0a0a0a', color: '#fcfaf6', borderBottom: '2px solid #ff6b00',
+        fontFamily: 'var(--mono)',
+        background: 'var(--brand-grad-soft), var(--bg-2)', color: 'var(--fg)', borderBottom: '1px solid var(--accent-line)',
       }}
     >
       <span>
-        <b style={{ color: '#ff6b00' }}>▶ Live demo</b> · read-only tour with sample data — nothing here runs a real sandbox.
+        <b className="sbx-grad-text">▶ Live demo</b> · read-only tour with sample data — nothing here runs a real sandbox.
       </span>
       <a
         href="https://github.com/tastyeffectco/sandboxd"
         target="_blank" rel="noreferrer"
-        style={{ color: '#0a0a0a', background: '#ff6b00', textDecoration: 'none', fontWeight: 700, padding: '3px 12px', whiteSpace: 'nowrap' }}
+        style={{ color: '#fff', background: 'var(--brand-grad)', textDecoration: 'none', fontWeight: 700, padding: '4px 14px', borderRadius: 999, whiteSpace: 'nowrap' }}
       >
         Install it → one command
       </a>

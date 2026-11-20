@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
-import { c, font, Btn, Card, Input } from './design/kit'
+import { c, Btn, Input } from './design/kit'
+import { Bot, BOTS, BotMood, agentHue, moodFor } from './design/Bot'
 import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
 import { browserTimeZone, canSetTimeZone } from './timeZone'
 
@@ -39,44 +40,66 @@ export function AgentsView({
   }, [onError])
 
   return (
-    <div className="content-page">
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Add an agent</h1>
-      <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 620 }}>
-        Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
-        remember what you tell them and can create and change apps on this computer.
-      </p>
+    <div className="content-page crew-page">
+      <header className="page-hero">
+        <div className="page-hero-text">
+          <span className="eyebrow">Your crew</span>
+          <h1>Add an agent</h1>
+          <p>
+            Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
+            remember what you tell them and can create and change apps on this computer.
+          </p>
+        </div>
+        <div className="page-hero-crew" aria-hidden="true">
+          {(packages || []).slice(0, 3).map((p, i) => (
+            <Bot key={p.id} who={p.id} size={i === 1 ? 84 : 62} />
+          ))}
+        </div>
+      </header>
       {notice && (
-        <p role="status" className="chat-notice" style={{ maxWidth: 680 }} data-testid="openrouter-connected">
+        <p role="status" className="chat-notice" data-testid="openrouter-connected">
           {notice}
         </p>
       )}
-      {packages === null && <p style={{ color: c.muted2 }}>Loading…</p>}
-      {packages?.map((p) => {
-        const added = agents.find((a) => a.package === p.id)
-        return added ? (
-          <Card key={p.id} pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`added-agent-${p.id}`}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <strong style={{ fontSize: 16 }}>{p.label}</strong>
-              <span style={{ color: c.muted2, fontSize: 12 }}>Added</span>
-              <span style={{ flex: 1 }} />
-              <Btn sm variant="primary" onClick={() => onOpen(added.id)} data-testid="open-agent">
-                Open {added.name}
-              </Btn>
-            </div>
-            <p style={{ color: c.muted, margin: '6px 0 0' }}>{p.description}</p>
-          </Card>
-        ) : (
-          <AddAgent
-            key={p.id}
-            pkg={p}
-            models={models}
-            goModels={goModels}
-            onConnected={connected}
-            onAdded={onOpen}
-            onError={onError}
-          />
-        )
-      })}
+      {packages === null && (
+        <div className="crew-list" aria-label="Loading">
+          <div className="sbx-skeleton" style={{ height: 150 }} />
+          <div className="sbx-skeleton" style={{ height: 150 }} />
+        </div>
+      )}
+      <div className="crew-list">
+        {packages?.map((p) => {
+          const mine = agents.filter((a) => a.package === p.id)
+          return mine.length > 0 ? (
+            <AddedAgents
+              key={p.id}
+              pkg={p}
+              mine={mine}
+              all={agents}
+              models={models}
+              goModels={goModels}
+              onConnected={connected}
+              onOpen={onOpen}
+              onError={onError}
+            />
+          ) : (
+            <CrewCard key={p.id} id={p.id} mood="idle" data-testid={`add-agent-${p.id}`}>
+              <div className="crew-card-title">
+                <h2>{p.label}</h2>
+              </div>
+              <p>{p.description}</p>
+              <AddAgent
+                pkg={p}
+                models={models}
+                goModels={goModels}
+                onConnected={connected}
+                onAdded={onOpen}
+                onError={onError}
+              />
+            </CrewCard>
+          )
+        })}
+      </div>
       {packages !== null && <AgentTimeZone onError={onError} />}
     </div>
   )
@@ -106,7 +129,9 @@ function AgentTimeZone({ onError }: { onError: (message: string) => void }) {
   const change = async (next: string) => {
     setBusy(true)
     try {
-      const s = await api.patchSettings({ agents: { time_zone: next === 'UTC' ? '' : next } })
+      const s = await api.patchSettings({
+        agents: { time_zone: next === 'UTC' ? '' : next },
+      })
       setZone(s.agents.time_zone || 'UTC')
     } catch (e) {
       onError((e as Error).message)
@@ -129,6 +154,87 @@ function AgentTimeZone({ onError }: { onError: (message: string) => void }) {
   )
 }
 
+// The agents of one kind you already have, each with its own window, and a
+// way to add another (a second Hermes for work, say).
+function AddedAgents({
+  pkg,
+  mine,
+  all,
+  models,
+  goModels,
+  onConnected,
+  onOpen,
+  onError,
+}: {
+  pkg: AgentCatalogEntry
+  mine: AgentInstance[]
+  all: AgentInstance[]
+  models: ModelProvider[]
+  goModels: () => void
+  onConnected: (p: ModelProvider, free: boolean) => void
+  onOpen: (id: string) => void
+  onError: (message: string) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const names = mine.map((a) => a.name)
+  return (
+    <CrewCard id={pkg.id} mood={adding ? 'thinking' : moodFor(mine[0].status)} data-testid={`added-agent-${pkg.id}`}>
+      <div className="crew-card-title">
+        <h2>{pkg.label}</h2>
+        <span className="crew-badge">{mine.length > 1 ? `${mine.length} on your crew` : 'On your crew'}</span>
+      </div>
+      <p>{pkg.description}</p>
+      <ul className="crew-members">
+        {mine.map((a) => (
+          <li key={a.id}>
+            <Bot who={a.package} hue={agentHue(all, a)} mood={moodFor(a.status)} size={34} still />
+            <span>
+              <strong>{a.name}</strong>
+              <small>{agentState(a.status)}</small>
+            </span>
+            <Btn sm variant="primary" onClick={() => onOpen(a.id)} data-testid="open-agent">
+              Open
+            </Btn>
+          </li>
+        ))}
+      </ul>
+      {adding ? (
+        <div className="crew-add-another">
+          <AddAgent
+            pkg={pkg}
+            models={models}
+            goModels={goModels}
+            onConnected={onConnected}
+            onAdded={onOpen}
+            onError={onError}
+            taken={names}
+            onCancel={() => setAdding(false)}
+          />
+        </div>
+      ) : (
+        <div className="crew-card-actions">
+          <Btn onClick={() => setAdding(true)} data-testid={`add-another-${pkg.id}`}>
+            + Add another {pkg.label}
+          </Btn>
+        </div>
+      )}
+    </CrewCard>
+  )
+}
+
+function agentState(status: string) {
+  if (status === 'running') return 'Ready'
+  if (status === 'starting') return 'Starting…'
+  if (status === 'missing') return 'Needs attention'
+  return 'Paused'
+}
+
+// A next name nobody has yet: "Hermes 2", "Hermes 3"…
+export function nextName(label: string, taken: string[]): string {
+  const used = new Set(taken.map((n) => n.trim().toLowerCase()))
+  for (let i = 2; ; i++) if (!used.has(`${label} ${i}`.toLowerCase())) return `${label} ${i}`
+}
+
 function AddAgent({
   pkg,
   models,
@@ -136,8 +242,13 @@ function AddAgent({
   onConnected,
   onAdded,
   onError,
+  taken,
+  onCancel,
 }: {
   pkg: AgentCatalogEntry
+  // Names of the agents of this kind already added; set when adding another.
+  taken?: string[]
+  onCancel?: () => void
   models: ModelProvider[]
   goModels: () => void
   onConnected: (p: ModelProvider, free: boolean) => void
@@ -149,6 +260,9 @@ function AddAgent({
   const [users, setUsers] = useState('')
   const [busy, setBusy] = useState(false)
   const [warning, setWarning] = useState('')
+  const another = !!taken
+  const [name, setName] = useState(() => (taken ? nextName(pkg.label, taken) : ''))
+  const clash = another && taken!.some((n) => n.trim().toLowerCase() === name.trim().toLowerCase())
   const chosen = connection || suggestedConnection(models, pkg.strong_model) || ''
   const add = async () => {
     setBusy(true)
@@ -156,6 +270,7 @@ function AddAgent({
     try {
       const res = await api.createAgentInstance({
         package: pkg.id,
+        ...(another ? { name: name.trim() } : {}),
         connection_id: chosen,
         telegram_bot_token: token.trim() || undefined,
         telegram_allowed_users: users.trim() || undefined,
@@ -169,9 +284,7 @@ function AddAgent({
     }
   }
   return (
-    <Card pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`add-agent-${pkg.id}`}>
-      <strong style={{ fontSize: 16 }}>{pkg.label}</strong>
-      <p style={{ color: c.muted, margin: '6px 0 14px' }}>{pkg.description}</p>
+    <>
       {models.length === 0 && canConnectOpenRouter() ? (
         <>
           <p style={{ margin: '0 0 12px' }}>
@@ -196,6 +309,23 @@ function AddAgent({
         </p>
       ) : (
         <>
+          {another && (
+            <label className="form-field">
+              Name
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={40}
+                autoFocus
+                data-testid="agent-name"
+              />
+              <small className={clash ? 'crew-name-hint bad' : 'crew-name-hint'} role={clash ? 'alert' : undefined}>
+                {clash
+                  ? `You already have an agent called ${name.trim()}.`
+                  : `A name to tell it apart, like “${pkg.label} for work”. It has its own chats and memory.`}
+              </small>
+            </label>
+          )}
           {models.length > 1 && (
             <label className="form-field">
               AI model
@@ -212,8 +342,9 @@ function AddAgent({
             <details style={{ margin: '4px 0 14px' }}>
               <summary>Talk to {pkg.label} on Telegram (optional)</summary>
               <p style={{ color: c.muted, fontSize: 13 }}>
-                Create a bot with @BotFather and paste its token. Add your Telegram user ID (from @userinfobot) so
-                only you can talk to it.
+                Create a bot with @BotFather and paste its token. Add your Telegram user ID (from @userinfobot) so only
+                you can talk to it.
+                {another && ' Use a different bot for each agent.'}
               </p>
               <label className="form-field">
                 Bot token
@@ -225,12 +356,23 @@ function AddAgent({
               </label>
             </details>
           )}
-          <Btn variant="primary" disabled={busy || !chosen} onClick={() => void add()} data-testid="add-agent">
-            {busy ? `Setting up ${pkg.label}…` : `Add ${pkg.label}`}
-          </Btn>
+          <div className="crew-card-actions">
+            <Btn
+              variant="primary"
+              disabled={busy || !chosen || (another && (!name.trim() || clash))}
+              onClick={() => void add()}
+              data-testid="add-agent"
+            >
+              {busy
+                ? `Setting up ${another ? name.trim() : pkg.label}…`
+                : `Add ${another ? name.trim() || pkg.label : pkg.label}`}
+            </Btn>
+            {onCancel && !busy && <Btn onClick={onCancel}>Cancel</Btn>}
+          </div>
           <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
-            The first setup downloads {pkg.download}. {pkg.label} runs in its own protected space, uses{' '}
-            {pkg.memory} of memory and keeps running while this computer is on.
+            {another
+              ? `Nothing new to download. Each ${pkg.label} runs in its own protected space and uses ${pkg.memory} of memory.`
+              : `The first setup downloads ${pkg.download}. ${pkg.label} runs in its own protected space, uses ${pkg.memory} of memory and keeps running while this computer is on.`}
           </p>
         </>
       )}
@@ -239,7 +381,29 @@ function AddAgent({
           {warning}
         </p>
       )}
-    </Card>
+    </>
+  )
+}
+
+// One agent on the roster: its bot on a stage lit in its colour, then its card.
+function CrewCard({
+  id,
+  mood,
+  children,
+  ...rest
+}: {
+  id: string
+  mood: BotMood
+  children: React.ReactNode
+} & React.HTMLAttributes<HTMLElement>) {
+  const look = BOTS[id]
+  return (
+    <article className="crew-card" style={{ ['--crew' as string]: look?.hi || 'var(--accent)' }} {...rest}>
+      <div className="crew-stage" aria-hidden="true">
+        <Bot who={id} mood={mood} size={104} />
+      </div>
+      <div className="crew-card-body">{children}</div>
+    </article>
   )
 }
 

@@ -110,7 +110,7 @@ export function AgentConnection({
           <p>
             {mode === 'disconnect'
               ? 'Future tasks will no longer use this account. Existing conversations and project files are kept.'
-              : 'Your credential is stored server-side and kept out of the sandbox. You can disconnect this account at any time.'}
+              : 'Your sign-in is kept safe by sandboxd and never placed in your app’s workspace. You can disconnect this account at any time.'}
           </p>
         </div>
         {mode === 'disconnect' ? (

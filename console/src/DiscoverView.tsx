@@ -4,6 +4,8 @@ import { CATALOG, CatalogApp, catalogTag } from './catalog'
 import { installCatalogApp } from './catalogInstall'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
+import { Bot } from './design/Bot'
+import { CatalogCard } from './CatalogCard'
 
 // Free apps: popular open-source projects, installed in one click on this
 // computer, each in its own project (and, when built from source, ready to be
@@ -87,45 +89,18 @@ export function DiscoverView({
         {shown.map((entry) => {
           const installed = apps.find((a) => (a.tags || []).includes(catalogTag(entry.id)))
           return (
-            <article key={entry.id} className="project-card catalog-card" data-testid={`catalog-${entry.id}`}>
-              <div className="project-art catalog-art" style={{ background: `${entry.color}1f`, color: entry.color }}>
-                <span style={{ color: entry.color }}>{entry.name.slice(0, 1)}</span>
-                <span className="catalog-stars" title="Stars on GitHub">
-                  ★ {entry.stars}
-                </span>
-              </div>
-              <div className="project-card-body">
-                <div>
-                  <h3>{entry.name}</h3>
-                  <span className="catalog-category">{entry.category}</span>
-                </div>
-                <p className="catalog-pitch">{entry.pitch}</p>
-                <footer>
-                  {installed ? (
-                    <Btn sm variant="primary" onClick={() => onOpen(installed.id)} data-testid="catalog-open">
-                      Open
-                    </Btn>
-                  ) : (
-                    <Btn
-                      sm
-                      variant="primary"
-                      disabled={!!installing}
-                      onClick={() => void install(entry)}
-                      data-testid="catalog-install"
-                    >
-                      {installing === entry.id ? 'Installing…' : 'Install'}
-                    </Btn>
-                  )}
-                  <span>
-                    {entry.source ? 'Changeable with AI · ' : ''}
-                    {entry.license} ·{' '}
-                    <a href={entry.repo} target="_blank" rel="noreferrer">
-                      code
-                    </a>
-                  </span>
-                </footer>
-              </div>
-            </article>
+            <CatalogCard
+              key={entry.id}
+              entry={entry}
+              installed={installed}
+              installing={installing}
+              onInstall={(e) => void install(e)}
+              onOpen={onOpen}
+              testId={`catalog-${entry.id}`}
+              openTestId="catalog-open"
+              installTestId="catalog-install"
+              extra={entry.source ? 'Changeable with AI · ' : ''}
+            />
           )
         })}
       </div>
@@ -148,6 +123,9 @@ export function DiscoverView({
             const added = agents.find((a) => a.package === p.id)
             return (
               <article key={p.id} className="project-card catalog-card" data-testid={`catalog-agent-${p.id}`}>
+                <div className="catalog-art catalog-art-agent" aria-hidden="true">
+                  <Bot who={p.id} size={76} still />
+                </div>
                 <div className="project-card-body">
                   <div>
                     <h3>{p.label}</h3>

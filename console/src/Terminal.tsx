@@ -32,7 +32,7 @@ export function SandboxTerminal({ sandboxId }: { sandboxId: string }) {
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       fontSize: 13,
-      theme: { background: '#0a0d14', foreground: '#c6d0de', cursor: '#7c93ff', selectionBackground: '#2c374d' },
+      theme: { background: '#0e0e17', foreground: '#d9d7e8', cursor: '#9b7bff', selectionBackground: '#3a2f66' },
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -74,25 +74,25 @@ export function SandboxTerminal({ sandboxId }: { sandboxId: string }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={host} style={{ height: 500, width: '100%', background: '#0a0d14', padding: 8, borderRadius: 8, overflow: 'hidden' }} />
+      <div ref={host} style={{ height: 500, width: '100%', background: '#0e0e17', padding: 10, borderRadius: 14, border: '1px solid var(--border)', overflow: 'hidden' }} />
       {overlayVisible && (
         <div
           style={{
             position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 10,
-            background: status === 'idle' ? '#0a0d14' : 'rgba(10,13,20,0.85)', borderRadius: 8,
+            background: status === 'idle' ? '#0e0e17' : 'rgba(14,14,23,0.85)', borderRadius: 14,
           }}
         >
           <button
             onClick={() => { setStatus('connecting'); setSession((s) => s + 1) }}
             style={{
-              padding: '10px 22px', borderRadius: 8, border: '1px solid #2c374d',
-              background: '#1a2233', color: '#c6d0de', fontSize: 14, cursor: 'pointer',
+              padding: '10px 22px', borderRadius: 12, fontWeight: 600,
+              background: 'var(--brand-grad)', color: '#fff', border: 0, fontSize: 14, cursor: 'pointer',
             }}
           >
             {status === 'idle' ? 'Open terminal' : 'Reconnect'}
           </button>
-          <span style={{ color: '#5c6a80', fontSize: 12, maxWidth: 380, textAlign: 'center' }}>
+          <span style={{ color: 'var(--muted-2)', fontSize: 12.5, maxWidth: 380, textAlign: 'center' }}>
             Starts an interactive shell inside the sandbox. The sandbox stays awake while the session is open.
           </span>
         </div>

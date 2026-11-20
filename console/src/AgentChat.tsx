@@ -4,6 +4,7 @@ import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentP
 import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
+import { Bot } from './design/Bot'
 import { AgentMessage } from './AgentMessage'
 import { Dialog } from './design/Dialog'
 
@@ -222,18 +223,12 @@ export function AgentChat({
     <section className="agent-chat" aria-label="Build conversation">
       <header className="chat-heading">
         <span className="agent-avatar">
-          <Icon name="spark" size={17} />
+          <Bot who={assistant ? 'sandboxd' : choice.agent || 'opencode'} mood={active ? 'working' : 'idle'} size={42} />
         </span>
         <div>
           <strong>
             {assistant ? 'Your sandboxd agent, on' : 'Build with'}{' '}
-            {choice.agent === 'opencode'
-              ? 'OpenCode'
-              : choice.agent === 'pi'
-                ? 'Pi'
-                : choice.agent === 'codex'
-                  ? 'Codex'
-                  : 'Claude'}
+            {agentName(choice.agent)}
           </strong>
           <span>{active ? (assistant ? 'Working on it' : 'Working on your app') : assistant ? 'Pick any agent and model below' : 'Your coding partner'}</span>
         </div>
@@ -271,7 +266,7 @@ export function AgentChat({
         {history.length === 0 && !active && (
           <div className="chat-welcome">
             <span className="welcome-icon">
-              <Icon name="spark" size={28} />
+              <Bot who={assistant ? 'sandboxd' : choice.agent || 'opencode'} mood="happy" size={88} />
             </span>
             <h3>{assistant ? 'What can I do for you?' : 'Let’s make it yours.'}</h3>
             <p>
@@ -303,8 +298,8 @@ export function AgentChat({
               {t.prompt && <UserPrompt text={t.prompt} />}
               <div className="agent-message">
                 <span className="message-label">
-                  <Icon name="spark" size={13} />
-                  {t.agent || 'Agent'}
+                  <Bot who={t.agent || 'opencode'} size={22} still mood={t.status === 'failed' ? 'error' : 'idle'} />
+                  {agentName(t.agent)}
                 </span>
                 <AgentMessage text={plainTaskError(t.agent_message || t.error_message) || `Task ${t.status}`} />
               </div>
@@ -353,8 +348,8 @@ export function AgentChat({
             <UserPrompt text={active.prompt || 'Task in progress'} />
             <div className="agent-message">
               <span className="message-label">
-                <Icon name="spark" size={13} />
-                Agent
+                <Bot who={active.agent || choice.agent || 'opencode'} size={22} mood="working" />
+                {agentName(active.agent || choice.agent)}
               </span>
               <AgentMessage text={response || 'Working on your request…'} />
             </div>
@@ -481,5 +476,13 @@ export function UserPrompt({ text }: { text: string }) {
         <pre>{text}</pre>
       </details>
     </div>
+  )
+}
+
+// A coding agent's id as people know it.
+function agentName(id?: string) {
+  return (
+    { opencode: 'OpenCode', codex: 'Codex', 'claude-code': 'Claude Code', claude: 'Claude Code', pi: 'Pi' }[id || ''] ||
+    (id ? id[0].toUpperCase() + id.slice(1) : 'Agent')
   )
 }

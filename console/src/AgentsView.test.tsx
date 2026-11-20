@@ -6,12 +6,22 @@ import { api, AgentInstance } from './api'
 vi.mock('./api', () => ({
   api: {
     listAgentCatalogEntrys: vi.fn().mockResolvedValue([
-      { id: 'hermes', label: 'Hermes', description: 'A personal assistant.', download: 'about 3 GB', memory: 'up to 2 GB', telegram: true },
+      {
+        id: 'hermes',
+        label: 'Hermes',
+        description: 'A personal assistant.',
+        download: 'about 3 GB',
+        memory: 'up to 2 GB',
+        telegram: true,
+      },
     ]),
     listModelProviders: vi.fn(),
     createAgentInstance: vi.fn(),
     saveModelProvider: vi.fn(),
-    getSettings: vi.fn().mockResolvedValue({ editable: ['agents.time_zone'], agents: { time_zone: 'Europe/Paris' } }),
+    getSettings: vi.fn().mockResolvedValue({
+      editable: ['agents.time_zone'],
+      agents: { time_zone: 'Europe/Paris' },
+    }),
     patchSettings: vi.fn().mockResolvedValue({ agents: { time_zone: 'Asia/Tokyo' } }),
   },
 }))
@@ -71,7 +81,11 @@ describe('AgentsView (catalog)', () => {
     const select = (await screen.findByTestId('agent-time-zone')) as HTMLSelectElement
     expect(select.value).toBe('Europe/Paris')
     fireEvent.change(select, { target: { value: 'Asia/Tokyo' } })
-    await waitFor(() => expect(api.patchSettings).toHaveBeenCalledWith({ agents: { time_zone: 'Asia/Tokyo' } }))
+    await waitFor(() =>
+      expect(api.patchSettings).toHaveBeenCalledWith({
+        agents: { time_zone: 'Asia/Tokyo' },
+      }),
+    )
     await waitFor(() => expect(select.value).toBe('Asia/Tokyo'))
   })
 
@@ -96,5 +110,66 @@ describe('AgentsView (catalog)', () => {
     render(<AgentsView onError={() => {}} agents={[hermes]} goModels={() => {}} onOpen={onOpen} />)
     fireEvent.click(await screen.findByTestId('open-agent'))
     expect(onOpen).toHaveBeenCalledWith('h1')
+  })
+
+  it('adds a second Hermes with its own name', async () => {
+    vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
+    vi.mocked(api.createAgentInstance).mockResolvedValue({
+      agent: { ...hermes, id: 'h2', name: 'Hermes for work' },
+    })
+    const onOpen = vi.fn()
+    render(<AgentsView onError={() => {}} agents={[hermes]} goModels={() => {}} onOpen={onOpen} />)
+    fireEvent.click(await screen.findByTestId('add-another-hermes'))
+    const name = screen.getByTestId('agent-name') as HTMLInputElement
+    expect(name.value).toBe('Hermes 2')
+    fireEvent.change(name, { target: { value: 'Hermes for work' } })
+    fireEvent.click(screen.getByTestId('add-agent'))
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith('h2'))
+    expect(vi.mocked(api.createAgentInstance).mock.calls.slice(-1)[0][0]).toMatchObject({
+      package: 'hermes',
+      name: 'Hermes for work',
+    })
+  })
+
+  it('does not add a second agent with a name already in use', async () => {
+    vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
+    render(<AgentsView onError={() => {}} agents={[hermes]} goModels={() => {}} onOpen={() => {}} />)
+    fireEvent.click(await screen.findByTestId('add-another-hermes'))
+    fireEvent.change(screen.getByTestId('agent-name'), {
+      target: { value: ' hermes ' },
+    })
+    expect(screen.getByRole('alert').textContent).toMatch(/already have an agent called hermes/)
+    expect((screen.getByTestId('add-agent') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('lists every agent of a kind, each opening its own window', async () => {
+    vi.mocked(api.listModelProviders).mockResolvedValue([connection] as never)
+    const onOpen = vi.fn()
+    const second = {
+      ...hermes,
+      id: 'h2',
+      name: 'Hermes 2',
+      status: 'stopped' as const,
+    }
+    render(<AgentsView onError={() => {}} agents={[hermes, second]} goModels={() => {}} onOpen={onOpen} />)
+    expect(await screen.findByText('2 on your crew')).toBeTruthy()
+    const open = screen.getAllByTestId('open-agent')
+    expect(open).toHaveLength(2)
+    fireEvent.click(open[1])
+    expect(onOpen).toHaveBeenCalledWith('h2')
+  })
+})
+
+describe('agentHue', () => {
+  it('keeps the first agent of a kind in its own colours and turns the next ones', async () => {
+    const { agentHue } = await import('./design/Bot')
+    const list = [
+      { id: '01b', package: 'hermes' },
+      { id: '01a', package: 'hermes' },
+      { id: '01c', package: 'openclaw' },
+    ]
+    expect(agentHue(list, list[1])).toBe(0)
+    expect(agentHue(list, list[0])).toBe(67)
+    expect(agentHue(list, list[2])).toBe(0)
   })
 })

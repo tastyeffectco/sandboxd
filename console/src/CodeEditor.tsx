@@ -23,16 +23,28 @@ function langFor(path: string): Extension[] {
   return []
 }
 
-// A compact light theme tuned to the console's neutral palette.
-const theme = EditorView.theme({
-  '&': { fontSize: '12.5px', backgroundColor: '#ffffff' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.6' },
-  '.cm-gutters': { backgroundColor: '#fcfcfc', color: '#a1a1aa', border: 'none', borderRight: '1px solid #e4e4e7' },
-  '.cm-activeLineGutter': { backgroundColor: '#f4f4f5' },
-  '.cm-activeLine': { backgroundColor: '#fafafa' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: '#e4e4e7' },
-})
+// The editor in the console's dark theme (syntax colours from One Dark,
+// surfaces and selection from the design tokens).
+const theme = EditorView.theme(
+  {
+    '&': { fontSize: '13px', backgroundColor: 'var(--bg-2)', color: 'var(--fg-2)' },
+    '&.cm-focused': { outline: 'none' },
+    '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: '1.65' },
+    '.cm-gutters': {
+      backgroundColor: 'var(--bg-2)',
+      color: 'var(--faint)',
+      border: 'none',
+      borderRight: '1px solid var(--border)',
+    },
+    '.cm-activeLineGutter': { backgroundColor: 'rgba(155, 123, 255, 0.08)', color: 'var(--fg-2)' },
+    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.025)' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
+      backgroundColor: 'rgba(155, 123, 255, 0.32) !important',
+    },
+    '.cm-cursor': { borderLeftColor: 'var(--violet)' },
+  },
+  { dark: true },
+)
 
 // CodeEditor — a real code editor (CodeMirror 6) with syntax highlighting,
 // bracket matching, search, and Cmd/Ctrl+S to save. Fully client-side; no
@@ -59,7 +71,7 @@ export function CodeEditor({ path, value, onChange, onSave, height = '560px' }: 
       value={value}
       onChange={onChange}
       extensions={extensions}
-      theme="light"
+      theme="dark"
       height={height}
       basicSetup={{ highlightActiveLine: true, foldGutter: false, autocompletion: false }}
     />
