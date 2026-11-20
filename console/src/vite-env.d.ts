@@ -5,6 +5,8 @@ interface ImportMetaEnv {
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv
+  // Vite: the files matching a pattern, known at build time (design/Avatar.tsx).
+  glob(pattern: string, options: { eager: true; query: string; import: string }): Record<string, unknown>
 }
 
 // `import text from './file?raw'`: the file's content as a string (Vite).

@@ -16,7 +16,9 @@ export function AssistantView({
   goSettings,
   apps,
   onOpenApp,
+  reloadApps,
 }: {
+  reloadApps?: () => void
   onError: (m: string) => void
   toast: (m: string) => void
   goApps: () => void
@@ -61,6 +63,7 @@ export function AssistantView({
       goSettings={goSettings}
       apps={apps}
       onOpenApp={onOpenApp}
+      reloadApps={reloadApps}
     />
   )
 }

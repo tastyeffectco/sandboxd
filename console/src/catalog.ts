@@ -507,6 +507,8 @@ export const CATALOG: CatalogApp[] = [
 ]
 
 export const catalogTag = (id: string) => `catalog:${id}`
+// The free app a project was installed from, if any: its logo is the project's face.
+export const catalogIdOf = (tags?: string[]) => tags?.find((t) => t.startsWith('catalog:'))?.slice(8)
 
 // "113k" -> 113000, for ordering by popularity.
 export const starCount = (stars: string) => parseFloat(stars) * (/k$/i.test(stars) ? 1000 : 1)

@@ -4,6 +4,7 @@ import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
 import { StatusPill } from './design/kit'
 import { Bot, moodFor } from './design/Bot'
+import { Avatar } from './design/Avatar'
 
 // One agent's own window: one continuous conversation, like a chat in Telegram.
 // The engine keeps the thread and writes replies itself, so closing this
@@ -268,7 +269,7 @@ export function AgentRoom({
     >
       <header className="agent-room-header">
         <span className="agent-avatar" aria-hidden="true">
-          <Bot who={agent.package} hue={hue} mood={moodFor(agent.status, working)} size={52} />
+          <Avatar who={agent.package} hue={hue} mood={moodFor(agent.status, working)} size={52} toggle />
         </span>
         <div className="agent-room-title">
           <h1>{agent.name}</h1>
@@ -366,7 +367,7 @@ export function AgentRoom({
         {messages?.length === 0 && (
           <div className="agent-room-empty">
             <span className="agent-avatar large" aria-hidden="true">
-              <Bot who={agent.package} hue={hue} mood={running ? 'happy' : moodFor(agent.status)} size={120} />
+              <Avatar who={agent.package} hue={hue} mood={running ? 'happy' : moodFor(agent.status)} size={120} />
             </span>
             <h2>Chat with {agent.name}</h2>
             <p>
@@ -401,7 +402,7 @@ export function AgentRoom({
               <span className="agent-avatar small" aria-hidden="true">
                 {/* One face per run of replies, on the last one (as in messaging apps). */}
                 {messages?.[i + 1]?.role !== m.role && (
-                  <Bot
+                  <Avatar
                     who={agent.package} hue={hue}
                     mood={m.state === 'working' ? 'working' : m.state === 'error' ? 'error' : 'idle'}
                     size={34}

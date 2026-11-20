@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { App as TApp } from './api'
 import { CatalogApp } from './catalog'
 import { Btn } from './design/kit'
+import { Avatar, logoFor } from './design/Avatar'
 
 // One free app on a card: its icon tile in the app's own colour, what it does,
 // and Install (or Open once it is installed). Used by Free apps and the
@@ -36,9 +37,13 @@ export function CatalogCard({
   return (
     <article className="project-card catalog-card" data-testid={testId} style={{ ['--app' as string]: entry.color }}>
       <div className="catalog-art">
-        <span className="catalog-icon" aria-hidden="true">
-          {entry.name.slice(0, 1)}
-        </span>
+        {logoFor(entry.id) ? (
+          <Avatar who={entry.name} logo={entry.id} size={64} toggle />
+        ) : (
+          <span className="catalog-icon" aria-hidden="true">
+            {entry.name.slice(0, 1)}
+          </span>
+        )}
         <span className="catalog-stars" title="Stars on GitHub">
           ★ {entry.stars}
         </span>

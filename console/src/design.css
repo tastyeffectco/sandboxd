@@ -318,7 +318,7 @@ hr {
   cursor: pointer;
   transition: background 0.18s, color 0.18s;
 }
-.sidebar-project > span:last-child {
+.sidebar-project > span:last-child:not(.logo-tile) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1308,7 +1308,30 @@ hr {
   overflow: auto;
   min-height: 0;
   padding: 20px 16px;
-  scroll-behavior: smooth;
+}
+/* Back to the end of a long conversation. */
+.chat-jump {
+  position: sticky;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px auto 0;
+  padding: 7px 14px;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font: 600 12px var(--sans);
+  box-shadow: var(--shadow-2);
+  cursor: pointer;
+  animation: sbx-pop 0.2s var(--ease) both;
+}
+.chat-jump svg {
+  transform: rotate(90deg);
+}
+.chat-jump:hover {
+  border-color: var(--accent);
 }
 .chat-welcome {
   margin: 28px auto;
@@ -3296,7 +3319,7 @@ select.agent-model {
   border-radius: var(--r);
   background: rgba(255, 255, 255, 0.025);
 }
-.crew-members li > span {
+.crew-members li > span:not(.logo-tile) {
   flex: 1;
   min-width: 0;
   display: grid;
@@ -3557,4 +3580,108 @@ select.agent-model {
 .settings-nav > button:hover {
   background: rgba(255, 255, 255, 0.04);
   color: var(--fg);
+}
+
+/* Home: sandboxd's own welcome, roomy like the old builder hero. */
+.chat-welcome.home-welcome {
+  max-width: 640px;
+  margin: 6vh auto 28px;
+}
+.home-welcome h1 {
+  font: 650 clamp(34px, 4.2vw, 56px) / 1.05 var(--display);
+  letter-spacing: -2px;
+  margin: 10px 0 12px;
+  color: var(--fg);
+}
+.home-welcome > p {
+  font-size: 15px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.home-welcome .chat-suggestions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 26px;
+}
+@media (max-width: 640px) {
+  .home-welcome .chat-suggestions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* An app sandboxd just made, ready to open. */
+.made-app {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 460px;
+  margin: 4px 0 18px 34px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-lg);
+  background: var(--brand-grad-soft), var(--panel);
+  box-shadow: var(--shadow-2);
+  animation: sbx-pop 0.4s var(--spring) both;
+}
+.made-app > span:not(.logo-tile) {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.made-app small {
+  font: 600 10.5px var(--sans);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--link);
+}
+.made-app strong {
+  font: 650 16px var(--display);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Projects page: the list first, building it yourself below. */
+.projects-section .section-heading {
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+.projects-section .section-heading > div:first-child {
+  flex: 1;
+  min-width: 260px;
+}
+.projects-section .section-heading h1 {
+  font: 650 40px var(--display);
+  letter-spacing: -1.4px;
+  margin: 6px 0 4px;
+  color: var(--fg);
+}
+.projects-section .section-heading h1 > span {
+  font: 600 13px var(--sans);
+  vertical-align: middle;
+  padding: 3px 9px;
+  background: var(--panel-3);
+  color: var(--muted);
+  border-radius: 999px;
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+.projects-section .section-heading p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.build-hero.build-yourself {
+  margin-top: 44px;
+  padding-top: 36px;
+  border-top: 1px solid var(--border);
+}
+.build-yourself h2 {
+  font: 650 26px var(--display);
+  letter-spacing: -0.6px;
+  margin: 0 0 8px;
+  color: var(--fg);
+}
+.build-yourself > p {
+  margin-bottom: 20px;
 }

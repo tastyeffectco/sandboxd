@@ -15,6 +15,8 @@ import { AgentChat } from './AgentChat'
 import { BuildIntent } from './AgentPicker'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
+import { Avatar } from './design/Avatar'
+import { catalogIdOf } from './catalog'
 import { Dialog } from './design/Dialog'
 import { useUnsavedChanges } from './unsavedChanges'
 import { VersionsPanel } from './VersionsPanel'
@@ -106,9 +108,12 @@ export function AppView({
   chatDraft,
   saveChatDraft,
   assistant,
+  reloadApps,
 }: {
   // The person's sandboxd agent: only the chat, no workspace tools.
   assistant?: boolean
+  // The sandboxd agent made an app: refresh the project list.
+  reloadApps?: () => void
   chatDraft?: BuildIntent
   saveChatDraft?: (draft: BuildIntent) => void
   initialBuild?: BuildIntent
@@ -266,18 +271,20 @@ export function AppView({
   return (
     <div className="app-workspace">
       <header className="workspace-header">
-        <button className="icon-button workspace-back" onClick={goApps} aria-label="Back to projects">
-          <Icon name="grid" />
-        </button>
+        {!assistant && (
+          <button className="icon-button workspace-back" onClick={goApps} aria-label="Back to projects">
+            <Icon name="grid" />
+          </button>
+        )}
         {assistant ? (
           <div className="workspace-title">
             <Bot who="sandboxd" size={30} />
-            <h1>Ask sandboxd</h1>
-            <span className="assistant-sub">Builds and installs apps, and works with your agents</span>
+            <h1>sandboxd</h1>
+            <span className="assistant-sub">Builds apps, installs open-source projects and runs your agents</span>
           </div>
         ) : (
           <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename app">
-            <Bot who={app.name} size={30} still />
+            <Avatar who={app.name} logo={catalogIdOf(app.tags)} size={30} still toggle />
             <h1>{app.name}</h1>
             <Icon name="chevron" size={14} />
           </button>
@@ -435,6 +442,8 @@ export function AppView({
         <div className="workspace-chat">
           <AgentChat
             assistant={assistant}
+            onOpenApp={assistant && onOpenApp ? (id) => onOpenApp(id) : undefined}
+            onAppsChanged={reloadApps}
             draft={chatDraft}
             saveDraft={saveChatDraft}
             sb={sb}

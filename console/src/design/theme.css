@@ -351,3 +351,43 @@ select option {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Logos (design/Avatar.tsx): an app-icon tile, light so any logo reads. */
+.logo-tile {
+  flex: none !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-sizing: border-box;
+
+  border-radius: 26%;
+  background: linear-gradient(160deg, #ffffff, #e9e7f5);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 18px -8px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+.logo-tile img {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+  display: block;
+}
+.logo-tile.logo-copy {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.avatar-toggle {
+  display: inline-flex;
+  border-radius: 28%;
+  cursor: pointer;
+  transition: transform 0.2s var(--spring);
+}
+.avatar-toggle:hover {
+  transform: scale(1.04) rotate(-2deg);
+}
+.avatar-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
