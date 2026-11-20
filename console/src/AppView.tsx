@@ -15,6 +15,8 @@ import { AgentChat } from './AgentChat'
 import { BuildIntent } from './AgentPicker'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
+import { Avatar } from './design/Avatar'
+import { catalogIdOf } from './catalog'
 import { Dialog } from './design/Dialog'
 import { useUnsavedChanges } from './unsavedChanges'
 import { VersionsPanel } from './VersionsPanel'
@@ -282,7 +284,7 @@ export function AppView({
           </div>
         ) : (
           <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename app">
-            <Bot who={app.name} size={30} still />
+            <Avatar who={app.name} logo={catalogIdOf(app.tags)} size={30} still toggle />
             <h1>{app.name}</h1>
             <Icon name="chevron" size={14} />
           </button>

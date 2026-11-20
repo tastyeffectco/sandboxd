@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
 import { c, Btn, Input } from './design/kit'
 import { Bot, BOTS, BotMood, agentHue, moodFor } from './design/Bot'
+import { Avatar } from './design/Avatar'
 import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
 import { browserTimeZone, canSetTimeZone } from './timeZone'
 
@@ -187,7 +188,7 @@ function AddedAgents({
       <ul className="crew-members">
         {mine.map((a) => (
           <li key={a.id}>
-            <Bot who={a.package} hue={agentHue(all, a)} mood={moodFor(a.status)} size={34} still />
+            <Avatar who={a.package} hue={agentHue(all, a)} mood={moodFor(a.status)} size={34} still />
             <span>
               <strong>{a.name}</strong>
               <small>{agentState(a.status)}</small>
@@ -400,7 +401,7 @@ function CrewCard({
   return (
     <article className="crew-card" style={{ ['--crew' as string]: look?.hi || 'var(--accent)' }} {...rest}>
       <div className="crew-stage" aria-hidden="true">
-        <Bot who={id} mood={mood} size={104} />
+        <Avatar who={id} mood={mood} size={104} toggle />
       </div>
       <div className="crew-card-body">{children}</div>
     </article>

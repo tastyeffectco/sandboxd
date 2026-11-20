@@ -5,6 +5,8 @@ import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
+import { Avatar } from './design/Avatar'
+import { catalogIdOf } from './catalog'
 import { AgentMessage } from './AgentMessage'
 import { Dialog } from './design/Dialog'
 
@@ -295,7 +297,7 @@ export function AgentChat({
     <section className="agent-chat" aria-label="Build conversation">
       <header className="chat-heading">
         <span className="agent-avatar">
-          <Bot who={assistant ? 'sandboxd' : choice.agent || 'opencode'} mood={active ? 'working' : 'idle'} size={42} />
+          <Avatar who={assistant ? 'sandboxd' : choice.agent || 'opencode'} mood={active ? 'working' : 'idle'} size={42} />
         </span>
         <div>
           <strong>
@@ -388,7 +390,7 @@ export function AgentChat({
               {t.prompt && <UserPrompt text={t.prompt} />}
               <div className="agent-message">
                 <span className="message-label">
-                  <Bot who={t.agent || 'opencode'} size={22} still mood={t.status === 'failed' ? 'error' : 'idle'} />
+                  <Avatar who={t.agent || 'opencode'} size={22} still mood={t.status === 'failed' ? 'error' : 'idle'} />
                   {agentName(t.agent)}
                 </span>
                 <AgentMessage text={plainTaskError(t.agent_message || t.error_message) || `Task ${t.status}`} />
@@ -438,7 +440,7 @@ export function AgentChat({
             <UserPrompt text={active.prompt || 'Task in progress'} />
             <div className="agent-message">
               <span className="message-label">
-                <Bot who={active.agent || choice.agent || 'opencode'} size={22} mood="working" />
+                <Avatar who={active.agent || choice.agent || 'opencode'} size={22} mood="working" />
                 {agentName(active.agent || choice.agent)}
               </span>
               <AgentMessage text={response || 'Working on your request…'} />
@@ -452,7 +454,7 @@ export function AgentChat({
         )}
         {made.map((a) => (
           <div className="made-app" key={a.id} data-testid="made-app">
-            <Bot who={a.name} size={40} mood="happy" />
+            <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={40} mood="happy" />
             <span>
               <small>New app</small>
               <strong>{a.name}</strong>

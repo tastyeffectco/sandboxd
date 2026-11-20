@@ -5,6 +5,7 @@ import { installCatalogApp } from './catalogInstall'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
+import { Avatar } from './design/Avatar'
 import { CatalogCard } from './CatalogCard'
 
 // Free apps: popular open-source projects, installed in one click on this
@@ -124,7 +125,7 @@ export function DiscoverView({
             return (
               <article key={p.id} className="project-card catalog-card" data-testid={`catalog-agent-${p.id}`}>
                 <div className="catalog-art catalog-art-agent" aria-hidden="true">
-                  <Bot who={p.id} size={76} still />
+                  <Avatar who={p.id} size={76} still toggle />
                 </div>
                 <div className="project-card-body">
                   <div>

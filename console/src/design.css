@@ -318,7 +318,7 @@ hr {
   cursor: pointer;
   transition: background 0.18s, color 0.18s;
 }
-.sidebar-project > span:last-child {
+.sidebar-project > span:last-child:not(.logo-tile) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3319,7 +3319,7 @@ select.agent-model {
   border-radius: var(--r);
   background: rgba(255, 255, 255, 0.025);
 }
-.crew-members li > span {
+.crew-members li > span:not(.logo-tile) {
   flex: 1;
   min-width: 0;
   display: grid;
@@ -3623,7 +3623,7 @@ select.agent-model {
   box-shadow: var(--shadow-2);
   animation: sbx-pop 0.4s var(--spring) both;
 }
-.made-app > span {
+.made-app > span:not(.logo-tile) {
   flex: 1;
   min-width: 0;
   display: grid;

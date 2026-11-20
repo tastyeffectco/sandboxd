@@ -2,9 +2,10 @@ import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
-import { CATALOG } from './catalog'
+import { CATALOG, catalogIdOf } from './catalog'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
+import { Avatar } from './design/Avatar'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
 import { appTitle } from './appTitle'
@@ -194,7 +195,13 @@ export function BuilderHome({
             {filtered.map((a, i) => (
               <button key={a.id} className="project-card" onClick={() => onOpen(a.id)} data-testid="app-card">
                 <div className="project-art" style={{ ['--art' as string]: `${(i * 47) % 360}` }}>
-                  <Bot who={a.name} size={64} still mood={status[a.id] === 'running' ? 'idle' : 'sleeping'} />
+                  <Avatar
+                    who={a.name}
+                    logo={catalogIdOf(a.tags)}
+                    size={64}
+                    still
+                    mood={status[a.id] === 'running' ? 'idle' : 'sleeping'}
+                  />
                   <Icon name={a.git ? 'git' : 'code'} size={16} />
                 </div>
                 <div className="project-card-body">

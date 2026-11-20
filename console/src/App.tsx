@@ -18,6 +18,8 @@ import { Dialog } from './design/Dialog'
 import { IS_DEMO } from './demo'
 import { Icon, IconName } from './design/Icon'
 import { Bot, agentHue, moodFor } from './design/Bot'
+import { Avatar } from './design/Avatar'
+import { catalogIdOf } from './catalog'
 import { confirmLeaveWorkspace } from './unsavedChanges'
 import { VersionPill } from './VersionPill'
 import { Login, CreatePassword } from './AuthGate'
@@ -442,7 +444,7 @@ export default function App({
                 }
                 onClick={() => setRoute({ name: 'agent', id: a.id })}
               >
-                <Bot
+                <Avatar
                   who={a.package}
                   hue={agentHue(agents || [], a)}
                   mood={moodFor(a.status)}
@@ -475,7 +477,7 @@ export default function App({
                 }
                 onClick={() => goApp(a.id)}
               >
-                <Bot who={a.name} size={22} still />
+                <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={22} still />
                 <span>{a.name}</span>
               </button>
             ))}
@@ -802,7 +804,7 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
           return (
             <button key={a.id} className="brain-card" onClick={() => onOpen(a.id)} data-testid="brain-card">
               <header>
-                <Bot who={a.name} size={30} still />
+                <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={30} still />
                 <strong>{a.name}</strong>
                 <small>
                   {md.split('\n').length} lines
@@ -822,7 +824,7 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
           <div>
             {without.map((a) => (
               <button key={a.id} className="chip" onClick={() => onOpen(a.id)}>
-                <Bot who={a.name} size={18} still mood="sleeping" />
+                <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={18} still mood="sleeping" />
                 {a.name}
               </button>
             ))}

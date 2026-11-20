@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, alpha, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
 import { Bot } from './design/Bot'
+import { Avatar } from './design/Avatar'
 import { Icon } from './design/Icon'
 import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
@@ -227,7 +228,7 @@ export function SettingsView({
                   <article className="agent-account" data-testid={`agent-${a.id}`} key={a.id}>
                     <div className="agent-account-header">
                       <span className="account-mark">
-                        <Bot who={a.id} size={40} still />
+                        <Avatar who={a.id} size={40} still />
                       </span>
                       <div>
                         <h3>{a.label}</h3>
