@@ -1,43 +1,28 @@
+/* The desktop app's own frame: title bar, status bar, first-run welcome,
+   engine setup and connections. The app inside looks exactly like the web
+   console (design.css); only sizing that the window frame needs is set here. */
+
 .desktop-client {
   height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--panel-2);
-  color: var(--link);
+  background: transparent;
+  color: var(--fg);
   font-family: var(--sans);
 }
-.desktop-local-setup {
-  padding: 18px;
-  margin: 18px 0;
-  background: var(--panel-3);
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-}
-.desktop-local-setup > p {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--fg-2);
-  margin: 8px 0 14px;
-}
-.desktop-local-setup > small {
-  display: block;
-  margin-top: 10px;
-  font-size: 11px;
-  color: var(--fg-2);
-}
-.desktop-local-setup .desktop-setup-progress {
-  font-weight: 600;
-}
+
+/* Title bar (draggable). */
 .desktop-titlebar {
-  height: 48px;
+  height: 44px;
   flex: none;
-  background: var(--panel-3);
+  background: rgba(10, 10, 17, 0.85);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 20px;
   padding: 0 150px 0 24px;
   -webkit-app-region: drag;
   user-select: none;
@@ -49,15 +34,10 @@
 .desktop-wordmark {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.desktop-wordmark small {
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: var(--muted);
-  font-weight: 500;
+  gap: 8px;
+  font: 650 13.5px var(--display);
+  letter-spacing: -0.1px;
+  color: var(--fg);
 }
 .desktop-titlebar button {
   -webkit-app-region: no-drag;
@@ -66,28 +46,32 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--panel-2);
-  padding: 5px 9px;
-  font-size: 11px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 11px;
+  font-size: 11.5px;
   color: var(--fg-2);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
 .engine-status {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--raised);
+  background: var(--faint);
   flex: none;
 }
 .engine-status.online {
-  background: var(--ink);
+  background: var(--good);
+  box-shadow: 0 0 8px rgba(62, 230, 168, 0.7);
 }
+
+/* The app inside. */
 .desktop-content {
   flex: 1;
   min-height: 0;
@@ -97,175 +81,259 @@
   height: 100%;
   min-height: 0;
 }
-.desktop-content .studio-sidebar {
-  background: var(--panel-3);
-  border-right-color: var(--border);
+.desktop-content .auth-page {
+  height: 100%;
+  overflow: auto;
 }
-.desktop-content .studio-main {
-  background: var(--panel-2);
-}
-.desktop-content .workspace-header {
-  height: 55px;
-}
-.desktop-content .studio-brand small {
-  display: none;
-}
-.desktop-content .studio-brand {
-  padding-top: 18px;
-}
-.desktop-content .build-hero {
-  padding-top: 48px;
-}
+
+/* Status bar. */
 .desktop-statusbar {
   height: 28px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 15px;
+  padding: 0 16px;
   border-top: 1px solid var(--border);
-  background: var(--panel-3);
-  font-size: 10px;
-  color: var(--fg-2);
+  background: rgba(10, 10, 17, 0.9);
+  font-size: 11px;
+  color: var(--muted-2);
 }
 .desktop-statusbar > span {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 .desktop-statusbar i {
-  height: 10px;
-  border-left: 1px solid var(--border-2);
-  margin: 0 5px;
+  width: 1px;
+  height: 12px;
+  background: var(--border-2);
 }
+
+/* Banner when the engine can't be reached. */
+.desktop-offline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 16px;
+  background: rgba(255, 195, 92, 0.1);
+  border-bottom: 1px solid rgba(255, 195, 92, 0.3);
+  color: var(--sun);
+  font-size: 12.5px;
+}
+.desktop-start-error {
+  max-width: 520px;
+  margin: 80px auto;
+  padding: 30px;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+.desktop-start-error h1 {
+  font: 650 30px var(--display);
+  color: var(--fg);
+}
+
+/* First-run welcome: the crew on the left, setup on the right. */
 .desktop-welcome {
-  height: 100%;
   display: grid;
-  grid-template-columns: minmax(300px, 0.85fr) minmax(430px, 1.15fr);
+  grid-template-columns: minmax(380px, 1fr) minmax(420px, 1.05fr);
+  height: 100%;
+  overflow: auto;
 }
 .desktop-welcome-story {
-  padding: clamp(35px, 5vw, 80px);
-  background: var(--panel-3);
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: flex-start;
-  border-right: 1px solid var(--border);
-  position: relative;
+  padding: 48px 56px;
   overflow: hidden;
+  border-right: 1px solid var(--border);
+  background:
+    radial-gradient(520px 360px at 50% 28%, rgba(155, 123, 255, 0.2), transparent 70%),
+    radial-gradient(420px 320px at 0% 100%, rgba(255, 122, 89, 0.12), transparent 70%),
+    var(--bg-2);
 }
-.desktop-welcome-story:after {
-  content: '';
-  position: absolute;
-  width: 500px;
-  height: 500px;
-  border: 1px solid var(--border-2);
-  border-radius: 50%;
-  bottom: -370px;
-  left: -50px;
-  box-shadow:
-    0 0 0 35px rgba(0, 0, 0, 0.60),
-    0 0 0 36px rgba(0, 0, 0, 0.60);
-  pointer-events: none;
+.desktop-crew {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 160px;
+  margin-bottom: 26px;
 }
-.desktop-app-mark {
-  width: 76px;
-  height: 76px;
-  background: var(--ink);
-  color: var(--on-accent);
-  display: grid;
-  place-items: center;
-  border-radius: 23px;
-  box-shadow: 0 12px 30px #244e3418;
-  margin-bottom: 48px;
+.desktop-crew .bot {
+  position: relative;
+  z-index: 1;
+  animation: sbx-pop 0.8s var(--spring) both;
 }
-.desktop-welcome-story .eyebrow {
-  font-size: 9px;
-  letter-spacing: 1.7px;
+.desktop-crew .crew-l1,
+.desktop-crew .crew-r1 {
+  margin-bottom: 10px;
+  animation-delay: 0.18s;
+}
+.desktop-crew .crew-l1 .bot-body {
+  animation-delay: -1.4s;
+}
+.desktop-crew .crew-r1 .bot-body {
+  animation-delay: -2.6s;
+}
+.desktop-crew .crew-lead {
+  filter: drop-shadow(0 20px 34px rgba(155, 123, 255, 0.45));
+}
+.desktop-crew .crew-floor {
+  left: 130px;
+  width: 340px;
 }
 .desktop-welcome-story h1 {
-  font-family: var(--display);
-  font-size: clamp(44px, 4.6vw, 70px);
-  line-height: 1.08;
-  letter-spacing: -3px;
-  font-weight: 500;
-  margin: 20px 0;
+  font: 650 clamp(40px, 4.6vw, 60px) / 1.02 var(--display);
+  letter-spacing: -2px;
+  margin: 12px 0 16px;
+  color: var(--fg);
 }
 .desktop-welcome-story > p {
-  max-width: 360px;
-  font-size: 15px;
-  line-height: 1.8;
-  color: var(--fg-2);
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 440px;
+  margin: 0;
 }
 .desktop-feature-list {
   display: grid;
-  gap: 18px;
-  margin: 30px 0 50px;
-  font-size: 12px;
-  color: var(--link);
+  gap: 14px;
+  margin: 30px 0 0;
 }
 .desktop-feature-list span {
   display: flex;
   align-items: center;
   gap: 12px;
+  font-size: 13.5px;
+  color: var(--fg-2);
 }
-.desktop-welcome-story > small {
-  font-size: 10px;
-  color: var(--muted);
-  z-index: 1;
+.desktop-feature-list svg {
+  padding: 7px;
+  box-sizing: content-box;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--link);
 }
+
 .desktop-connect-page {
-  overflow: auto;
-  padding: clamp(30px, 5vw, 80px);
-  max-width: 730px;
-  width: 100%;
-  align-self: center;
-  max-height: 100%;
-  box-sizing: border-box;
-  margin: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px clamp(32px, 6vw, 80px);
+  max-width: 640px;
 }
 .desktop-connect-page h2 {
-  font-family: var(--display);
-  font-weight: 500;
-  letter-spacing: -1px;
-  font-size: 32px;
-  margin: 15px 0 10px;
+  font: 650 32px var(--display);
+  letter-spacing: -0.9px;
+  margin: 0 0 8px;
+  color: var(--fg);
 }
 .desktop-connect-page > p {
-  font-size: 14px;
-  color: var(--fg-2);
-  line-height: 1.7;
-  margin-bottom: 28px;
+  font-size: 14.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
 }
+
+/* The one-click setup card. */
+.desktop-local-setup {
+  position: relative;
+  padding: 26px 24px 22px;
+  margin: 0 0 18px;
+  background: var(--surface-grad), var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3);
+}
+.desktop-local-setup .setup-bot {
+  position: absolute;
+  right: 18px;
+  top: -30px;
+}
+.desktop-local-setup > strong {
+  display: block;
+  font: 650 18px var(--display);
+  color: var(--fg);
+  padding-right: 64px;
+}
+.desktop-local-setup > p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 8px 0 14px;
+}
+.desktop-local-setup > button {
+  min-height: 44px !important;
+  padding: 10px 20px !important;
+  font-size: 14px !important;
+}
+.desktop-local-setup > small {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted-2);
+}
+.desktop-local-setup .desktop-setup-progress {
+  font-weight: 600;
+  color: var(--fg);
+}
+.setup-meter {
+  height: 6px;
+  margin: 0 0 16px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(155, 123, 255, 0.9), rgba(255, 122, 89, 0.9), transparent)
+      0 0 / 40% 100% no-repeat,
+    var(--panel-3);
+  animation: setup-meter 1.6s ease-in-out infinite;
+}
+@keyframes setup-meter {
+  from {
+    background-position: -40% 0, 0 0;
+  }
+  to {
+    background-position: 140% 0, 0 0;
+  }
+}
+
+/* Connections: this computer or a remote engine. */
 .desktop-connection-modes {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 .desktop-connection-modes button {
   display: grid;
   text-align: left;
-  gap: 8px;
-  padding: 17px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  gap: 6px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
   color: var(--fg-2);
   cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.desktop-connection-modes button:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 .desktop-connection-modes button[aria-pressed='true'] {
-  background: var(--panel-3);
-  border-color: var(--border-2);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.60);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--fg);
 }
 .desktop-connection-modes strong {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 .desktop-connection-modes span {
-  font-size: 11px;
-  color: var(--fg-2);
+  font-size: 12px;
+  color: var(--muted);
 }
 .desktop-connection-form form {
   display: grid;
@@ -274,24 +342,27 @@
 .desktop-connection-form form > button {
   width: 100%;
   margin-top: 2px;
-  min-height: 42px !important;
+  min-height: 44px !important;
   justify-content: center;
 }
 .desktop-login-note {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 11.5px;
+  color: var(--muted-2);
   line-height: 1.6;
   margin: 0;
 }
 .desktop-advanced {
-  font-size: 12px;
-  color: var(--fg-2);
+  font-size: 13px;
+  color: var(--muted);
 }
 .desktop-advanced summary {
   cursor: pointer;
+}
+.desktop-advanced summary:hover {
+  color: var(--fg);
 }
 .desktop-advanced label {
   margin-top: 14px;
@@ -300,136 +371,94 @@
   padding-top: 22px;
   margin-top: 22px;
   border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
 }
 .desktop-setup-help strong {
-  font-size: 12px;
+  color: var(--fg);
 }
 .desktop-setup-help p {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--fg-2);
-  margin: 8px 0 12px;
-}
-.desktop-setup-help button {
-  font-size: 12px;
+  margin: 6px 0 10px;
+  line-height: 1.6;
 }
 .desktop-recent {
-  margin-top: 25px;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 22px;
 }
 .desktop-recent h3 {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0.5px;
+  font: 600 11px var(--sans);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 4px;
 }
 .desktop-recent button {
-  width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  border: 0;
-  background: transparent;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--fg-2);
   text-align: left;
   cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.desktop-recent button:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 .desktop-recent button > span {
   flex: 1;
+  min-width: 0;
   display: grid;
-  gap: 3px;
 }
 .desktop-recent strong {
-  font-size: 12px;
+  font-size: 13px;
+  color: var(--fg);
 }
 .desktop-recent small {
-  font-size: 10px;
-  color: var(--muted);
+  font: 11px var(--mono);
+  color: var(--muted-2);
 }
 .desktop-disconnect {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.desktop-disconnect p {
-  width: 100%;
-  font-size: 12px;
-  color: var(--muted);
-}
-.desktop-offline {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
-  font-size: 12px;
-  padding: 9px;
-  background: var(--panel-3);
-  color: var(--coral);
-  flex: none;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
 }
-.desktop-offline button {
-  font-size: 12px;
-}
-.desktop-start-error {
-  max-width: 440px;
-  margin: 80px auto;
-  padding: 30px;
-  font-size: 14px;
-  color: var(--fg-2);
-}
-@media (max-height: 760px) {
-  .desktop-app-mark {
-    margin-bottom: 26px;
-  }
-  .desktop-feature-list {
-    margin: 20px 0 25px;
-  }
-  .desktop-welcome-story {
-    padding: 35px;
-  }
-  .desktop-connect-page {
-    padding: 30px 45px;
-  }
-}
-.desktop-content .auth-page {
-  height: 100%;
-  overflow: auto;
+.desktop-disconnect p {
+  flex-basis: 100%;
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
-/* Decorative artwork stays behind readable content at smaller window sizes. */
-.desktop-welcome-story::after {
-  z-index: 0;
-}
-.desktop-welcome-story > * {
-  position: relative;
-  z-index: 1;
+@media (max-width: 900px) {
+  .desktop-welcome {
+    grid-template-columns: 1fr;
+  }
+  .desktop-welcome-story {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 32px;
+  }
 }
 @media (max-height: 760px) {
-  .desktop-welcome-story {
-    padding: 28px;
+  .desktop-crew {
+    height: 120px;
+    margin-bottom: 14px;
   }
   .desktop-welcome-story h1 {
-    font-size: 44px;
-    margin: 16px 0;
-  }
-  .desktop-welcome-story > p {
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .desktop-app-mark {
-    width: 56px;
-    height: 56px;
-    flex: none;
-    margin-bottom: 24px;
-    border-radius: 17px;
+    font-size: 42px;
   }
   .desktop-feature-list {
-    gap: 12px;
-    margin: 18px 0 24px;
+    margin-top: 20px;
+    gap: 10px;
   }
 }

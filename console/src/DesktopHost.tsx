@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import App from './App'
 import type { DesktopConnection, DesktopState } from './desktop'
 import { Icon } from './design/Icon'
+import { Bot } from './design/Bot'
 import { Btn, Input } from './design/kit'
 import { Dialog } from './design/Dialog'
 import { confirmLeaveWorkspace } from './unsavedChanges'
@@ -73,7 +74,7 @@ export default function DesktopHost() {
     <div className={`desktop-client platform-${state?.platform || 'unknown'}`}>
       <header className="desktop-titlebar">
         <span className="desktop-wordmark">
-          <Icon name="box" size={16} /> sandboxd <small>STUDIO</small>
+          <Bot who="sandboxd" size={20} still /> sandboxd
         </span>
         {selected && (
           <button className="desktop-engine-pill" onClick={() => setConnections(true)} title={selected.url}>
@@ -125,41 +126,40 @@ export default function DesktopHost() {
         ) : (
           <div className="desktop-welcome">
             <aside className="desktop-welcome-story">
-              <div className="desktop-app-mark">
-                <Icon name="box" size={36} />
+              <div className="desktop-crew" aria-hidden="true">
+                <Bot who="hermes" size={64} className="crew-l1" />
+                <Bot who="sandboxd" size={124} mood="happy" className="crew-lead" />
+                <Bot who="opencode" size={64} className="crew-r1" />
+                <span className="crew-floor" />
               </div>
-              <span className="eyebrow">A LITTLE SPACE. BIG POSSIBILITIES.</span>
+              <span className="eyebrow">Welcome to sandboxd</span>
               <h1>
-                Your ideas,
-                <br />
-                at home.
+                Meet your <span className="sbx-grad-text">AI crew.</span>
               </h1>
               <p>
-                Build with your coding agent. Shape every detail. Keep your work on infrastructure you
-                control.
+                Describe an app in your own words. Your crew builds it, runs it and keeps it private on this
+                computer.
               </p>
               <div className="desktop-feature-list">
                 <span>
                   <Icon name="spark" />
-                  Start with a prompt
+                  Start with an idea, no code needed
                 </span>
                 <span>
                   <Icon name="monitor" />
-                  See your ideas take shape
+                  Watch your app come to life
                 </span>
                 <span>
                   <Icon name="lock" />
-                  Your engine. Your workspace.
+                  Free, open source, yours
                 </span>
               </div>
-              <small>Open source · Made for your desktop</small>
             </aside>
             <main className="desktop-connect-page">
-              <div className="eyebrow">WELCOME TO SANDBOXD</div>
               {state.platform === 'win32' ? (
                 <>
-                  <h2>Let’s set up your studio.</h2>
-                  <p>Your apps and AI agent run privately on this computer.</p>
+                  <h2>Let’s get your crew ready.</h2>
+                  <p>Everything runs privately on this computer.</p>
                 </>
               ) : (
                 <>
@@ -327,6 +327,20 @@ function ConnectionForm({
   )
   const setup = state.platform === 'win32' && (
     <section className="desktop-local-setup" aria-label="Local engine setup">
+      <Bot
+        who="sandboxd"
+        size={56}
+        mood={
+          working
+            ? 'working'
+            : state.localEngine?.phase === 'error'
+              ? 'error'
+              : state.localEngine?.installed
+                ? 'happy'
+                : 'idle'
+        }
+        className="setup-bot"
+      />
       <strong>
         {state.localEngine?.installed
           ? 'Your engine on this computer'
@@ -348,6 +362,7 @@ function ConnectionForm({
           {state.localEngine.message}
         </p>
       )}
+      {working && <div className="setup-meter" aria-hidden="true" />}
       <Btn
         variant="primary"
         disabled={working}
