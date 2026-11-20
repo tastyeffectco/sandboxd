@@ -17,7 +17,7 @@ import { BuildIntent } from './AgentPicker'
 import { Dialog } from './design/Dialog'
 import { IS_DEMO } from './demo'
 import { Icon, IconName } from './design/Icon'
-import { Bot, moodFor } from './design/Bot'
+import { Bot, agentHue, moodFor } from './design/Bot'
 import { confirmLeaveWorkspace } from './unsavedChanges'
 import { VersionPill } from './VersionPill'
 import { Login, CreatePassword } from './AuthGate'
@@ -432,7 +432,13 @@ export default function App({
                 }
                 onClick={() => setRoute({ name: 'agent', id: a.id })}
               >
-                <Bot who={a.package} mood={moodFor(a.status)} size={26} still={a.status !== 'running'} />
+                <Bot
+                  who={a.package}
+                  hue={agentHue(agents || [], a)}
+                  mood={moodFor(a.status)}
+                  size={26}
+                  still={a.status !== 'running'}
+                />
                 <span>{a.name}</span>
                 <i className={`agent-dot ${a.status}`} aria-label={a.status} />
               </button>
@@ -590,6 +596,7 @@ export default function App({
                 <AgentRoom
                   key={agent.id}
                   agent={agent}
+                  hue={agentHue(agents || [], agent)}
                   onChanged={loadAgents}
                   onRemoved={() => {
                     loadAgents()

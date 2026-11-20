@@ -82,8 +82,11 @@ export function AgentRoom({
   onRemoved,
   onError,
   reloadApps,
+  hue = 0,
 }: {
   agent: AgentInstance
+  // Colour of this agent's bot, when there are several of its kind.
+  hue?: number
   onChanged: () => void
   onRemoved: () => void
   onError: (message: string) => void
@@ -265,7 +268,7 @@ export function AgentRoom({
     >
       <header className="agent-room-header">
         <span className="agent-avatar" aria-hidden="true">
-          <Bot who={agent.package} mood={moodFor(agent.status, working)} size={52} />
+          <Bot who={agent.package} hue={hue} mood={moodFor(agent.status, working)} size={52} />
         </span>
         <div className="agent-room-title">
           <h1>{agent.name}</h1>
@@ -363,7 +366,7 @@ export function AgentRoom({
         {messages?.length === 0 && (
           <div className="agent-room-empty">
             <span className="agent-avatar large" aria-hidden="true">
-              <Bot who={agent.package} mood={running ? 'happy' : moodFor(agent.status)} size={120} />
+              <Bot who={agent.package} hue={hue} mood={running ? 'happy' : moodFor(agent.status)} size={120} />
             </span>
             <h2>Chat with {agent.name}</h2>
             <p>
@@ -399,7 +402,7 @@ export function AgentRoom({
                 {/* One face per run of replies, on the last one (as in messaging apps). */}
                 {messages?.[i + 1]?.role !== m.role && (
                   <Bot
-                    who={agent.package}
+                    who={agent.package} hue={hue}
                     mood={m.state === 'working' ? 'working' : m.state === 'error' ? 'error' : 'idle'}
                     size={34}
                     still={i < (messages?.length || 0) - 1}
