@@ -21,6 +21,8 @@ export interface DesktopBridge {
   connect(connection: DesktopConnection): Promise<DesktopState>
   disconnect(forget?: boolean): Promise<DesktopState>
   openExternal(url: string): Promise<void>
+  // Opens this console in the person's own browser (same apps and agents).
+  openInBrowser?(): Promise<void>
   // Signs in on openrouter.ai in the person's browser; resolves with a new key.
   openRouterSignIn?(): Promise<{ key: string; free: boolean }>
   installEngine(): Promise<LocalEngineState>

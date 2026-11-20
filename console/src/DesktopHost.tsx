@@ -201,6 +201,18 @@ export default function DesktopHost() {
               : 'Choose an engine to begin'}
           </span>
           <span>
+            {online && selected && bridge?.openInBrowser && (
+              <>
+                <button
+                  className="desktop-statusbar-link"
+                  onClick={() => void bridge.openInBrowser?.()}
+                  data-testid="open-in-browser"
+                >
+                  Open in browser
+                </button>
+                <i />
+              </>
+            )}
             {state.platform === 'darwin' ? '⌘' : 'Ctrl'} K · Quick search <i /> Desktop {state.version}
           </span>
         </footer>

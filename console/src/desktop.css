@@ -110,6 +110,19 @@
   background: var(--border-2);
 }
 
+.desktop-statusbar-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+.desktop-statusbar-link:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
 /* Banner when the engine can't be reached. */
 .desktop-offline {
   display: flex;
