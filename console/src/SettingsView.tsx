@@ -1,7 +1,7 @@
 import { AccountModelSelect } from './AccountModelSelect'
 import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
-import { c, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
+import { c, alpha, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
 import { Icon } from './design/Icon'
 import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
@@ -25,7 +25,7 @@ function Src({ env, kind }: { env?: string; kind?: SrcKind }) {
   }
   if (kind === 'editable')
     return (
-      <span style={{ ...base, color: c.good, background: `${c.good}14`, border: `1px solid ${c.good}40` }}>
+      <span style={{ ...base, color: c.good, background: alpha(c.good, 10), border: `1px solid ${alpha(c.good, 30)}` }}>
         editable
       </span>
     )

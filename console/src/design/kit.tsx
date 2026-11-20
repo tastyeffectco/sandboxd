@@ -1,29 +1,33 @@
 import { CSSProperties, ReactNode } from 'react'
 
-// Exact palette from the design.
+// The palette is the design system's CSS variables (design/theme.css), so
+// inline styles follow the theme. Use alpha() for a see-through tint.
 export const c = {
-  bg: '#f8f9f7',
-  panel: '#ffffff',
-  panel2: '#f1f3ef',
-  panel3: '#fcfcfc',
-  fg: '#09090b',
-  fg2: '#3f3f46',
-  muted: '#52525b',
-  muted2: '#71717a',
-  faint: '#a1a1aa',
-  border: '#e4e4e7',
-  border2: '#d4d4d8',
-  ink: '#183d32',
-  ink2: '#3f3f46',
-  link: '#22634f',
-  good: '#15803d',
-  warn: '#b45309',
-  bad: '#dc2626',
+  bg: 'var(--bg)',
+  panel: 'var(--panel)',
+  panel2: 'var(--panel-2)',
+  panel3: 'var(--panel-3)',
+  fg: 'var(--fg)',
+  fg2: 'var(--fg-2)',
+  muted: 'var(--muted)',
+  muted2: 'var(--muted-2)',
+  faint: 'var(--faint)',
+  border: 'var(--border)',
+  border2: 'var(--border-2)',
+  ink: 'var(--ink)',
+  ink2: 'var(--ink-2)',
+  link: 'var(--link)',
+  accent: 'var(--accent)',
+  good: 'var(--good)',
+  warn: 'var(--warn)',
+  bad: 'var(--bad)',
 }
+// alpha(c.good, 8) -> the colour at 8% over transparent.
+export const alpha = (color: string, percent: number) => `color-mix(in srgb, ${color} ${percent}%, transparent)`
 export const font = {
-  sans: "'IBM Plex Sans',system-ui,sans-serif",
-  display: "'Space Grotesk','IBM Plex Sans',sans-serif",
-  mono: "'IBM Plex Mono',ui-monospace,monospace",
+  sans: 'var(--sans)',
+  display: 'var(--display)',
+  mono: 'var(--mono)',
 }
 export const mono: CSSProperties = { fontFamily: font.mono }
 
@@ -91,10 +95,10 @@ export function Btn({
     whiteSpace: 'nowrap',
   }
   const v: Record<BtnVariant, CSSProperties> = {
-    primary: { background: c.ink, color: '#fff', fontWeight: 600, border: 'none' },
+    primary: { background: 'var(--brand-grad)', color: 'var(--on-accent)', fontWeight: 600, border: 'none', boxShadow: '0 6px 20px -8px rgba(155,123,255,.7)' },
     outline: { background: c.panel2, border: `1px solid ${c.border2}`, color: c.fg },
     ghost: { background: 'transparent', border: `1px solid ${c.border2}`, color: c.muted },
-    danger: { background: 'transparent', border: '1px solid rgba(220,38,38,.3)', color: c.bad },
+    danger: { background: 'transparent', border: `1px solid ${alpha(c.bad, 35)}`, color: c.bad },
   }
   return (
     <button
@@ -132,8 +136,8 @@ export function Pill({
         fontFamily: font.mono,
         fontSize: 10.5,
         color: col,
-        background: `${col}14`,
-        border: `1px solid ${col}40`,
+        background: alpha(col, 10),
+        border: `1px solid ${alpha(col, 30)}`,
         borderRadius: 5,
         padding: '1px 8px',
       }}

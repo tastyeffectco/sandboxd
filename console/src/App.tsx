@@ -17,6 +17,7 @@ import { BuildIntent } from './AgentPicker'
 import { Dialog } from './design/Dialog'
 import { IS_DEMO } from './demo'
 import { Icon, IconName } from './design/Icon'
+import { Bot, moodFor } from './design/Bot'
 import { confirmLeaveWorkspace } from './unsavedChanges'
 import { VersionPill } from './VersionPill'
 import { Login, CreatePassword } from './AuthGate'
@@ -380,11 +381,9 @@ export default function App({
         )}
         <aside className={`studio-sidebar ${mobileNav ? 'is-open' : ''}`}>
           <button className="studio-brand" onClick={() => setRoute({ name: 'apps' })}>
-            <span>
-              <Icon name="box" size={23} />
-            </span>
+            <Bot who="sandboxd" size={40} />
             <strong>
-              sandboxd<small>BUILD SOMETHING YOURS</small>
+              sandboxd<small>Your AI crew, on your machine</small>
             </strong>
           </button>
           <button
@@ -412,7 +411,7 @@ export default function App({
                 className={route.name === n.key ? 'sidebar-link active' : 'sidebar-link'}
                 onClick={() => setRoute({ name: n.key } as Route)}
               >
-                <Icon name={n.icon as IconName} />
+                {n.key === 'assistant' ? <Bot who="sandboxd" size={20} still /> : <Icon name={n.icon as IconName} />}
                 <span>{n.label}</span>
               </button>
             ))}
@@ -431,9 +430,7 @@ export default function App({
                 }
                 onClick={() => setRoute({ name: 'agent', id: a.id })}
               >
-                <span className="project-initial" aria-hidden="true">
-                  {a.name.slice(0, 1).toUpperCase()}
-                </span>
+                <Bot who={a.package} mood={moodFor(a.status)} size={26} still={a.status !== 'running'} />
                 <span>{a.name}</span>
                 <i className={`agent-dot ${a.status}`} aria-label={a.status} />
               </button>
@@ -460,9 +457,7 @@ export default function App({
                 }
                 onClick={() => goApp(a.id)}
               >
-                <span className="project-initial" aria-hidden="true">
-                  {a.name.slice(0, 1).toUpperCase()}
-                </span>
+                <Bot who={a.name} size={22} still />
                 <span>{a.name}</span>
               </button>
             ))}

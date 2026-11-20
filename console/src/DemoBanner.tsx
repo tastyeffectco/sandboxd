@@ -6,7 +6,7 @@ export default function DemoBanner() {
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
         flexWrap: 'wrap', padding: '7px 16px', fontSize: 13,
-        fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
+        fontFamily: 'var(--mono)',
         background: '#0a0a0a', color: '#fcfaf6', borderBottom: '2px solid #ff6b00',
       }}
     >

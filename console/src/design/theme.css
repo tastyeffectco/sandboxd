@@ -1,0 +1,356 @@
+/* sandboxd design system: "Night workshop".
+   One dark theme, used by every screen. Components use these tokens only
+   (kit.tsx's `c` points at them too), never literal colors. */
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, from the room to the things on the desk. */
+  --bg: #0a0a11;
+  --bg-2: #0e0e17;
+  --panel: #13131d;
+  --panel-2: #1a1a26;
+  --panel-3: #222231;
+  --raised: #262637;
+  --overlay: rgba(6, 6, 12, 0.72);
+
+  /* Text. */
+  --fg: #f4f3fb;
+  --fg-2: #d9d7e8;
+  --fg2: var(--fg-2);
+  --muted: #a5a3bd;
+  --muted-2: #85839f;
+  --faint: #5f5d78;
+
+  /* Lines. */
+  --border: rgba(255, 255, 255, 0.075);
+  --border-2: rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.22);
+
+  /* Brand: violet light, coral warmth, mint life. */
+  --violet: #9b7bff;
+  --violet-2: #7c5cff;
+  --coral: #ff7a59;
+  --pink: #ff6bd5;
+  --mint: #3ee6a8;
+  --sky: #5cc8ff;
+  --sun: #ffc35c;
+
+  --accent: var(--violet);
+  --accent-2: var(--coral);
+  --accent-soft: rgba(155, 123, 255, 0.14);
+  --accent-line: rgba(155, 123, 255, 0.42);
+  --ink: var(--violet-2);
+  --ink-2: var(--fg-2);
+  --link: #c2b2ff;
+  --on-accent: #ffffff;
+
+  --good: var(--mint);
+  --good-fg: var(--mint);
+  --warn: var(--sun);
+  --bad: #ff5c7a;
+
+  --brand-grad: linear-gradient(135deg, #8f6bff 0%, #d36bff 48%, #ff7a59 100%);
+  --brand-grad-soft: linear-gradient(135deg, rgba(143, 107, 255, 0.22), rgba(255, 122, 89, 0.16));
+  --surface-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01));
+
+  /* Depth. */
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 10px 30px -12px rgba(0, 0, 0, 0.7);
+  --shadow-3: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+  --glow: 0 0 0 1px rgba(155, 123, 255, 0.35), 0 8px 40px -8px rgba(155, 123, 255, 0.55);
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+  --r-xl: 26px;
+
+  --sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Bricolage Grotesque Variable', 'Geist Variable', system-ui, sans-serif;
+  --mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The room: faint coloured light from the corners, so dark isn't flat. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(900px 520px at 88% -8%, rgba(155, 123, 255, 0.13), transparent 60%),
+    radial-gradient(700px 480px at -6% 108%, rgba(255, 122, 89, 0.08), transparent 60%);
+}
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background: rgba(155, 123, 255, 0.4);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+
+input,
+textarea,
+select {
+  color: var(--fg);
+  background: var(--bg-2);
+  border-color: var(--border-2);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--faint);
+}
+select option {
+  background: var(--panel-2);
+  color: var(--fg);
+}
+
+/* Shared motion. */
+@keyframes sbx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sbx-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sbx-shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes sbx-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.sbx-rise {
+  animation: sbx-rise 0.45s var(--ease) both;
+}
+.sbx-skeleton {
+  background: linear-gradient(90deg, var(--panel-2) 25%, var(--panel-3) 50%, var(--panel-2) 75%);
+  background-size: 200% 100%;
+  animation: sbx-shimmer 1.6s linear infinite;
+  border-radius: var(--r-sm);
+}
+.sbx-grad-text {
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Boxbots (design/Bot.tsx). */
+.bot {
+  flex: none;
+  overflow: visible;
+}
+.bot .bot-body {
+  transform-origin: 60px 100px;
+  animation: bot-float 4.2s ease-in-out infinite;
+}
+.bot .bot-shadow {
+  transform-origin: 60px 110px;
+  animation: bot-shadow 4.2s ease-in-out infinite;
+}
+.bot-still .bot-body,
+.bot-still .bot-shadow,
+.bot-sleeping .bot-body,
+.bot-sleeping .bot-shadow {
+  animation: none;
+}
+.bot .bot-blink {
+  transform-origin: 60px 62px;
+  animation: bot-blink 4.8s infinite;
+}
+.bot .bot-look {
+  animation: bot-look 2.4s ease-in-out infinite;
+}
+.bot .bot-scan {
+  animation: bot-scan 1.1s ease-in-out infinite alternate;
+}
+.bot .bot-bulb {
+  animation: bot-bulb 2.6s ease-in-out infinite;
+}
+.bot-working .bot-bulb,
+.bot-thinking .bot-bulb {
+  animation-duration: 0.9s;
+}
+.bot-sleeping .bot-bulb {
+  animation: none;
+  opacity: 0.35;
+}
+.bot .bot-dots circle {
+  animation: sbx-pulse 1.2s ease-in-out infinite;
+}
+.bot .bot-dots circle:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.bot .bot-dots circle:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.bot .bot-z {
+  animation: bot-z 2.6s ease-in-out infinite;
+}
+.bot-error .bot-body {
+  animation: bot-shake 0.5s ease-in-out 2;
+}
+.bot-happy .bot-body {
+  animation: bot-hop 0.7s var(--spring) 1, bot-float 4.2s 0.7s ease-in-out infinite;
+}
+@keyframes bot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes bot-shadow {
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scaleX(0.86);
+    opacity: 0.3;
+  }
+}
+@keyframes bot-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes bot-look {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  40%,
+  60% {
+    transform: translate(4px, -4px);
+  }
+}
+@keyframes bot-scan {
+  from {
+    transform: translateX(-4px);
+  }
+  to {
+    transform: translateX(4px);
+  }
+}
+@keyframes bot-bulb {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes bot-z {
+  0% {
+    opacity: 0;
+    transform: translate(0, 4px);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(6px, -10px);
+  }
+}
+@keyframes bot-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+@keyframes bot-hop {
+  0% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-9px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

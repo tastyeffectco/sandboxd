@@ -4,6 +4,7 @@ import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
 import { CATALOG } from './catalog'
 import { Icon } from './design/Icon'
+import { Bot } from './design/Bot'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
 import { appTitle } from './appTitle'
@@ -153,14 +154,23 @@ export function BuilderHome({
   return (
     <div className="builder-home">
       <section className="build-hero">
-        <div className="eyebrow">
-          <span className="brand-dot" /> YOUR IDEAS. YOUR INFRASTRUCTURE.
+        <div className="hero-crew" aria-hidden="true">
+          <Bot who="hermes" size={46} className="crew-far crew-l2" />
+          <Bot who="openmausbot" size={58} className="crew-l1" />
+          <Bot
+            who={choice.agent || 'opencode'}
+            size={104}
+            mood={busy ? 'working' : prompt.trim() ? 'thinking' : 'idle'}
+            className="crew-lead"
+          />
+          <Bot who="openclaw" size={58} className="crew-r1" />
+          <Bot who="pi" size={46} className="crew-far crew-r2" />
+          <span className="crew-floor" />
         </div>
         <h1>
-          What do you want
-          <br className="hero-break" /> to build?
+          What do you want <span className="sbx-grad-text">to build?</span>
         </h1>
-        <p>Start with an idea. Bring it to life with your coding agent.</p>
+        <p>Describe it in your own words. Your crew writes the code, runs it and shows it to you, on your machine.</p>
         <div className="build-composer">
           <label className="sr-only" htmlFor="build-prompt">
             Describe your app
@@ -382,7 +392,7 @@ export function BuilderHome({
         </div>
         {apps.length === 0 ? (
           <div className="empty-projects">
-            <Icon name="grid" size={26} />
+            <Bot who="sandboxd" size={72} mood="happy" />
             <h3>A home for everything you build</h3>
             <p>Your projects, live previews and conversations will appear here.</p>
             <Btn onClick={() => composer.current?.focus()}>Start your first app</Btn>
@@ -393,9 +403,9 @@ export function BuilderHome({
           <div className="project-grid" data-testid="app-list">
             {filtered.map((a, i) => (
               <button key={a.id} className="project-card" onClick={() => onOpen(a.id)} data-testid="app-card">
-                <div className={`project-art art-${i % 4}`}>
-                  <span>{a.name.slice(0, 1).toUpperCase()}</span>
-                  <Icon name={a.git ? 'git' : 'code'} size={22} />
+                <div className="project-art" style={{ ['--art' as string]: `${(i * 47) % 360}` }}>
+                  <Bot who={a.name} size={64} still mood={status[a.id] === 'running' ? 'idle' : 'sleeping'} />
+                  <Icon name={a.git ? 'git' : 'code'} size={16} />
                 </div>
                 <div className="project-card-body">
                   <div>
