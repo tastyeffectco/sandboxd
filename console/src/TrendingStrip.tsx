@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { App as TApp } from './api'
 import { CatalogApp, TRENDING, catalogTag } from './catalog'
 import { installCatalogApp } from './catalogInstall'
-import { Btn } from './design/kit'
+import { CatalogCard } from './CatalogCard'
 
 // "Trending on GitHub" on the home page: projects everyone talks about right
 // now, ready in one click, in words a non-technical person understands.
@@ -57,44 +57,19 @@ export function TrendingStrip({
         {items.slice(0, limit).map((entry) => {
           const installed = apps.find((a) => (a.tags || []).includes(catalogTag(entry.id)))
           return (
-            <article key={entry.id} className="project-card catalog-card" data-testid={`trending-${entry.id}`}>
-              <div className="project-art catalog-art" style={{ background: `${entry.color}1f`, color: entry.color }}>
-                <span style={{ color: entry.color }}>{entry.name.slice(0, 1)}</span>
-                <span className="catalog-stars" title="Stars on GitHub">
-                  ★ {entry.stars}
-                </span>
-              </div>
-              <div className="project-card-body">
-                <div>
-                  <h3>{entry.name}</h3>
-                  <span className="catalog-category">{entry.category}</span>
-                </div>
-                <p className="catalog-pitch">{entry.pitch}</p>
-                <footer>
-                  {installed ? (
-                    <Btn sm variant="primary" onClick={() => onOpen(installed.id)} data-testid="trending-open">
-                      Open
-                    </Btn>
-                  ) : (
-                    <Btn
-                      sm
-                      variant="primary"
-                      disabled={!!installing}
-                      onClick={() => void install(entry)}
-                      data-testid="trending-try"
-                    >
-                      {installing === entry.id ? 'Getting it ready…' : 'Try it'}
-                    </Btn>
-                  )}
-                  <span>
-                    {entry.license} ·{' '}
-                    <a href={entry.repo} target="_blank" rel="noreferrer">
-                      code
-                    </a>
-                  </span>
-                </footer>
-              </div>
-            </article>
+            <CatalogCard
+              key={entry.id}
+              entry={entry}
+              installed={installed}
+              installing={installing}
+              onInstall={(e) => void install(e)}
+              onOpen={onOpen}
+              testId={`trending-${entry.id}`}
+              openTestId="trending-open"
+              installTestId="trending-try"
+              installLabel="Try it"
+              installingLabel="Getting it ready…"
+            />
           )
         })}
       </div>

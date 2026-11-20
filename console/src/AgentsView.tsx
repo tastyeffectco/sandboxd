@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, AgentInstance, AgentCatalogEntry, ModelProvider } from './api'
-import { c, font, Btn, Card, Input } from './design/kit'
+import { c, Btn, Input } from './design/kit'
+import { Bot, BOTS, BotMood, moodFor } from './design/Bot'
 import { ConnectOpenRouter, canConnectOpenRouter } from './ConnectOpenRouter'
 import { browserTimeZone, canSetTimeZone } from './timeZone'
 
@@ -39,32 +40,49 @@ export function AgentsView({
   }, [onError])
 
   return (
-    <div className="content-page">
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>Add an agent</h1>
-      <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 620 }}>
-        Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
-        remember what you tell them and can create and change apps on this computer.
-      </p>
+    <div className="content-page crew-page">
+      <header className="page-hero">
+        <div className="page-hero-text">
+          <span className="eyebrow">Your crew</span>
+          <h1>Add an agent</h1>
+          <p>
+            Agents are assistants that work for you around the clock. Each one gets its own chat in the sidebar; they
+            remember what you tell them and can create and change apps on this computer.
+          </p>
+        </div>
+        <div className="page-hero-crew" aria-hidden="true">
+          {(packages || []).slice(0, 3).map((p, i) => (
+            <Bot key={p.id} who={p.id} size={i === 1 ? 84 : 62} />
+          ))}
+        </div>
+      </header>
       {notice && (
-        <p role="status" className="chat-notice" style={{ maxWidth: 680 }} data-testid="openrouter-connected">
+        <p role="status" className="chat-notice" data-testid="openrouter-connected">
           {notice}
         </p>
       )}
-      {packages === null && <p style={{ color: c.muted2 }}>Loading…</p>}
+      {packages === null && (
+        <div className="crew-list" aria-label="Loading">
+          <div className="sbx-skeleton" style={{ height: 150 }} />
+          <div className="sbx-skeleton" style={{ height: 150 }} />
+        </div>
+      )}
+      <div className="crew-list">
       {packages?.map((p) => {
         const added = agents.find((a) => a.package === p.id)
         return added ? (
-          <Card key={p.id} pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`added-agent-${p.id}`}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <strong style={{ fontSize: 16 }}>{p.label}</strong>
-              <span style={{ color: c.muted2, fontSize: 12 }}>Added</span>
-              <span style={{ flex: 1 }} />
-              <Btn sm variant="primary" onClick={() => onOpen(added.id)} data-testid="open-agent">
+          <CrewCard key={p.id} id={p.id} mood={moodFor(added.status)} data-testid={`added-agent-${p.id}`}>
+            <div className="crew-card-title">
+              <h2>{p.label}</h2>
+              <span className="crew-badge">On your crew</span>
+            </div>
+            <p>{p.description}</p>
+            <div className="crew-card-actions">
+              <Btn variant="primary" onClick={() => onOpen(added.id)} data-testid="open-agent">
                 Open {added.name}
               </Btn>
             </div>
-            <p style={{ color: c.muted, margin: '6px 0 0' }}>{p.description}</p>
-          </Card>
+          </CrewCard>
         ) : (
           <AddAgent
             key={p.id}
@@ -77,6 +95,7 @@ export function AgentsView({
           />
         )
       })}
+      </div>
       {packages !== null && <AgentTimeZone onError={onError} />}
     </div>
   )
@@ -169,9 +188,11 @@ function AddAgent({
     }
   }
   return (
-    <Card pad={20} style={{ marginBottom: 16, maxWidth: 680 }} data-testid={`add-agent-${pkg.id}`}>
-      <strong style={{ fontSize: 16 }}>{pkg.label}</strong>
-      <p style={{ color: c.muted, margin: '6px 0 14px' }}>{pkg.description}</p>
+    <CrewCard id={pkg.id} mood={busy ? 'working' : 'idle'} data-testid={`add-agent-${pkg.id}`}>
+      <div className="crew-card-title">
+        <h2>{pkg.label}</h2>
+      </div>
+      <p>{pkg.description}</p>
       {models.length === 0 && canConnectOpenRouter() ? (
         <>
           <p style={{ margin: '0 0 12px' }}>
@@ -239,7 +260,25 @@ function AddAgent({
           {warning}
         </p>
       )}
-    </Card>
+    </CrewCard>
+  )
+}
+
+// One agent on the roster: its bot on a stage lit in its colour, then its card.
+function CrewCard({
+  id,
+  mood,
+  children,
+  ...rest
+}: { id: string; mood: BotMood; children: React.ReactNode } & React.HTMLAttributes<HTMLElement>) {
+  const look = BOTS[id]
+  return (
+    <article className="crew-card" style={{ ['--crew' as string]: look?.hi || 'var(--accent)' }} {...rest}>
+      <div className="crew-stage" aria-hidden="true">
+        <Bot who={id} mood={mood} size={104} />
+      </div>
+      <div className="crew-card-body">{children}</div>
+    </article>
   )
 }
 
