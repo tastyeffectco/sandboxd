@@ -130,3 +130,21 @@ func TestTemplatesIgnoreDependencies(t *testing.T) {
 		}
 	}
 }
+
+// Every preset's starter files ship in the image (image/templates/<name>), and
+// a preset with a web process serves it on port 3000, the port the preview
+// routes to. A renamed template or another port would break new apps silently.
+func TestPresetsShipTemplatesAndServePort3000(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	repo := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+	for _, p := range List() {
+		if p.Template != "" {
+			if fi, err := os.Stat(filepath.Join(repo, "image", "templates", p.Template)); err != nil || !fi.IsDir() {
+				t.Errorf("%s: template %q not in image/templates", p.ID, p.Template)
+			}
+		}
+		if strings.Contains(p.Manifest, "\nweb:") && !strings.Contains(p.Manifest, "port: 3000") {
+			t.Errorf("%s: web process must serve port 3000", p.ID)
+		}
+	}
+}
