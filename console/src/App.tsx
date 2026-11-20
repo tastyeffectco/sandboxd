@@ -19,6 +19,8 @@ import { IS_DEMO } from './demo'
 import { Icon, IconName } from './design/Icon'
 import { Bot, agentHue, moodFor } from './design/Bot'
 import { Avatar } from './design/Avatar'
+import { ProjectIcon } from './design/ProjectIcon'
+import { EditLook } from './EditLook'
 import { catalogIdOf } from './catalog'
 import { confirmLeaveWorkspace } from './unsavedChanges'
 import { VersionPill } from './VersionPill'
@@ -89,6 +91,8 @@ export default function App({
   const [chatDrafts, setChatDrafts] = useState<Record<string, BuildIntent>>({})
   const [pendingBuilds, setPendingBuilds] = useState<Record<string, BuildIntent>>({})
   const [mobileNav, setMobileNav] = useState(false)
+  // Rename & icon, from the sidebar.
+  const [editing, setEditing] = useState<{ app?: TApp; agent?: AgentInstance } | null>(null)
   useEffect(() => {
     const listener = () => setRoute(readRoute())
     window.addEventListener('hashchange', listener)
@@ -433,27 +437,37 @@ export default function App({
           <div className="sidebar-projects" data-testid="sidebar-agents">
             <div className="sidebar-caption">AGENTS</div>
             {(agents || []).map((a) => (
-              <button
-                key={a.id}
-                title={a.name}
-                data-testid={`sidebar-agent-${a.id}`}
-                className={
-                  route.name === 'agent' && route.id === a.id
-                    ? 'sidebar-project sidebar-agent active'
-                    : 'sidebar-project sidebar-agent'
-                }
-                onClick={() => setRoute({ name: 'agent', id: a.id })}
-              >
-                <Avatar
-                  who={a.package}
-                  hue={agentHue(agents || [], a)}
-                  mood={moodFor(a.status)}
-                  size={26}
-                  still={a.status !== 'running'}
-                />
-                <span>{a.name}</span>
-                <i className={`agent-dot ${a.status}`} aria-label={a.status} />
-              </button>
+              <div className="sidebar-row" key={a.id}>
+                <button
+                  title={a.name}
+                  data-testid={`sidebar-agent-${a.id}`}
+                  className={
+                    route.name === 'agent' && route.id === a.id
+                      ? 'sidebar-project sidebar-agent active'
+                      : 'sidebar-project sidebar-agent'
+                  }
+                  onClick={() => setRoute({ name: 'agent', id: a.id })}
+                >
+                  <Avatar
+                    who={a.package}
+                    hue={agentHue(agents || [], a)}
+                    mood={moodFor(a.status)}
+                    size={26}
+                    still={a.status !== 'running'}
+                  />
+                  <span>{a.name}</span>
+                  <i className={`agent-dot ${a.status}`} aria-label={a.status} />
+                </button>
+                <button
+                  className="sidebar-edit"
+                  aria-label={`Rename or change the icon of ${a.name}`}
+                  title="Rename & icon"
+                  onClick={() => setEditing({ agent: a })}
+                  data-testid={`edit-agent-${a.id}`}
+                >
+                  <Icon name="edit" size={13} />
+                </button>
+              </div>
             ))}
             <button
               className={route.name === 'agents' ? 'sidebar-project active' : 'sidebar-project'}
@@ -469,17 +483,27 @@ export default function App({
           <div className="sidebar-projects">
             <div className="sidebar-caption">RECENT PROJECTS</div>
             {apps.slice(0, 7).map((a) => (
-              <button
-                key={a.id}
-                title={a.name}
-                className={
-                  route.name === 'app' && route.id === a.id ? 'sidebar-project active' : 'sidebar-project'
-                }
-                onClick={() => goApp(a.id)}
-              >
-                <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={22} still />
-                <span>{a.name}</span>
-              </button>
+              <div className="sidebar-row" key={a.id}>
+                <button
+                  title={a.name}
+                  className={
+                    route.name === 'app' && route.id === a.id ? 'sidebar-project active' : 'sidebar-project'
+                  }
+                  onClick={() => goApp(a.id)}
+                >
+                  <ProjectIcon name={a.name} tags={a.tags} logo={catalogIdOf(a.tags)} size={22} still />
+                  <span>{a.name}</span>
+                </button>
+                <button
+                  className="sidebar-edit"
+                  aria-label={`Rename or change the icon of ${a.name}`}
+                  title="Rename & icon"
+                  onClick={() => setEditing({ app: a })}
+                  data-testid={`edit-app-${a.id}`}
+                >
+                  <Icon name="edit" size={13} />
+                </button>
+              </div>
             ))}
             {!apps.length && <p>Your next idea starts here.</p>}
           </div>
@@ -633,6 +657,7 @@ export default function App({
             <AppView
               key={route.id}
               appId={route.id}
+              reloadApps={loadApps}
               initialBuild={pendingBuilds[route.id]}
               chatDraft={chatDrafts[route.id]}
               saveChatDraft={(draft) => setChatDrafts((p) => ({ ...p, [route.id]: draft }))}
@@ -658,6 +683,28 @@ export default function App({
         </main>
       </div>
 
+      {editing?.app && (
+        <EditLook
+          app={editing.app}
+          onClose={() => setEditing(null)}
+          onError={onError}
+          onSaved={() => {
+            loadApps()
+            toast('Saved')
+          }}
+        />
+      )}
+      {editing?.agent && (
+        <EditLook
+          agent={editing.agent}
+          onClose={() => setEditing(null)}
+          onError={onError}
+          onSaved={() => {
+            loadAgents()
+            toast('Saved')
+          }}
+        />
+      )}
       {paletteOpen && (
         <Palette
           apps={apps}
@@ -804,7 +851,7 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
           return (
             <button key={a.id} className="brain-card" onClick={() => onOpen(a.id)} data-testid="brain-card">
               <header>
-                <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={30} still />
+                <ProjectIcon name={a.name} tags={a.tags} logo={catalogIdOf(a.tags)} size={30} still />
                 <strong>{a.name}</strong>
                 <small>
                   {md.split('\n').length} lines
@@ -824,7 +871,7 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
           <div>
             {without.map((a) => (
               <button key={a.id} className="chip" onClick={() => onOpen(a.id)}>
-                <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={18} still mood="sleeping" />
+                <ProjectIcon name={a.name} tags={a.tags} logo={catalogIdOf(a.tags)} size={18} still mood="sleeping" />
                 {a.name}
               </button>
             ))}
