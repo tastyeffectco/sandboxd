@@ -7,7 +7,7 @@ let createdApp: string | undefined
 
 test.beforeEach(async ({ page }) => {
   createdApp = undefined
-  await page.goto('/')
+  await page.goto('/#/apps')
   await expect(page.getByTestId('build-prompt').or(page.getByTestId('login-password'))).toBeVisible()
   if (await page.getByTestId('login-password').isVisible()) {
     if (!process.env.CONSOLE_PASSWORD) throw new Error('Set CONSOLE_PASSWORD for this test instance')
@@ -34,8 +34,8 @@ async function createBlank(page: Page) {
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
 }
 
-test('prompt-first home loads', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'What do you want to build?' })).toBeVisible()
+test('projects page with its own builder loads', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: 'Start a project yourself' })).toBeVisible()
   await expect(page.getByTestId('build-app')).toBeVisible()
 })
 

@@ -26,7 +26,7 @@ describe('App with a host-managed login', () => {
       state.authenticated = true
     })
     render(<App signIn={signIn} />)
-    await screen.findByRole('heading', { name: 'What do you want to build?' })
+    await screen.findByTestId('nav-assistant')
     expect(signIn).toHaveBeenCalledTimes(1)
     expect(screen.queryByTestId('login-password')).toBeNull()
     expect(screen.queryByTestId('nav-logout')).toBeNull()
@@ -70,7 +70,7 @@ describe('App network-sharing hint', () => {
   it('stays out of the way when the engine runs on this computer', async () => {
     signedIn()
     render(<App localEngine />)
-    await screen.findByRole('heading', { name: 'What do you want to build?' })
+    await screen.findByTestId('nav-assistant')
     await new Promise((r) => setTimeout(r, 50))
     expect(screen.queryByTestId('public-url-hint')).toBeNull()
   })

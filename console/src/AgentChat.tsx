@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, Agent, ModelProvider, Sandbox, TaskSummary } from './api'
+import { api, Agent, App as TApp, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
 import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
@@ -22,9 +22,14 @@ export function AgentChat({
   draft,
   saveDraft,
   assistant,
+  onOpenApp,
+  onAppsChanged,
 }: {
   // The sandboxd agent's chat: its own words and suggestions.
   assistant?: boolean
+  // sandboxd agent: open an app it made, and tell the sidebar about it.
+  onOpenApp?: (id: string) => void
+  onAppsChanged?: () => void
   sb: Sandbox | null
   onError: (m: string) => void
   toast: (m: string) => void
@@ -58,6 +63,9 @@ export function AgentChat({
     saveDraftRef.current?.({ ...choice, prompt: text })
   }, [choice, text])
   const scroll = useRef<HTMLDivElement>(null)
+  // Apps the sandboxd agent made in this visit, shown as cards to open.
+  const known = useRef<Set<string> | null>(null)
+  const [made, setMade] = useState<TApp[]>([])
   const sbID = sb?.id
   const currentSandbox = useRef(sbID)
   currentSandbox.current = sbID
@@ -155,9 +163,68 @@ export function AgentChat({
     source.onerror = () => source.close()
     return () => source.close()
   }, [sbID, active?.id, loadHistory, refresh])
+  // While the sandboxd agent works, notice the apps it creates.
+  const working = !!active
   useEffect(() => {
-    scroll.current?.scrollTo?.({ top: scroll.current.scrollHeight, behavior: 'smooth' })
-  }, [response, history.length, active?.id])
+    if (!assistant) return
+    const look = async () => {
+      if (!known.current) return
+      try {
+        const list = await api.listApps()
+        const fresh = list.filter((a) => !known.current!.has(a.id) && !(a.tags || []).includes('sandboxd:assistant'))
+        if (!fresh.length) return
+        for (const a of fresh) known.current.add(a.id)
+        setMade((m) => [...m, ...fresh])
+        onAppsChanged?.()
+      } catch {
+        /* the next look tries again */
+      }
+    }
+    if (!working) {
+      void look()
+      return
+    }
+    const t = setInterval(() => void look(), 3000)
+    return () => clearInterval(t)
+  }, [assistant, working, onAppsChanged])
+
+  // Stay at the end of the conversation while the person is there (a long
+  // history, a reply growing as it renders); not when they scrolled up to read.
+  const following = useRef(true)
+  const [behind, setBehind] = useState(false)
+  const toEnd = useCallback(() => {
+    const el = scroll.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [])
+  useEffect(() => {
+    if (following.current) toEnd()
+  }, [response, history.length, active?.id, toEnd])
+  // A new conversation (another workspace) opens at its end.
+  useEffect(() => {
+    following.current = true
+    setBehind(false)
+  }, [sbID])
+  useEffect(() => {
+    const el = scroll.current
+    if (!el || typeof MutationObserver === 'undefined') return
+    const observer = new MutationObserver(() => {
+      if (following.current) toEnd()
+    })
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    // Images and code blocks change size after they are added.
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => following.current && toEnd())
+    for (const child of Array.from(el.children)) resize?.observe(child)
+    return () => {
+      observer.disconnect()
+      resize?.disconnect()
+    }
+  }, [toEnd, history.length])
+  const onScroll = () => {
+    const el = scroll.current
+    if (!el) return
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    setBehind(!following.current)
+  }
   const send = async (auto = false) => {
     if (!sbID || !canSend || !text.trim() || active || blocked || !loaded || submitting.current) return
     submitting.current = true
@@ -170,6 +237,11 @@ export function AgentChat({
     setText('')
     setResponse('')
     setActive({ id: '', prompt, status: 'starting', can_revert: false })
+    if (assistant && !known.current)
+      void api
+        .listApps()
+        .then((list) => (known.current ??= new Set(list.map((a) => a.id))))
+        .catch(() => {})
     try {
       const task = await api.submitTask(
         sbID,
@@ -262,24 +334,42 @@ export function AgentChat({
           </button>
         </div>
       </details>
-      <div className="chat-messages" ref={scroll}>
+      <div className="chat-messages" ref={scroll} onScroll={onScroll} data-testid="chat-messages">
         {history.length === 0 && !active && (
-          <div className="chat-welcome">
-            <span className="welcome-icon">
-              <Bot who={assistant ? 'sandboxd' : choice.agent || 'opencode'} mood="happy" size={88} />
-            </span>
-            <h3>{assistant ? 'What can I do for you?' : 'Let’s make it yours.'}</h3>
+          <div className={assistant ? 'chat-welcome home-welcome' : 'chat-welcome'}>
+            {assistant ? (
+              <div className="hero-crew" aria-hidden="true">
+                <Bot who="hermes" size={46} className="crew-far crew-l2" />
+                <Bot who="openmausbot" size={58} className="crew-l1" />
+                <Bot who="sandboxd" size={104} mood={text.trim() ? 'thinking' : 'happy'} className="crew-lead" />
+                <Bot who="openclaw" size={58} className="crew-r1" />
+                <Bot who="opencode" size={46} className="crew-far crew-r2" />
+                <span className="crew-floor" />
+              </div>
+            ) : (
+              <span className="welcome-icon">
+                <Bot who={choice.agent || 'opencode'} mood="happy" size={88} />
+              </span>
+            )}
+            {assistant ? (
+              <h1>
+                What can I do <span className="sbx-grad-text">for you?</span>
+              </h1>
+            ) : (
+              <h3>Let’s make it yours.</h3>
+            )}
             <p>
               {assistant
-                ? 'Ask for an app, an open-source project from GitHub, or a task for one of your agents. I take care of the rest.'
+                ? 'Ask me for an app, an open-source project from GitHub, a new agent, or a task for one of your agents. I build it, run it and show it to you, on your machine.'
                 : 'Describe what to build or change. Your agent can edit files, install packages and run your app.'}
             </p>
             <div className="chat-suggestions">
               {(assistant
                 ? [
-                    'Install the 2048 game for me',
-                    'What did my agents do today?',
                     'Build me a recipe app with a shopping list',
+                    'Install Excalidraw for me',
+                    'Add a Hermes agent to plan my week',
+                    'What did my agents do today?',
                   ]
                 : ['Improve the layout and typography', 'Explain this project’s structure', 'Find and fix bugs in this app']
               ).map((p) => (
@@ -360,6 +450,33 @@ export function AgentChat({
             {resolved && <p className="field-help">{resolved}</p>}
           </article>
         )}
+        {made.map((a) => (
+          <div className="made-app" key={a.id} data-testid="made-app">
+            <Bot who={a.name} size={40} mood="happy" />
+            <span>
+              <small>New app</small>
+              <strong>{a.name}</strong>
+            </span>
+            {onOpenApp && (
+              <Btn sm variant="primary" onClick={() => onOpenApp(a.id)}>
+                Open
+              </Btn>
+            )}
+          </div>
+        ))}
+        {behind && (
+          <button
+            className="chat-jump"
+            onClick={() => {
+              following.current = true
+              setBehind(false)
+              toEnd()
+            }}
+            data-testid="chat-jump"
+          >
+            <Icon name="arrow" size={13} /> Latest
+          </button>
+        )}
       </div>
       {error && (
         <div role="alert" className="chat-notice error">
@@ -401,6 +518,7 @@ export function AgentChat({
         }}
       >
         <textarea
+          id="chat-prompt"
           aria-label="Message the agent"
           value={text}
           rows={3}
@@ -411,7 +529,7 @@ export function AgentChat({
               void send()
             }
           }}
-          placeholder="What should we build next?"
+          placeholder={assistant ? "Ask for an app, an agent or a task…" : "What should we build next?"}
           data-testid="task-prompt"
         />
         <footer>

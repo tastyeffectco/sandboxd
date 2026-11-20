@@ -40,8 +40,9 @@ function readRoute(): Route {
   }
   if (parts[0] === 'settings') return { name: 'settings', section: parts[1] }
   if (parts[0] === 'discover' && parts[1]) return { name: 'discover', category: decodeURIComponent(parts[1]) }
+  // Home is the sandboxd agent: the one place to ask for apps, agents and tasks.
   return {
-    name: ['brain', 'discover', 'agents', 'settings', 'assistant'].includes(parts[0]) ? parts[0] : 'apps',
+    name: ['brain', 'discover', 'agents', 'settings', 'apps'].includes(parts[0]) ? parts[0] : 'assistant',
   } as Route
 }
 
@@ -304,9 +305,21 @@ export default function App({
 
   const goApp = (id: string, tab?: string) => setRoute({ name: 'app', id, tab })
 
+  // Home, with the cursor in sandboxd's box (it may still be getting ready).
+  const askSandboxd = () => {
+    setRoute({ name: 'assistant' })
+    setMobileNav(false)
+    let tries = 0
+    const focus = () => {
+      const box = document.getElementById('chat-prompt') as HTMLTextAreaElement | null
+      if (box) return box.focus()
+      if (++tries < 40) setTimeout(focus, 100)
+    }
+    setTimeout(focus, 0)
+  }
   const nav = [
-    { key: 'assistant', label: 'Ask sandboxd', icon: 'spark' },
-    { key: 'apps', label: 'Build & projects', icon: 'grid' },
+    { key: 'assistant', label: 'Home', icon: 'spark' },
+    { key: 'apps', label: 'Projects', icon: 'grid' },
     { key: 'discover', label: 'Free apps', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
@@ -382,7 +395,7 @@ export default function App({
           />
         )}
         <aside className={`studio-sidebar ${mobileNav ? 'is-open' : ''}`}>
-          <button className="studio-brand" onClick={() => setRoute({ name: 'apps' })}>
+          <button className="studio-brand" onClick={() => setRoute({ name: 'assistant' })}>
             <Bot who="sandboxd" size={40} />
             <strong>
               sandboxd<small>Your AI crew, on your machine</small>
@@ -390,10 +403,7 @@ export default function App({
           </button>
           <button
             className="sidebar-new"
-            onClick={() => {
-              setRoute({ name: 'apps' })
-              setTimeout(() => document.getElementById('build-prompt')?.focus(), 0)
-            }}
+            onClick={askSandboxd}
           >
             <Icon name="plus" size={18} />
             <span>New project</span>
@@ -511,10 +521,16 @@ export default function App({
         {/* MAIN */}
         <main
           id="main-content"
-          className={route.name === 'app' || route.name === 'agent' ? 'studio-main workspace-main' : 'studio-main'}
+          className={
+            // Workspaces and chats fill the window and scroll inside (the conversation, not the page).
+            route.name === 'app' || route.name === 'agent' || route.name === 'assistant'
+              ? 'studio-main workspace-main'
+              : 'studio-main'
+          }
         >
           {route.name === 'apps' && (
             <BuilderHome
+              onAsk={askSandboxd}
               draft={builderDraft}
               saveDraft={setBuilderDraft}
               apps={apps}
@@ -564,6 +580,7 @@ export default function App({
               goSettings={() => setRoute({ name: 'settings' })}
               apps={apps}
               onOpenApp={(id, tab) => goApp(id, tab)}
+              reloadApps={loadApps}
             />
           )}
           {route.name === 'brain' && <BrainOverview apps={apps} onOpen={(id) => goApp(id, 'brain')} />}
@@ -820,7 +837,8 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState(0)
   const commands: { label: string; route: Route }[] = [
-    { label: 'Build a new project', route: { name: 'apps' } },
+    { label: 'Ask sandboxd', route: { name: 'assistant' } },
+    { label: 'Projects', route: { name: 'apps' } },
     { label: 'Project memory', route: { name: 'brain' } },
     { label: 'Free apps', route: { name: 'discover' } },
     { label: 'Add an agent', route: { name: 'agents' } },

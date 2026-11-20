@@ -44,7 +44,10 @@ export function BuilderHome({
   featured,
   draft,
   saveDraft,
+  onAsk,
 }: {
+  // Ask the sandboxd agent (Home) for a new app.
+  onAsk?: () => void
   apps: App[]
   reload: () => void
   onOpen: (id: string) => void
@@ -153,24 +156,66 @@ export function BuilderHome({
   const blocked = !!prompt.trim() && choiceBlocked(choice, providers, agents)
   return (
     <div className="builder-home">
-      <section className="build-hero">
-        <div className="hero-crew" aria-hidden="true">
-          <Bot who="hermes" size={46} className="crew-far crew-l2" />
-          <Bot who="openmausbot" size={58} className="crew-l1" />
-          <Bot
-            who={choice.agent || 'opencode'}
-            size={104}
-            mood={busy ? 'working' : prompt.trim() ? 'thinking' : 'idle'}
-            className="crew-lead"
-          />
-          <Bot who="openclaw" size={58} className="crew-r1" />
-          <Bot who="pi" size={46} className="crew-far crew-r2" />
-          <span className="crew-floor" />
+      <section className="projects-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Your work</span>
+            <h1>
+              Projects <span>{apps.length}</span>
+            </h1>
+            <p>Every app you or your crew built. Open one to see it live, change it or chat with its agent.</p>
+          </div>
+          {onAsk && (
+            <Btn variant="primary" onClick={onAsk} data-testid="projects-ask">
+              <Icon name="plus" size={14} /> New app
+            </Btn>
+          )}
+          <label className="project-search">
+            <Icon name="search" size={16} />
+            <input
+              aria-label="Search projects"
+              placeholder="Find a project…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
         </div>
-        <h1>
-          What do you want <span className="sbx-grad-text">to build?</span>
-        </h1>
-        <p>Describe it in your own words. Your crew writes the code, runs it and shows it to you, on your machine.</p>
+        {apps.length === 0 ? (
+          <div className="empty-projects">
+            <Bot who="sandboxd" size={72} mood="happy" />
+            <h3>A home for everything you build</h3>
+            <p>Your projects, live previews and conversations will appear here.</p>
+            <Btn onClick={() => (onAsk ? onAsk() : composer.current?.focus())}>Start your first app</Btn>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p className="empty-state">No projects match “{query}”.</p>
+        ) : (
+          <div className="project-grid" data-testid="app-list">
+            {filtered.map((a, i) => (
+              <button key={a.id} className="project-card" onClick={() => onOpen(a.id)} data-testid="app-card">
+                <div className="project-art" style={{ ['--art' as string]: `${(i * 47) % 360}` }}>
+                  <Bot who={a.name} size={64} still mood={status[a.id] === 'running' ? 'idle' : 'sleeping'} />
+                  <Icon name={a.git ? 'git' : 'code'} size={16} />
+                </div>
+                <div className="project-card-body">
+                  <div>
+                    <h3>{a.name}</h3>
+                    <Icon name="arrow" size={17} />
+                  </div>
+                  <p>{a.description || (a.git ? a.git.repo_url : 'Ready for your next idea')}</p>
+                  <footer>
+                    <StatusPill status={a.current_sandbox_id ? status[a.id] || 'loading' : 'not started'} />
+                    <span>{a.runtime_preset || (a.git ? 'Imported project' : 'App workspace')}</span>
+                  </footer>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="build-hero build-yourself">
+        <h2>Start a project yourself</h2>
+        <p>Choose the stack and the coding agent, then describe it. Or simply ask sandboxd on Home.</p>
         <div className="build-composer">
           <label className="sr-only" htmlFor="build-prompt">
             Describe your app
@@ -372,57 +417,6 @@ export function BuilderHome({
         )}
       </section>
       {featured}
-      <section className="projects-section">
-        <div className="section-heading">
-          <div>
-            <h2>
-              Your projects <span>{apps.length}</span>
-            </h2>
-            <p>Pick up where you left off.</p>
-          </div>
-          <label className="project-search">
-            <Icon name="search" size={16} />
-            <input
-              aria-label="Search projects"
-              placeholder="Find a project…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-        </div>
-        {apps.length === 0 ? (
-          <div className="empty-projects">
-            <Bot who="sandboxd" size={72} mood="happy" />
-            <h3>A home for everything you build</h3>
-            <p>Your projects, live previews and conversations will appear here.</p>
-            <Btn onClick={() => composer.current?.focus()}>Start your first app</Btn>
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="empty-state">No projects match “{query}”.</p>
-        ) : (
-          <div className="project-grid" data-testid="app-list">
-            {filtered.map((a, i) => (
-              <button key={a.id} className="project-card" onClick={() => onOpen(a.id)} data-testid="app-card">
-                <div className="project-art" style={{ ['--art' as string]: `${(i * 47) % 360}` }}>
-                  <Bot who={a.name} size={64} still mood={status[a.id] === 'running' ? 'idle' : 'sleeping'} />
-                  <Icon name={a.git ? 'git' : 'code'} size={16} />
-                </div>
-                <div className="project-card-body">
-                  <div>
-                    <h3>{a.name}</h3>
-                    <Icon name="arrow" size={17} />
-                  </div>
-                  <p>{a.description || (a.git ? a.git.repo_url : 'Ready for your next idea')}</p>
-                  <footer>
-                    <StatusPill status={a.current_sandbox_id ? status[a.id] || 'loading' : 'not started'} />
-                    <span>{a.runtime_preset || (a.git ? 'Imported project' : 'App workspace')}</span>
-                  </footer>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
       <div className="capability-strip">
         <span>
           <Icon name="monitor" />
