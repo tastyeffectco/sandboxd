@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { c, font, mono } from './design/kit'
+import { c, font } from './design/kit'
+import { lookFor } from './design/Bot'
 import { BrainNode, BrainEdge } from './brain'
 
 // Obsidian-style knowledge graph, hand-rolled: a small deterministic force
@@ -69,6 +70,15 @@ export function BrainGraph({ nodes, edges, onOpen }: { nodes: BrainNode[]; edges
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} data-testid="brain-graph" role="img" aria-label="Knowledge graph of project brains">
+      <defs>
+        <filter id="brain-glow" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="4" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
       {edges.map((e, i) => {
         const A = pos.get(e.from), B = pos.get(e.to)
         if (!A || !B) return null
@@ -81,6 +91,8 @@ export function BrainGraph({ nodes, edges, onOpen }: { nodes: BrainNode[]; edges
         const r = node.kind === 'concept' ? 6 : node.kind === 'spoke' ? 6.5 : node.empty ? 7 : Math.min(13, 8 + node.lines / 40)
         const clickable = node.kind !== 'concept' && !!node.appId
         const stroke = isErr ? c.warn : node.empty ? c.muted2 : node.kind === 'spoke' ? c.muted : c.ink
+        // An app glows in its project's bot colour.
+        const glow = node.kind === 'app' && !node.empty ? lookFor(node.label).hi : undefined
         return (
           <g key={node.id}
             onMouseEnter={() => setHover(node.id)} onMouseLeave={() => setHover(null)}
@@ -88,13 +100,14 @@ export function BrainGraph({ nodes, edges, onOpen }: { nodes: BrainNode[]; edges
             style={{ cursor: clickable ? 'pointer' : 'default' }}
             opacity={active(node.id) ? 1 : 0.3}>
             <circle cx={p.x} cy={p.y} r={r}
-              fill={node.empty ? 'transparent' : node.kind === 'spoke' ? c.muted : c.ink}
+              fill={node.empty ? 'transparent' : glow || (node.kind === 'spoke' ? c.muted : c.ink)}
+              filter={glow ? 'url(#brain-glow)' : undefined}
               stroke={stroke}
               strokeWidth={node.empty ? 1.2 : node.kind === 'spoke' ? 0 : 0}
               strokeDasharray={node.empty ? '3 3' : undefined}
               style={{ transition: 'opacity .15s ease' }} />
             <text x={p.x} y={p.y + r + 13} textAnchor="middle"
-              style={{ fontFamily: font.mono, fontSize: node.kind === 'app' ? 10.5 : 9.5, fill: node.empty ? (isErr ? c.warn : c.muted2) : node.kind === 'spoke' ? c.muted : c.fg, userSelect: 'none' }}>
+              style={{ fontFamily: font.sans, fontSize: node.kind === 'app' ? 12 : 10.5, fontWeight: node.kind === 'app' ? 600 : 400, fill: node.empty ? (isErr ? c.warn : c.muted2) : node.kind === 'spoke' ? c.muted : c.fg, userSelect: 'none' }}>
               {node.label.length > 22 ? node.label.slice(0, 21) + '…' : node.label}
             </text>
           </g>

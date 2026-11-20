@@ -685,14 +685,19 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
 
   return (
     <div className="content-page">
-      <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 6px' }}>
-        Project memory
-      </h1>
-      <p style={{ color: c.muted, margin: '0 0 24px', maxWidth: 600 }}>
-        Every project's memory in one place — state, decisions, gotchas. Each app's{' '}
-        <span style={{ ...mono, fontSize: 12 }}>BRAIN.md</span> is read by the agent before every task and
-        updated as it learns.
-      </p>
+      <header className="page-hero">
+        <div className="page-hero-text">
+          <span className="eyebrow">What your crew remembers</span>
+          <h1>Project memory</h1>
+          <p>
+            Every project's memory in one place: its state, decisions and lessons. Each app's{' '}
+            <code>BRAIN.md</code> is read by its agent before every task and updated as it learns.
+          </p>
+        </div>
+        <div className="page-hero-crew" aria-hidden="true">
+          <Bot who="sandboxd" mood="thinking" size={84} />
+        </div>
+      </header>
 
       {apps.length === 0 && (
         <p style={{ color: c.muted2 }}>Your project notes and decisions will appear here as you build.</p>
@@ -707,10 +712,10 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
         if (g.edges.length === 0 && g.nodes.every((n) => n.empty)) return null
         return (
           <>
-            <Card style={{ padding: '8px 10px', marginBottom: 22 }}>
+            <Card className="brain-graph-card" style={{ padding: '8px 10px', marginBottom: 22 }}>
               <BrainGraph nodes={g.nodes} edges={g.edges} onOpen={onOpen} />
               <div
-                style={{ ...mono, fontSize: 10.5, color: c.muted2, textAlign: 'center', paddingBottom: 6 }}
+                style={{ fontSize: 12, color: c.muted2, textAlign: 'center', paddingBottom: 8 }}
               >
                 Link projects &amp; concepts from any brain with [[name]] — dashed nodes have no note yet ·
                 err-* concepts flag repeat mistakes.
@@ -762,78 +767,38 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
         )
       })()}
 
-      <div
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}
-        data-testid="brain-list"
-      >
+      <div className="brain-list" data-testid="brain-list">
         {withBrain.map((a) => {
           const b = brains[a.id] as AppBrain
           const md = b.hub || ''
           const spokeCount = Object.keys(b.spokes).length
           const excerpt = brainExcerpt(md)
           return (
-            <Card key={a.id} style={{ padding: 16, cursor: 'pointer' }}>
-              <div className="dc-hoverborder" onClick={() => onOpen(a.id)} data-testid="brain-card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span
-                    style={{
-                      ...mono,
-                      fontWeight: 500,
-                      fontSize: 14,
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {a.name}
-                  </span>
-                  <span style={{ ...mono, fontSize: 10, color: c.muted2 }}>
-                    {md.split('\n').length} lines
-                    {spokeCount > 0 ? ` · ${spokeCount} note${spokeCount > 1 ? 's' : ''}` : ''}
-                  </span>
-                </div>
-                <div style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.5, minHeight: 38 }}>
-                  {excerpt || <i style={{ color: c.muted2 }}>No current state written yet.</i>}
-                </div>
-                <div style={{ marginTop: 10, color: c.link, fontSize: 12 }}>Open brain →</div>
-              </div>
-            </Card>
+            <button key={a.id} className="brain-card" onClick={() => onOpen(a.id)} data-testid="brain-card">
+              <header>
+                <Bot who={a.name} size={30} still />
+                <strong>{a.name}</strong>
+                <small>
+                  {md.split('\n').length} lines
+                  {spokeCount > 0 ? ` · ${spokeCount} note${spokeCount > 1 ? 's' : ''}` : ''}
+                </small>
+              </header>
+              <p>{excerpt || <i>No current state written yet.</i>}</p>
+              <span className="text-button">Open brain →</span>
+            </button>
           )
         })}
       </div>
 
       {without.length > 0 && (
-        <div style={{ marginTop: 26 }}>
-          <div
-            style={{
-              fontFamily: font.display,
-              fontWeight: 700,
-              fontSize: 13,
-              color: c.muted,
-              marginBottom: 10,
-            }}
-          >
-            No brain yet
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="brain-without">
+          <h2>No brain yet</h2>
+          <div>
             {without.map((a) => (
-              <span
-                key={a.id}
-                onClick={() => onOpen(a.id)}
-                className="dc-hoverborder"
-                style={{
-                  ...mono,
-                  fontSize: 12,
-                  color: c.muted,
-                  border: `1px solid ${c.border}`,
-                  borderRadius: 7,
-                  padding: '5px 11px',
-                  cursor: 'pointer',
-                }}
-              >
-                {a.name} +
-              </span>
+              <button key={a.id} className="chip" onClick={() => onOpen(a.id)}>
+                <Bot who={a.name} size={18} still mood="sleeping" />
+                {a.name}
+              </button>
             ))}
           </div>
         </div>
