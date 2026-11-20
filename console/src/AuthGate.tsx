@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from './api'
 import { c, font, Btn, Input, H } from './design/kit'
+import { Bot } from './design/Bot'
 
 // Full-page centered auth screens shown before the app when a session is required.
 // Both are minimal single-card forms; Enter submits, errors render inline.
@@ -9,24 +10,30 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="auth-page">
       <aside className="auth-story">
-        <div className="auth-brand">◇ sandboxd</div>
+        <div className="auth-brand">
+          <Bot who="sandboxd" size={30} still /> sandboxd
+        </div>
         <div>
-          <span className="eyebrow">YOUR IDEAS. YOUR INFRASTRUCTURE.</span>
+          <div className="welcome-crew" aria-hidden="true">
+            <Bot who="hermes" size={60} className="crew-l1" />
+            <Bot who="sandboxd" size={116} mood="happy" className="crew-lead" />
+            <Bot who="opencode" size={60} className="crew-r1" />
+            <span className="crew-floor" />
+          </div>
+          <span className="eyebrow">Welcome back</span>
           <h1>
-            From a spark
-            <br />
-            to something real.
+            Your <span className="sbx-grad-text">AI crew</span> is waiting.
           </h1>
-          <p>A place to build, experiment and make it yours. Your code, your models, your workspace.</p>
+          <p>Describe an app in your own words. Your crew builds it, runs it and keeps it on your own server.</p>
           <div className="auth-capabilities">
             <span>
               01 <b>Describe your idea</b>
             </span>
             <span>
-              02 <b>Build alongside your agent</b>
+              02 <b>Watch your crew build it</b>
             </span>
             <span>
-              03 <b>Preview. Refine. Repeat.</b>
+              03 <b>Preview, refine, share</b>
             </span>
           </div>
         </div>
@@ -34,7 +41,9 @@ function Shell({ children }: { children: React.ReactNode }) {
       </aside>
       <main className="auth-form">
         <div className="auth-form-inner">
-          <div className="auth-mobile-brand">◇ sandboxd</div>
+          <div className="auth-mobile-brand">
+            <Bot who="sandboxd" size={28} still /> sandboxd
+          </div>
           {children}
         </div>
       </main>

@@ -155,37 +155,6 @@
     radial-gradient(420px 320px at 0% 100%, rgba(255, 122, 89, 0.12), transparent 70%),
     var(--bg-2);
 }
-.desktop-crew {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  height: 160px;
-  margin-bottom: 26px;
-}
-.desktop-crew .bot {
-  position: relative;
-  z-index: 1;
-  animation: sbx-pop 0.8s var(--spring) both;
-}
-.desktop-crew .crew-l1,
-.desktop-crew .crew-r1 {
-  margin-bottom: 10px;
-  animation-delay: 0.18s;
-}
-.desktop-crew .crew-l1 .bot-body {
-  animation-delay: -1.4s;
-}
-.desktop-crew .crew-r1 .bot-body {
-  animation-delay: -2.6s;
-}
-.desktop-crew .crew-lead {
-  filter: drop-shadow(0 20px 34px rgba(155, 123, 255, 0.45));
-}
-.desktop-crew .crew-floor {
-  left: 130px;
-  width: 340px;
-}
 .desktop-welcome-story h1 {
   font: 650 clamp(40px, 4.6vw, 60px) / 1.02 var(--display);
   letter-spacing: -2px;
@@ -450,7 +419,7 @@
   }
 }
 @media (max-height: 760px) {
-  .desktop-crew {
+  .welcome-crew {
     height: 120px;
     margin-bottom: 14px;
   }

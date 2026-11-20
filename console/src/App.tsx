@@ -643,33 +643,10 @@ export default function App({
 
       {/* TOASTS */}
       {toasts.length > 0 && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 80,
-            right: 20,
-            zIndex: 99,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
+        <div className="toast-stack">
           {toasts.map((t) => (
-            <div
-              role="status"
-              key={t.id}
-              style={{
-                background: c.ink,
-                color: '#fff',
-                borderRadius: 8,
-                padding: '10px 16px',
-                fontSize: 12.5,
-                boxShadow: '0 8px 24px rgba(0,0,0,.18)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div role="status" key={t.id} className="toast">
+              <Bot who="sandboxd" mood="happy" size={26} still />
               {t.msg}
             </div>
           ))}

@@ -126,7 +126,7 @@ export default function DesktopHost() {
         ) : (
           <div className="desktop-welcome">
             <aside className="desktop-welcome-story">
-              <div className="desktop-crew" aria-hidden="true">
+              <div className="welcome-crew" aria-hidden="true">
                 <Bot who="hermes" size={64} className="crew-l1" />
                 <Bot who="sandboxd" size={124} mood="happy" className="crew-lead" />
                 <Bot who="opencode" size={64} className="crew-r1" />
