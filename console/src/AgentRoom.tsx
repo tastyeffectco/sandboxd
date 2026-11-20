@@ -3,6 +3,7 @@ import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep, ModelP
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
 import { StatusPill } from './design/kit'
+import { Bot, moodFor } from './design/Bot'
 
 // One agent's own window: one continuous conversation, like a chat in Telegram.
 // The engine keeps the thread and writes replies itself, so closing this
@@ -243,7 +244,6 @@ export function AgentRoom({
   }
 
   const lastUser = [...(messages || [])].reverse().find((m) => m.role === 'user')
-  const initial = agent.name.slice(0, 1).toUpperCase()
   return (
     <section
       className={dragging ? 'agent-room dragging' : 'agent-room'}
@@ -265,7 +265,7 @@ export function AgentRoom({
     >
       <header className="agent-room-header">
         <span className="agent-avatar" aria-hidden="true">
-          {initial}
+          <Bot who={agent.package} mood={moodFor(agent.status, working)} size={52} />
         </span>
         <div className="agent-room-title">
           <h1>{agent.name}</h1>
@@ -363,7 +363,7 @@ export function AgentRoom({
         {messages?.length === 0 && (
           <div className="agent-room-empty">
             <span className="agent-avatar large" aria-hidden="true">
-              {initial}
+              <Bot who={agent.package} mood={running ? 'happy' : moodFor(agent.status)} size={120} />
             </span>
             <h2>Chat with {agent.name}</h2>
             <p>
@@ -396,7 +396,15 @@ export function AgentRoom({
           ) : (
             <div key={m.id} className="bubble-row">
               <span className="agent-avatar small" aria-hidden="true">
-                {initial}
+                {/* One face per run of replies, on the last one (as in messaging apps). */}
+                {messages?.[i + 1]?.role !== m.role && (
+                  <Bot
+                    who={agent.package}
+                    mood={m.state === 'working' ? 'working' : m.state === 'error' ? 'error' : 'idle'}
+                    size={34}
+                    still={i < (messages?.length || 0) - 1}
+                  />
+                )}
               </span>
               <div className="bubble theirs" data-testid="agent-reply">
                 {m.channel === 'agent' && (

@@ -4,6 +4,7 @@ import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentP
 import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
+import { Bot } from './design/Bot'
 import { AgentMessage } from './AgentMessage'
 import { Dialog } from './design/Dialog'
 
@@ -222,7 +223,7 @@ export function AgentChat({
     <section className="agent-chat" aria-label="Build conversation">
       <header className="chat-heading">
         <span className="agent-avatar">
-          <Icon name="spark" size={17} />
+          <Bot who={assistant ? 'sandboxd' : choice.agent || 'opencode'} mood={active ? 'working' : 'idle'} size={42} />
         </span>
         <div>
           <strong>
