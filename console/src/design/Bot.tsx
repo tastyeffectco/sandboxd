@@ -55,6 +55,7 @@ export function Bot({
   size?: number
   // No idle motion (lists with many bots).
   still?: boolean
+  // Announce the bot to screen readers with this text; otherwise it is decorative.
   title?: string
   style?: CSSProperties
   className?: string
@@ -68,8 +69,10 @@ export function Bot({
       viewBox="0 0 120 120"
       width={size}
       height={size}
-      role="img"
-      aria-label={title || `${who} bot`}
+      // Decorative next to a name (the usual case); a titled bot is announced.
+      role={title ? 'img' : undefined}
+      aria-label={title}
+      aria-hidden={title ? undefined : true}
       className={`bot bot-${mood} ${still ? 'bot-still' : ''} ${className || ''}`}
       style={style}
     >

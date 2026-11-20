@@ -98,7 +98,7 @@ async function main() {
     page.on('pageerror', (error) => errors.push(error.message))
     const origin = `http://127.0.0.1:${engine.address().port}`
     // Windows offers its own engine setup; other platforms connect to an existing engine.
-    const welcome = process.platform === 'win32' ? 'Let’s set up your studio.' : 'Connect your engine.'
+    const welcome = process.platform === 'win32' ? 'Let’s get your crew ready.' : 'Connect your engine.'
     await expect(page.getByRole('heading', { name: welcome })).toBeVisible()
     await page.screenshot({ path: path.join(output, 'welcome.png') })
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(880, 640))
@@ -106,7 +106,7 @@ async function main() {
     assert(
       await page.evaluate(() => {
         const story = document.querySelector('.desktop-welcome-story').getBoundingClientRect()
-        const footer = document.querySelector('.desktop-welcome-story > small').getBoundingClientRect()
+        const footer = document.querySelector('.desktop-welcome-story > :last-child').getBoundingClientRect()
         return footer.bottom <= story.bottom && document.documentElement.scrollWidth <= window.innerWidth
       }),
       'Welcome content must fit the minimum window',

@@ -73,7 +73,7 @@ async function main() {
     const context = browser.contexts()[0]
     const page = context.pages()[0] || (await context.waitForEvent('page'))
     // Windows offers its own engine setup; other platforms connect to an existing engine.
-    const welcome = process.platform === 'win32' ? 'Let’s set up your studio.' : 'Connect your engine.'
+    const welcome = process.platform === 'win32' ? 'Let’s get your crew ready.' : 'Connect your engine.'
     await expect(page.getByRole('heading', { name: welcome })).toBeVisible({ timeout: 15000 })
     if (process.platform === 'win32') await expect(page.getByTestId('desktop-install-engine')).toBeVisible()
     if ((await page.evaluate(() => typeof require)) !== 'undefined')
