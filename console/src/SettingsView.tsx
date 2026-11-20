@@ -2,6 +2,7 @@ import { AccountModelSelect } from './AccountModelSelect'
 import { useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, alpha, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
+import { Bot } from './design/Bot'
 import { Icon } from './design/Icon'
 import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
@@ -172,10 +173,17 @@ export function SettingsView({
   const selected = SECTIONS.find((p) => p.id === section)!
   return (
     <div className="settings-page">
-      <header className="page-heading">
-        <div className="eyebrow">YOUR WORKSPACE, YOUR WAY</div>
-        <h1>Settings</h1>
-        <p>Connect your tools. Choose your models. Stay in control.</p>
+      <header className="page-hero">
+        <div className="page-hero-text">
+          <span className="eyebrow">Your workspace, your way</span>
+          <h1>Settings</h1>
+          <p>Connect your tools. Choose your models. Stay in control.</p>
+        </div>
+        <div className="page-hero-crew" aria-hidden="true">
+          <Bot who="opencode" size={58} still />
+          <Bot who="sandboxd" size={78} />
+          <Bot who="codex" size={58} still />
+        </div>
       </header>
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
@@ -218,7 +226,9 @@ export function SettingsView({
                 {agents.map((a) => (
                   <article className="agent-account" data-testid={`agent-${a.id}`} key={a.id}>
                     <div className="agent-account-header">
-                      <span className="account-mark">{a.label.slice(0, 1)}</span>
+                      <span className="account-mark">
+                        <Bot who={a.id} size={40} still />
+                      </span>
                       <div>
                         <h3>{a.label}</h3>
                         <p>

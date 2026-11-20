@@ -1542,29 +1542,32 @@ hr {
 .settings-nav > button {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 11px;
   text-align: left;
   border: 0;
   background: none;
   color: var(--muted);
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
 }
 .settings-nav > button.active {
-  background: var(--accent-soft);
-  color: var(--ink);
+  background: linear-gradient(90deg, rgba(155, 123, 255, 0.18), rgba(155, 123, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(155, 123, 255, 0.25);
+  color: var(--fg);
 }
 .settings-nav strong {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   display: block;
 }
 .settings-nav small {
   display: block;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted-2);
-  margin-top: 5px;
-  line-height: 1.5;
+  margin-top: 4px;
+  line-height: 1.45;
 }
 .settings-content {
   min-width: 0;
@@ -1624,13 +1627,9 @@ hr {
 .account-mark {
   display: grid;
   place-items: center;
-  font: 500 17px var(--display);
-  background: var(--panel-3);
-  border: 1px solid var(--border);
-  color: var(--link);
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
+  width: 44px;
+  height: 44px;
+  flex: none;
 }
 .agent-account-actions {
   display: flex;
@@ -3542,4 +3541,8 @@ select.agent-model {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.settings-nav > button:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
 }
