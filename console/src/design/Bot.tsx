@@ -36,7 +36,11 @@ export function lookFor(key: string): BotLook {
   let h = 0
   for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   const hue = h % 360
-  return { hi: `hsl(${hue} 90% 76%)`, lo: `hsl(${(hue + 18) % 360} 62% 42%)`, glow: `hsl(${hue} 100% 94%)` }
+  return {
+    hi: `hsl(${hue} 90% 76%)`,
+    lo: `hsl(${(hue + 18) % 360} 62% 42%)`,
+    glow: `hsl(${hue} 100% 94%)`,
+  }
 }
 
 export function Bot({
@@ -46,6 +50,7 @@ export function Bot({
   size = 40,
   still = false,
   title,
+  hue = 0,
   style,
   className,
 }: {
@@ -57,6 +62,8 @@ export function Bot({
   still?: boolean
   // Announce the bot to screen readers with this text; otherwise it is decorative.
   title?: string
+  // Turn the colour wheel (degrees): a second Hermes is the same bot in another colour.
+  hue?: number
   style?: CSSProperties
   className?: string
 }) {
@@ -74,7 +81,7 @@ export function Bot({
       aria-label={title}
       aria-hidden={title ? undefined : true}
       className={`bot bot-${mood} ${still ? 'bot-still' : ''} ${className || ''}`}
-      style={style}
+      style={hue ? { ...style, filter: `hue-rotate(${hue}deg)` } : style}
     >
       <defs>
         <linearGradient id={`b${id}`} x1="0" y1="0" x2="1" y2="1">
@@ -147,7 +154,14 @@ export function Bot({
         <rect x="15.5" y="22.5" width="89" height="79" rx="25.5" fill="none" stroke="#fff" strokeOpacity=".28" />
         {/* visor */}
         <rect x="26" y="40" width="68" height="44" rx="17" fill={`url(#v${id})`} />
-        <path d="M33 47 Q44 42 60 43" stroke="#fff" strokeOpacity=".16" strokeWidth="3" strokeLinecap="round" fill="none" />
+        <path
+          d="M33 47 Q44 42 60 43"
+          stroke="#fff"
+          strokeOpacity=".16"
+          strokeWidth="3"
+          strokeLinecap="round"
+          fill="none"
+        />
         {/* face */}
         <g className="bot-face" filter={`url(#g${id})`} fill={eye} stroke={eye}>
           {mood === 'happy' && (
@@ -205,4 +219,15 @@ export function moodFor(status?: string, working = false): BotMood {
   if (status === 'starting' || status === 'creating' || status === 'waking' || status === 'pulling') return 'thinking'
   if (status === 'error' || status === 'failed') return 'error'
   return 'sleeping'
+}
+
+// Several agents of one kind (two Hermes) look alike but not the same: the
+// first keeps its colours, each next one turns the colour wheel further.
+export function agentHue(agents: { id: string; package: string }[], agent: { id: string; package: string }): number {
+  const same = agents
+    .filter((a) => a.package === agent.package)
+    .map((a) => a.id)
+    .sort()
+  const i = same.indexOf(agent.id)
+  return i > 0 ? (i * 67) % 360 : 0
 }

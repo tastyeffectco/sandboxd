@@ -3280,6 +3280,55 @@ select.agent-model {
   display: flex;
   gap: 8px;
 }
+.crew-members {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.crew-members li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.025);
+}
+.crew-members li > span {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.crew-members strong {
+  font-size: 14px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crew-members small {
+  font-size: 12px;
+  color: var(--muted-2);
+}
+.crew-add-another {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px dashed color-mix(in srgb, var(--crew) 45%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--crew) 6%, transparent);
+  animation: sbx-rise 0.3s var(--ease) both;
+}
+.crew-name-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted-2);
+}
+.crew-name-hint.bad {
+  color: #ffb3c1;
+}
 @media (max-width: 700px) {
   .crew-card {
     grid-template-columns: 1fr;

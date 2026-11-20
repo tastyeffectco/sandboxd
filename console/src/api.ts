@@ -416,6 +416,8 @@ export interface AgentAttachment {
 
 export interface AgentInstanceInput {
   package: string
+  // Shown in the sidebar; defaults to the agent's label.
+  name?: string
   connection_id: string
   model?: string
   telegram_bot_token?: string
