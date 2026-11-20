@@ -362,7 +362,9 @@ export default function App({
         <button className="icon-button" aria-label="Open navigation" onClick={() => setMobileNav(true)}>
           <Icon name="menu" />
         </button>
-        <strong>sandboxd</strong>
+        <strong>
+          <Bot who="sandboxd" size={24} still /> sandboxd
+        </strong>
         <button
           className="icon-button"
           aria-label="Search projects and commands"

@@ -1781,8 +1781,11 @@ hr {
     flex: none;
   }
   .mobile-bar strong {
-    font: 600 17px var(--display);
-    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 650 17px var(--display);
+    color: var(--fg);
     flex: 1;
   }
   .settings-layout {
