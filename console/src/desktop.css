@@ -138,7 +138,7 @@
 /* First-run welcome: the crew on the left, setup on the right. */
 .desktop-welcome {
   display: grid;
-  grid-template-columns: minmax(380px, 1fr) minmax(420px, 1.05fr);
+  grid-template-columns: minmax(340px, 1fr) minmax(400px, 1.05fr);
   height: 100%;
   overflow: auto;
 }
@@ -408,9 +408,10 @@
   color: var(--muted);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .desktop-welcome {
     grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
   }
   .desktop-welcome-story {
     border-right: 0;
@@ -418,7 +419,13 @@
     padding: 32px;
   }
 }
-@media (max-height: 760px) {
+@media (max-height: 760px), (max-width: 960px) {
+  .desktop-welcome-story {
+    padding: 32px 36px;
+  }
+  .desktop-connect-page {
+    padding: 32px 36px;
+  }
   .welcome-crew {
     height: 120px;
     margin-bottom: 14px;
