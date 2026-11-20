@@ -28,6 +28,7 @@
     "files": [
       "src/**",
       "ui/**",
+      "ui-web/**",
       "package.json"
     ],
     "asar": true,

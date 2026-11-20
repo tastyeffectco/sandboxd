@@ -344,3 +344,62 @@ test('the gateway reuses its port so agent apps keep their address, or takes a f
   const third = await fixture(t, undefined, { port: free })
   assert.equal(Number(new URL(third.gateway.origin).port), free)
 })
+test('the browser gets in only through a one-time link, and then sees the web console', async (t) => {
+  const webRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sandboxd-web-'))
+  await fs.writeFile(path.join(webRoot, 'index.html'), '<h1>Web console</h1>')
+  t.after(() => fs.rm(webRoot, { recursive: true }))
+  const seen = []
+  const { gateway } = await fixture(
+    t,
+    (req, res) => {
+      seen.push(req.headers.cookie || '')
+      res.end('{"ok":true}')
+    },
+    { browserRoot: webRoot, browserKey: 'a'.repeat(64), session: 'engine-session' },
+  )
+  // A browser has no capability header: it only sends what it is given.
+  const browser = (route, headers = {}) =>
+    new Promise((resolve, reject) => {
+      http
+        .get(gateway.origin + route, { headers }, (response) => {
+          let body = ''
+          response.on('data', (d) => (body += d))
+          response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body }))
+        })
+        .on('error', reject)
+    })
+  assert.equal((await browser('/')).status, 403)
+  assert.equal((await browser('/v1/apps', { cookie: `sbx_desktop=${'b'.repeat(64)}` })).status, 403)
+  assert.equal((await browser('/open-in-browser?code=guess')).status, 403)
+
+  const link = new URL(gateway.browserLink())
+  // A page elsewhere cannot spend the code for the person.
+  assert.equal((await browser(link.pathname + link.search, { 'sec-fetch-site': 'cross-site' })).status, 403)
+  const fresh = new URL(gateway.browserLink())
+  const opened = await browser(fresh.pathname + fresh.search, { 'sec-fetch-site': 'none' })
+  assert.equal(opened.status, 302)
+  assert.equal(opened.headers.location, '/')
+  const cookie = opened.headers['set-cookie'][0]
+  assert.match(cookie, /HttpOnly/)
+  assert.match(cookie, /SameSite=Strict/)
+  // Used once.
+  assert.equal((await browser(fresh.pathname + fresh.search)).status, 403)
+
+  const jar = cookie.split(';')[0]
+  const page = await browser('/', { cookie: jar })
+  assert.equal(page.status, 200)
+  assert.match(page.body, /Web console/)
+  const api = await browser('/v1/apps', { cookie: jar, origin: gateway.origin })
+  assert.equal(api.status, 200)
+  // The engine sees the app's own login, never the browser's cookie.
+  assert.deepEqual(seen, ['sbx_session=engine-session'])
+  // Other local sites are still refused, even with the cookie.
+  assert.equal((await browser('/v1/apps', { cookie: jar, origin: 'http://127.0.0.1:3000' })).status, 403)
+  assert.equal((await browser('/v1/apps', { cookie: jar, 'sec-fetch-site': 'same-site' })).status, 403)
+})
+
+test('without a web console bundled, there is no browser link', async (t) => {
+  const { gateway, request } = await fixture(t)
+  assert.throws(() => gateway.browserLink())
+  assert.equal((await request('/open-in-browser?code=x', { 'x-sandboxd-desktop': '' })).status, 403)
+})

@@ -117,6 +117,19 @@ async function signInManaged(url) {
     return sessionFor(url)
   }
 }
+// The key a browser on this computer keeps after "Open in Browser", saved so
+// its bookmark keeps working after the app restarts.
+async function browserKey() {
+  const file = path.join(app.getPath('userData'), 'browser-key')
+  const saved = (await fs.readFile(file, 'utf8').catch(() => '')).trim()
+  if (/^[0-9a-f]{64}$/.test(saved)) return saved
+  const key = require('node:crypto').randomBytes(32).toString('hex')
+  await fs.writeFile(file, key, { mode: 0o600 }).catch(() => {})
+  return key
+}
+function openInBrowser() {
+  if (gateway) void shell.openExternal(gateway.browserLink()).catch(() => {})
+}
 async function openExternal(value) {
   const url = externalURL(value)
   if (url) await shell.openExternal(url)
@@ -271,6 +284,8 @@ async function start() {
   gateway = await createGateway({
     port: savedPort >= 1024 && savedPort < 65536 ? savedPort : 0,
     uiRoot: path.join(__dirname, '../ui'),
+    browserRoot: path.join(__dirname, '../ui-web'),
+    browserKey: await browserKey(),
     engine: config.selected,
     session: sessionFor(config.selected),
     onSession: rememberSession,
@@ -435,6 +450,10 @@ async function start() {
     window?.focus()
     return result
   })
+  ipcMain.handle('desktop:open-in-browser', (event) => {
+    trusted(event)
+    openInBrowser()
+  })
   ipcMain.handle('desktop:external', async (event, url) => {
     trusted(event)
     await openExternal(url)
@@ -467,6 +486,11 @@ async function start() {
             label: 'Quick Search',
             accelerator: 'CmdOrCtrl+K',
             click: () => window?.webContents.send('desktop:search'),
+          },
+          {
+            label: 'Open in Browser',
+            accelerator: 'CmdOrCtrl+Shift+B',
+            click: openInBrowser,
           },
           { type: 'separator' },
           { role: 'resetZoom' },

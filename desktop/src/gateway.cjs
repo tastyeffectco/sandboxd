@@ -27,6 +27,11 @@ const equal = (a, b) =>
 // capability header injected by Electron, and upstream login cookies stay here.
 async function createGateway({
   uiRoot,
+  // The web console, for "Open in browser"; served only to a browser that
+  // came in through a one-time link from this app.
+  browserRoot = '',
+  // Kept across launches so a bookmark keeps working while the app runs.
+  browserKey = randomBytes(32).toString('hex'),
   engine = '',
   session = '',
   onSession = () => {},
@@ -51,14 +56,23 @@ async function createGateway({
   const sockets = new Set()
   const terminals = new Set()
   const root = path.resolve(uiRoot)
+  const webRoot = browserRoot ? path.resolve(browserRoot) : ''
+  // One-time codes for the link that lets this computer's browser in.
+  const codes = new Map()
+  const browserCookie = (request) =>
+    /(?:^|;\s*)sbx_desktop=([0-9a-f]{64})(?:;|$)/.exec(request.headers.cookie || '')?.[1]
+  // 'app' for the desktop window, 'browser' for this computer's browser
+  // after it opened the link, '' for anyone else.
   const authorized = (request) => {
-    return (
-      request.headers.host === host &&
-      equal(request.headers['x-sandboxd-desktop'], token) &&
-      (!request.headers.origin || request.headers.origin === origin) &&
-      (!request.headers['sec-fetch-site'] ||
-        ['same-origin', 'none'].includes(request.headers['sec-fetch-site']))
+    if (
+      request.headers.host !== host ||
+      (request.headers.origin && request.headers.origin !== origin) ||
+      (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))
     )
+      return ''
+    if (equal(request.headers['x-sandboxd-desktop'], token)) return 'app'
+    if (webRoot && equal(browserCookie(request), browserKey)) return 'browser'
+    return ''
   }
   // An agent's own app (OpenClaw's Control panel) gets a private origin per
   // agent, ui-<id>.localhost on this port, so its scripts can reach only
@@ -199,20 +213,38 @@ async function createGateway({
       if (!authorizedAgent(request, agent)) return error(response, 403, 'This connection belongs to the desktop app.')
       return forward(request, response, agent)
     }
-    if (!authorized(request)) return error(response, 403, 'This connection belongs to the desktop app.')
     let url
     try {
       url = new URL(request.url, origin)
     } catch {
       return error(response, 400, 'Invalid URL.')
     }
+    // The link the app opens in the browser: trade its one-time code for a
+    // cookie only this site can send, then show the console.
+    if (url.pathname === '/open-in-browser' && webRoot && request.method === 'GET' && request.headers.host === host) {
+      const code = url.searchParams.get('code') || ''
+      const expires = codes.get(code)
+      codes.delete(code)
+      if (!expires || expires < Date.now() || (request.headers['sec-fetch-site'] || 'none') !== 'none') {
+        response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+        return response.end('This link was already used or is too old. In the sandboxd app, choose View → Open in Browser.')
+      }
+      response.writeHead(302, {
+        location: '/',
+        'set-cookie': `sbx_desktop=${browserKey}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
+      })
+      return response.end()
+    }
+    const kind = authorized(request)
+    if (!kind) return error(response, 403, 'This connection belongs to the desktop app.')
     if (url.pathname.startsWith('/v1/')) return forward(request, response)
     if (!['GET', 'HEAD'].includes(request.method)) return error(response, 405, 'Method not allowed.')
     try {
       const decoded = decodeURIComponent(url.pathname)
       const relative = decoded === '/' ? 'index.html' : decoded.slice(1)
-      const filename = path.resolve(root, relative)
-      if (!filename.startsWith(root + path.sep)) return error(response, 404, 'Not found.')
+      const base = kind === 'browser' ? webRoot : root
+      const filename = path.resolve(base, relative)
+      if (!filename.startsWith(base + path.sep)) return error(response, 404, 'Not found.')
       const body = await fs.readFile(filename)
       response.setHeader('content-type', MIME[path.extname(filename)] || 'application/octet-stream')
       response.end(request.method === 'HEAD' ? undefined : body)
@@ -281,6 +313,15 @@ async function createGateway({
   return {
     origin,
     authorization: { 'x-sandboxd-desktop': token },
+    // A one-time link that opens the web console in this computer's browser.
+    browserLink() {
+      if (!webRoot) throw new Error('This build has no web console.')
+      const now = Date.now()
+      for (const [code, expires] of codes) if (expires < now) codes.delete(code)
+      const code = randomBytes(24).toString('hex')
+      codes.set(code, now + 120000)
+      return `${origin}/open-in-browser?code=${code}`
+    },
     get engine() {
       return current
     },
