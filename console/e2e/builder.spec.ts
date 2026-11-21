@@ -476,6 +476,14 @@ test('the projects page builds new apps from an idea only', async ({ page }) => 
   await expect(page.getByTestId('build-prompt')).toHaveCount(1)
 })
 
+test('New project opens the build box from any page', async ({ page }) => {
+  await fixture(page, { empty: true })
+  await page.goto('/#/settings')
+  await page.getByTestId('sidebar-new-project').click()
+  await expect(page).toHaveURL(/#\/apps$/)
+  await expect(page.getByTestId('build-prompt')).toBeFocused()
+})
+
 test('API keys show once, preserve scopes and require confirmation to revoke', async ({ page }) => {
   const s = await fixture(page)
   await page.goto('/#/settings/access')
