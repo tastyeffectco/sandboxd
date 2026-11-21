@@ -471,9 +471,9 @@ test('the projects page builds new apps from an idea only', async ({ page }) => 
   await page.getByTestId('build-prompt').fill('A tiny habit tracker')
   await expect(page.getByTestId('build-app')).toBeEnabled()
   expect(s.calls.filter((c) => c.path === '/v1/apps' && c.method === 'POST')).toHaveLength(0)
-  // A first app is asked of sandboxd, on Home.
-  await page.getByRole('button', { name: 'Start your first app' }).click()
-  await expect(page).toHaveURL(/#\/assistant$/)
+  // No projects yet: one box to start from, no second "first app" card.
+  await expect(page.getByRole('button', { name: 'Start your first app' })).toHaveCount(0)
+  await expect(page.getByTestId('build-prompt')).toHaveCount(1)
 })
 
 test('API keys show once, preserve scopes and require confirmation to revoke', async ({ page }) => {

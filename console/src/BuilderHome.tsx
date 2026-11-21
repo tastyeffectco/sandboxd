@@ -4,7 +4,6 @@ import { api, App, Agent, Preset, ModelProvider } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
 import { CATALOG, catalogIdOf } from './catalog'
 import { Icon } from './design/Icon'
-import { Bot } from './design/Bot'
 import { Avatar } from './design/Avatar'
 import { ProjectIcon } from './design/ProjectIcon'
 import { Btn, Input, StatusPill } from './design/kit'
@@ -182,14 +181,8 @@ export function BuilderHome({
             />
           </label>
         </div>
-        {apps.length === 0 ? (
-          <div className="empty-projects">
-            <Bot who="sandboxd" size={72} mood="happy" />
-            <h3>A home for everything you build</h3>
-            <p>Your projects, live previews and conversations will appear here.</p>
-            <Btn onClick={() => (onAsk ? onAsk() : composer.current?.focus())}>Start your first app</Btn>
-          </div>
-        ) : filtered.length === 0 ? (
+        {/* No projects yet: the box below is the one way to start, as everywhere else. */}
+        {apps.length === 0 ? null : filtered.length === 0 ? (
           <p className="empty-state">No projects match “{query}”.</p>
         ) : (
           <div className="project-grid" data-testid="app-list">
@@ -223,8 +216,8 @@ export function BuilderHome({
         )}
       </section>
       <section className="build-hero build-yourself">
-        <h2>Start a project yourself</h2>
-        <p>Choose the stack and the coding agent, then describe it. Or simply ask sandboxd on Home.</p>
+        <h2>What should your crew build?</h2>
+        <p>Describe it in your own words. Your crew builds it and shows it to you here.</p>
         <div className="build-composer">
           <label className="sr-only" htmlFor="build-prompt">
             Describe your app
