@@ -219,20 +219,6 @@ hr {
   -webkit-text-fill-color: var(--muted-2);
   white-space: nowrap;
 }
-.sidebar-new {
-  border: 0;
-  background: var(--brand-grad);
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 13px;
-  border-radius: 12px;
-  font-weight: 600;
-  color: var(--on-accent);
-  box-shadow: 0 10px 30px -12px rgba(155, 123, 255, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  cursor: pointer;
-  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
-}
 .sidebar-search {
   display: flex;
   align-items: center;
@@ -3095,10 +3081,6 @@ select.agent-model {
 }
 .workspace-actions[hidden] {
   display: none;
-}
-.sidebar-new:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 34px -12px rgba(155, 123, 255, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .sidebar-search:hover {
   border-color: var(--border-2);

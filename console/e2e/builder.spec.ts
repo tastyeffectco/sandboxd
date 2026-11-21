@@ -253,51 +253,6 @@ async function fixture(
   return state
 }
 
-test('prompt-first creation waits for workspace and submits the selected stack, agent and model exactly once', async ({
-  page,
-}, info) => {
-  const s = await fixture(page, { empty: true })
-  await page.goto('/#/apps')
-  await page.getByTestId('build-prompt').fill('Build a studio planning app with a calendar and a task board')
-  await page.getByTestId('stack-toggle').click()
-  await page.getByTestId('preset-nextjs').click()
-  await page.getByRole('button', { name: 'OpenCode', exact: true }).click()
-  await page.getByTestId('task-agent').selectOption('pi')
-  await page.getByTestId('task-provider').selectOption('local')
-  await page.getByTestId('task-model').selectOption('team/fast')
-  await page.screenshot({ path: info.outputPath('builder-options.png') })
-  await page.getByTestId('build-app').click()
-  await expect(page.locator('.agent-message').filter({ hasText: 'Created your project.' })).toBeVisible()
-  expect(s.calls.find((c) => c.path === '/v1/apps')?.body.runtime_preset).toBe('nextjs')
-  const tasks = s.calls.filter((c) => c.path.endsWith('/tasks'))
-  expect(tasks).toHaveLength(1)
-  expect(tasks[0].body).toEqual({
-    prompt: 'Build a studio planning app with a calendar and a task board',
-    agent: 'pi',
-    provider: 'local',
-    model: 'team/fast',
-    continue: false,
-  })
-  await page.getByTestId('tab-files').click()
-  await expect(page.locator('.agent-message').filter({ hasText: 'Created your project.' })).toBeVisible()
-  await page.getByTestId('tab-overview').click()
-  await page.screenshot({ path: info.outputPath('workspace.png') })
-  expect(s.errors).toEqual([])
-})
-
-test('failed workspace creation keeps the original app and prompt for retry', async ({ page }) => {
-  const s = await fixture(page, { empty: true, failBoot: true })
-  await page.goto('/#/apps')
-  await page.getByTestId('build-prompt').fill('Build a portfolio')
-  await page.getByTestId('build-app').click()
-  await expect(page.getByRole('button', { name: 'Create workspace' })).toBeVisible()
-  await expect(page.getByTestId('task-prompt')).toHaveValue('Build a portfolio')
-  await page.getByRole('button', { name: 'Create workspace' }).click()
-  await expect(page.locator('.agent-message').filter({ hasText: 'Created your project.' })).toBeVisible()
-  expect(s.calls.filter((c) => c.path === '/v1/apps')).toHaveLength(1)
-  expect(s.calls.filter((c) => c.path.endsWith('/tasks'))).toHaveLength(1)
-})
-
 test('code edits survive switching panels and secrets are write-only with explicit rotation', async ({
   page,
 }, info) => {
@@ -386,7 +341,7 @@ test('mobile navigation, chat and configuration fit the viewport', async ({ page
   const s = await fixture(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/#/apps')
-  await expect(page.getByTestId('build-prompt')).toBeVisible()
+  await expect(page.getByTestId('app-card').first()).toBeVisible()
   await page.screenshot({ path: info.outputPath('home-mobile.png') })
   await page.getByTestId('app-card').click()
   await page.getByRole('button', { name: 'Chat', exact: true }).click()
@@ -402,13 +357,9 @@ test('mobile navigation, chat and configuration fit the viewport', async ({ page
   expect(s.errors).toEqual([])
 })
 
-test('home and conversation drafts survive a trip to Settings', async ({ page }) => {
+test('conversation drafts survive a trip to Settings', async ({ page }) => {
   const s = await fixture(page)
   await page.goto('/#/apps')
-  await page.getByTestId('build-prompt').fill('Make a beautiful recipe collection')
-  await page.getByTestId('nav-settings').click()
-  await page.getByTestId('nav-apps').click()
-  await expect(page.getByTestId('build-prompt')).toHaveValue('Make a beautiful recipe collection')
   await page.getByTestId('app-card').filter({ hasText: 'Studio planner' }).click()
   await page.getByTestId('task-prompt').fill('Add a shopping list')
   await page.getByTestId('nav-settings').click()
@@ -460,28 +411,15 @@ test('versions capture, restore and duplicate through explicit dialogs', async (
   expect(s.errors).toEqual([])
 })
 
-test('the projects page builds new apps from an idea only', async ({ page }) => {
+test('My apps lists apps only; new ones are asked of sandboxd on Home', async ({ page }) => {
   const s = await fixture(page, { empty: true })
   await page.goto('/#/apps')
-  for (const removed of ['Import from Git', 'Use a starter', 'Blank project', 'App library']) {
-    await expect(page.getByRole('button', { name: removed })).toHaveCount(0)
-  }
-  await expect(page.getByRole('link', { name: 'App library' })).toHaveCount(0)
-  await expect(page.getByTestId('build-app')).toBeDisabled()
-  await page.getByTestId('build-prompt').fill('A tiny habit tracker')
-  await expect(page.getByTestId('build-app')).toBeEnabled()
+  await expect(page.getByRole('heading', { name: /My apps/ })).toBeVisible()
+  await expect(page.getByTestId('build-prompt')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'New project' })).toHaveCount(0)
+  await page.getByTestId('apps-ask').click()
+  await expect(page).toHaveURL(/#\/assistant$/)
   expect(s.calls.filter((c) => c.path === '/v1/apps' && c.method === 'POST')).toHaveLength(0)
-  // No projects yet: one box to start from, no second "first app" card.
-  await expect(page.getByRole('button', { name: 'Start your first app' })).toHaveCount(0)
-  await expect(page.getByTestId('build-prompt')).toHaveCount(1)
-})
-
-test('New project opens the build box from any page', async ({ page }) => {
-  await fixture(page, { empty: true })
-  await page.goto('/#/settings')
-  await page.getByTestId('sidebar-new-project').click()
-  await expect(page).toHaveURL(/#\/apps$/)
-  await expect(page.getByTestId('build-prompt')).toBeFocused()
 })
 
 test('API keys show once, preserve scopes and require confirmation to revoke', async ({ page }) => {
