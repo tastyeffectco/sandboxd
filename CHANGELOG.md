@@ -6,6 +6,55 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
+## [0.3.27] — 2026-11-21
+
+* fix(desktop): pin the Windows engine to v0.3.26 (desktop 0.3.26) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/151
+* fix(desktop): engine updates go through (desktop 0.3.27) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/152
+* chore(daily): docs/desktop.md describes engine updates by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/154
+* chore(daily): fix two sandbox.yaml doc errors by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/156
+* chore(daily): plain-language Windows setup errors in the desktop by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/161
+* chore(daily): say "sandboxd" instead of "control plane" in model settings by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/163
+* chore(daily): plain-language runtime detection messages in the console by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/164
+* chore: pause Dependabot version-update PRs by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/165
+* chore(daily): desktop doc no longer says Dependabot covers Electron by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/166
+* chore(daily): test the unsaved-edits warning in the console by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/167
+* chore(daily): README no longer suggests App Store recipes by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/169
+* chore(daily): test when the agent picker blocks a build by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/170
+* chore(daily): test how the console's API client handles errors by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/171
+* chore(daily): plain-language engine address errors in the desktop by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/172
+* chore(daily): test which message each engine address mistake shows by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/174
+* chore(daily): docs name the current Settings sections by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/175
+* fix(agents): long tasks, reasoning models, and a real ready state by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/176
+* fix(console): short app names from the prompt by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/177
+* fix(console): plain next step when a build hits the time limit by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/178
+* feat(agents): own window per agent, one Telegram-style conversation kept by the engine by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/180
+* fix(desktop): restart the local engine when it stops while the app is open by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/181
+* chore(daily): test the Secrets & variables panel by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/183
+* chore(daily): test that the static demo stays read-only by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/185
+* feat(agents): agents' own apps, file attachments, OpenMausBot, model switching by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/182
+* fix(restore): a file that can't be chowned no longer fails restoring a version by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/188
+* feat: reliable agents, one-click free apps, and the core fixes they needed by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/184
+* docs: the sandboxd agent, one assistant for all apps and agents (draft for approval) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/186
+* feat: the sandboxd agent, one assistant for all apps and agents by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/187
+* docs: README and ARCHITECTURE for Free apps, agents, Ask sandboxd and the desktop by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/190
+* feat(codex): Codex can use OpenAI-compatible model connections (OpenRouter...) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/191
+* release: agents, Free apps and the sandboxd agent by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/189
+* chore(daily): docs say model connections work with Codex too by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/192
+* chore(daily): agent-auth doc mentions Codex on model connections by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/193
+* chore(daily): test that the assistant's guide names every tool by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/195
+* chore(daily): test that every preset ships its template and serves port 3000 by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/197
+* Add several agents of the same kind by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/199
+* feat: new look for the desktop app and console — the Boxbot crew (Product Hunt launch) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/198
+* Desktop: open the console in your browser by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/200
+* sandboxd as Home, chats stay at their end, real logos by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/201
+* chore(daily): fix runtimed socket path in runtime package comments by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/203
+* Rename & icon, app tiles, brand icon; sandboxd waits for its workspace by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/202
+* fix(desktop,console): first run without dead ends or jargon by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/205
+* fix(console): one box to start a project by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/206
+
+
+**Full Changelog**: https://github.com/tastyeffectco/sandboxd/compare/v0.3.26...v0.3.27
+
 ## [Unreleased]
 
 ### Fixed
