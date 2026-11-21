@@ -12,7 +12,7 @@ import { AgentRoom } from './AgentRoom'
 import { syncAgentTimeZone } from './timeZone'
 import { BrainGraph } from './BrainGraph'
 import { SettingsView } from './SettingsView'
-import { BuilderHome, BuilderDraft } from './BuilderHome'
+import { MyApps } from './MyApps'
 import { BuildIntent } from './AgentPicker'
 import { Dialog } from './design/Dialog'
 import { IS_DEMO } from './demo'
@@ -87,9 +87,7 @@ export default function App({
     routeRef.current = next
     setRouteState(next)
   }, [])
-  const [builderDraft, setBuilderDraft] = useState<BuilderDraft>()
   const [chatDrafts, setChatDrafts] = useState<Record<string, BuildIntent>>({})
-  const [pendingBuilds, setPendingBuilds] = useState<Record<string, BuildIntent>>({})
   const [mobileNav, setMobileNav] = useState(false)
   // Rename & icon, from the sidebar.
   const [editing, setEditing] = useState<{ app?: TApp; agent?: AgentInstance } | null>(null)
@@ -170,9 +168,7 @@ export default function App({
     refreshAuth()
     setOnUnauthorized(() => {
       setAuth((a) => (a ? { ...a, authenticated: false } : a))
-      setBuilderDraft(undefined)
       setChatDrafts({})
-      setPendingBuilds({})
     })
   }, [refreshAuth])
   useEffect(() => {
@@ -292,9 +288,7 @@ export default function App({
   }, [refreshAuth, loadApps])
   const logout = useCallback(() => {
     if (!confirmLeaveWorkspace()) return
-    setBuilderDraft(undefined)
     setChatDrafts({})
-    setPendingBuilds({})
     api.logout().finally(() => setAuth((a) => (a ? { ...a, authenticated: false } : a)))
   }, [])
 
@@ -323,24 +317,9 @@ export default function App({
     }
     setTimeout(focus, 0)
   }
-  // New project: the projects page, with the cursor in its build box, so
-  // something visibly happens wherever the person is (on Home, focusing
-  // sandboxd's box looked like nothing happened).
-  const newProject = () => {
-    setRoute({ name: 'apps' })
-    setMobileNav(false)
-    let tries = 0
-    const focus = () => {
-      const box = document.getElementById('build-prompt') as HTMLTextAreaElement | null
-      if (!box) return void (++tries < 40 && setTimeout(focus, 100))
-      box.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      box.focus()
-    }
-    setTimeout(focus, 0)
-  }
   const nav = [
     { key: 'assistant', label: 'Home', icon: 'spark' },
-    { key: 'apps', label: 'Projects', icon: 'grid' },
+    { key: 'apps', label: 'My apps', icon: 'grid' },
     { key: 'discover', label: 'Free apps', icon: 'spark' },
     { key: 'brain', label: 'Project memory', icon: 'book' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
@@ -422,10 +401,6 @@ export default function App({
               sandboxd<small>Your AI crew, on your machine</small>
             </strong>
           </button>
-          <button className="sidebar-new" onClick={newProject} data-testid="sidebar-new-project">
-            <Icon name="plus" size={18} />
-            <span>New project</span>
-          </button>
           <button className="sidebar-search" onClick={() => setPaletteOpen(true)}>
             <Icon name="search" size={16} />
             <span>Quick search</span>
@@ -493,7 +468,7 @@ export default function App({
             </button>
           </div>
           <div className="sidebar-projects">
-            <div className="sidebar-caption">RECENT PROJECTS</div>
+            <div className="sidebar-caption">RECENT APPS</div>
             {apps.slice(0, 7).map((a) => (
               <div className="sidebar-row" key={a.id}>
                 <button
@@ -567,15 +542,10 @@ export default function App({
           }
         >
           {route.name === 'apps' && (
-            <BuilderHome
-              onAsk={askSandboxd}
-              draft={builderDraft}
-              saveDraft={setBuilderDraft}
+            <MyApps
               apps={apps}
-              reload={loadApps}
+              onAsk={askSandboxd}
               onOpen={(id) => goApp(id)}
-              goSettings={() => setRoute({ name: 'settings' })}
-              goDiscover={() => setRoute({ name: 'discover' })}
               featured={
                 <TrendingStrip
                   apps={apps}
@@ -588,10 +558,6 @@ export default function App({
                   }}
                 />
               }
-              onCreated={(id, intent) => {
-                if (intent) setPendingBuilds((p) => ({ ...p, [id]: intent }))
-                goApp(id)
-              }}
             />
           )}
           {route.name === 'discover' && (
@@ -670,16 +636,8 @@ export default function App({
               key={route.id}
               appId={route.id}
               reloadApps={loadApps}
-              initialBuild={pendingBuilds[route.id]}
               chatDraft={chatDrafts[route.id]}
               saveChatDraft={(draft) => setChatDrafts((p) => ({ ...p, [route.id]: draft }))}
-              consumeBuild={() =>
-                setPendingBuilds((p) => {
-                  const next = { ...p }
-                  delete next[route.id]
-                  return next
-                })
-              }
               initialTab={route.tab}
               onError={onError}
               toast={toast}
@@ -899,7 +857,7 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
   const [selected, setSelected] = useState(0)
   const commands: { label: string; route: Route }[] = [
     { label: 'Ask sandboxd', route: { name: 'assistant' } },
-    { label: 'Projects', route: { name: 'apps' } },
+    { label: 'My apps', route: { name: 'apps' } },
     { label: 'Project memory', route: { name: 'brain' } },
     { label: 'Free apps', route: { name: 'discover' } },
     { label: 'Add an agent', route: { name: 'agents' } },

@@ -8,13 +8,14 @@ let createdApp: string | undefined
 test.beforeEach(async ({ page }) => {
   createdApp = undefined
   await page.goto('/#/apps')
-  await expect(page.getByTestId('build-prompt').or(page.getByTestId('login-password'))).toBeVisible()
+  const myApps = page.getByRole('heading', { name: /My apps/ })
+  await expect(myApps.or(page.getByTestId('login-password'))).toBeVisible()
   if (await page.getByTestId('login-password').isVisible()) {
     if (!process.env.CONSOLE_PASSWORD) throw new Error('Set CONSOLE_PASSWORD for this test instance')
     await page.getByTestId('login-password').fill(process.env.CONSOLE_PASSWORD)
     await page.getByTestId('login-submit').click()
   }
-  await expect(page.getByTestId('build-prompt')).toBeVisible()
+  await expect(myApps).toBeVisible()
 })
 
 test.afterEach(async ({ page }) => {
@@ -22,7 +23,7 @@ test.afterEach(async ({ page }) => {
   if (createdApp) expect((await page.request.delete(`/v1/apps/${createdApp}`)).ok()).toBe(true)
 })
 
-// An empty project, made through the API (the UI only creates apps from an idea),
+// An empty project, made through the API (the UI asks the sandboxd agent for new apps),
 // so the workspace tests don't depend on an agent run.
 async function createBlank(page: Page) {
   const name = `e2e-${Date.now()}`
@@ -34,9 +35,8 @@ async function createBlank(page: Page) {
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
 }
 
-test('projects page with its own builder loads', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'What should your crew build?' })).toBeVisible()
-  await expect(page.getByTestId('build-app')).toBeVisible()
+test('My apps page loads', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: /My apps/ })).toBeVisible()
 })
 
 test('create an app and workspace from the UI', async ({ page }) => {
