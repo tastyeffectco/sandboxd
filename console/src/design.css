@@ -759,7 +759,6 @@ hr {
   white-space: nowrap;
   margin-left: auto;
 }
-.empty-projects,
 .empty-state {
   text-align: center;
   border: 1px dashed var(--border-2);
@@ -768,17 +767,14 @@ hr {
   color: var(--muted);
   background: var(--panel-2);
 }
-.empty-projects > svg,
 .empty-state > svg {
   color: var(--muted);
   margin-bottom: 14px;
 }
-.empty-projects h3,
 .empty-state h3 {
   color: var(--fg2);
   font-weight: 500;
 }
-.empty-projects p,
 .empty-state p {
   font-size: 12px;
   margin: 6px auto 18px;

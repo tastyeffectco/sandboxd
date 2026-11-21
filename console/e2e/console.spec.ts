@@ -35,7 +35,7 @@ async function createBlank(page: Page) {
 }
 
 test('projects page with its own builder loads', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'Start a project yourself' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'What should your crew build?' })).toBeVisible()
   await expect(page.getByTestId('build-app')).toBeVisible()
 })
 
