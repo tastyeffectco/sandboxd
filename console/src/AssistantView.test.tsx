@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AssistantView } from './AssistantView'
 import { api } from './api'
 
@@ -9,7 +9,10 @@ vi.mock('./AppView', () => ({
     <div data-testid="appview" data-app={p.appId} data-assistant={String(!!p.assistant)} />
   ),
 }))
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
 const props = { onError: vi.fn(), toast: vi.fn(), goApps: vi.fn(), goSettings: vi.fn() }
 
@@ -27,5 +30,25 @@ describe('AssistantView (Ask sandboxd)', () => {
     vi.mocked(api.ensureAssistant).mockRejectedValue(new Error('The engine is not running.'))
     render(<AssistantView {...props} />)
     await waitFor(() => expect(screen.getByTestId('assistant-failed').textContent).toContain('The engine is not running.'))
+  })
+
+  it('offers to try again or build an app instead', async () => {
+    vi.mocked(api.ensureAssistant)
+      .mockRejectedValueOnce(new Error('The engine is not running.'))
+      .mockResolvedValueOnce({ app_id: 'a9' })
+    render(<AssistantView {...props} />)
+    await waitFor(() => expect(screen.getByTestId('assistant-failed')).toBeTruthy())
+    fireEvent.click(screen.getByText('Build an app instead'))
+    expect(props.goApps).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText('Try again'))
+    await waitFor(() => expect(screen.getByTestId('appview').dataset.app).toBe('a9'))
+    expect(api.ensureAssistant).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens the projects page when the engine has no sandboxd agent yet', async () => {
+    vi.mocked(api.ensureAssistant).mockRejectedValue(Object.assign(new Error('404 Not Found'), { status: 404 }))
+    render(<AssistantView {...props} />)
+    await waitFor(() => expect(props.goApps).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('assistant-failed')).toBeNull()
   })
 })

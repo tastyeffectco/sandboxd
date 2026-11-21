@@ -114,7 +114,7 @@ only the lifecycle tunables). Contract: `docs/openapi.yaml`.
 small local gateway that forwards the console's `/v1` calls to the chosen engine
 (local or remote), keeps sign-ins out of the renderer, and imports a coding
 agent's existing login (ChatGPT/Codex, OpenCode, Pi) only after a native
-confirmation. On Windows, **Install & open workspace** creates a dedicated WSL 2
+confirmation. On Windows, **Install & start** creates a dedicated WSL 2
 distribution, installs Docker Engine there and runs the engine; each desktop
 release pins one engine release and moves the managed engine to it, with a
 backup and automatic rollback. Details: `docs/desktop.md`.

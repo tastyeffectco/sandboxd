@@ -173,7 +173,7 @@ export default function DesktopHost() {
                   <strong>New to sandboxd?</strong>
                   <p>
                     {state.platform === 'win32'
-                      ? 'Choose Install & open workspace to set up an engine on this computer. No terminal needed.'
+                      ? 'Choose Install & start to set up sandboxd on this computer. No terminal needed.'
                       : 'The engine runs your apps and agents. Connect an existing engine, or follow the local setup guide.'}
                   </p>
                   <button
@@ -198,7 +198,7 @@ export default function DesktopHost() {
             <span className={`engine-status ${online && selected ? 'online' : ''}`} />
             {selected
               ? `${selected.name} · ${online ? 'Connected' : 'Offline'}`
-              : 'Choose an engine to begin'}
+              : 'Not set up yet'}
           </span>
           <span>
             {online && selected && bridge?.openInBrowser && (
@@ -355,7 +355,7 @@ function ConnectionForm({
       />
       <strong>
         {state.localEngine?.installed
-          ? 'Your engine on this computer'
+          ? 'sandboxd is set up on this computer'
           : 'Everything you need, installed for you.'}
       </strong>
       <p>
@@ -363,8 +363,8 @@ function ConnectionForm({
         account or subscription needed.
       </p>
       <p className="field-help">
-        The first setup downloads a few GB and takes 15–30 minutes. Windows may ask for permission or a
-        restart.
+        The first setup downloads a few GB: usually 5 to 15 minutes, longer on a slow connection. Windows
+        may ask for permission or a restart.
       </p>
       {state.localEngine?.message && (
         <p
@@ -382,14 +382,14 @@ function ConnectionForm({
         data-testid="desktop-install-engine"
       >
         {working
-          ? 'Setting up your engine…'
+          ? 'Setting things up…'
           : state.localEngine?.phase === 'restart'
             ? 'Continue setup'
             : state.localEngine?.phase === 'error'
               ? 'Retry setup'
               : state.localEngine?.installed
-                ? 'Start & open workspace'
-                : 'Install & open workspace'}
+                ? 'Start sandboxd'
+                : 'Install & start'}
         {!working && <Icon name="arrow" size={16} />}
       </Btn>
       <small>
@@ -500,7 +500,7 @@ function ConnectionForm({
       <div className="desktop-connection-form">
         {setup}
         <details className="desktop-advanced" open={state.connections.length > 0 || mode === 'remote'}>
-          <summary>I already have an engine</summary>
+          <summary>Use sandboxd on another computer or server</summary>
           {modes}
           {form}
           {recent}

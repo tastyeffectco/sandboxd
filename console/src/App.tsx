@@ -417,7 +417,7 @@ export default function App({
           <button className="sidebar-search" onClick={() => setPaletteOpen(true)}>
             <Icon name="search" size={16} />
             <span>Quick search</span>
-            <kbd>⌘ K</kbd>
+            <kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'} K</kbd>
           </button>
           <nav aria-label="Main navigation">
             {nav.map((n) => (

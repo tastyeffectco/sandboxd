@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, App as TApp } from './api'
 import { AppView } from './AppView'
+import { Btn } from './design/kit'
 
 // The project that holds the person's sandboxd agent; kept out of the project list.
 export const ASSISTANT_TAG = 'sandboxd:assistant'
@@ -28,21 +29,38 @@ export function AssistantView({
 }) {
   const [appId, setAppId] = useState('')
   const [failed, setFailed] = useState('')
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
+    setFailed('')
     api
       .ensureAssistant()
       .then((a) => live && setAppId(a.app_id))
-      .catch((e) => live && setFailed((e as Error).message))
+      .catch((e: Error & { status?: number }) => {
+        if (!live) return
+        // An engine from before the sandboxd agent has no /v1/assistant:
+        // open the projects page, where building an app works, instead of
+        // showing an error the person can do nothing about.
+        if (e.status === 404) goApps()
+        else setFailed(e.message)
+      })
     return () => {
       live = false
     }
-  }, [])
+  }, [attempt])
   if (failed) {
     return (
       <div className="content-page" data-testid="assistant-failed">
-        <h1>Your sandboxd agent could not start</h1>
+        <h1>sandboxd isn't ready yet</h1>
         <p>{failed}</p>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <Btn variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </Btn>
+          <Btn variant="ghost" onClick={goApps}>
+            Build an app instead
+          </Btn>
+        </div>
       </div>
     )
   }

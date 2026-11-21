@@ -54,8 +54,8 @@ Compose there, and builds the engine from a pinned public repository commit.
 Docker Desktop and an existing Ubuntu installation are not required for this flow.
 
 Windows 11 with hardware virtualization enabled, internet access and sufficient
-free disk space is required. Setup downloads several GB; the first engine build
-can take 15–30 minutes or longer on a slow connection. Windows may show a UAC
+free disk space is required. Setup downloads several GB of prebuilt images;
+it usually takes 5–15 minutes, longer on a slow connection. Windows may show a UAC
 administrator prompt when enabling WSL. If Windows requires a reboot, restart
 when convenient, reopen the app, and click **Continue setup**. The app never
 reboots Windows automatically. Progress appears in the connection panel. Keep the
@@ -128,7 +128,7 @@ CI tests native clients against a disposable API fixture, not a Windows hypervis
 
 ## Connect and build
 
-1. On Windows, choose **This computer → Install & open workspace** for automatic
+1. On Windows, choose **This computer → Install & start** for automatic
    local setup. Otherwise enter `http://127.0.0.1:9090` for a running local engine,
    or choose **Remote engine** for an existing HTTPS API origin. Use the engine API address, not an app preview.
 2. Click **Open workspace**, then create your first console password or sign in

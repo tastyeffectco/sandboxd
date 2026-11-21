@@ -71,7 +71,7 @@ test('new setup pins downloads, imports an isolated distro, streams stages and v
   assert.match(bootstrap.options.input, /test -s \/usr\/bin\/node/)
   // Unpacking images must not fill the VM's file cache, which Windows cannot reclaim.
   assert.match(bootstrap.options.input, /echo 1 > \/proc\/sys\/vm\/drop_caches; done \) 9>&- >\/dev\/null 2>&1 &/)
-  assert(f.events.some((e) => e.message === 'Downloading your engine and coding tools…'))
+  assert(f.events.some((e) => e.message === 'Downloading your AI crew and their tools…'))
   assert.deepEqual(
     f.shortcuts,
     [imported.args[1], imported.args[1]],
@@ -250,7 +250,7 @@ test('an app update brings its engine to the pinned release', async (t) => {
   const bootstrap = f.commands.find((c) => c.args.includes('bash'))
   assert(bootstrap, 'the update did not run')
   assert.deepEqual(bootstrap.args.slice(-2), [ENGINE_TAG, ENGINE_COMMIT])
-  assert(f.events.some((e) => e.message === 'Updating your engine to the new version…'))
+  assert(f.events.some((e) => e.message === 'Updating sandboxd to the new version…'))
   // Backup, verified release before anything stops, and a way back.
   assert.match(bootstrap.options.input, /git fetch -q --depth 1 origin "refs\/tags\/\$tag:refs\/tags\/\$tag"[^\n]*&&\n\s+\[ "\$\(git rev-parse "refs\/tags\/\$tag\^\{commit\}"\)" = "\$commit" \]; then\n\s+stage upgrade/)
   assert.match(bootstrap.options.input, /cp -a "\$data_dir\/state" "\$backup\/"/)
