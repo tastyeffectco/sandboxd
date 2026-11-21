@@ -16,7 +16,7 @@
 .desktop-titlebar {
   height: 44px;
   flex: none;
-  background: rgba(10, 10, 17, 0.85);
+  background: rgb(var(--glass) / 0.85);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -48,7 +48,7 @@
   gap: 8px;
   border: 1px solid var(--border-2);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--tint) / 0.04);
   padding: 4px 11px;
   font-size: 11.5px;
   color: var(--fg-2);
@@ -68,7 +68,7 @@
 }
 .engine-status.online {
   background: var(--good);
-  box-shadow: 0 0 8px rgba(62, 230, 168, 0.7);
+  box-shadow: 0 0 8px rgb(var(--mint-rgb) / 0.7);
 }
 
 /* The app inside. */
@@ -95,7 +95,7 @@
   justify-content: space-between;
   padding: 0 16px;
   border-top: 1px solid var(--border);
-  background: rgba(10, 10, 17, 0.9);
+  background: rgb(var(--glass) / 0.9);
   font-size: 11px;
   color: var(--muted-2);
 }
@@ -130,8 +130,8 @@
   justify-content: center;
   gap: 16px;
   padding: 8px 16px;
-  background: rgba(255, 195, 92, 0.1);
-  border-bottom: 1px solid rgba(255, 195, 92, 0.3);
+  background: rgb(var(--sun-rgb) / 0.1);
+  border-bottom: 1px solid rgb(var(--sun-rgb) / 0.3);
   color: var(--sun);
   font-size: 12.5px;
 }
@@ -164,8 +164,8 @@
   overflow: hidden;
   border-right: 1px solid var(--border);
   background:
-    radial-gradient(520px 360px at 50% 28%, rgba(155, 123, 255, 0.2), transparent 70%),
-    radial-gradient(420px 320px at 0% 100%, rgba(255, 122, 89, 0.12), transparent 70%),
+    radial-gradient(520px 360px at 50% 28%, rgb(var(--accent-rgb) / 0.2), transparent 70%),
+    radial-gradient(420px 320px at 0% 100%, rgb(var(--coral-rgb) / 0.12), transparent 70%),
     var(--bg-2);
 }
 .desktop-welcome-story h1 {
@@ -197,7 +197,7 @@
   padding: 7px;
   box-sizing: content-box;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--tint) / 0.05);
   border: 1px solid var(--border);
   color: var(--link);
 }
@@ -268,7 +268,7 @@
   height: 6px;
   margin: 0 0 16px;
   border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(155, 123, 255, 0.9), rgba(255, 122, 89, 0.9), transparent)
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.9), rgb(var(--coral-rgb) / 0.9), transparent)
       0 0 / 40% 100% no-repeat,
     var(--panel-3);
   animation: setup-meter 1.6s ease-in-out infinite;
@@ -294,7 +294,7 @@
   text-align: left;
   gap: 6px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--tint) / 0.03);
   border: 1px solid var(--border-2);
   border-radius: var(--r);
   color: var(--fg-2);
@@ -382,7 +382,7 @@
   padding: 12px 14px;
   border: 1px solid var(--border-2);
   border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--tint) / 0.03);
   color: var(--fg-2);
   text-align: left;
   cursor: pointer;
