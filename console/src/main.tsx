@@ -5,8 +5,10 @@ import DesktopHost from './DesktopHost'
 import './design/theme.css'
 import './design.css'
 import { IS_DEMO, installDemo } from './demo'
+import { installTheme } from './theme'
 import DemoBanner from './DemoBanner'
 
+installTheme()
 if (IS_DEMO) installDemo()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
