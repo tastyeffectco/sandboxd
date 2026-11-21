@@ -51,12 +51,12 @@ test('full lifecycle: preview, task and stop/start', async ({ page }) => {
   await expect(page.getByTestId('preview')).toBeVisible({ timeout: 90_000 })
   await page.getByTestId('task-prompt').fill('Reply hello without changing any files.')
   await page.getByTestId('task-send').click()
-  await expect(page.locator('.task-status')).toBeVisible({ timeout: 120_000 })
+  await expect(page.locator('.turn-meta').first()).toBeVisible({ timeout: 120_000 })
   await page.getByRole('button', { name: 'Project actions' }).click()
   await page.getByRole('button', { name: 'Stop workspace', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Start workspace', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Wake up', exact: true })).toBeVisible({
     timeout: 30_000,
   })
-  await page.getByRole('button', { name: 'Start workspace', exact: true }).click()
+  await page.getByRole('button', { name: 'Wake up', exact: true }).click()
   await expect(page.getByTestId('preview')).toBeVisible({ timeout: 60_000 })
 })

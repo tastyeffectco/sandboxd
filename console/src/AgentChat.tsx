@@ -414,8 +414,13 @@ export function AgentChat({
               {t.prompt && <UserPrompt text={t.prompt} />}
               <div className="agent-message">
                 <span className="message-label">
-                  <Avatar who={t.agent || 'opencode'} size={22} still mood={t.status === 'failed' ? 'error' : 'idle'} />
-                  {agentName(t.agent)}
+                  <Avatar
+                    who={assistant ? 'sandboxd' : t.agent || 'opencode'}
+                    size={22}
+                    still
+                    mood={t.status === 'failed' ? 'error' : 'idle'}
+                  />
+                  {assistant ? 'sandboxd' : agentName(t.agent)}
                 </span>
                 <AgentMessage text={plainTaskError(t.agent_message || t.error_message) || `Task ${t.status}`} />
               </div>
@@ -434,7 +439,9 @@ export function AgentChat({
                 </p>
               )}
               <div className="turn-meta">
-                <span className={`task-status status-${t.status}`}>{t.status}</span>
+                {t.status !== 'succeeded' && (
+                  <span className={`task-status status-${t.status}`}>{statusLabel(t.status)}</span>
+                )}
                 {!!t.files_changed?.length && (
                   <details>
                     <summary>
@@ -464,14 +471,14 @@ export function AgentChat({
             <UserPrompt text={active.prompt || 'Task in progress'} />
             <div className="agent-message">
               <span className="message-label">
-                <Avatar who={active.agent || choice.agent || 'opencode'} size={22} mood="working" />
-                {agentName(active.agent || choice.agent)}
+                <Avatar who={assistant ? 'sandboxd' : active.agent || choice.agent || 'opencode'} size={22} mood="working" />
+                {assistant ? 'sandboxd' : agentName(active.agent || choice.agent)}
               </span>
               <AgentMessage text={response || 'Working on your request…'} />
             </div>
             <div role="status" className="agent-progress">
               <span className="loading-dot" />
-              {tool || 'Building in your workspace…'}
+              {tool || (assistant ? 'sandboxd is working on it…' : 'Working on your app…')}
             </div>
             {resolved && <p className="field-help">{resolved}</p>}
           </article>
@@ -525,15 +532,15 @@ export function AgentChat({
           </button>
         </div>
       )}
-      {!sandboxRunning && (
+      {!sandboxRunning && !assistant && (
         <div className="chat-notice">
           {sb?.status === 'running'
             ? 'Preparing your project…'
             : !sb
-              ? 'Create a workspace to start building. Your prompt is kept here.'
+              ? 'Your app is not set up yet. Your message is kept here.'
               : sb.status === 'stopped'
-                ? 'Your workspace is resting. Send a message to wake it.'
-                : 'Your workspace is starting…'}
+                ? 'Your app is asleep. Send a message and it wakes up.'
+                : 'Your app is waking up…'}
         </div>
       )}
       <form
@@ -611,7 +618,21 @@ export function UserPrompt({ text }: { text: string }) {
   const catalog = /^Install (.+?) from sandboxd's app catalog/.exec(text)
   // An install the sandboxd agent started (install_project).
   const project = /^Install the open-source project https:\/\/github\.com\/[^/\s]+\/([^\s/]+?) so it runs/.exec(text)
-  if (!catalog && !project) return <div className="user-message">{text}</div>
+  if (!catalog && !project) {
+    // A long request, usually the brief sandboxd wrote for the builder: show
+    // its start, with the rest one click away.
+    if (text.length > 280)
+      return (
+        <div className="user-message" data-testid="long-request">
+          <span>{text.slice(0, 160).replace(/\s+\S*$/, '')}…</span>
+          <details className="install-details">
+            <summary>Show the full request</summary>
+            <pre>{text}</pre>
+          </details>
+        </div>
+      )
+    return <div className="user-message">{text}</div>
+  }
   return (
     <div className="user-message" data-testid="catalog-install-message">
       <span>{catalog ? `Install ${catalog[1]} from Free apps` : `Install ${project![1]} from GitHub`}</span>
@@ -621,6 +642,11 @@ export function UserPrompt({ text }: { text: string }) {
       </details>
     </div>
   )
+}
+
+// A finished task's outcome, in plain words (success shows nothing).
+function statusLabel(status: string) {
+  return { failed: "Didn't finish", cancelled: 'Stopped', canceled: 'Stopped' }[status] || status
 }
 
 // A coding agent's id as people know it.
