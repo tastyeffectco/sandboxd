@@ -447,7 +447,7 @@ export function AgentChat({
                     </ul>
                   </details>
                 )}
-                {t.can_revert && (
+                {t.can_revert && !assistant && (
                   <button
                     disabled={!sandboxRunning || !!active}
                     className="text-button"
