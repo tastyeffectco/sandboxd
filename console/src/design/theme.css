@@ -1,12 +1,28 @@
-/* sandboxd design system: "Night workshop".
-   One dark theme, used by every screen. Components use these tokens only
-   (kit.tsx's `c` points at them too), never literal colors. */
+/* sandboxd design system: "Night workshop" (dark) and "Paper studio" (light).
+   Every screen uses these tokens only (kit.tsx's `c` points at them too),
+   never literal colors. The theme is chosen in Settings → Appearance
+   (System, Light, Dark) and set as <html data-theme>. */
 @import '@fontsource-variable/bricolage-grotesque';
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/geist-mono';
 
 :root {
   color-scheme: dark;
+
+  /* Channels for translucent colours: rgb(var(--tint) / 0.06). */
+  --tint: 255 255 255; /* light on dark: lines, hovers, glass edges */
+  --shade: 0 0 0; /* shadows */
+  --shade-k: 1; /* how strong shadows are */
+  --glass: 14 14 23; /* frosted bars over content */
+  --glass-2: 26 26 38;
+  --accent-rgb: 155 123 255;
+  --coral-rgb: 255 122 89;
+  --mint-rgb: 62 230 168;
+  --bad-rgb: 255 92 122;
+  --sun-rgb: 255 195 92;
+  --bad-fg: #ffb3c1;
+  --brand-text-grad: linear-gradient(180deg, #fff, #cfc7f0);
+  --room-light: 0.13; /* coloured light from the corners */
 
   /* Surfaces, from the room to the things on the desk. */
   --bg: #0a0a11;
@@ -15,7 +31,7 @@
   --panel-2: #1a1a26;
   --panel-3: #222231;
   --raised: #262637;
-  --overlay: rgba(6, 6, 12, 0.72);
+  --overlay: rgb(var(--glass) / 0.72);
 
   /* Text. */
   --fg: #f4f3fb;
@@ -26,9 +42,9 @@
   --faint: #5f5d78;
 
   /* Lines. */
-  --border: rgba(255, 255, 255, 0.075);
-  --border-2: rgba(255, 255, 255, 0.13);
-  --border-strong: rgba(255, 255, 255, 0.22);
+  --border: rgb(var(--tint) / 0.075);
+  --border-2: rgb(var(--tint) / 0.13);
+  --border-strong: rgb(var(--tint) / 0.22);
 
   /* Brand: violet light, coral warmth, mint life. */
   --violet: #9b7bff;
@@ -41,8 +57,8 @@
 
   --accent: var(--violet);
   --accent-2: var(--coral);
-  --accent-soft: rgba(155, 123, 255, 0.14);
-  --accent-line: rgba(155, 123, 255, 0.42);
+  --accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --accent-line: rgb(var(--accent-rgb) / 0.42);
   --ink: var(--violet-2);
   --ink-2: var(--fg-2);
   --link: #c2b2ff;
@@ -54,14 +70,14 @@
   --bad: #ff5c7a;
 
   --brand-grad: linear-gradient(135deg, #8f6bff 0%, #d36bff 48%, #ff7a59 100%);
-  --brand-grad-soft: linear-gradient(135deg, rgba(143, 107, 255, 0.22), rgba(255, 122, 89, 0.16));
-  --surface-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01));
+  --brand-grad-soft: linear-gradient(135deg, rgb(var(--accent-rgb) / 0.22), rgb(var(--coral-rgb) / 0.16));
+  --surface-grad: linear-gradient(180deg, rgb(var(--tint) / 0.045), rgb(var(--tint) / 0.01));
 
   /* Depth. */
-  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 10px 30px -12px rgba(0, 0, 0, 0.7);
-  --shadow-3: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 30px 80px -20px rgba(0, 0, 0, 0.8);
-  --glow: 0 0 0 1px rgba(155, 123, 255, 0.35), 0 8px 40px -8px rgba(155, 123, 255, 0.55);
+  --shadow-1: 0 1px 0 rgb(var(--tint) / 0.04) inset, 0 1px 2px rgb(var(--shade) / calc(0.5 * var(--shade-k)));
+  --shadow-2: 0 1px 0 rgb(var(--tint) / 0.05) inset, 0 10px 30px -12px rgb(var(--shade) / calc(0.7 * var(--shade-k)));
+  --shadow-3: 0 1px 0 rgb(var(--tint) / 0.06) inset, 0 30px 80px -20px rgb(var(--shade) / calc(0.8 * var(--shade-k)));
+  --glow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), 0 8px 40px -8px rgb(var(--accent-rgb) / 0.55);
 
   --r-sm: 8px;
   --r: 12px;
@@ -74,6 +90,67 @@
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* "Paper studio": warm paper, ink text, the crew's colours kept as accents
+   (inspired by calm, readable desktop tools). Same tokens, light values. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --tint: 26 26 22;
+  --shade: 40 34 20;
+  --shade-k: 0.35;
+  --glass: 250 249 246;
+  --glass-2: 255 255 255;
+  --accent-rgb: 110 86 207;
+  --coral-rgb: 226 93 60;
+  --mint-rgb: 22 150 104;
+  --bad-rgb: 214 52 82;
+  --sun-rgb: 196 132 20;
+  --bad-fg: #b4233f;
+  --brand-text-grad: linear-gradient(180deg, #1f1d2b, #4b3f7a);
+  --room-light: 0.07;
+
+  --bg: #f6f5f1;
+  --bg-2: #fbfaf7;
+  --panel: #ffffff;
+  --panel-2: #f3f1eb;
+  --panel-3: #ebe8df;
+  --raised: #ffffff;
+  --overlay: rgba(32, 30, 24, 0.32);
+
+  --fg: #1f1f1f;
+  --fg-2: #33332e;
+  --muted: #62676d;
+  --muted-2: #7a7a70;
+  --faint: #a3a196;
+
+  --border: rgb(26 26 22 / 0.08);
+  --border-2: rgb(26 26 22 / 0.13);
+  --border-strong: rgb(26 26 22 / 0.22);
+
+  --violet: #6e56cf;
+  --violet-2: #5b45b8;
+  --coral: #e25d3c;
+  --pink: #c2409b;
+  --mint: #169668;
+  --sky: #2f7fc1;
+  --sun: #c48414;
+
+  --accent-soft: rgb(110 86 207 / 0.1);
+  --accent-line: rgb(110 86 207 / 0.35);
+  --link: #5b45b8;
+  --on-accent: #ffffff;
+  --bad: #d63452;
+
+  --brand-grad: linear-gradient(135deg, #7c5cff 0%, #b04fe0 50%, #ee6a45 100%);
+  --brand-grad-soft: linear-gradient(135deg, rgb(124 92 255 / 0.12), rgb(238 106 69 / 0.1));
+  --surface-grad: linear-gradient(180deg, #ffffff, #fbfaf7);
+
+  --shadow-1: 0 1px 2px rgb(40 34 20 / 0.06);
+  --shadow-2: 0 1px 2px rgb(40 34 20 / 0.05), 0 10px 28px -14px rgb(40 34 20 / 0.18);
+  --shadow-3: 0 1px 2px rgb(40 34 20 / 0.06), 0 28px 70px -24px rgb(40 34 20 / 0.25);
+  --glow: 0 0 0 1px rgb(110 86 207 / 0.3), 0 8px 30px -10px rgb(110 86 207 / 0.35);
 }
 
 html,
@@ -92,8 +169,8 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(900px 520px at 88% -8%, rgba(155, 123, 255, 0.13), transparent 60%),
-    radial-gradient(700px 480px at -6% 108%, rgba(255, 122, 89, 0.08), transparent 60%);
+    radial-gradient(900px 520px at 88% -8%, rgb(var(--accent-rgb) / var(--room-light)), transparent 60%),
+    radial-gradient(700px 480px at -6% 108%, rgb(var(--coral-rgb) / 0.08), transparent 60%);
 }
 #root {
   position: relative;
@@ -101,26 +178,26 @@ body::before {
 }
 
 ::selection {
-  background: rgba(155, 123, 255, 0.4);
-  color: #fff;
+  background: rgb(var(--accent-rgb) / 0.4);
+  color: var(--fg);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: rgb(var(--tint) / 0.14) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgb(var(--tint) / 0.12);
   border-radius: 10px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.22);
+  background-color: rgb(var(--tint) / 0.22);
 }
 
 input,
@@ -363,7 +440,7 @@ select option {
 
   border-radius: 26%;
   background: linear-gradient(160deg, #ffffff, #e9e7f5);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 18px -8px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 1px 0 rgb(var(--tint) / 0.6) inset, 0 6px 18px -8px rgb(var(--shade) / calc(0.7 * var(--shade-k)));
   overflow: hidden;
 }
 .logo-tile img {
@@ -401,14 +478,14 @@ select option {
   box-sizing: border-box;
   border-radius: 26%;
   background:
-    radial-gradient(120% 90% at 25% 10%, rgba(255, 255, 255, 0.38), transparent 55%),
+    radial-gradient(120% 90% at 25% 10%, rgb(var(--tint) / 0.38), transparent 55%),
     linear-gradient(150deg, var(--tile), color-mix(in srgb, var(--tile) 55%, #1a0f3a));
   color: #fff;
   font-family: var(--display);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 6px 18px -8px color-mix(in srgb, var(--tile) 70%, #000);
+  text-shadow: 0 1px 2px rgb(var(--shade) / calc(0.25 * var(--shade-k)));
+  box-shadow: 0 1px 0 rgb(var(--tint) / 0.35) inset, 0 6px 18px -8px color-mix(in srgb, var(--tile) 70%, #000);
   user-select: none;
 }

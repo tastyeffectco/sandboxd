@@ -27,7 +27,7 @@ body {
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 2px solid rgba(155, 123, 255, 0.20);
+  outline: 2px solid rgb(var(--accent-rgb) / 0.20);
   border-color: var(--accent);
   outline-offset: 1px;
 }
@@ -175,7 +175,7 @@ hr {
 .studio-sidebar {
   width: 236px;
   flex: none;
-  background: linear-gradient(180deg, rgba(19, 19, 29, 0.92), rgba(12, 12, 19, 0.92));
+  background: linear-gradient(180deg, rgb(var(--glass) / 0.92), rgb(var(--glass) / 0.92));
   backdrop-filter: blur(20px);
   border-right: 1px solid var(--border);
   display: flex;
@@ -205,7 +205,7 @@ hr {
 .studio-brand strong {
   font: 700 22px/1 var(--display);
   letter-spacing: -0.6px;
-  background: linear-gradient(180deg, #fff, #cfc7f0);
+  background: var(--brand-text-grad);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -223,7 +223,7 @@ hr {
   display: flex;
   align-items: center;
   gap: 9px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--tint) / 0.03);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 10px;
@@ -262,14 +262,14 @@ hr {
 }
 .sidebar-link.active,
 .sidebar-project.active {
-  background: linear-gradient(90deg, rgba(155, 123, 255, 0.18), rgba(155, 123, 255, 0.04));
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.18), rgb(var(--accent-rgb) / 0.04));
   color: var(--fg);
   font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(155, 123, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.22);
 }
 .sidebar-link:hover,
 .sidebar-project:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgb(var(--tint) / 0.045);
   color: var(--fg);
 }
 .sidebar-caption {
@@ -415,7 +415,7 @@ hr {
   transition: background 0.2s, color 0.2s;
 }
 .icon-button:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--tint) / 0.06);
   color: var(--fg);
 }
 .button-link {
@@ -431,9 +431,9 @@ hr {
   font-weight: 600;
 }
 .inline-error {
-  color: #ffb3c1;
-  background: rgba(255, 92, 122, 0.08);
-  border: 1px solid rgba(255, 92, 122, 0.3);
+  color: var(--bad-fg);
+  background: rgb(var(--bad-rgb) / 0.08);
+  border: 1px solid rgb(var(--bad-rgb) / 0.3);
   border-radius: var(--r);
   padding: 12px 15px;
   font-size: 13px;
@@ -472,7 +472,7 @@ hr {
   margin: 0 auto 30px;
 }
 .build-composer {
-  background: linear-gradient(180deg, rgba(26, 26, 38, 0.92), rgba(19, 19, 29, 0.92));
+  background: linear-gradient(180deg, rgb(var(--glass-2) / 0.92), rgb(var(--glass) / 0.92));
   border: 1px solid var(--border-2);
   border-radius: 22px;
   box-shadow: var(--shadow-3);
@@ -483,7 +483,7 @@ hr {
 }
 .build-composer:focus-within {
   border-color: var(--accent-line);
-  box-shadow: var(--shadow-3), 0 0 0 4px rgba(155, 123, 255, 0.12), 0 20px 70px -20px rgba(155, 123, 255, 0.45);
+  box-shadow: var(--shadow-3), 0 0 0 4px rgb(var(--accent-rgb) / 0.12), 0 20px 70px -20px rgb(var(--accent-rgb) / 0.45);
 }
 .build-composer > textarea {
   display: block;
@@ -516,7 +516,7 @@ hr {
   align-items: center;
   padding: 7px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--tint) / 0.035);
   border: 1px solid var(--border-2);
   color: var(--fg-2);
   font-size: 12px;
@@ -542,13 +542,13 @@ hr {
   font-weight: 650;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 12px 28px -12px rgba(155, 123, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow: 0 12px 28px -12px rgb(var(--accent-rgb) / 0.9), inset 0 1px 0 rgb(var(--tint) / 0.25);
   transition: transform 0.2s var(--spring), box-shadow 0.2s, filter 0.2s;
 }
 .composer-panel {
   border-top: 1px solid var(--border);
   padding: 18px 22px;
-  background: rgba(0, 0, 0, 0.18);
+  background: rgb(var(--shade) / calc(0.18 * var(--shade-k)));
 }
 .panel-heading {
   display: flex;
@@ -690,7 +690,7 @@ hr {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-image: radial-gradient(rgb(var(--tint) / 0.07) 1px, transparent 1px);
   background-size: 14px 14px;
   mask-image: linear-gradient(180deg, #000, transparent 85%);
 }
@@ -846,7 +846,7 @@ hr {
   padding: 26px;
   background: var(--surface-grad), var(--panel);
   color: var(--fg);
-  box-shadow: var(--shadow-3), 0 0 0 1px rgba(155, 123, 255, 0.08);
+  box-shadow: var(--shadow-3), 0 0 0 1px rgb(var(--accent-rgb) / 0.08);
   animation: sbx-pop 0.3s var(--spring) both;
 }
 .studio-dialog::backdrop {
@@ -923,7 +923,7 @@ hr {
   gap: 12px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
-  background: rgba(14, 14, 23, 0.72);
+  background: rgb(var(--glass) / 0.72);
   backdrop-filter: blur(16px);
   min-height: 62px;
   flex: none;
@@ -1032,7 +1032,7 @@ hr {
 .workspace-tabs > button.active,
 .workspace-more > summary.active {
   background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px rgba(155, 123, 255, 0.3);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.3);
   color: var(--fg);
 }
 .workspace-more {
@@ -1116,8 +1116,8 @@ hr {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(600px 300px at 50% 60%, rgba(155, 123, 255, 0.07), transparent 70%),
-    radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 18px 18px,
+    radial-gradient(600px 300px at 50% 60%, rgb(var(--accent-rgb) / 0.07), transparent 70%),
+    radial-gradient(rgb(var(--tint) / 0.06) 1px, transparent 1px) 0 0 / 18px 18px,
     var(--bg-2);
   padding: 16px;
   overflow: auto;
@@ -1136,7 +1136,7 @@ hr {
   border-radius: 34px;
   border: 10px solid #1c1c28;
   outline: 1px solid var(--border-2);
-  box-shadow: var(--shadow-3), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  box-shadow: var(--shadow-3), 0 0 0 1px rgb(var(--tint) / 0.06) inset;
 }
 .preview-placeholder {
   text-align: center;
@@ -1346,7 +1346,7 @@ hr {
   align-items: center;
   justify-content: space-between;
   gap: 7px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--tint) / 0.03);
   border: 1px solid var(--border-2);
   border-radius: var(--r);
   padding: 11px 13px;
@@ -1373,7 +1373,7 @@ hr {
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.6;
-  box-shadow: 0 10px 26px -14px rgba(155, 123, 255, 0.85);
+  box-shadow: 0 10px 26px -14px rgb(var(--accent-rgb) / 0.85);
 }
 .agent-message {
   font-size: 13px;
@@ -1412,13 +1412,13 @@ hr {
   text-transform: capitalize;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--tint) / 0.05);
   border: 1px solid var(--border);
 }
 .status-succeeded {
   color: var(--good);
-  border-color: rgba(62, 230, 168, 0.3);
-  background: rgba(62, 230, 168, 0.08);
+  border-color: rgb(var(--mint-rgb) / 0.3);
+  background: rgb(var(--mint-rgb) / 0.08);
 }
 .status-failed,
 .status-error {
@@ -1445,16 +1445,16 @@ hr {
   padding: 10px 15px;
   font-size: 12px;
   line-height: 1.6;
-  background: rgba(255, 255, 255, 0.025);
+  background: rgb(var(--tint) / 0.025);
   color: var(--muted);
   border-top: 1px solid var(--border);
 }
 .chat-notice.warn {
-  background: rgba(255, 195, 92, 0.08);
+  background: rgb(var(--sun-rgb) / 0.08);
   color: var(--warn);
 }
 .chat-notice.error {
-  background: rgba(255, 92, 122, 0.08);
+  background: rgb(var(--bad-rgb) / 0.08);
   color: var(--bad);
 }
 .chat-composer {
@@ -1500,7 +1500,7 @@ hr {
   width: 34px;
   height: 34px;
   cursor: pointer;
-  box-shadow: 0 8px 20px -8px rgba(155, 123, 255, 0.9);
+  box-shadow: 0 8px 20px -8px rgb(var(--accent-rgb) / 0.9);
   transition: transform 0.2s var(--spring);
 }
 .send-button > svg {
@@ -1539,8 +1539,8 @@ hr {
   transition: background 0.2s, color 0.2s;
 }
 .settings-nav > button.active {
-  background: linear-gradient(90deg, rgba(155, 123, 255, 0.18), rgba(155, 123, 255, 0.04));
-  box-shadow: inset 0 0 0 1px rgba(155, 123, 255, 0.25);
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.18), rgb(var(--accent-rgb) / 0.04));
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.25);
   color: var(--fg);
 }
 .settings-nav strong {
@@ -1752,7 +1752,7 @@ hr {
     inset: 0;
     z-index: 150;
     border: 0;
-    background: rgba(0, 0, 0, 0.70);
+    background: rgb(var(--shade) / calc(0.70 * var(--shade-k)));
     backdrop-filter: blur(2px);
   }
   .mobile-bar {
@@ -2073,8 +2073,8 @@ hr {
   flex-direction: column;
   justify-content: space-between;
   background:
-    radial-gradient(520px 360px at 50% 34%, rgba(155, 123, 255, 0.2), transparent 70%),
-    radial-gradient(420px 320px at 0% 100%, rgba(255, 122, 89, 0.12), transparent 70%),
+    radial-gradient(520px 360px at 50% 34%, rgb(var(--accent-rgb) / 0.2), transparent 70%),
+    radial-gradient(420px 320px at 0% 100%, rgb(var(--coral-rgb) / 0.12), transparent 70%),
     var(--bg-2);
   border-right: 1px solid var(--border);
   color: var(--fg);
@@ -2244,7 +2244,7 @@ hr {
 .command-list > button:hover {
   background: var(--accent-soft);
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px rgba(155, 123, 255, 0.25);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.25);
 }
 .command-list > p {
   padding: 15px;
@@ -2469,7 +2469,7 @@ hr {
   gap: 14px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--border);
-  background: rgba(14, 14, 23, 0.7);
+  background: rgb(var(--glass) / 0.7);
   backdrop-filter: blur(16px);
 }
 .agent-room-title {
@@ -2535,7 +2535,7 @@ hr {
 }
 .agent-suggestions button {
   border: 1px solid var(--border-2);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--tint) / 0.03);
   border-radius: 999px;
   padding: 8px 15px;
   font: inherit;
@@ -2575,7 +2575,7 @@ hr {
   color: var(--on-accent);
   border-bottom-right-radius: 6px;
   white-space: pre-wrap;
-  box-shadow: 0 10px 30px -14px rgba(155, 123, 255, 0.8);
+  box-shadow: 0 10px 30px -14px rgb(var(--accent-rgb) / 0.8);
 }
 .bubble.theirs {
   background: var(--surface-grad), var(--panel);
@@ -2701,7 +2701,7 @@ hr {
   gap: 10px;
   padding: 14px clamp(16px, 5vw, 64px) 20px;
   border-top: 0;
-  background: linear-gradient(180deg, transparent, rgba(10, 10, 17, 0.9) 40%);
+  background: linear-gradient(180deg, transparent, rgb(var(--glass) / 0.9) 40%);
 }
 .agent-composer textarea {
   flex: 1;
@@ -2722,7 +2722,7 @@ hr {
 .agent-composer textarea:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: var(--shadow-2), 0 0 0 4px rgba(155, 123, 255, 0.12);
+  box-shadow: var(--shadow-2), 0 0 0 4px rgb(var(--accent-rgb) / 0.12);
 }
 .composer-send {
   flex: none;
@@ -2738,7 +2738,7 @@ hr {
   font: inherit;
   font-weight: 600;
   padding: 0 15px;
-  box-shadow: 0 10px 26px -10px rgba(155, 123, 255, 0.85);
+  box-shadow: 0 10px 26px -10px rgb(var(--accent-rgb) / 0.85);
   transition: transform 0.2s var(--spring), opacity 0.2s;
 }
 .composer-send:disabled {
@@ -2760,7 +2760,7 @@ hr {
 }
 .sidebar-agent .agent-dot.running {
   background: var(--good);
-  box-shadow: 0 0 0 3px rgba(62, 230, 168, 0.15), 0 0 10px rgba(62, 230, 168, 0.7);
+  box-shadow: 0 0 0 3px rgb(var(--mint-rgb) / 0.15), 0 0 10px rgb(var(--mint-rgb) / 0.7);
 }
 .sidebar-agent .agent-dot.starting {
   background: var(--warn);
@@ -2788,7 +2788,7 @@ hr {
 .agent-views button.active {
   color: var(--fg);
   background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px rgba(155, 123, 255, 0.3);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.3);
 }
 .agent-app {
   flex: 1;
@@ -2899,7 +2899,7 @@ hr {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.022);
+  background: rgb(var(--tint) / 0.022);
   color: inherit;
   text-decoration: none;
   font-size: 12.5px;
@@ -2995,7 +2995,7 @@ select.agent-model {
   white-space: nowrap;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--tint) / 0.04);
   border: 1px solid var(--border);
 }
 .project-card p.catalog-pitch {
@@ -3112,7 +3112,7 @@ select.agent-model {
 }
 .hero-crew .crew-lead {
   margin: 0 10px;
-  filter: drop-shadow(0 18px 30px rgba(155, 123, 255, 0.35));
+  filter: drop-shadow(0 18px 30px rgb(var(--accent-rgb) / 0.35));
   animation-delay: 0.05s;
 }
 .hero-crew .crew-l1,
@@ -3142,7 +3142,7 @@ select.agent-model {
   width: 420px;
   height: 46px;
   transform: translateX(-50%);
-  background: radial-gradient(closest-side, rgba(155, 123, 255, 0.32), transparent);
+  background: radial-gradient(closest-side, rgb(var(--accent-rgb) / 0.32), transparent);
   filter: blur(6px);
 }
 .project-art > svg:not(.bot) {
@@ -3182,7 +3182,7 @@ select.agent-model {
 }
 .agent-views button:hover:not(.active) {
   color: var(--fg);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--tint) / 0.04);
 }
 .agent-avatar.small {
   width: 34px;
@@ -3274,8 +3274,8 @@ select.agent-model {
   padding: 3px 9px;
   border-radius: 999px;
   color: var(--good);
-  background: rgba(62, 230, 168, 0.1);
-  border: 1px solid rgba(62, 230, 168, 0.28);
+  background: rgb(var(--mint-rgb) / 0.1);
+  border: 1px solid rgb(var(--mint-rgb) / 0.28);
 }
 .crew-card-actions {
   display: flex;
@@ -3295,7 +3295,7 @@ select.agent-model {
   padding: 8px 10px 8px 8px;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.025);
+  background: rgb(var(--tint) / 0.025);
 }
 .crew-members li > span:not(.logo-tile) {
   flex: 1;
@@ -3328,7 +3328,7 @@ select.agent-model {
   color: var(--muted-2);
 }
 .crew-name-hint.bad {
-  color: #ffb3c1;
+  color: var(--bad-fg);
 }
 @media (max-width: 700px) {
   .crew-card {
@@ -3347,7 +3347,7 @@ select.agent-model {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-image: radial-gradient(rgb(var(--tint) / 0.07) 1px, transparent 1px);
   background-size: 14px 14px;
   mask-image: linear-gradient(180deg, #000, transparent 85%);
 }
@@ -3360,12 +3360,12 @@ select.agent-model {
   border-radius: 18px;
   font: 700 28px var(--display);
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  text-shadow: 0 1px 2px rgb(var(--shade) / calc(0.35 * var(--shade-k)));
   background:
-    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.55), transparent 55%),
+    radial-gradient(circle at 30% 22%, rgb(var(--tint) / 0.55), transparent 55%),
     linear-gradient(150deg, color-mix(in srgb, var(--app) 85%, #fff), color-mix(in srgb, var(--app) 70%, #000));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 1px 0 rgb(var(--tint) / 0.4),
     0 12px 26px -10px color-mix(in srgb, var(--app) 80%, transparent);
   transition: transform 0.35s var(--spring);
 }
@@ -3380,9 +3380,9 @@ select.agent-model {
   right: 12px;
   top: 10px;
   font: 600 11px var(--sans);
-  background: rgba(0, 0, 0, 0.35);
+  background: rgb(var(--shade) / calc(0.35 * var(--shade-k)));
   backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--tint) / 0.1);
   border-radius: 999px;
   padding: 3px 9px;
   color: var(--fg);
@@ -3406,7 +3406,7 @@ select.agent-model {
 }
 .chat-composer:focus-within {
   border-color: var(--accent-line);
-  box-shadow: var(--shadow-2), 0 0 0 4px rgba(155, 123, 255, 0.12);
+  box-shadow: var(--shadow-2), 0 0 0 4px rgb(var(--accent-rgb) / 0.12);
 }
 .send-button:hover:not(:disabled) {
   transform: scale(1.07);
@@ -3433,7 +3433,7 @@ select.agent-model {
   gap: 10px;
   padding: 10px 16px 10px 10px;
   border-radius: 14px;
-  background: rgba(26, 26, 38, 0.92);
+  background: rgb(var(--glass-2) / 0.92);
   backdrop-filter: blur(14px);
   border: 1px solid var(--border-2);
   color: var(--fg);
@@ -3467,7 +3467,7 @@ select.agent-model {
   animation-delay: -2.6s;
 }
 .welcome-crew .crew-lead {
-  filter: drop-shadow(0 20px 34px rgba(155, 123, 255, 0.45));
+  filter: drop-shadow(0 20px 34px rgb(var(--accent-rgb) / 0.45));
 }
 .welcome-crew .crew-floor {
   left: 130px;
@@ -3475,8 +3475,8 @@ select.agent-model {
 }
 .brain-graph-card {
   background:
-    radial-gradient(500px 220px at 50% 50%, rgba(155, 123, 255, 0.08), transparent 70%),
-    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px) 0 0 / 22px 22px,
+    radial-gradient(500px 220px at 50% 50%, rgb(var(--accent-rgb) / 0.08), transparent 70%),
+    radial-gradient(rgb(var(--tint) / 0.05) 1px, transparent 1px) 0 0 / 22px 22px,
     var(--bg-2) !important;
   border-radius: var(--r-xl) !important;
   box-shadow: var(--shadow-2);
@@ -3486,7 +3486,7 @@ select.agent-model {
   font: 12px var(--mono);
   padding: 1px 6px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--tint) / 0.06);
   border: 1px solid var(--border);
 }
 .brain-list {
@@ -3556,7 +3556,7 @@ select.agent-model {
   flex-wrap: wrap;
 }
 .settings-nav > button:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--tint) / 0.04);
   color: var(--fg);
 }
 
@@ -3737,7 +3737,7 @@ select.agent-model {
   padding: 0;
   border: 1px solid var(--border-2);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--tint) / 0.03);
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s var(--spring);
 }
@@ -3748,4 +3748,49 @@ select.agent-model {
 .look-option.on {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Settings → Appearance */
+.appearance-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.appearance-option {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.appearance-option:hover {
+  border-color: var(--border-strong);
+}
+.appearance-option.active {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+.appearance-option small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.appearance-swatch {
+  height: 72px;
+  border-radius: var(--r);
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+}
+.swatch-light {
+  background: linear-gradient(135deg, #f6f5f1 60%, #ffffff 60%);
+}
+.swatch-dark {
+  background: linear-gradient(135deg, #0a0a11 60%, #1a1a26 60%);
+}
+.swatch-system {
+  background: linear-gradient(135deg, #f6f5f1 50%, #0a0a11 50%);
 }

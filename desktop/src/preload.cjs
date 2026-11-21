@@ -11,6 +11,7 @@ if (process.isMainFrame) {
       agentLogin: (agent) => ipcRenderer.invoke('desktop:agent-login', agent),
       importAgentLogin: (agent) => ipcRenderer.invoke('desktop:import-agent-login', agent),
       state: () => ipcRenderer.invoke('desktop:state'),
+      setTheme: (theme) => ipcRenderer.invoke('desktop:theme', theme),
       connect: (connection) => ipcRenderer.invoke('desktop:connect', connection),
       disconnect: (forget = false) => ipcRenderer.invoke('desktop:disconnect', forget),
       openExternal: (url) => ipcRenderer.invoke('desktop:external', url),
