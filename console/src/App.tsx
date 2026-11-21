@@ -323,6 +323,21 @@ export default function App({
     }
     setTimeout(focus, 0)
   }
+  // New project: the projects page, with the cursor in its build box, so
+  // something visibly happens wherever the person is (on Home, focusing
+  // sandboxd's box looked like nothing happened).
+  const newProject = () => {
+    setRoute({ name: 'apps' })
+    setMobileNav(false)
+    let tries = 0
+    const focus = () => {
+      const box = document.getElementById('build-prompt') as HTMLTextAreaElement | null
+      if (!box) return void (++tries < 40 && setTimeout(focus, 100))
+      box.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      box.focus()
+    }
+    setTimeout(focus, 0)
+  }
   const nav = [
     { key: 'assistant', label: 'Home', icon: 'spark' },
     { key: 'apps', label: 'Projects', icon: 'grid' },
@@ -407,10 +422,7 @@ export default function App({
               sandboxd<small>Your AI crew, on your machine</small>
             </strong>
           </button>
-          <button
-            className="sidebar-new"
-            onClick={askSandboxd}
-          >
+          <button className="sidebar-new" onClick={newProject} data-testid="sidebar-new-project">
             <Icon name="plus" size={18} />
             <span>New project</span>
           </button>
