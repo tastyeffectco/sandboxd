@@ -192,7 +192,7 @@ under **Settings**, create an app, and build. No code needed.
 - **API:** `http://127.0.0.1:9090` (`curl http://127.0.0.1:9090/healthz` → `ok`)
 - **Desktop (Electron):** the same builder in a native macOS/Windows app, with
   local or remote engine connections. Desktop installation is on by default on
-  macOS; on Windows, the app offers **Install & open workspace** to provision
+  macOS; on Windows, the app offers **Install & start** to provision
   its own local WSL engine. `install.ps1` remains available for existing Docker
   Desktop/WSL setups. Opt out of CLI desktop installation with
   `--no-desktop` / `-NoDesktop` or `SANDBOXD_DESKTOP=0`. The initial signed desktop

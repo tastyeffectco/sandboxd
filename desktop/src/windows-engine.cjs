@@ -14,14 +14,14 @@ const ROOTFS = {
   arm64: { arch: 'arm64', sha256: 'a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2' },
 }
 const STAGES = {
-  packages: 'Installing engine prerequisites…',
-  docker: 'Starting the container runtime…',
+  packages: 'Getting this computer ready…',
+  docker: 'Preparing the space where your apps run…',
   source: 'Downloading sandboxd…',
-  engine: 'Downloading your engine and coding tools…',
-  starting: 'Starting your engine…',
-  upgrade: 'Updating your engine to the new version…',
-  health: 'Waiting for the engine to be ready…',
-  ready: 'Checking the connection from Windows…',
+  engine: 'Downloading your AI crew and their tools…',
+  starting: 'Starting sandboxd…',
+  upgrade: 'Updating sandboxd to the new version…',
+  health: 'Almost ready…',
+  ready: 'Finishing up…',
 }
 function decode(buffer) {
   return buffer.includes(0) ? buffer.toString('utf16le').replace(/^\uFEFF/, '') : buffer.toString('utf8')
