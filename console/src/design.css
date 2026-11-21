@@ -3761,3 +3761,28 @@ select.agent-model {
   text-transform: uppercase;
   color: var(--faint);
 }
+
+/* Attachments in project chats and on Home. */
+.chat-composer .agent-attachments {
+  padding: 10px 10px 0;
+  border-top: 0;
+  background: transparent;
+}
+.chat-composer footer .composer-attach {
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+}
+.chat-composer footer > span {
+  flex: 1;
+}
+.message-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.user-message .message-files .attachment {
+  background: rgb(var(--tint) / 0.12);
+  color: inherit;
+}
