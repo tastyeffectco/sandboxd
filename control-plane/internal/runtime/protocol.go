@@ -2,10 +2,10 @@
 // sandboxd (the host control plane) and runtimed (the in-sandbox
 // supervisor). See the runtimed contract.
 //
-// Transport is HTTP/1.1 over a Unix domain socket on the workspace
-// loopback (DefaultSocketPath): the socket inode is reachable both
-// from inside the container and, via the same loopback mount, from
-// the host at <workspaces>/<id>.mnt/.runtimed/sock. There is no
+// Transport is HTTP/1.1 over a Unix domain socket in the workspace
+// directory (DefaultSocketPath): the socket inode is reachable both
+// from inside the container and, via the same bind-mounted workspace,
+// from the host at <workspaces>/<id>/.runtimed/sock. There is no
 // network port and no cross-tenant reachability.
 //
 // This package is imported by both sides: runtimed serves these
@@ -16,7 +16,7 @@ import "time"
 
 // DefaultSocketPath is where runtimed binds its control socket inside
 // the container. It is under the durable workspace so the host sees
-// the same inode at <workspaces>/<id>.mnt/.runtimed/sock.
+// the same inode at <workspaces>/<id>/.runtimed/sock.
 const DefaultSocketPath = "/home/sandbox/.runtimed/sock"
 
 // PreviewStatus is the dev-server / app runtime state. It is reported,

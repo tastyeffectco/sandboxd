@@ -20,7 +20,7 @@ var ErrTaskInProgress = errors.New("a task is already in progress")
 // Client is the sandboxd-side client for one sandbox's runtimed,
 // reached over its Unix domain socket. It is the integration seam:
 // sandboxd constructs a Client per sandbox from the host-side socket
-// path (<workspaces>/<id>.mnt/.runtimed/sock).
+// path (<workspaces>/<id>/.runtimed/sock, see loopback.Manager.Paths).
 type Client struct {
 	socketPath string
 	http       *http.Client // short-timeout: status, start, cancel
