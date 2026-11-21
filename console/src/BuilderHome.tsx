@@ -6,6 +6,7 @@ import { CATALOG, catalogIdOf } from './catalog'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
 import { Avatar } from './design/Avatar'
+import { ProjectIcon } from './design/ProjectIcon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
 import { appTitle } from './appTitle'
@@ -195,8 +196,9 @@ export function BuilderHome({
             {filtered.map((a, i) => (
               <button key={a.id} className="project-card" onClick={() => onOpen(a.id)} data-testid="app-card">
                 <div className="project-art" style={{ ['--art' as string]: `${(i * 47) % 360}` }}>
-                  <Avatar
-                    who={a.name}
+                  <ProjectIcon
+                    name={a.name}
+                    tags={a.tags}
                     logo={catalogIdOf(a.tags)}
                     size={64}
                     still

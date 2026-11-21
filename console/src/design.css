@@ -3685,3 +3685,89 @@ select.agent-model {
 .build-yourself > p {
   margin-bottom: 20px;
 }
+
+/* Sidebar rows with a pencil: rename & change icon (shows on hover). */
+.sidebar-row {
+  position: relative;
+  display: grid;
+}
+.sidebar-row > .sidebar-project {
+  width: 100%;
+  padding-right: 34px;
+}
+.sidebar-edit {
+  position: absolute;
+  z-index: 2;
+  right: 6px;
+  /* Centred with a margin: buttons shrink with transform while pressed, which
+     would move this one out from under the pointer before the click ends. */
+  top: 50%;
+  margin-top: -12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--panel-3);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.sidebar-row:hover .sidebar-edit,
+.sidebar-edit:focus-visible {
+  opacity: 1;
+}
+.sidebar-edit:hover {
+  color: var(--fg);
+}
+.sidebar-row:hover .agent-dot {
+  opacity: 0;
+}
+@media (hover: none) {
+  .sidebar-edit {
+    opacity: 0.7;
+  }
+  .sidebar-row .agent-dot {
+    margin-right: 26px;
+  }
+}
+
+/* Rename & icon dialog. */
+.edit-look {
+  display: grid;
+  gap: 16px;
+}
+.edit-look-preview {
+  display: grid;
+  place-items: center;
+  padding: 10px 0 2px;
+}
+.look-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.look-option {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s var(--spring);
+}
+.look-option:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+.look-option.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}

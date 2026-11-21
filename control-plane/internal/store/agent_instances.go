@@ -99,6 +99,14 @@ func (s *Store) SetAgentInstanceModel(ctx context.Context, id, connectionID, mod
 	})
 }
 
+// SetAgentInstanceName renames an agent (what the person sees).
+func (s *Store) SetAgentInstanceName(ctx context.Context, id, name string) error {
+	return s.submit(ctx, func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE agent_instance SET name = ? WHERE id = ?`, name, id)
+		return err
+	})
+}
+
 func (s *Store) DeleteAgentInstance(ctx context.Context, id string) error {
 	return s.submit(ctx, func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `DELETE FROM agent_instance WHERE id = ?`, id)

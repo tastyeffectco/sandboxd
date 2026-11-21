@@ -16,6 +16,8 @@ import { BuildIntent } from './AgentPicker'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
 import { Avatar } from './design/Avatar'
+import { ProjectIcon } from './design/ProjectIcon'
+import { EditLook } from './EditLook'
 import { catalogIdOf } from './catalog'
 import { Dialog } from './design/Dialog'
 import { useUnsavedChanges } from './unsavedChanges'
@@ -283,8 +285,8 @@ export function AppView({
             <span className="assistant-sub">Builds apps, installs open-source projects and runs your agents</span>
           </div>
         ) : (
-          <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename app">
-            <Avatar who={app.name} logo={catalogIdOf(app.tags)} size={30} still toggle />
+          <button className="workspace-title" onClick={() => setRename(app.name)} title="Rename & icon">
+            <ProjectIcon name={app.name} tags={app.tags} logo={catalogIdOf(app.tags)} size={30} still />
             <h1>{app.name}</h1>
             <Icon name="chevron" size={14} />
           </button>
@@ -572,37 +574,16 @@ export function AppView({
         </div>
       </div>
       {rename !== null && (
-        <Dialog title="Rename project" close={() => !busy && setRename(null)}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (rename.trim())
-                void act(async () => {
-                  setApp(await api.updateApp(appId, { name: rename.trim() }))
-                  setRename(null)
-                }, 'Project renamed')
-            }}
-          >
-            <label className="form-field">
-              Project name
-              <Input
-                autoFocus
-                required
-                maxLength={80}
-                value={rename}
-                onChange={(e) => setRename(e.target.value)}
-              />
-            </label>
-            <div className="dialog-actions">
-              <Btn onClick={() => setRename(null)} type="button">
-                Cancel
-              </Btn>
-              <Btn type="submit" variant="primary" disabled={busy}>
-                Save name
-              </Btn>
-            </div>
-          </form>
-        </Dialog>
+        <EditLook
+          app={app}
+          onClose={() => setRename(null)}
+          onError={onError}
+          onSaved={(next) => {
+            setApp(next)
+            reloadApps?.()
+            toast('Saved')
+          }}
+        />
       )}
       {deleting && (
         <Dialog title="Delete this project?" close={() => !busy && setDeleting(false)}>

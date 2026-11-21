@@ -6,10 +6,14 @@ import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { Bot } from './design/Bot'
 import { Avatar } from './design/Avatar'
+import { ProjectIcon } from './design/ProjectIcon'
 import { catalogIdOf } from './catalog'
 import { AgentMessage } from './AgentMessage'
 import { Dialog } from './design/Dialog'
 
+// The workspace runs but its task runner is not answering yet (just started).
+const notReadyYet = (e: unknown) =>
+  (e as { status?: number }).status === 502 && /^runtimed:/.test((e as Error).message || '')
 const terminal = (status: string) => ['succeeded', 'failed', 'cancelled', 'error'].includes(status)
 
 export function AgentChat({
@@ -244,8 +248,8 @@ export function AgentChat({
         .listApps()
         .then((list) => (known.current ??= new Set(list.map((a) => a.id))))
         .catch(() => {})
-    try {
-      const task = await api.submitTask(
+    const submit = () =>
+      api.submitTask(
         sbID,
         prompt,
         choice.agent,
@@ -253,12 +257,32 @@ export function AgentChat({
         auto ? false : cont,
         choice.provider || undefined,
       )
+    try {
+      let task
+      // A workspace that has just started takes a few seconds before it
+      // accepts work: wait for it quietly instead of failing the message.
+      for (let waited = 0; ; waited += 2) {
+        try {
+          task = await submit()
+          break
+        } catch (e) {
+          if (!notReadyYet(e) || waited >= 60 || currentSandbox.current !== sbID) throw e
+          setTool(assistant ? 'sandboxd is waking up…' : 'Your workspace is waking up…')
+          await new Promise((r) => setTimeout(r, 2000))
+        }
+      }
+      setTool('')
       setActive({ id: task.id, prompt, status: 'running', can_revert: false })
       void loadHistory()
     } catch (e) {
+      setTool('')
       setText(prompt)
       setActive(null)
-      setError((e as Error).message)
+      setError(
+        notReadyYet(e)
+          ? `${assistant ? 'sandboxd' : 'Your workspace'} did not wake up. Your message is kept: try again in a moment, or restart the app.`
+          : (e as Error).message,
+      )
     } finally {
       submitting.current = false
     }
@@ -454,7 +478,7 @@ export function AgentChat({
         )}
         {made.map((a) => (
           <div className="made-app" key={a.id} data-testid="made-app">
-            <Avatar who={a.name} logo={catalogIdOf(a.tags)} size={40} mood="happy" />
+            <ProjectIcon name={a.name} tags={a.tags} logo={catalogIdOf(a.tags)} size={40} mood="happy" />
             <span>
               <small>New app</small>
               <strong>{a.name}</strong>

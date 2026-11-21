@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#241a44"/>
+      <stop offset="1" stop-color="#0b0a14"/>
+    </linearGradient>
+    <radialGradient id="light" cx=".5" cy=".92" r=".62">
+      <stop offset="0" stop-color="#9b7bff" stop-opacity=".55"/>
+      <stop offset=".55" stop-color="#ff7a59" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#ff7a59" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c3afff"/>
+      <stop offset="1" stop-color="#5b3fd6"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d1b2e"/>
+      <stop offset="1" stop-color="#07070d"/>
+    </linearGradient>
+    <radialGradient id="shine" cx=".3" cy=".22" r=".55">
+      <stop offset="0" stop-color="#fff" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#tile)"/>
+  <rect width="1024" height="1024" rx="230" fill="url(#light)"/>
+  <rect x="6" y="6" width="1012" height="1012" rx="224" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="12"/>
+  <g transform="translate(152 168) scale(6)">
+    <path d="M60 22 V10" stroke="#5b3fd6" stroke-width="4" stroke-linecap="round"/>
+    <path d="M60 -1 L63 6 L70 9 L63 12 L60 19 L57 12 L50 9 L57 6 Z" fill="#ffd9f4"/>
+    <rect x="9" y="50" width="10" height="24" rx="5" fill="#5b3fd6"/>
+    <rect x="101" y="50" width="10" height="24" rx="5" fill="#5b3fd6"/>
+    <rect x="15" y="22" width="90" height="80" rx="26" fill="url(#body)"/>
+    <rect x="15" y="22" width="90" height="80" rx="26" fill="url(#shine)"/>
+    <rect x="26" y="40" width="68" height="44" rx="17" fill="url(#visor)"/>
+    <path d="M33 47 Q44 42 60 43" stroke="#fff" stroke-opacity=".16" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <rect x="40" y="52" width="12" height="20" rx="6" fill="#ffe6f8"/>
+    <rect x="68" y="52" width="12" height="20" rx="6" fill="#ffe6f8"/>
+  </g>
+</svg>

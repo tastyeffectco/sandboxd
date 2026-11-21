@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentcatalog"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
@@ -432,20 +433,39 @@ func (s *Server) v1StopAgentInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
 }
 
-// PATCH /v1/agent-instances/{id} {connection_id, model?} — think with another
-// model. The agent is made again with it; its memory and skills stay.
+// PATCH /v1/agent-instances/{id} {name} — rename it (shown in the sidebar;
+// nothing restarts). {connection_id, model?} — think with another model: the
+// agent is made again with it; its memory and skills stay.
 func (s *Server) v1UpdateAgentInstance(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.ownAgentInstance(w, r)
 	if !ok {
 		return
 	}
 	var req struct {
-		ConnectionID string `json:"connection_id"`
-		Model        string `json:"model"`
+		Name         *string `json:"name"`
+		ConnectionID string  `json:"connection_id"`
+		Model        string  `json:"model"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil || req.ConnectionID == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil ||
+		(req.ConnectionID == "" && req.Name == nil) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "choose a model connection")
 		return
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || utf8.RuneCountInString(name) > 60 {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "give the agent a name of 1 to 60 characters")
+			return
+		}
+		if err := s.Store.SetAgentInstanceName(r.Context(), h.ID, name); err != nil {
+			writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		h.Name = name
+		if req.ConnectionID == "" {
+			writeJSON(w, http.StatusOK, s.agentInstanceView(r.Context(), h))
+			return
+		}
 	}
 	model, err := s.agentModel(r.Context(), req.ConnectionID, req.Model)
 	if err != nil {
