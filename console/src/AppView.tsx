@@ -225,6 +225,23 @@ export function AppView({
       .finally(() => setPreparing(false))
   }, [app?.git, sb, applyRuntime])
 
+  // Opening a sleeping app wakes it: people expect to see their app, not a
+  // button. Decided once, on the first status seen in this visit; the header
+  // Wake up button stays as a retry.
+  const wokenRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (assistant || !sb || wokenRef.current === sb.id) return
+    // Only an app that was asleep when opened; never undo a Stop made here.
+    wokenRef.current = sb.id
+    if (sb.status !== 'stopped') return
+    api
+      .startSandbox(sb.id)
+      .then(() => refresh())
+      .catch(() => {
+        /* the Wake up button remains */
+      })
+  }, [assistant, sb, refresh])
+
   const undoRuntime = useCallback(async () => {
     if (!sb) return
     setBusy(true)
@@ -295,12 +312,12 @@ export function AppView({
         <div className="workspace-actions" hidden={assistant}>
           {!sb && (
             <Btn variant="primary" disabled={busy} onClick={() => act(() => api.createAppSandbox(appId))}>
-              Create workspace
+              Set up app
             </Btn>
           )}
           {sb && status === 'stopped' && (
             <Btn variant="primary" disabled={busy} onClick={() => act(() => api.startSandbox(sb.id))}>
-              Start workspace
+              Wake up
             </Btn>
           )}
           {previewURL && status === 'running' && (
@@ -719,7 +736,7 @@ export function PreviewPane({
                 : !sb
                   ? 'Your canvas is waiting'
                   : sb.status !== 'running'
-                    ? 'Your workspace is resting'
+                    ? 'Waking your app…'
                     : sb.preview?.status === 'none'
                       ? 'Running behind the scenes'
                       : 'Bringing your app to life'}
@@ -728,9 +745,9 @@ export function PreviewPane({
               {blocked
                 ? 'The app is running, but this browser could not reach the inline preview.'
                 : !sb
-                  ? 'Create a workspace, then tell your agent what you want to build.'
+                  ? 'Tell your agent what you want to build.'
                   : sb.status !== 'running'
-                    ? 'Start the workspace to continue where you left off.'
+                    ? 'It was asleep to save energy on this computer. It will be back in a moment.'
                     : sb.preview?.status === 'none'
                       ? 'This project has no web preview. Check its processes in Runtime.'
                       : 'The preview appears here as soon as your app is ready.'}

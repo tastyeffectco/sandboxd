@@ -434,6 +434,10 @@ export default function App({
                       : 'sidebar-project sidebar-agent'
                   }
                   onClick={() => setRoute({ name: 'agent', id: a.id })}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setEditing({ agent: a })
+                  }}
                 >
                   <Avatar
                     who={a.package}
@@ -477,6 +481,10 @@ export default function App({
                     route.name === 'app' && route.id === a.id ? 'sidebar-project active' : 'sidebar-project'
                   }
                   onClick={() => goApp(a.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setEditing({ app: a })
+                  }}
                 >
                   <ProjectIcon name={a.name} tags={a.tags} logo={catalogIdOf(a.tags)} size={22} still />
                   <span>{a.name}</span>

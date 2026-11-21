@@ -333,7 +333,7 @@ test('an existing task reconnects and can be stopped after navigation', async ({
   await expect(page.locator('.agent-message').filter({ hasText: 'Still building…' })).toBeVisible()
   await page.getByTestId('tab-files').click()
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
-  await expect(page.getByText('cancelled', { exact: true })).toBeVisible()
+  await expect(page.getByText('Stopped', { exact: true })).toBeVisible()
   expect(s.calls.filter((c) => c.path.endsWith('/cancel'))).toHaveLength(1)
 })
 

@@ -3601,7 +3601,7 @@ select.agent-model {
   box-shadow: var(--shadow-2);
   animation: sbx-pop 0.4s var(--spring) both;
 }
-.made-app > span:not(.logo-tile) {
+.made-app > span:not(.logo-tile):not(.app-tile) {
   flex: 1;
   min-width: 0;
   display: grid;
@@ -3688,14 +3688,19 @@ select.agent-model {
   padding: 0;
   border: 0;
   border-radius: 7px;
-  background: var(--panel-3);
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
+  /* Always findable, quiet until the row is hovered or open. */
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.sidebar-row:has(.active) .sidebar-edit {
+  opacity: 0.8;
 }
 .sidebar-row:hover .sidebar-edit,
 .sidebar-edit:focus-visible {
+  background: var(--panel-3);
   opacity: 1;
 }
 .sidebar-edit:hover {
@@ -3793,4 +3798,10 @@ select.agent-model {
 }
 .swatch-system {
   background: linear-gradient(135deg, #f6f5f1 50%, #0a0a11 50%);
+.settings-nav-caption {
+  margin: 14px 10px 4px;
+  font: 600 10.5px var(--sans);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--faint);
 }

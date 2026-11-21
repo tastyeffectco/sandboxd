@@ -33,7 +33,7 @@ describe('AgentChat on a resting project', () => {
         goSettings={noop}
       />,
     )
-    expect(screen.getByText('Your workspace is resting. Send a message to wake it.')).toBeTruthy()
+    expect(screen.getByText('Your app is asleep. Send a message and it wakes up.')).toBeTruthy()
     fireEvent.change(screen.getByTestId('task-prompt'), { target: { value: 'Add a footer' } })
     await waitFor(() => expect((screen.getByTestId('task-send') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByTestId('task-send'))

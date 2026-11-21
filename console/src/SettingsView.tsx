@@ -1,5 +1,5 @@
 import { AccountModelSelect } from './AccountModelSelect'
-import { useCallback, useEffect, useState, ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useState, ReactNode } from 'react'
 import { api, Settings as TSettings, Agent, GitCredential, ApiKey } from './api'
 import { c, alpha, font, mono, Card, H, Btn, Pill, Input } from './design/kit'
 import { Bot } from './design/Bot'
@@ -86,8 +86,8 @@ const SECTIONS = [
   { id: 'access', title: 'Security & API keys', note: 'Manage access to your instance', icon: 'lock' },
   {
     id: 'lifecycle',
-    title: 'Workspace lifecycle',
-    note: 'Balance availability and resources',
+    title: 'Sleep & wake',
+    note: 'When apps go to sleep to save energy',
     icon: 'history',
   },
   { id: 'instance', title: 'Instance', note: 'Networking, runtime and system context', icon: 'settings' },
@@ -191,8 +191,13 @@ export function SettingsView({
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
           {SECTIONS.map((p) => (
+            <Fragment key={p.id}>
+            {p.id === 'git' && (
+              <p className="settings-nav-caption" aria-hidden="true">
+                Advanced
+              </p>
+            )}
             <button
-              key={p.id}
               className={section === p.id ? 'active' : ''}
               aria-current={section === p.id ? 'page' : undefined}
               onClick={() => {
@@ -210,6 +215,7 @@ export function SettingsView({
                 <small>{p.note}</small>
               </span>
             </button>
+            </Fragment>
           ))}
         </nav>
         <div className="settings-content">
