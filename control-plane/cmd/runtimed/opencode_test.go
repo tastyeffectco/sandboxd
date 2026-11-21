@@ -210,3 +210,28 @@ func TestOpencodeFatalLogFreeLimit(t *testing.T) {
 		}
 	}
 }
+
+// Separate text parts are separate messages: they get a paragraph break
+// instead of running together ("list.It's"), in the stream and the result.
+func TestParse_TextPartsDoNotRunTogether(t *testing.T) {
+	const stream = `
+{"type":"text","part":{"id":"p1","type":"text","text":"I'll create a recipe app."}}
+{"part":{"id":"t1","type":"tool","tool":"create_app","state":{"status":"completed","input":{}}}}
+{"type":"text","part":{"id":"p2","type":"text","text":"It's building now."}}
+`
+	c := &captured{}
+	pr := parseOpencodeStream(strings.NewReader(stream), c.sink)
+	if got, want := pr.FinalMessage, "I'll create a recipe app.\n\nIt's building now."; got != want {
+		t.Errorf("FinalMessage = %q, want %q", got, want)
+	}
+	msgs := c.ofType(runtime.EventMessage)
+	var streamed string
+	for _, m := range msgs {
+		if m["role"] == "agent" {
+			streamed += m["text"].(string)
+		}
+	}
+	if streamed != pr.FinalMessage {
+		t.Errorf("streamed %q, want the same as the result %q", streamed, pr.FinalMessage)
+	}
+}
