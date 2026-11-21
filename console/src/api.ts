@@ -586,6 +586,26 @@ export const api = {
     }
     return { hub, spokes }
   },
+  // A file the person attached in a project chat, written as-is (binary
+  // safe, up to 25 MB) under the app folder.
+  putWorkspaceBlob: async (sandboxId: string, path: string, file: Blob): Promise<void> => {
+    const res = await fetch(`/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: file,
+    })
+    if (!res.ok) {
+      if (res.status === 401 && onUnauthorized) onUnauthorized()
+      let message = `${res.status} ${res.statusText}`
+      try {
+        const e = await res.json()
+        if (e?.error?.message) message = e.error.message
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(message)
+    }
+  },
   putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
     const res = await fetch(`/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`, {
       method: 'PUT',

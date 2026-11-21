@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { fileSize, MAX_FILE_BYTES, MAX_FILES } from './chatAttachments'
 import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep, ModelProvider } from './api'
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
@@ -586,15 +587,7 @@ export function AgentRoom({
   )
 }
 
-const MAX_FILES = 10
-const MAX_FILE_BYTES = 25 * 1024 * 1024
 type Pending = { key: string; name: string; size: number; preview?: string; file?: AgentAttachment }
-
-export function fileSize(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
-  if (n >= 1024) return `${Math.round(n / 1024)} KB`
-  return `${n} bytes`
-}
 
 // A file in the conversation: pictures show, anything else downloads.
 function AttachedFile({ agentId, file }: { agentId: string; file: AgentAttachment }) {
