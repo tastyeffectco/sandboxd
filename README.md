@@ -1,7 +1,8 @@
 <h1 align="center">sandboxd</h1>
 
 <p align="center">
-  <b>Your own AI crew. It builds apps and runs agents for you, on your computer.</b><br/>
+  <b>Your own AI agents, working for you around the clock, on your computer.</b><br/>
+  They take on jobs, keep at them, report back, and build the apps you need along the way.<br/>
   Free to start · No code · Runs on your machine · Open source (MIT)
 </p>
 
@@ -35,20 +36,25 @@
 
 
 <p align="center">
-  <img alt="sandboxd: Home and an app built from one sentence" src="docs/images/readme/hero.webp" width="100%">
+  <img alt="sandboxd: the Hermes agent watching flight prices and planning meals, in front of an app it uses" src="docs/images/readme/hero.webp" width="100%">
 </p>
 
 ---
 
 ## What is sandboxd?
 
-**You ask in plain words. sandboxd does the rest.**
+**An AI crew that works for you: agents first, apps on demand.**
 
-| You say… | sandboxd… |
+Chatbots answer and forget. sandboxd's agents **keep working**: they remember
+you, run jobs on a schedule, browse the web, message you on Telegram, and use
+(or build) apps to get things done. You talk to them in plain words.
+
+| You say… | Your crew… |
 |---|---|
-| *"Build me a recipe app with a shopping list"* | builds a real, working app in a few minutes, with its own link |
+| *"Watch flight prices to Marrakech and tell me when it drops under €120"* | an agent checks every morning and messages you the moment it does |
+| *"Plan my dinners every week from my recipes"* | an agent makes the plan every Sunday and sends it to you |
+| *"Build me a recipe app with a shopping list"* | a coding agent builds a real, working app in minutes, with its own link |
 | *"Install Excalidraw for me"* | sets up a popular free app in one click |
-| *"Ask Hermes to watch flight prices"* | hands the job to an agent that keeps working and messages you |
 
 Everything runs on **your** computer or server: your apps, your code and your
 data live there, and no subscription is needed. It starts free with a built-in
@@ -60,16 +66,21 @@ your own computer whenever you like.
 ```mermaid
 flowchart LR
     you(["🧑 You"]) -- "plain words" --> agent["🤖 sandboxd<br/>(Home)"]
-    agent -- "build an app" --> sb["📦 Private sandbox<br/>an AI writes the code"] --> url["🌐 Your app<br/>at its own link"]
+    agent -- "hand off a job" --> crew["🛰️ Your agents<br/>Hermes · OpenClaw · OpenMausBot"]
+    crew -- "report back" --> tg["📲 You, on Telegram<br/>or in the chat"]
+    agent -- "build an app" --> sb["📦 Private sandbox<br/>a coding agent writes it"] --> url["🌐 Your app<br/>at its own link"]
+    crew -. "use and update" .-> url
     agent -- "install a free app" --> free["🧩 Open-source app<br/>ready to use"]
-    agent -- "hand off a task" --> crew["🛰️ Your agents<br/>Hermes · OpenClaw · OpenMausBot"]
 ```
 
-1. **Ask on Home.** One chat with the sandboxd agent, the first thing you see.
-2. **Watch it come alive.** Each app gets its own private sandbox. An AI coding
-   agent builds it while you watch the live preview.
-3. **Keep shaping it.** Chat to change anything. Every step is saved, so you can
-   go back.
+1. **Ask on Home.** One chat with the sandboxd agent, your crew's lead. It
+   hands each job to the right agent, or starts building.
+2. **Your agents get to work, and keep at it.** Each runs in its own locked-down
+   container with its own memory, on a schedule or whenever you ask, and tells you
+   what it found.
+3. **Apps when you need them.** A coding agent builds each app in a private
+   sandbox while you watch the live preview. Chat to change anything; every step
+   is saved, so you can go back.
 
 <p align="center">
   <img alt="An app built from one sentence, live next to its chat" src="docs/images/readme/app-preview.webp" width="100%">
@@ -79,15 +90,15 @@ flowchart LR
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img alt="Home: one chat with the sandboxd agent" src="docs/images/readme/home.webp"><br><b>Home</b><br><sub>One chat for everything: an app, a free app, an agent or a task.</sub></td>
-    <td width="50%" valign="top"><img alt="My apps" src="docs/images/readme/my-apps.webp"><br><b>My apps</b><br><sub>Everything your crew built, plus what's trending on GitHub.</sub></td>
+    <td width="50%" valign="top"><img alt="Home: one chat with the sandboxd agent" src="docs/images/readme/home.webp"><br><b>Home</b><br><sub>One chat with your crew's lead: hand off a job, ask for an app, or ask what your agents did today.</sub></td>
+    <td width="50%" valign="top"><img alt="Add an agent" src="docs/images/readme/agents.webp"><br><b>Your agents</b><br><sub>Hermes, OpenClaw and OpenMausBot, or several of each, each with its own memory.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img alt="A chat with Hermes" src="docs/images/readme/agent-chat.webp"><br><b>Agents that keep working</b><br><sub>Hermes watches flight prices every morning, then plans dinners and fills the shopping list in your Recipe Box app.</sub></td>
+    <td width="50%" valign="top"><img alt="My apps" src="docs/images/readme/my-apps.webp"><br><b>My apps</b><br><sub>Every app your crew built, plus what's trending on GitHub.</sub></td>
   </tr>
   <tr>
     <td width="50%" valign="top"><img alt="Free apps" src="docs/images/readme/free-apps.webp"><br><b>Free apps</b><br><sub>Excalidraw, draw.io, Uptime Kuma and many more, installed in one click.</sub></td>
-    <td width="50%" valign="top"><img alt="Add an agent" src="docs/images/readme/agents.webp"><br><b>Agents</b><br><sub>Hermes, OpenClaw and OpenMausBot: assistants that remember you and work around the clock.</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img alt="A chat with Hermes" src="docs/images/readme/agent-chat.webp"><br><b>Talk to an agent</b><br><sub>Hermes checks flight prices every morning and messages you on Telegram.</sub></td>
     <td width="50%" valign="top"><img alt="Settings: choose your AI" src="docs/images/readme/settings-ai.webp"><br><b>Choose your AI</b><br><sub>Free to start. Add ChatGPT, Claude, OpenRouter, CometAPI or a model on your own computer.</sub></td>
   </tr>
 </table>
@@ -99,17 +110,21 @@ flowchart LR
 
 ## What your crew can do
 
-- **✨ Build apps.** A habit tracker, a landing page for your bakery, a team
-  dashboard. Attach your logo or photos and it uses them.
-- **🧩 Install free apps.** Popular open-source apps (whiteboards, diagrams,
-  notes, PDF tools, a CAD modeler, a physics simulator…), each tested and ready.
-  [Free apps →](docs/free-apps.md)
-- **🤖 Run agents.** Open-source assistants that remember you, run scheduled
-  jobs, browse the web, reach you on Telegram, and can build apps too. Only agents
-  that run fully on your machine. [Agents →](docs/operator-agents.md)
-- **💬 One assistant for all of it.** sandboxd hands tasks to your agents, brings
-  the answers back, and never deletes anything without your yes.
+- **🤖 Agents that work around the clock.** Open-source assistants
+  ([Hermes](https://github.com/NousResearch/hermes-agent), OpenClaw,
+  OpenMausBot) that remember you, run scheduled jobs, browse the web, reach you
+  on Telegram, and create or change apps to get the job done. Add several of
+  each. Only agents that run fully on your machine, each in its own locked-down
+  container with no keys inside. [Agents →](docs/operator-agents.md)
+- **💬 One lead for the whole crew.** The sandboxd agent hands jobs to your
+  agents, brings the answers back, and never deletes anything without your yes.
   [The sandboxd agent →](docs/sandboxd-agent.md)
+- **✨ Apps built on demand.** A habit tracker, a landing page for your bakery, a
+  team dashboard. A coding agent builds it in minutes; attach your logo or photos
+  and it uses them.
+- **🧩 Free apps in one click.** Popular open-source apps (whiteboards,
+  diagrams, notes, PDF tools, a CAD modeler, a physics simulator…), each tested
+  and ready. [Free apps →](docs/free-apps.md)
 - **🧠 Pick your AI.** Free by default. In **Settings → AI**, connect your
   ChatGPT or Claude subscription, OpenRouter, CometAPI, or a model on your own
   computer (Ollama, LM Studio). [Model connections →](docs/model-providers.md)
@@ -130,7 +145,7 @@ curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install
 ```
 
 It prints your link: open it, create a password, and tell sandboxd what you want
-on **Home**. Works on Intel/AMD and ARM, including Apple Silicon.
+on **Home**: hand off a job or ask for an app. Works on Intel/AMD and ARM, including Apple Silicon.
 
 **☁️ No computer to spare?** [Deploy to a VPS in one click](#-deploy-to-a-vps-in-one-click)
 or let us [run it for you](#managed--we-run-it-for-you).
