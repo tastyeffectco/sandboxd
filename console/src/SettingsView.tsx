@@ -9,6 +9,7 @@ import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
 import { ModelProviders } from './ModelProviders'
 import { SettingsAI } from './SettingsAI'
+import { ThemePref, themePref, setThemePref } from './theme'
 import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
 
 // --- source badges: every value on this page is one of these ----------------
@@ -80,6 +81,7 @@ function Field({
 
 const SECTIONS = [
   { id: 'ai', title: 'AI', note: 'Which AI builds for you', icon: 'spark' },
+  { id: 'appearance', title: 'Appearance', note: 'Light, dark, or like this computer', icon: 'monitor' },
   { id: 'models', title: 'Model connections', note: 'Local models and remote endpoints', icon: 'box' },
   { id: 'agents', title: 'Coding agents', note: 'Accounts, subscriptions and defaults', icon: 'spark' },
   { id: 'git', title: 'Git credentials', note: 'Connect private repositories', icon: 'git' },
@@ -238,6 +240,7 @@ export function SettingsView({
               }}
             />
           )}
+          {section === 'appearance' && <AppearancePicker />}
           {section === 'models' && <ModelProviders onError={onError} toast={toast} />}
           {section === 'agents' && (
             <>
@@ -902,6 +905,37 @@ export function SettingsView({
           </div>
         </Dialog>
       )}
+    </div>
+  )
+}
+
+// Appearance: three choices, applied at once and remembered on this computer.
+function AppearancePicker() {
+  const [pref, setPref] = useState<ThemePref>(themePref())
+  const options: { id: ThemePref; title: string; note: string }[] = [
+    { id: 'system', title: 'Like this computer', note: 'Light by day, dark at night if your computer does' },
+    { id: 'light', title: 'Light', note: 'Warm paper, easy to read' },
+    { id: 'dark', title: 'Dark', note: 'Easy on the eyes at night' },
+  ]
+  return (
+    <div className="appearance-picker" role="radiogroup" aria-label="Appearance">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          role="radio"
+          aria-checked={pref === o.id}
+          className={`appearance-option ${pref === o.id ? 'active' : ''}`}
+          data-testid={`theme-${o.id}`}
+          onClick={() => {
+            setThemePref(o.id)
+            setPref(o.id)
+          }}
+        >
+          <span className={`appearance-swatch swatch-${o.id}`} aria-hidden="true" />
+          <strong>{o.title}</strong>
+          <small>{o.note}</small>
+        </button>
+      ))}
     </div>
   )
 }

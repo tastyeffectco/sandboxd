@@ -338,6 +338,16 @@ async function start() {
     trusted(event)
     return publicState()
   })
+  // The console's theme: match the window background and the Windows title
+  // bar buttons, so a dark app has no light corner and the reverse.
+  ipcMain.handle('desktop:theme', (event, theme) => {
+    trusted(event)
+    if (theme !== 'light' && theme !== 'dark') throw new Error('Unknown theme.')
+    const light = theme === 'light'
+    window?.setBackgroundColor(light ? '#f6f5f1' : '#0a0a11')
+    if (process.platform !== 'darwin')
+      window?.setTitleBarOverlay?.(light ? { color: '#f6f5f1', symbolColor: '#33332e' } : { color: '#0a0a11', symbolColor: '#d9d7e8' })
+  })
   ipcMain.handle('desktop:install-engine', (event, ...args) => {
     trusted(event)
     if (args.length) throw new Error('Engine setup does not accept commands or options.')
