@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, App as TApp, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { AIPicker } from './AIPicker'
 import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
@@ -49,6 +50,21 @@ export function AgentChat({
   saveDraft?: (draft: BuildIntent) => void
 }) {
   const [choice, setChoice] = useState(initialBuild || draft || defaultChoice)
+  // A new chat starts on the AI chosen in Settings → AI.
+  useEffect(() => {
+    if (initialBuild || draft) return
+    let live = true
+    Promise.resolve()
+      .then(() => api.getSettings())
+      .then((s) => {
+        const d = s.agents?.default_ai
+        if (live && d?.agent) setChoice({ agent: d.agent, provider: d.provider || '', model: d.model || '' })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, []) // once, on open: a draft or a build already says which AI
   const [providers, setProviders] = useState<ModelProvider[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -385,34 +401,37 @@ export function AgentChat({
         </div>
         <span className={`connection-dot ${active ? 'working' : ''}`} />
       </header>
-      <details className="chat-options">
-        <summary>
-          <Icon name="settings" size={14} /> Agent & model{' '}
-          <span>{choice.provider ? providers.find((p) => p.id === choice.provider)?.name : 'Built-in'}</span>
-        </summary>
-        <AgentPicker
+      <div className="chat-options chat-ai-bar">
+        <AIPicker
           value={choice}
           onChange={setChoice}
           agents={agents}
           providers={providers}
           disabled={!!active}
+          onConnect={goSettings}
+          more={
+            <>
+              <AgentPicker
+                value={choice}
+                onChange={setChoice}
+                agents={agents}
+                providers={providers}
+                disabled={!!active}
+              />
+              <label className="chat-continue">
+                <input
+                  type="checkbox"
+                  checked={cont}
+                  disabled={!!active}
+                  onChange={(e) => setCont(e.target.checked)}
+                  data-testid="task-continue"
+                />{' '}
+                Continue the conversation
+              </label>
+            </>
+          }
         />
-        <div className="chat-option-footer">
-          <label>
-            <input
-              type="checkbox"
-              checked={cont}
-              disabled={!!active}
-              onChange={(e) => setCont(e.target.checked)}
-              data-testid="task-continue"
-            />{' '}
-            Continue conversation
-          </label>
-          <button className="text-button" onClick={goSettings}>
-            Connections
-          </button>
-        </div>
-      </details>
+      </div>
       <div className="chat-messages" ref={scroll} onScroll={onScroll} data-testid="chat-messages">
         {history.length === 0 && !active && (
           <div className={assistant ? 'chat-welcome home-welcome' : 'chat-welcome'}>

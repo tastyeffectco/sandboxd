@@ -8,6 +8,7 @@ import { Icon } from './design/Icon'
 import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
 import { ModelProviders } from './ModelProviders'
+import { SettingsAI } from './SettingsAI'
 import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
 
 // --- source badges: every value on this page is one of these ----------------
@@ -78,6 +79,7 @@ function Field({
 }
 
 const SECTIONS = [
+  { id: 'ai', title: 'AI', note: 'Which AI builds for you', icon: 'spark' },
   { id: 'models', title: 'Model connections', note: 'Local models and remote endpoints', icon: 'box' },
   { id: 'agents', title: 'Coding agents', note: 'Accounts, subscriptions and defaults', icon: 'spark' },
   { id: 'git', title: 'Git credentials', note: 'Connect private repositories', icon: 'git' },
@@ -100,7 +102,7 @@ export function SettingsView({
   toast: (m: string) => void
 }) {
   const [section, setSection] = useState<string>(
-    SECTIONS.some((s) => s.id === initialSection) ? initialSection! : 'models',
+    SECTIONS.some((s) => s.id === initialSection) ? initialSection! : 'ai',
   )
   useEffect(() => {
     if (SECTIONS.some((s) => s.id === initialSection)) setSection(initialSection!)
@@ -190,7 +192,7 @@ export function SettingsView({
         <nav className="settings-nav" aria-label="Settings sections">
           {SECTIONS.map((p) => (
             <Fragment key={p.id}>
-            {p.id === 'git' && (
+            {p.id === 'models' && (
               <p className="settings-nav-caption" aria-hidden="true">
                 Advanced
               </p>
@@ -225,6 +227,16 @@ export function SettingsView({
             <p role="alert" className="inline-error">
               {error}
             </p>
+          )}
+          {section === 'ai' && (
+            <SettingsAI
+              onError={onError}
+              toast={toast}
+              goSection={(id) => {
+                setSection(id)
+                history.replaceState(null, '', `#/settings/${id}`)
+              }}
+            />
           )}
           {section === 'models' && <ModelProviders onError={onError} toast={toast} />}
           {section === 'agents' && (

@@ -52,7 +52,14 @@ export interface Settings {
   runtime: { storage_mode: string; base_image: string }
   lifecycle: { idle_reap_enabled: boolean; idle_threshold_seconds: number; keepalive_max_seconds: number }
   egress: { mode: string }
-  agents: { providers: string[]; system_prompt?: string; default_models: Record<string, string>; time_zone?: string }
+  agents: {
+    providers: string[]
+    system_prompt?: string
+    default_models: Record<string, string>
+    time_zone?: string
+    // The AI new chats start with (Settings → AI). agent '' is the free AI.
+    default_ai?: { agent: string; provider?: string; model?: string }
+  }
   presets: Preset[]
   capabilities: Record<string, boolean>
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
@@ -80,7 +87,11 @@ export interface SettingsPatch {
     keepalive_max_seconds?: number
   }
   // Per-agent default model id (merges; empty value clears one).
-  agents?: { default_models?: Record<string, string>; time_zone?: string }
+  agents?: {
+    default_models?: Record<string, string>
+    time_zone?: string
+    default_ai?: { agent: string; provider?: string; model?: string }
+  }
 }
 
 // Advisory runtime detection (GET /v1/apps/{id}/runtime-inspect). Suggestions
@@ -435,8 +446,8 @@ export const api = {
   deleteAgentInstance: (id: string) => req<void>('DELETE', `/v1/agent-instances/${encodeURIComponent(id)}`),
   renameAgent: (id: string, name: string) =>
     req<AgentInstance>('PATCH', `/v1/agent-instances/${encodeURIComponent(id)}`, { name }),
-  setAgentModel: (id: string, connection_id: string) =>
-    req<AgentInstance>('PATCH', `/v1/agent-instances/${encodeURIComponent(id)}`, { connection_id }),
+  setAgentModel: (id: string, connection_id: string, model?: string) =>
+    req<AgentInstance>('PATCH', `/v1/agent-instances/${encodeURIComponent(id)}`, { connection_id, model }),
   listAgentMessages: (id: string) =>
     req<{ messages: AgentMessageRow[]; working: boolean }>('GET', `/v1/agent-instances/${encodeURIComponent(id)}/messages`),
   sendAgentMessage: (id: string, content: string, attachments: string[] = []) =>
