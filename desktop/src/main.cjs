@@ -465,9 +465,9 @@ async function start() {
         label: 'File',
         submenu: [
           {
-            label: 'New Project',
+            label: 'Ask sandboxd',
             accelerator: 'CmdOrCtrl+N',
-            click: () => window?.webContents.send('desktop:navigate', 'apps'),
+            click: () => window?.webContents.send('desktop:navigate', 'assistant'),
           },
           {
             label: 'Engine Connections…',

@@ -24,16 +24,19 @@ function Shell({ children }: { children: React.ReactNode }) {
           <h1>
             Your <span className="sbx-grad-text">AI crew</span> is waiting.
           </h1>
-          <p>Describe an app in your own words. Your crew builds it, runs it and keeps it on your own server.</p>
+          <p>
+            Ask in your own words. Your crew builds the apps you need and runs agents that keep working for you, on
+            your own server.
+          </p>
           <div className="auth-capabilities">
             <span>
-              01 <b>Describe your idea</b>
+              01 <b>Ask for an app or an agent</b>
             </span>
             <span>
-              02 <b>Watch your crew build it</b>
+              02 <b>Your crew builds and runs it</b>
             </span>
             <span>
-              03 <b>Preview, refine, share</b>
+              03 <b>Use it, change it, share it</b>
             </span>
           </div>
         </div>
