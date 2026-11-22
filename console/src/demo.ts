@@ -122,6 +122,12 @@ const hermesMessages = [
   { id: 'hm2', role: 'assistant', content: "On it. I'll check every morning at 8 and message you on Telegram the moment a return flight drops under **€120**.\n\nToday's cheapest is **€164** (Transavia, 23 → 30 Dec).",
     steps: [{ id: 's1', tool: 'browser', label: 'Searched 4 flight sites', status: 'done' }, { id: 's2', tool: 'cron', label: 'Scheduled a daily check at 8:00', status: 'done' }],
     state: 'done', channel: 'web', created_at: T0 },
+  { id: 'hm3', role: 'assistant', content: '✈️ **Price drop!** Paris → Marrakech, 23 → 30 Dec is now **€114** on Transavia. I sent you the link on Telegram. Want me to keep watching for the return leg?',
+    steps: [{ id: 's3', tool: 'browser', label: 'Morning check', status: 'done' }], state: 'done', channel: 'telegram', created_at: T0 },
+  { id: 'hm4', role: 'user', content: 'Booked it! Now plan my dinners for next week from my Recipe Box, and put what I need on the shopping list.', steps: [], state: 'done', channel: 'web', created_at: T0 },
+  { id: 'hm5', role: 'assistant', content: "Done: 7 dinners, starting with **Shakshuka** on Monday. I added 9 missing ingredients to the shopping list in your **Recipe Box** app, and I'll send next week's plan every Sunday at 6 pm.",
+    steps: [{ id: 's4', tool: 'apps', label: 'Updated the shopping list', status: 'done' }, { id: 's5', tool: 'cron', label: 'Scheduled Sundays at 18:00', status: 'done' }],
+    state: 'done', channel: 'web', created_at: T0 },
 ]
 
 const files = {

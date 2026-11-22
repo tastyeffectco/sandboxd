@@ -42,7 +42,7 @@ describe('demo mode fetch', () => {
     const { messages } = (await (await fetch('/v1/agent-instances/demo-hermes/messages')).json()) as {
       messages: unknown[]
     }
-    expect(messages.length).toBe(2)
+    expect(messages.length).toBe(5)
   })
 
   it('reports signed in so the console opens without a password', async () => {
