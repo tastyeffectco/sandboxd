@@ -3786,3 +3786,206 @@ select.agent-model {
   background: rgb(var(--tint) / 0.12);
   color: inherit;
 }
+
+/* The AI a chat uses: one button, a short list in plain words. */
+.chat-ai-bar {
+  padding: 6px 17px 10px;
+}
+.ai-picker {
+  position: relative;
+  display: inline-block;
+}
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--panel-2);
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ai-chip:hover:not(:disabled) {
+  border-color: var(--accent-line);
+}
+.ai-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.ai-chip > svg:first-child {
+  color: var(--accent);
+}
+.ai-chip-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.ai-chip-label small {
+  font: 600 9.5px var(--sans);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.ai-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(360px, 86vw);
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--raised);
+  box-shadow: var(--shadow-3);
+  animation: sbx-pop 0.18s var(--ease) both;
+}
+.ai-group > p {
+  margin: 8px 8px 4px;
+  font: 600 10px var(--sans);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.ai-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.ai-option:hover {
+  background: rgb(var(--tint) / 0.06);
+}
+.ai-option.active {
+  background: var(--accent-soft);
+}
+.ai-option > span {
+  display: grid;
+  gap: 1px;
+}
+.ai-option strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ai-option small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ai-option > svg {
+  color: var(--accent);
+  flex: none;
+}
+.ai-menu-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 8px 2px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.ai-more {
+  padding: 8px;
+}
+.ai-more .agent-picker {
+  padding-top: 6px;
+}
+.chat-continue {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* Settings → AI */
+.settings-ai {
+  display: grid;
+  gap: 28px;
+}
+.settings-ai h3 {
+  margin: 0 0 4px;
+  font: 650 16px var(--display);
+}
+.ai-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.ai-card {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 12px 34px 12px 14px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ai-card:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.ai-card.active {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+.ai-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-card > svg {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--accent);
+}
+.ai-connect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.ai-provider {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+}
+.ai-provider p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ai-provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ai-provider-actions input {
+  flex: 1;
+  min-width: 160px;
+}
+.ai-disclosure {
+  font-size: 11px;
+  color: var(--muted-2);
+}

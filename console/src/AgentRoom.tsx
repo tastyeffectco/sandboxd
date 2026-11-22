@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileSize, MAX_FILE_BYTES, MAX_FILES } from './chatAttachments'
+import { modelName } from './aiOptions'
 import { api, AgentAttachment, AgentInstance, AgentMessageRow, AgentStep, ModelProvider } from './api'
 import { AgentMessage } from './AgentMessage'
 import { Icon } from './design/Icon'
@@ -636,7 +637,7 @@ function ModelSwitch({
         }
         data-testid="agent-model-change"
       >
-        {agent.model} <Icon name="chevron" size={11} />
+        AI: {modelName(agent.model || '')} <Icon name="chevron" size={11} />
       </button>
     )
   return (
@@ -644,14 +645,15 @@ function ModelSwitch({
       className="agent-model"
       autoFocus
       disabled={saving}
-      value={agent.connection_id}
+      value={`${agent.connection_id}|${agent.model}`}
       onBlur={() => !saving && setOptions(null)}
       onChange={async (e) => {
-        const next = e.target.value
-        if (next === agent.connection_id) return setOptions(null)
+        const [connection, ...rest] = e.target.value.split('|')
+        const model = rest.join('|')
+        if (connection === agent.connection_id && model === agent.model) return setOptions(null)
         setSaving(true)
         try {
-          await api.setAgentModel(agent.id, next)
+          await api.setAgentModel(agent.id, connection, model)
           onChanged()
         } catch (err) {
           onError((err as Error).message)
@@ -663,11 +665,13 @@ function ModelSwitch({
       aria-label="AI model"
       data-testid="agent-model-select"
     >
-      {options.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.name} · {m.models[0].id}
-        </option>
-      ))}
+      {options.flatMap((c) =>
+        c.models.map((m) => (
+          <option key={`${c.id}|${m.id}`} value={`${c.id}|${m.id}`}>
+            {modelName(m.id)} · {c.name}
+          </option>
+        )),
+      )}
     </select>
   )
 }

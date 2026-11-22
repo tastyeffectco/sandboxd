@@ -17,6 +17,12 @@ vi.mock('./api', () => ({
 
 afterEach(cleanup)
 
+// The detailed pickers sit behind the AI button's "More options".
+const openMore = async () => {
+  fireEvent.click(await screen.findByTestId('ai-chip'))
+  fireEvent.click(screen.getByText('More options'))
+}
+
 const connected = (id: string): Agent => ({
   id,
   label: id,
@@ -34,6 +40,7 @@ describe('account model picker', () => {
     vi.mocked(api.getAgentModels).mockClear()
     const noop = () => {}
     render(<AppView appId="app" onError={noop} toast={noop} goApps={noop} goSettings={noop} />)
+    await openMore()
     await screen.findByText('Free to use. No account needed.')
     const picker = screen.getByTestId('task-model') as HTMLSelectElement
     expect(Array.from(picker.options).map((o) => [o.value, o.text])).toEqual([['', 'Free model']])
@@ -47,6 +54,7 @@ describe('account model picker', () => {
     }))
     const noop = () => {}
     render(<AppView appId="app" onError={noop} toast={noop} goApps={noop} goSettings={noop} />)
+    await openMore()
     const picker = (await screen.findByTestId('task-model')) as HTMLSelectElement
     await waitFor(() =>
       expect(Array.from(picker.options).map((o) => o.value)).toEqual(['', 'opencode-account-model']),
@@ -68,6 +76,7 @@ describe('account model picker', () => {
     vi.mocked(api.getAgentModels).mockRejectedValue(new Error('Reconnect this account'))
     const noop = () => {}
     render(<AppView appId="app" onError={noop} toast={noop} goApps={noop} goSettings={noop} />)
+    await openMore()
     await screen.findByText(/Reconnect this account/)
     expect(
       Array.from((screen.getByTestId('task-model') as HTMLSelectElement).options).map((o) => o.value),
