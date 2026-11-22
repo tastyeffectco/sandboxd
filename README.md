@@ -1,10 +1,8 @@
 <h1 align="center">sandboxd</h1>
 
 <p align="center">
-  <b>Your AI crew, on your own machine.</b><br/>
-  Ask in plain words. sandboxd builds the apps you need, installs free open-source
-  ones in one click, and runs agents that keep working for you, all on
-  <b>your</b> computer or server. Open-source, self-hosted, MIT.
+  <b>Your own AI crew. It builds apps and runs agents for you, on your computer.</b><br/>
+  Free to start · No code · Runs on your machine · Open source (MIT)
 </p>
 
 <h3 align="center">🔥 Trend of the Day on Trendshift</h3>
@@ -37,124 +35,142 @@
 
 
 <p align="center">
-  <img alt="sandboxd: an app built from one sentence, live next to its chat" src="docs/images/readme/app-preview.webp" width="100%">
+  <img alt="sandboxd: Home and an app built from one sentence" src="docs/images/readme/hero.webp" width="100%">
 </p>
-
-<p align="center"><sub>One sentence in, a working app out: the chat that built <b>Recipe Box</b> on the left, the live app on the right.</sub></p>
 
 ---
 
 ## What is sandboxd?
 
-sandboxd is like having a small team of AI helpers that live on your computer.
+**You ask in plain words. sandboxd does the rest.**
 
-- **You talk to one assistant, the sandboxd agent.** It is the first thing you
-  see. Tell it what you want in your own words.
-- **It builds apps.** *"Build me a recipe app with a shopping list"* gives you a
-  real, running app at its own link, in a few minutes. Keep chatting to change it.
-- **It installs free apps.** Excalidraw, draw.io, Uptime Kuma and dozens more
-  open-source apps, in one click, with no account and no AI needed to use them.
-- **It runs agents for you.** Hermes, OpenClaw and OpenMausBot are open-source
-  assistants that remember you, run scheduled jobs, browse the web and can reach
-  you on Telegram. Ask sandboxd to hand them work and it brings the answers back.
+| You say… | sandboxd… |
+|---|---|
+| *"Build me a recipe app with a shopping list"* | builds a real, working app in a few minutes, with its own link |
+| *"Install Excalidraw for me"* | sets up a popular free app in one click |
+| *"Ask Hermes to watch flight prices"* | hands the job to an agent that keeps working and messages you |
 
-Everything runs on **your** machine: your apps, your code, your data. It starts
-free with OpenCode's built-in AI (no account, no credit card), and you can plug
-in your own subscription or models whenever you want.
+Everything runs on **your** computer or server: your apps, your code and your
+data live there, and no subscription is needed. It starts free with a built-in
+AI, and you can plug in ChatGPT, Claude, any other AI, or a model running on
+your own computer whenever you like.
 
-Under the hood each app lives in its own **isolated sandbox** (a locked-down
-container with its own files and limits). A coding agent works inside it, the app
-is served at a live preview link, and idle apps **go to sleep and wake on
-demand**, so one ordinary computer holds many of them. It is one Go program
-driving Docker, with Traefik for links and SQLite for state: no Kubernetes, no
-separate database, no queue.
+## How it works
 
 ```mermaid
 flowchart LR
-    you(["🧑 You"]) -- "plain words" --> agent["🤖 sandboxd agent<br/>(Home)"]
-    agent -- "build an app" --> sb["📦 Sandbox<br/>coding agent inside"] --> url["🌐 Live app<br/>at its own link"]
-    agent -- "install a free app" --> free["🧩 Open-source app<br/>in its own sandbox"]
+    you(["🧑 You"]) -- "plain words" --> agent["🤖 sandboxd<br/>(Home)"]
+    agent -- "build an app" --> sb["📦 Private sandbox<br/>an AI writes the code"] --> url["🌐 Your app<br/>at its own link"]
+    agent -- "install a free app" --> free["🧩 Open-source app<br/>ready to use"]
     agent -- "hand off a task" --> crew["🛰️ Your agents<br/>Hermes · OpenClaw · OpenMausBot"]
 ```
+
+1. **Ask on Home.** One chat with the sandboxd agent, the first thing you see.
+2. **Watch it come alive.** Each app gets its own private sandbox. An AI coding
+   agent builds it while you watch the live preview.
+3. **Keep shaping it.** Chat to change anything. Every step is saved, so you can
+   go back.
+
+<p align="center">
+  <img alt="An app built from one sentence, live next to its chat" src="docs/images/readme/app-preview.webp" width="100%">
+</p>
 
 ## A quick tour
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img alt="Home: one chat with the sandboxd agent" src="docs/images/readme/home.webp"><br><sub><b>Home.</b> One chat with the sandboxd agent: ask for an app, a free app, an agent or a task.</sub></td>
-    <td width="50%" valign="top"><img alt="My apps: every app your crew built" src="docs/images/readme/my-apps.webp"><br><sub><b>My apps.</b> Everything your crew built, plus what's trending on GitHub, ready in one click.</sub></td>
+    <td width="50%" valign="top"><img alt="Home: one chat with the sandboxd agent" src="docs/images/readme/home.webp"><br><b>Home</b><br><sub>One chat for everything: an app, a free app, an agent or a task.</sub></td>
+    <td width="50%" valign="top"><img alt="My apps" src="docs/images/readme/my-apps.webp"><br><b>My apps</b><br><sub>Everything your crew built, plus what's trending on GitHub.</sub></td>
   </tr>
   <tr>
-    <td width="50%" valign="top"><img alt="Free apps catalog" src="docs/images/readme/free-apps.webp"><br><sub><b>Free apps.</b> Popular open-source apps, each pinned to a tested release and run in its own sandbox.</sub></td>
-    <td width="50%" valign="top"><img alt="Add an agent: Hermes, OpenClaw, OpenMausBot" src="docs/images/readme/agents.webp"><br><sub><b>Agents.</b> Add Hermes, OpenClaw or OpenMausBot, or several of each, each with its own memory.</sub></td>
+    <td width="50%" valign="top"><img alt="Free apps" src="docs/images/readme/free-apps.webp"><br><b>Free apps</b><br><sub>Excalidraw, draw.io, Uptime Kuma and many more, installed in one click.</sub></td>
+    <td width="50%" valign="top"><img alt="Add an agent" src="docs/images/readme/agents.webp"><br><b>Agents</b><br><sub>Hermes, OpenClaw and OpenMausBot: assistants that remember you and work around the clock.</sub></td>
   </tr>
   <tr>
-    <td width="50%" valign="top"><img alt="Chatting with the Hermes agent" src="docs/images/readme/agent-chat.webp"><br><sub><b>Talk to an agent.</b> Hermes watches flight prices every morning and pings you on Telegram.</sub></td>
-    <td width="50%" valign="top"><img alt="Settings, AI: choose which AI builds for you" src="docs/images/readme/settings-ai.webp"><br><sub><b>Choose your AI.</b> Free to start; add OpenRouter, CometAPI, your ChatGPT or Claude subscription, or a model on your own computer.</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><br><b>▶ <a href="https://sandboxd.io/demo/">Try the live demo</a></b><br><sub>Click around a real console with sample data, no install.</sub><br><br></td>
+    <td width="50%" valign="top"><img alt="A chat with Hermes" src="docs/images/readme/agent-chat.webp"><br><b>Talk to an agent</b><br><sub>Hermes checks flight prices every morning and messages you on Telegram.</sub></td>
+    <td width="50%" valign="top"><img alt="Settings: choose your AI" src="docs/images/readme/settings-ai.webp"><br><b>Choose your AI</b><br><sub>Free to start. Add ChatGPT, Claude, OpenRouter, CometAPI or a model on your own computer.</sub></td>
   </tr>
 </table>
 
-Dark or light: **Settings → Appearance** follows your computer, or pick one.
+<p align="center">
+  <b>▶ <a href="https://sandboxd.io/demo/">Try the live demo</a></b> · click around with sample data, nothing to install<br/>
+  <sub>Light or dark: <b>Settings → Appearance</b> follows your computer, or pick one.</sub>
+</p>
 
 ## What your crew can do
 
-- **✨ Build apps from a sentence.** *"A habit tracker"*, *"a landing page for my
-  bakery"*, *"a team dashboard"*. A coding agent (OpenCode, Claude Code, Codex or
-  Pi) builds it in its own sandbox while you watch the live preview. Keep
-  chatting to change it; every step is a checkpoint you can restore. Attach your
-  logo or photos with **+**, by dropping them, or by pasting.
-- **🧩 Install free apps in one click.** A CAD modeler, a physics simulator
-  (MuJoCo), a username finder (Sherlock), whiteboards, PDF and slide tools, and
-  more. A **Trending** strip shows what's hot on GitHub.
+- **✨ Build apps.** A habit tracker, a landing page for your bakery, a team
+  dashboard. Attach your logo or photos and it uses them.
+- **🧩 Install free apps.** Popular open-source apps (whiteboards, diagrams,
+  notes, PDF tools, a CAD modeler, a physics simulator…), each tested and ready.
   [Free apps →](docs/free-apps.md)
-- **🤖 Run agents that work around the clock.**
-  [Hermes](https://github.com/NousResearch/hermes-agent), OpenClaw and
-  OpenMausBot remember you, run scheduled jobs, browse, reach you on Telegram,
-  and can create and change apps. Each runs in its own locked-down container, with
-  no keys inside. Only open-source agents that run fully on your machine are
-  offered. [Agents →](docs/operator-agents.md)
-- **💬 One assistant for all of it.** The sandboxd agent checks a project can run
-  before installing it, hands tasks to your agents and brings their answers back,
-  and deletes nothing without your yes.
+- **🤖 Run agents.** Open-source assistants that remember you, run scheduled
+  jobs, browse the web, reach you on Telegram, and can build apps too. Only agents
+  that run fully on your machine. [Agents →](docs/operator-agents.md)
+- **💬 One assistant for all of it.** sandboxd hands tasks to your agents, brings
+  the answers back, and never deletes anything without your yes.
   [The sandboxd agent →](docs/sandboxd-agent.md)
-- **🧠 Your AI, your choice.** OpenCode's free AI needs no account. In
-  **Settings → AI** pick what every new chat uses, and add more in a few clicks:
-  OpenRouter sign-in, a CometAPI key, your ChatGPT or Claude subscription, a
-  local model server (Ollama, LM Studio) or any OpenAI- or Anthropic-compatible
-  endpoint, including LiteLLM gateways routing to AWS Bedrock. The **AI** button
-  above any message box switches for one chat. Keys stay encrypted on the
-  control plane and never enter a sandbox.
-  [Model connections →](docs/model-providers.md)
-- **🚀 Keep what you build.** Review the code, commit and push it to your own Git
-  repository, or self-host it on your own server.
-
-> **Dev → prod, never shorter:** prompt an app into a sandbox, iterate on a live
-> preview, then self-host it on your own server in [one command](#-deploy-to-a-vps-in-one-click).
+- **🧠 Pick your AI.** Free by default. In **Settings → AI**, connect your
+  ChatGPT or Claude subscription, OpenRouter, CometAPI, or a model on your own
+  computer (Ollama, LM Studio). [Model connections →](docs/model-providers.md)
+- **🚀 Keep what you build.** The code is yours: push it to your own Git
+  repository or run it on your own server.
 
 ## Get started
 
-### On Windows or macOS: the desktop app
+**🖥️ Windows or macOS: the desktop app.** Click **Install & start** and it sets
+everything up by itself: no Docker, no terminal, no account.
+[Download and setup →](docs/desktop.md)
 
-The desktop app is the easiest way in. On Windows it installs its own engine with
-one click on **Install & start**: no Docker Desktop, no terminal, no account, and
-keeps it updated. [Desktop app, downloads and release status →](docs/desktop.md)
-
-### On a Linux server or your own machine: one command
-
-Needs **Docker + the Compose plugin** and **git** (macOS via Docker Desktop is
-best-effort). Runs natively on **amd64 and arm64**, including Apple Silicon and
-arm64 Linux hosts such as AWS Graviton.
+**🐧 Linux, a server, or your own machine: one command.** Needs Docker (with the
+Compose plugin) and git.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash
 ```
 
-It starts the engine **with the web console** and prints your **console URL**.
-Create your password on first visit, then tell sandboxd on **Home** what you
-want. That's it.
+It prints your link: open it, create a password, and tell sandboxd what you want
+on **Home**. Works on Intel/AMD and ARM, including Apple Silicon.
+
+**☁️ No computer to spare?** [Deploy to a VPS in one click](#-deploy-to-a-vps-in-one-click)
+or let us [run it for you](#managed--we-run-it-for-you).
+
+## For developers
+
+sandboxd is also an **engine you can build on**. Everything the console does is a
+`/v1` HTTP call, so you can run many sandboxes for your own users: an AI
+app-builder, an agent platform, a coding playground, or per-user preview
+environments.
+
+```bash
+API=http://127.0.0.1:9090
+curl -s -XPOST $API/v1/agents/claude-code/api-key -d '{"api_key":"sk-ant-..."}'
+ID=$(curl -s -XPOST $API/sandbox -d '{"ports":[3000]}' | sed -E 's/.*"id":"([^"]+)".*/\1/')
+curl -s -XPOST $API/v1/sandboxes/$ID/tasks -d '{"prompt":"build a todo app on port 3000","agent":"opencode"}'
+# open the result at  http://s-$ID-3000.preview.localhost
+```
+
+**Under the hood**
+
+- **One Go program driving Docker,** with Traefik for links and SQLite for state:
+  no Kubernetes, no separate database, no queue.
+- **Isolated sandboxes:** a hardened container per app, with its own files,
+  limits and live preview link. Idle apps sleep and wake on demand, so one
+  ordinary machine holds many.
+- **Coding agents:** OpenCode, Claude Code, Codex and Pi. **No credential ever
+  enters a sandbox** (a proxy adds it on the wire), and every task is
+  checkpointed and revertible.
+- **Bring any model:** OpenAI- and Anthropic-compatible endpoints, local servers
+  and LiteLLM gateways (including AWS Bedrock). Keys stay encrypted on the
+  control plane.
+- **Runtime presets:** React/Vite, Next.js, Node/Express, FastAPI, Worker.
+  [Base image, stacks &amp; presets →](https://sandboxd.io/guides/images-stacks-presets)
+- **Files, Git and secrets:** in-browser editor and diffs, commit and push,
+  encrypted write-only secrets per app. Snapshots, fork and restore, activity
+  timeline, per-process logs. [Architecture →](https://sandboxd.io/reference/architecture)
+
+<details>
+<summary><b>Install options</b> (verified images, build from source, headless, upgrades)</summary>
 
 - **Console:** `http://console.localhost`. Run **`./console-login.sh`** to show
   the URL or reset the password.
@@ -175,23 +191,12 @@ want. That's it.
   new version and rolls back automatically if it fails
   ([Upgrading](docs/upgrading.md)). `./upgrade.sh --check` shows your version.
 
-### Building a product? Drive the API
-
-Everything the console does is a `/v1` call, so you can build sandboxd into your
-own product. The console is a pure `/v1` client; the engine runs perfectly
-headless without it. Connect an agent once, create a sandbox, hand it a prompt:
-
-```bash
-API=http://127.0.0.1:9090
-curl -s -XPOST $API/v1/agents/claude-code/api-key -d '{"api_key":"sk-ant-..."}'
-ID=$(curl -s -XPOST $API/sandbox -d '{"ports":[3000]}' | sed -E 's/.*"id":"([^"]+)".*/\1/')
-curl -s -XPOST $API/v1/sandboxes/$ID/tasks -d '{"prompt":"build a todo app on port 3000","agent":"opencode"}'
-# open the result at  http://s-$ID-3000.preview.localhost
-```
+</details>
 
 **Full walkthrough → [sandboxd.io/quickstart](https://sandboxd.io/quickstart)** ·
 **[Console guide](console/README.md)** · **[`AGENTS.md`](AGENTS.md)** for driving
-it from your own agent.
+it from your own agent. Just need one or two containers, with no AI? A shell
+script or `docker run` is simpler ([why not just a script?](https://sandboxd.io/what-is-sandboxd)).
 
 ## 🚀 Deploy to a VPS in one click
 
@@ -219,37 +224,6 @@ curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/deploy/
 ```
 
 Full per-provider walkthrough: [deploy/DEPLOY.md](deploy/DEPLOY.md).
-
-## Who's it for?
-
-- **🙋 Anyone who wants apps and helpers without code.** Describe it, use it,
-  keep it, on your own machine and with your own data.
-- **🛠️ Builders of AI products.** An AI app-builder, an agent platform, a coding
-  playground, per-user or per-branch preview environments, or team multi-app
-  hosting: sandboxd runs **many sandboxes for other people** behind one API.
-
-Just need one or two containers for yourself, with no AI? A shell script or
-`docker run` is simpler. ([Why not just a script?](https://sandboxd.io/what-is-sandboxd))
-
-## Under the hood
-
-- **Isolated sandboxes:** a hardened container per app with a workspace and a live
-  preview URL; sleep/wake so idle apps cost nothing.
-- **Built-in coding agents:** OpenCode, Claude Code, Codex and Pi. **No credential
-  ever enters a sandbox** (a proxy injects it on the wire), and every task is
-  **checkpointed and revertible**.
-- **Free apps, agents and the sandboxd agent:** one-click open-source projects,
-  always-on assistants with their own memory, and one assistant that drives them
-  all, through the same `/v1` API.
-- **Desktop app:** the same console as a native Windows/macOS app; on Windows it
-  provisions and updates its own engine.
-- **Runtime presets:** React/Vite, Next.js, Node/Express, FastAPI, Worker; boot to a
-  preview and reload after agent edits.
-  [Base image, stacks &amp; presets →](https://sandboxd.io/guides/images-stacks-presets)
-- **Files, Git and secrets:** in-browser editor and diffs, commit and push, per-app
-  config/secrets (encrypted, write-only).
-- **Snapshots, fork and restore,** an activity timeline, per-process logs and live
-  lifecycle tuning. [Architecture →](https://sandboxd.io/reference/architecture)
 
 ## Get a public URL — sandboxd Cloud
 
