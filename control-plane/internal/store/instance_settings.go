@@ -21,18 +21,29 @@ type InstanceSettings struct {
 	AgentDefaultModels map[string]string
 	// AgentTimeZone is the IANA time zone agents run in ("" is UTC).
 	AgentTimeZone string
+	// AgentDefaultAI is the AI every new chat starts with (Settings → AI).
+	// Zero value: the built-in free AI.
+	AgentDefaultAI DefaultAI
+}
+
+// DefaultAI is a coding agent plus, optionally, a model connection and model.
+// Not a secret: connection IDs and model names only.
+type DefaultAI struct {
+	Agent    string `json:"agent"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // GetInstanceSettings returns the singleton row, or ErrNotFound if unset (the
 // caller then falls back to env defaults).
 func (s *Store) GetInstanceSettings(ctx context.Context) (*InstanceSettings, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, agent_time_zone
+		`SELECT idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, agent_time_zone, agent_default_ai
 		   FROM instance_settings WHERE id = 1`)
 	var enabled int
-	var modelsJSON string
+	var modelsJSON, aiJSON string
 	out := &InstanceSettings{}
-	err := row.Scan(&enabled, &out.IdleThresholdSeconds, &out.KeepaliveMaxSeconds, &modelsJSON, &out.AgentTimeZone)
+	err := row.Scan(&enabled, &out.IdleThresholdSeconds, &out.KeepaliveMaxSeconds, &modelsJSON, &out.AgentTimeZone, &aiJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -44,6 +55,9 @@ func (s *Store) GetInstanceSettings(ctx context.Context) (*InstanceSettings, err
 	if modelsJSON != "" {
 		// Tolerate a malformed value rather than failing the whole read.
 		_ = json.Unmarshal([]byte(modelsJSON), &out.AgentDefaultModels)
+	}
+	if aiJSON != "" {
+		_ = json.Unmarshal([]byte(aiJSON), &out.AgentDefaultAI) // malformed reads as the free AI
 	}
 	return out, nil
 }
@@ -63,17 +77,26 @@ func (s *Store) SaveInstanceSettings(ctx context.Context, v InstanceSettings) er
 		if err != nil {
 			return err
 		}
+		aiJSON := ""
+		if v.AgentDefaultAI != (DefaultAI{}) {
+			b, err := json.Marshal(v.AgentDefaultAI)
+			if err != nil {
+				return err
+			}
+			aiJSON = string(b)
+		}
 		_, err = db.ExecContext(ctx, `
-			INSERT INTO instance_settings (id, idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, agent_time_zone, updated_at)
-			VALUES (1, ?, ?, ?, ?, ?, ?)
+			INSERT INTO instance_settings (id, idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, agent_time_zone, agent_default_ai, updated_at)
+			VALUES (1, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 			  idle_reap_enabled = excluded.idle_reap_enabled,
 			  idle_threshold_seconds = excluded.idle_threshold_seconds,
 			  keepalive_max_seconds = excluded.keepalive_max_seconds,
 			  agent_default_models = excluded.agent_default_models,
 			  agent_time_zone = excluded.agent_time_zone,
+			  agent_default_ai = excluded.agent_default_ai,
 			  updated_at = excluded.updated_at`,
-			enabled, v.IdleThresholdSeconds, v.KeepaliveMaxSeconds, string(modelsJSON), v.AgentTimeZone, time.Now().Unix())
+			enabled, v.IdleThresholdSeconds, v.KeepaliveMaxSeconds, string(modelsJSON), v.AgentTimeZone, aiJSON, time.Now().Unix())
 		return err
 	})
 }
