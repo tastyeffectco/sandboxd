@@ -11,16 +11,38 @@ const TASK_ID = '01TASKAAAAAAAAAAAAAAAAAAAA'
 // Static sample app served alongside the demo (see static/demo/sample-app.html).
 const PREVIEW_URL = '/demo/sample-app'
 
+const T0 = '2026-11-22T09:00:00Z'
 const app = {
-  id: APP_ID, name: 'Todo App', description: 'A demo app built by an agent', tags: ['demo'],
+  id: APP_ID, name: 'Todo App', description: 'A demo app built by an agent', tags: ['demo', 'icon:#43aa8b'],
   runtime_preset: 'react-vite', current_sandbox_id: SB_ID,
   created_at: '2026-07-09T10:00:00Z', updated_at: '2026-07-09T10:12:00Z',
 }
+const RECIPE_ID = '01APPRECIPEAAAAAAAAAAAAAAA'
+const RECIPE_SB = '01SBRECIPEAAAAAAAAAAAAAAAA'
+const recipeApp = {
+  id: RECIPE_ID, name: 'Recipe Box', description: 'Recipes, a shopping list and a weekly plan', tags: ['demo', 'icon:#c8553d'],
+  runtime_preset: 'react-vite', current_sandbox_id: RECIPE_SB, created_at: T0, updated_at: T0,
+}
+// Home: the sandboxd agent's own hidden project.
+const ASSISTANT_ID = '01APPASSISTANTAAAAAAAAAAAA'
+const ASSISTANT_SB = '01SBASSISTANTAAAAAAAAAAAAA'
+const assistantApp = {
+  id: ASSISTANT_ID, name: 'sandboxd', description: '', tags: ['sandboxd:assistant'],
+  current_sandbox_id: ASSISTANT_SB, created_at: T0, updated_at: T0,
+}
+const apps = [recipeApp, app]
+const allApps = [...apps, assistantApp]
 
+const web = [{ name: 'web', kind: 'web', running: true, pid: 42, restarts: 0 }]
 const sandbox = {
   id: SB_ID, status: 'running',
   preview: { url: PREVIEW_URL, status: 'ready' },
-  processes: [{ name: 'web', kind: 'web', running: true, pid: 42, restarts: 0 }],
+  processes: web,
+}
+const sandboxes: Record<string, unknown> = {
+  [SB_ID]: sandbox,
+  [RECIPE_SB]: { id: RECIPE_SB, status: 'running', preview: { url: '/demo/recipe-box.html', status: 'ready' }, processes: web },
+  [ASSISTANT_SB]: { id: ASSISTANT_SB, status: 'running', processes: [] },
 }
 
 const presets = [
@@ -38,6 +60,8 @@ const agents = [
 ]
 
 const modelProviders = [
+  { id: 'demo-openrouter', name: 'OpenRouter', protocol: 'openai-completions', base_url: 'https://openrouter.ai/api/v1', has_api_key: true,
+    models: [{ id: 'deepseek/deepseek-v4-pro', name: 'DeepSeek V4 Pro', context_window: 128000, max_tokens: 8192 }] },
   { id: 'demo-local', name: 'Local model (demo)', protocol: 'openai-completions', base_url: 'http://ollama:11434/v1', has_api_key: false,
     models: [{ id: 'qwen2.5-coder:7b', context_window: 32768, max_tokens: 4096 }] },
   { id: 'demo-litellm', name: 'LiteLLM gateway (demo)', protocol: 'anthropic-messages', base_url: 'https://models.example.com/v1', has_api_key: true,
@@ -45,13 +69,13 @@ const modelProviders = [
 ]
 
 const settings = {
-  version: 'v0.3.0', git_commit: 'demo', update_available: false,
+  version: 'v0.3.28', git_commit: 'demo', update_available: false,
   networking: { preview_domain: 'localhost', public_http_port: '80', preview_base: 'http://*.preview.localhost', preview_host_style: 'nested', preview_tls: false, preview_entrypoint: 'web' },
   auth: { enabled: false },
   runtime: { storage_mode: 'directory', base_image: 'sandboxd-base:0.3.0' },
   lifecycle: { idle_reap_enabled: true, idle_threshold_seconds: 2100, keepalive_max_seconds: 86400 },
   egress: { mode: 'disabled' },
-  agents: { providers: ['opencode', 'pi', 'claude-code'], default_models: {} },
+  agents: { providers: ['opencode', 'pi', 'claude-code'], default_models: {}, default_ai: { agent: 'opencode', provider: 'demo-openrouter', model: 'deepseek/deepseek-v4-pro' } },
   presets,
   capabilities: { snapshots: true, config_secrets: true, templates: false, forward_auth: true },
   editable: ['lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds'],
@@ -62,6 +86,42 @@ const tasks = [
     build_status: 'passed', preview_ok: true, app_healthy: true, can_revert: true,
     files_changed: ['src/App.tsx', 'src/todo.css', 'index.html'],
     created_at: '2026-07-09T10:10:00Z', finished_at: '2026-07-09T10:12:00Z' },
+]
+
+const recipeTasks = [
+  { id: '01TASKRECIPE2AAAAAAAAAAAAA', prompt: 'Add a "Plan the week" tab and make the shopping list tick off items', agent: 'opencode', status: 'succeeded',
+    can_revert: true, created_at: T0,
+    agent_message: 'Added a **Plan the week** tab. Items on the shopping list now tick off with one tap and stay ticked when you come back.' },
+  { id: '01TASKRECIPE1AAAAAAAAAAAAA', prompt: 'Build me a recipe app with a shopping list, warm colours', agent: 'opencode', status: 'succeeded',
+    can_revert: true, created_at: T0,
+    agent_message: 'Your Recipe Box is ready: recipe cards, a shopping list, and warm terracotta colours. Try adding a recipe.' },
+]
+const homeTasks = [
+  { id: '01TASKHOME2AAAAAAAAAAAAAAA', prompt: 'Ask Hermes to plan my meals for next week from my recipes', agent: 'opencode', status: 'succeeded',
+    can_revert: false, created_at: T0,
+    agent_message: "Done. I asked **Hermes**, and it planned 7 dinners from your Recipe Box, using what's already on your shopping list first.\n\nIt will send you the plan on Telegram every Sunday at 6 pm. Want me to add the missing ingredients to your shopping list?" },
+  { id: '01TASKHOME1AAAAAAAAAAAAAAA', prompt: 'Build me a recipe app with a shopping list', agent: 'opencode', status: 'succeeded',
+    can_revert: false, created_at: T0,
+    agent_message: 'Your **Recipe Box** is ready. It has:\n\n- recipe cards with photos and cooking times\n- a shopping list you can fill from any recipe\n- a simple plan for the week\n\nOpen it to try it, or tell me what to change.' },
+]
+const tasksBySandbox: Record<string, unknown[]> = { [SB_ID]: tasks, [RECIPE_SB]: recipeTasks, [ASSISTANT_SB]: homeTasks }
+
+// Agents on the crew (Hermes, OpenClaw, OpenMausBot) and the catalog to add more.
+const agentInstances = [
+  { id: 'demo-hermes', package: 'hermes', name: 'Hermes', connection_id: 'demo-openrouter', model: 'deepseek/deepseek-v4-pro', status: 'running', telegram: true, apps_today: 1, apps_per_day: 5, created_at: T0, chat: true },
+  { id: 'demo-openclaw', package: 'openclaw', name: 'OpenClaw', connection_id: 'demo-openrouter', model: 'deepseek/deepseek-v4-pro', status: 'running', telegram: false, apps_today: 0, apps_per_day: 5, created_at: T0, chat: true },
+  { id: 'demo-openmausbot', package: 'openmausbot', name: 'OpenMausBot', connection_id: 'demo-openrouter', model: 'deepseek/deepseek-v4-pro', status: 'stopped', telegram: false, apps_today: 0, apps_per_day: 5, created_at: T0, chat: true },
+]
+const agentCatalog = [
+  { id: 'hermes', label: 'Hermes', description: 'A personal assistant that remembers you, runs scheduled jobs and reaches you on Telegram.', download: '1.2 GB', memory: '1 GB', telegram: true, chat: true },
+  { id: 'openclaw', label: 'OpenClaw', description: 'An always-on agent with its own control panel, browsing and skills.', download: '900 MB', memory: '1 GB', telegram: true, chat: true, ui_label: 'Control panel' },
+  { id: 'openmausbot', label: 'OpenMausBot', description: 'A small, fast helper for everyday tasks.', download: '400 MB', memory: '512 MB', telegram: true, chat: true },
+]
+const hermesMessages = [
+  { id: 'hm1', role: 'user', content: 'Watch flight prices Paris → Marrakech for the last week of December. Tell me when it drops under €120.', steps: [], state: 'done', channel: 'web', created_at: T0 },
+  { id: 'hm2', role: 'assistant', content: "On it. I'll check every morning at 8 and message you on Telegram the moment a return flight drops under **€120**.\n\nToday's cheapest is **€164** (Transavia, 23 → 30 Dec).",
+    steps: [{ id: 's1', tool: 'browser', label: 'Searched 4 flight sites', status: 'done' }, { id: 's2', tool: 'cron', label: 'Scheduled a daily check at 8:00', status: 'done' }],
+    state: 'done', channel: 'web', created_at: T0 },
 ]
 
 const files = {
@@ -117,11 +177,22 @@ function route(method: string, url: string): { status: number; body?: unknown; t
     const c = fileContents[rel]
     return c !== undefined ? { status: 200, text: c } : { status: 404, body: { error: { message: 'not found' } } }
   }
+  // Opening Home asks the engine for the sandboxd agent's project; that is the
+  // one write the demo answers, with the sample project.
+  if (method === 'POST' && match(u, /\/v1\/assistant$/)) return { status: 200, body: { app_id: ASSISTANT_ID } }
   if (isWrite) return { status: 403, body: READ_ONLY }
 
   // Auth is disabled in the demo, but report authenticated so the gate passes.
   if (match(u, /\/v1\/auth\/status$/)) return { status: 200, body: { enabled: false, authenticated: true, password_set: true } }
-  if (match(u, /\/v1\/apps$/)) return { status: 200, body: { apps: [app] } }
+  if (match(u, /\/v1\/apps$/)) return { status: 200, body: { apps } }
+  if (match(u, /\/v1\/agent-instances\/demo-hermes\/messages$/)) return { status: 200, body: { messages: hermesMessages, working: false } }
+  if (match(u, /\/v1\/agent-instances\/[^/]+\/messages$/)) return { status: 200, body: { messages: [], working: false } }
+  if (match(u, /\/v1\/agent-instances\/[^/]+$/)) {
+    const a = agentInstances.find((i) => u.endsWith('/' + i.id))
+    return a ? { status: 200, body: a } : { status: 404, body: { error: { message: 'not found' } } }
+  }
+  if (match(u, /\/v1\/agent-instances$/)) return { status: 200, body: { agents: agentInstances } }
+  if (match(u, /\/v1\/agent-catalog$/)) return { status: 200, body: { packages: agentCatalog } }
   if (match(u, /\/v1\/presets$/)) return { status: 200, body: { presets } }
   if (match(u, /\/v1\/settings$/)) return { status: 200, body: settings }
   if (match(u, /\/v1\/agents\/[^/]+\/models$/)) return { status: 502, body: { error: { code: 'demo', message: 'Account model discovery is unavailable in this read-only demo.' } } }
@@ -135,8 +206,12 @@ function route(method: string, url: string): { status: number; body?: unknown; t
   if (match(u, /\/v1\/apps\/[^/]+\/config$/)) return { status: 200, body: { config } }
   if (match(u, /\/v1\/apps\/[^/]+\/events$/)) return { status: 200, body: { events } }
   if (match(u, /\/v1\/apps\/[^/]+\/snapshots$/)) return { status: 200, body: { snapshots: [{ id: 'snap1', name: 'before-deploy', created_at: '2026-07-09T10:05:00Z' }] } }
-  if (match(u, /\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+$/)) return { status: 200, body: tasks[0] }
-  if (match(u, /\/v1\/sandboxes\/[^/]+\/tasks$/)) return { status: 200, body: { tasks } }
+  if (match(u, /\/v1\/sandboxes\/[^/]+\/tasks\/[^/]+$/)) {
+    const id = u.split('/').pop()
+    const t = Object.values(tasksBySandbox).flat().find((x) => (x as { id: string }).id === id)
+    return { status: 200, body: t || tasks[0] }
+  }
+  if (match(u, /\/v1\/sandboxes\/[^/]+\/tasks$/)) return { status: 200, body: { tasks: tasksBySandbox[u.split('/')[3]] || [] } }
   if (match(u, /\/v1\/sandboxes\/[^/]+\/files$/)) {
     const p = decodeURIComponent((q.match(/path=([^&]*)/)?.[1] || ''))
     if (p === 'brain') return { status: 200, body: { path: 'brain', recursive: false, entries: [
@@ -145,8 +220,8 @@ function route(method: string, url: string): { status: number; body?: unknown; t
     return { status: 200, body: files }
   }
   if (match(u, /\/v1\/sandboxes\/[^/]+\/processes\/[^/]+\/logs$/)) return { status: 200, body: { process: 'web', lines: ['VITE ready in 312 ms', '➜  Local:   http://localhost:3000/'] } }
-  if (match(u, /\/v1\/sandboxes\/[^/]+$/)) return { status: 200, body: sandbox }
-  if (match(u, /\/v1\/apps\/[^/]+$/)) return { status: 200, body: app }
+  if (match(u, /\/v1\/sandboxes\/[^/]+$/)) return { status: 200, body: sandboxes[u.split('/')[3]] || sandbox }
+  if (match(u, /\/v1\/apps\/[^/]+$/)) return { status: 200, body: allApps.find((a) => a.id === u.split('/')[3]) || app }
   return { status: 200, body: {} }
 }
 
