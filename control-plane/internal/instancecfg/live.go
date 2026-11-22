@@ -18,6 +18,14 @@ type Snapshot struct {
 	KeepaliveMaxSeconds  int
 	DefaultModels        map[string]string // agent id -> default model id
 	TimeZone             string            // IANA zone agents run in; "" is UTC
+	DefaultAI            DefaultAI         // the AI new chats start with; zero = free AI
+}
+
+// DefaultAI is the coding agent, connection and model new chats start with.
+type DefaultAI struct {
+	Agent    string `json:"agent"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 // Live is the shared, mutable holder. Construct with New; read via the
