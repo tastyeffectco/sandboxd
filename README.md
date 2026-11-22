@@ -125,8 +125,8 @@ Build anything you can describe, and run agents that work for you — no code
 needed. Open the console (or the desktop app) and:
 
 - **✨ Describe it** — tell sandboxd on Home: "a habit tracker", "a landing page
-  for my bakery", "a team dashboard". Attach a logo, a photo or a spreadsheet
-  if it helps. A coding agent builds it in its own sandbox.
+  for my bakery", "a team dashboard". A coding agent builds it in its own sandbox.
+  To use your own logo or photos, attach them in the app's chat.
 - **👀 Watch it come alive** — the app runs at a live preview URL while the agent
   works, and refreshes when each change lands.
 - **💬 Keep shaping it** — chat to change anything; every step is a checkpoint

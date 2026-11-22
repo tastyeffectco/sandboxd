@@ -18,7 +18,8 @@ GitHub, lists their agents, gives them tasks and reads what they did. Design: `d
   answers 404), Home quietly opens **My apps** instead.
 - Files attached on Home (the **+** button, drop or paste) are saved in the
   hidden project's `.attachments/` folder, and the message says where they
-  are.
+  are. The sandboxd agent can read them, but cannot yet hand them to an app it
+  builds: to use a file in an app, attach it in that app's chat.
 - `POST /v1/assistant` makes it on first use and, on every call, writes the
   project's tool settings again with a fresh secret and sandboxd's current
   address: `opencode.json` (OpenCode), `.mcp.json` + `.claude/settings.json`
