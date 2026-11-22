@@ -3798,6 +3798,7 @@ select.agent-model {
 }
 .swatch-system {
   background: linear-gradient(135deg, #f6f5f1 50%, #0a0a11 50%);
+}
 .settings-nav-caption {
   margin: 14px 10px 4px;
   font: 600 10.5px var(--sans);
