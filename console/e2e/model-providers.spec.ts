@@ -103,6 +103,8 @@ for (const protocol of ['openai-completions', 'anthropic-messages'] as const) {
     })
     await page.goto('/')
     await page.getByTestId('nav-settings').click()
+    // Settings opens on AI; connections for any API live under Advanced.
+    await page.getByRole('button', { name: /^Model connections/ }).click()
     await page.getByRole('button', { name: 'Add connection' }).click()
     await page.getByLabel('Connection name').fill('Community gateway')
     await page.getByLabel('API format').selectOption(protocol)
@@ -120,13 +122,20 @@ for (const protocol of ['openai-completions', 'anthropic-messages'] as const) {
     await page.screenshot({ path: testInfo.outputPath('connections.png'), fullPage: true })
     await page.getByTestId('nav-apps').click()
     await page.getByTestId('app-card').first().click()
-    await page.locator('.chat-options summary').click()
+    // The detailed pickers sit behind the AI button's More options.
+    const moreOptions = async () => {
+      if (!(await page.getByTestId('ai-menu').isVisible())) await page.getByTestId('ai-chip').click()
+      if (await page.getByRole('button', { name: 'More options' }).isVisible())
+        await page.getByRole('button', { name: 'More options' }).click()
+    }
+    await moreOptions()
     await page.getByTestId('task-agent').selectOption('pi')
     await expect(page.getByTestId('task-send')).toBeDisabled()
     // Enter must respect the same connection-required gate as the Send button.
     await page.getByTestId('task-prompt').fill('Should not submit without a connection')
     await page.getByTestId('task-prompt').press('Enter')
     expect(task).toBeUndefined()
+    await moreOptions()
     await page.getByTestId('task-provider').selectOption('connection1')
     await page.getByTestId('task-model').selectOption('team/second-model')
     await page.getByTestId('task-prompt').fill('Create a small app')
@@ -141,6 +150,7 @@ for (const protocol of ['openai-completions', 'anthropic-messages'] as const) {
         continue: true,
       })
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
+    await moreOptions()
     await page.getByTestId('task-agent').selectOption('opencode')
     await expect(page.getByTestId('task-provider')).toHaveValue('connection1')
     await expect(page.getByTestId('task-model')).toHaveValue('')

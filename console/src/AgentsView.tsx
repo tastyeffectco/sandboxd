@@ -296,7 +296,7 @@ function AddAgent({
           <p style={{ color: c.muted2, fontSize: 12, margin: '10px 0 0' }}>
             Prefer another model, or one running on this computer?{' '}
             <button className="text-button" onClick={goModels}>
-              Settings → Model connections
+              Settings → AI
             </button>
           </p>
         </>
@@ -304,7 +304,7 @@ function AddAgent({
         <p style={{ margin: 0 }}>
           {pkg.label} needs an AI model to think with. Add one (for example an OpenRouter key) in{' '}
           <button className="text-button" onClick={goModels}>
-            Settings → Model connections
+            Settings → AI
           </button>
           , then come back here.
         </p>

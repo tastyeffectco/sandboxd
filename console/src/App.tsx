@@ -600,7 +600,7 @@ export default function App({
             <AgentsView
               onError={onError}
               agents={agents || []}
-              goModels={() => setRoute({ name: 'settings', section: 'models' })}
+              goModels={() => setRoute({ name: 'settings', section: 'ai' })}
               onOpen={(id) => {
                 loadAgents()
                 setRoute({ name: 'agent', id })
@@ -869,6 +869,7 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
     { label: 'Project memory', route: { name: 'brain' } },
     { label: 'Free apps', route: { name: 'discover' } },
     { label: 'Add an agent', route: { name: 'agents' } },
+    { label: 'AI', route: { name: 'settings', section: 'ai' } },
     { label: 'Model connections', route: { name: 'settings', section: 'models' } },
     { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },
     { label: 'Git credentials', route: { name: 'settings', section: 'git' } },
