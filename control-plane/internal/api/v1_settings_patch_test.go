@@ -230,3 +230,66 @@ func TestContainerRevFollowsTimeZone(t *testing.T) {
 		t.Errorf("browserEnv = %v", got)
 	}
 }
+
+// Settings → AI: the AI new chats start with is saved, echoed, survives a
+// restart (persisted) and resets to the free AI with an empty agent.
+func TestPatchAgentDefaultAI(t *testing.T) {
+	s := newSettingsServer(t)
+	w := patchSettings(s, `{"agents":{"default_ai":{"agent":"opencode","provider":"conn-1","model":"deepseek/deepseek-v4-pro"}}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", w.Code, w.Body)
+	}
+	var got struct {
+		Agents struct {
+			DefaultAI instancecfg.DefaultAI `json:"default_ai"`
+		} `json:"agents"`
+		Editable []string `json:"editable"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := instancecfg.DefaultAI{Agent: "opencode", Provider: "conn-1", Model: "deepseek/deepseek-v4-pro"}
+	if got.Agents.DefaultAI != want {
+		t.Fatalf("echo = %+v, want %+v", got.Agents.DefaultAI, want)
+	}
+	if !strings.Contains(strings.Join(got.Editable, ","), "agents.default_ai") {
+		t.Fatalf("editable misses agents.default_ai: %v", got.Editable)
+	}
+	if s.Live.Snapshot().DefaultAI != want {
+		t.Fatalf("live = %+v", s.Live.Snapshot().DefaultAI)
+	}
+	persisted, err := s.Store.GetInstanceSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := persisted.AgentDefaultAI; p.Agent != want.Agent || p.Provider != want.Provider || p.Model != want.Model {
+		t.Fatalf("persisted = %+v", p)
+	}
+	// Other settings are untouched.
+	if persisted.IdleThresholdSeconds != 2100 {
+		t.Fatalf("idle threshold changed: %d", persisted.IdleThresholdSeconds)
+	}
+
+	if w := patchSettings(s, `{"agents":{"default_ai":{"agent":""}}}`); w.Code != http.StatusOK {
+		t.Fatalf("reset: %d %s", w.Code, w.Body)
+	}
+	if s.Live.Snapshot().DefaultAI != (instancecfg.DefaultAI{}) {
+		t.Fatalf("reset left %+v", s.Live.Snapshot().DefaultAI)
+	}
+}
+
+func TestPatchAgentDefaultAIValidation(t *testing.T) {
+	for _, body := range []string{
+		`{"agents":{"default_ai":{"agent":"rm -rf"}}}`,
+		`{"agents":{"default_ai":{"agent":"opencode","model":"` + strings.Repeat("x", 201) + `"}}}`,
+		`{"agents":{"default_ai":{"agent":"opencode","secret":"x"}}}`,
+	} {
+		s := newSettingsServer(t)
+		if w := patchSettings(s, body); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", body, w.Code)
+		}
+		if s.Live.Snapshot().DefaultAI != (instancecfg.DefaultAI{}) {
+			t.Errorf("%s: live changed", body)
+		}
+	}
+}

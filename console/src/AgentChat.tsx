@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, App as TApp, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { AIPicker } from './AIPicker'
 import { ClaudeSignIn } from './ClaudeSignIn'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
@@ -10,6 +11,7 @@ import { ProjectIcon } from './design/ProjectIcon'
 import { catalogIdOf } from './catalog'
 import { AgentMessage } from './AgentMessage'
 import { Dialog } from './design/Dialog'
+import { attachmentPath, fileSize, MAX_FILE_BYTES, MAX_FILES, splitAttachments, withAttachments } from './chatAttachments'
 
 // The workspace runs but its task runner is not answering yet (just started).
 const notReadyYet = (e: unknown) =>
@@ -48,6 +50,21 @@ export function AgentChat({
   saveDraft?: (draft: BuildIntent) => void
 }) {
   const [choice, setChoice] = useState(initialBuild || draft || defaultChoice)
+  // A new chat starts on the AI chosen in Settings → AI.
+  useEffect(() => {
+    if (initialBuild || draft) return
+    let live = true
+    Promise.resolve()
+      .then(() => api.getSettings())
+      .then((s) => {
+        const d = s.agents?.default_ai
+        if (live && d?.agent) setChoice({ agent: d.agent, provider: d.provider || '', model: d.model || '' })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, []) // once, on open: a draft or a build already says which AI
   const [providers, setProviders] = useState<ModelProvider[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -61,6 +78,12 @@ export function AgentChat({
   const [error, setError] = useState('')
   const [revertTarget, setRevertTarget] = useState<TaskSummary | null>(null)
   const [reverting, setReverting] = useState(false)
+  // Attached files: uploaded into the project as soon as they are picked.
+  const [files, setFiles] = useState<{ key: string; name: string; size: number; path?: string; preview?: string }[]>(
+    [],
+  )
+  const picker = useRef<HTMLInputElement>(null)
+  const uploading = files.some((f) => !f.path)
   const submitting = useRef(false)
   const initialSent = useRef(false)
   const saveDraftRef = useRef(saveDraft)
@@ -231,10 +254,56 @@ export function AgentChat({
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     setBehind(!following.current)
   }
+  // Attach: the paperclip, dropping files on the chat, or pasting.
+  const attach = (list: FileList | File[] | null) => {
+    const picked = Array.from(list || [])
+    if (!picked.length || !sbID) return
+    if (files.length + picked.length > MAX_FILES) {
+      onError(`You can send up to ${MAX_FILES} files at a time.`)
+      return
+    }
+    for (const f of picked) {
+      if (f.size > MAX_FILE_BYTES) {
+        onError(`${f.name} is too big. Files can be up to 25 MB.`)
+        continue
+      }
+      if (!f.size) continue
+      const key = `${Date.now()}-${Math.random()}`
+      const name = f.name || (f.type.startsWith('image/') ? `pasted-image.${f.type.slice(6) || 'png'}` : 'file')
+      const preview = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined
+      const path = attachmentPath(name)
+      setFiles((prev) => [...prev, { key, name, size: f.size, preview }])
+      api
+        .putWorkspaceBlob(sbID, path, f)
+        .then(() => setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, path } : p))))
+        .catch((e) => {
+          setFiles((prev) => prev.filter((p) => p.key !== key))
+          if (preview) URL.revokeObjectURL(preview)
+          onError(`${name} could not be attached: ${(e as Error).message}`)
+        })
+    }
+  }
+  const unattach = (key: string) =>
+    setFiles((prev) => {
+      const gone = prev.find((p) => p.key === key)
+      if (gone?.preview) URL.revokeObjectURL(gone.preview)
+      return prev.filter((p) => p.key !== key)
+    })
+
   const send = async (auto = false) => {
-    if (!sbID || !canSend || !text.trim() || active || blocked || !loaded || submitting.current) return
+    if (!sbID || !canSend || (!text.trim() && !files.length) || uploading || active || blocked || !loaded || submitting.current)
+      return
     submitting.current = true
-    const prompt = text.trim()
+    const attached = auto ? [] : files.filter((f) => f.path)
+    const prompt = withAttachments(
+      text,
+      attached.map((f) => f.path!),
+      assistant ? 'your workspace' : 'this project',
+    )
+    if (!auto) {
+      for (const f of attached) if (f.preview) URL.revokeObjectURL(f.preview)
+      setFiles([])
+    }
     if (auto) {
       initialSent.current = true
       consumeBuild?.()
@@ -276,7 +345,7 @@ export function AgentChat({
       void loadHistory()
     } catch (e) {
       setTool('')
-      setText(prompt)
+      setText(splitAttachments(prompt).text)
       setActive(null)
       setError(
         notReadyYet(e)
@@ -332,34 +401,37 @@ export function AgentChat({
         </div>
         <span className={`connection-dot ${active ? 'working' : ''}`} />
       </header>
-      <details className="chat-options">
-        <summary>
-          <Icon name="settings" size={14} /> Agent & model{' '}
-          <span>{choice.provider ? providers.find((p) => p.id === choice.provider)?.name : 'Built-in'}</span>
-        </summary>
-        <AgentPicker
+      <div className="chat-options chat-ai-bar">
+        <AIPicker
           value={choice}
           onChange={setChoice}
           agents={agents}
           providers={providers}
           disabled={!!active}
+          onConnect={goSettings}
+          more={
+            <>
+              <AgentPicker
+                value={choice}
+                onChange={setChoice}
+                agents={agents}
+                providers={providers}
+                disabled={!!active}
+              />
+              <label className="chat-continue">
+                <input
+                  type="checkbox"
+                  checked={cont}
+                  disabled={!!active}
+                  onChange={(e) => setCont(e.target.checked)}
+                  data-testid="task-continue"
+                />{' '}
+                Continue the conversation
+              </label>
+            </>
+          }
         />
-        <div className="chat-option-footer">
-          <label>
-            <input
-              type="checkbox"
-              checked={cont}
-              disabled={!!active}
-              onChange={(e) => setCont(e.target.checked)}
-              data-testid="task-continue"
-            />{' '}
-            Continue conversation
-          </label>
-          <button className="text-button" onClick={goSettings}>
-            Connections
-          </button>
-        </div>
-      </details>
+      </div>
       <div className="chat-messages" ref={scroll} onScroll={onScroll} data-testid="chat-messages">
         {history.length === 0 && !active && (
           <div className={assistant ? 'chat-welcome home-welcome' : 'chat-welcome'}>
@@ -549,7 +621,46 @@ export function AgentChat({
           e.preventDefault()
           void send()
         }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (!e.dataTransfer.files.length) return
+          e.preventDefault()
+          attach(e.dataTransfer.files)
+        }}
+        onPaste={(e) => {
+          if (e.clipboardData.files.length) {
+            e.preventDefault()
+            attach(e.clipboardData.files)
+          }
+        }}
       >
+        {files.length > 0 && (
+          <div className="agent-attachments" data-testid="chat-attachments">
+            {files.map((f) => (
+              <span key={f.key} className={f.path ? 'attachment' : 'attachment uploading'}>
+                {f.preview ? <img src={f.preview} alt="" /> : <Icon name="book" size={14} />}
+                <span className="attachment-name">{f.name}</span>
+                <small>{f.path ? fileSize(f.size) : 'Attaching…'}</small>
+                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => unattach(f.key)}>
+                  <Icon name="close" size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            attach(e.target.files)
+            e.target.value = ''
+          }}
+          data-testid="chat-file-input"
+        />
         <textarea
           id="chat-prompt"
           aria-label="Message the agent"
@@ -566,6 +677,17 @@ export function AgentChat({
           data-testid="task-prompt"
         />
         <footer>
+          <button
+            type="button"
+            className="composer-attach"
+            disabled={!sbID}
+            onClick={() => picker.current?.click()}
+            aria-label="Attach files"
+            title="Attach files"
+            data-testid="chat-attach"
+          >
+            <Icon name="plus" size={16} />
+          </button>
           <span>Enter to send · Shift + Enter for a new line</span>
           {active ? (
             <Btn disabled={!active.id} onClick={() => void cancel()} type="button">
@@ -575,7 +697,7 @@ export function AgentChat({
             <button
               className="send-button"
               type="submit"
-              disabled={!canSend || !text.trim() || blocked || !loaded}
+              disabled={!canSend || (!text.trim() && !files.length) || uploading || blocked || !loaded}
               data-testid="task-send"
               aria-label="Send message"
             >
@@ -614,7 +736,22 @@ export function plainTaskError(message?: string) {
 
 // A free-app install sends the coding agent its exact setup; people see one
 // line, with the details a click away.
-export function UserPrompt({ text }: { text: string }) {
+export function UserPrompt({ text: sent }: { text: string }) {
+  const { text, files } = splitAttachments(sent)
+  if (files.length)
+    return (
+      <div className="user-message" data-testid="message-with-files">
+        {text && <span>{text}</span>}
+        <span className="message-files">
+          {files.map((f) => (
+            <span key={f} className="attachment">
+              <Icon name="book" size={12} />
+              <span className="attachment-name">{f}</span>
+            </span>
+          ))}
+        </span>
+      </div>
+    )
   const catalog = /^Install (.+?) from sandboxd's app catalog/.exec(text)
   // An install the sandboxd agent started (install_project).
   const project = /^Install the open-source project https:\/\/github\.com\/[^/\s]+\/([^\s/]+?) so it runs/.exec(text)

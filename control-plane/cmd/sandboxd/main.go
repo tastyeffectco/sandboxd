@@ -339,6 +339,9 @@ func main() {
 			KeepaliveMaxSeconds:  persisted.KeepaliveMaxSeconds,
 			DefaultModels:        persisted.AgentDefaultModels,
 			TimeZone:             persisted.AgentTimeZone,
+			DefaultAI: instancecfg.DefaultAI{
+				Agent: persisted.AgentDefaultAI.Agent, Provider: persisted.AgentDefaultAI.Provider, Model: persisted.AgentDefaultAI.Model,
+			},
 		})
 		log.Info("instance settings: loaded persisted lifecycle tunables + agent default models")
 	}

@@ -6,6 +6,21 @@ All notable changes to sandboxd are documented here. The format is based on
 patch** — each lands the meaningful changes merged since the last one — and a
 **minor bump marks a milestone** release).
 
+## [0.3.28] — 2026-11-22
+
+* chore(desktop): install engine v0.3.27 by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/207
+* fix(console): New project always opens the build box by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/208
+* feat(console): one front door, the sandboxd agent by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/209
+* fix(console): what a real Windows test found, in plain words by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/212
+* feat(console): attach files on Home and in every app chat by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/215
+* chore(daily): test My apps' empty state and search by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/216
+* feat(settings): one default AI for new chats (agents.default_ai) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/217
+* feat(console): choose the AI in plain words, from one place by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/218
+* release: choose the AI in plain words (Settings → AI, AI button, default AI) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/219
+
+
+**Full Changelog**: https://github.com/tastyeffectco/sandboxd/compare/v0.3.27...v0.3.28
+
 ## [0.3.27] — 2026-11-21
 
 * fix(desktop): pin the Windows engine to v0.3.26 (desktop 0.3.26) by @tastyeffectco in https://github.com/tastyeffectco/sandboxd/pull/151

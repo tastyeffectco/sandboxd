@@ -17,6 +17,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentprompt"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/instancecfg"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
@@ -101,6 +102,9 @@ type v1SettingsAgents struct {
 	DefaultModels map[string]string `json:"default_models"`
 	// TimeZone is the IANA time zone agents run in ("" is UTC). Editable.
 	TimeZone string `json:"time_zone"`
+	// DefaultAI is the AI new chats start with (Settings → AI). Agent ""
+	// means the built-in free AI. Editable.
+	DefaultAI instancecfg.DefaultAI `json:"default_ai"`
 }
 
 // v1GetSettings — GET /v1/settings. Read-only, tokenless-safe instance summary.
@@ -138,7 +142,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 		Runtime:   v1SettingsRuntime{StorageMode: storageMode, BaseImage: s.Image},
 		Lifecycle: s.lifecycleView(),
 		Egress:    v1SettingsEgress{Mode: egressMode},
-		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{}), DefaultModels: s.agentDefaultModels(), TimeZone: s.agentTimeZone()},
+		Agents:    v1SettingsAgents{Providers: s.Instance.AgentProviders, SystemPrompt: agentprompt.Render(agentprompt.Vars{}), DefaultModels: s.agentDefaultModels(), TimeZone: s.agentTimeZone(), DefaultAI: s.agentDefaultAI()},
 		Presets:   presets,
 		Capabilities: map[string]bool{
 			"snapshots":      s.Snapshot != nil,
@@ -154,6 +158,7 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 			"lifecycle.keepalive_max_seconds",
 			"agents.default_models",
 			"agents.time_zone",
+			"agents.default_ai",
 		}
 	}
 	if s.Update != nil {
@@ -215,6 +220,9 @@ type v1SettingsPatch struct {
 		// TimeZone is an IANA name ("Europe/Paris"); "" means UTC. Agents
 		// are made again to pick it up.
 		TimeZone *string `json:"time_zone"`
+		// DefaultAI replaces the AI new chats start with. An empty agent
+		// resets it to the built-in free AI.
+		DefaultAI *instancecfg.DefaultAI `json:"default_ai"`
 	} `json:"agents"`
 }
 
@@ -234,7 +242,7 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 	var req v1SettingsPatch
 	if err := dec.Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			"editable: lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models / agents.time_zone: "+err.Error())
+			"editable: lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models / agents.time_zone / agents.default_ai: "+err.Error())
 		return
 	}
 	if req.Lifecycle == nil && req.Agents == nil {
@@ -310,12 +318,35 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 		next.TimeZone = zone
 	}
 
+	if req.Agents != nil && req.Agents.DefaultAI != nil {
+		target = "agents.default_ai"
+		ai := instancecfg.DefaultAI{
+			Agent:    strings.TrimSpace(req.Agents.DefaultAI.Agent),
+			Provider: strings.TrimSpace(req.Agents.DefaultAI.Provider),
+			Model:    strings.TrimSpace(req.Agents.DefaultAI.Model),
+		}
+		if ai.Agent == "" {
+			ai = instancecfg.DefaultAI{} // the built-in free AI
+		} else if !agentauth.Runnable(ai.Agent) {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "unknown agent in default_ai: "+ai.Agent)
+			return
+		}
+		if len(ai.Provider) > 100 || len(ai.Model) > 200 {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "default_ai provider or model too long")
+			return
+		}
+		next.DefaultAI = ai
+	}
+
 	if err := s.Store.SaveInstanceSettings(r.Context(), store.InstanceSettings{
 		IdleReapEnabled:      next.IdleEnabled,
 		IdleThresholdSeconds: next.IdleThresholdSeconds,
 		KeepaliveMaxSeconds:  next.KeepaliveMaxSeconds,
 		AgentDefaultModels:   next.DefaultModels,
 		AgentTimeZone:        next.TimeZone,
+		AgentDefaultAI: store.DefaultAI{
+			Agent: next.DefaultAI.Agent, Provider: next.DefaultAI.Provider, Model: next.DefaultAI.Model,
+		},
 	}); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -337,6 +368,14 @@ func (s *Server) agentDefaultModels() map[string]string {
 		}
 	}
 	return map[string]string{}
+}
+
+// agentDefaultAI is the AI new chats start with (zero value: the free AI).
+func (s *Server) agentDefaultAI() instancecfg.DefaultAI {
+	if s.Live == nil {
+		return instancecfg.DefaultAI{}
+	}
+	return s.Live.Snapshot().DefaultAI
 }
 
 // agentTimeZone is the IANA time zone agents run in ("" is UTC).
