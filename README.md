@@ -1,9 +1,11 @@
 <h1 align="center">sandboxd</h1>
 
 <p align="center">
-  <b>Open-source, self-hosted AI app builder.</b><br/>
-  Prompt it and a coding agent builds real apps in isolated sandboxes on <b>your</b>
-  server — each live at a preview URL. You own the infra, code, and data. MIT.
+  <b>Your AI crew builds apps and runs agents for you, on your machine.</b><br/>
+  Ask sandboxd in plain words: coding agents build real apps in isolated sandboxes
+  on <b>your</b> computer or server, each live at a preview URL, and always-on
+  agents (Hermes, OpenClaw, OpenMausBot) work next to them. Open-source and
+  self-hosted: you own the infra, code, and data. MIT.
 </p>
 
 <h3 align="center">🔥 Trend of the Day on Trendshift</h3>
@@ -71,9 +73,13 @@
 
 ## What is sandboxd?
 
-The apps where you type *"build me a todo app"* and a working site appears at its
-own link — Lovable, Bolt, v0, Replit. **sandboxd is the open-source engine that
-makes that work, on your own server.** One HTTP request and it:
+Your AI crew, on your own machine. Ask the sandboxd agent for an app and it gets
+built; ask for an agent and one moves in next to your apps, remembers you and
+runs jobs for you. One place to ask for either.
+
+For apps, it's what makes Lovable, Bolt, v0 or Replit work — you type *"build me
+a todo app"* and a working site appears at its own link — as **an open-source
+engine on your own computer or server.** One HTTP request and it:
 
 1. spins up a **private, isolated container** (its own filesystem + limits),
 2. runs an **AI coding agent inside it** against your prompt, and
@@ -113,10 +119,10 @@ model connections, coding-agent accounts, Git credentials and security controls
 sit under Advanced. Workspace menus expose secrets, versions, memory and runtime
 tools. See the [console guide](console/README.md) for the complete workflow.
 
-## What can you build?
+## What can your crew do?
 
-Anything you can describe — no code needed. Open the console (or the desktop
-app) and:
+Build anything you can describe, and run agents that work for you — no code
+needed. Open the console (or the desktop app) and:
 
 - **✨ Describe it** — tell sandboxd on Home: "a habit tracker", "a landing page
   for my bakery", "a team dashboard". Attach a logo, a photo or a spreadsheet
@@ -137,9 +143,9 @@ your own subscription or models whenever you like, from **Settings → AI** or t
   <a href="https://sandboxd.io/reference/architecture">Architecture</a>
 </p>
 
-## New: apps in one click, agents, and one assistant for everything
+## Apps and agents, with one assistant for everything
 
-The desktop app (and the console) now goes beyond building your own apps:
+Your crew does more than build your own apps:
 
 - **🧩 Free apps** — install popular open-source projects in one click, with
   no AI and no setup: a CAD modeler, a physics simulator (MuJoCo), a username

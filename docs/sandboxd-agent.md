@@ -1,7 +1,7 @@
 # The sandboxd agent ("Ask sandboxd")
 
 One main assistant per person: it is the console's **Home**, the first page
-and the single front door. The person talks to it in plain words; it acts on
+and the single front door to the person's AI crew, for apps and agents alike. The person talks to it in plain words; it acts on
 their sandboxd: builds and changes apps, installs open-source projects from
 GitHub, lists their agents, gives them tasks and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-agent-design.md` (PR #186).
 

@@ -1,7 +1,9 @@
 # sandboxd console
 
-A self-hosted app builder over sandboxd's public `/v1` API. Tell the sandboxd
-agent on Home what you want, then keep shaping each app beside a live preview.
+Your AI crew, self-hosted, over sandboxd's public `/v1` API: it builds apps and
+runs agents for you. Tell the sandboxd agent on Home what you want (an app, a
+free open-source app or an agent such as Hermes), then keep shaping each app
+beside a live preview or chat with your agents.
 The console is a Vite + React SPA; it accesses neither the database nor
 workspace files except through the API.
 

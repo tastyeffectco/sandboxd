@@ -1,7 +1,8 @@
 # sandboxd desktop
 
-The Electron desktop app is a client of the sandboxd engine, just like the web
-console. It bundles the same sandboxd agent (Home), apps, agents, files, terminal, previews,
+The desktop app puts your AI crew on your own computer: it builds apps and runs
+agents for you, with no terminal or setup. The Electron app is a client of the
+sandboxd engine, just like the web console. It bundles the same sandboxd agent (Home), apps, agents, files, terminal, previews,
 model connections and settings, with native window controls, menus, engine
 connections and a compact desktop layout. Closing it leaves engine workloads
 running. The engine stays outside Electron. On Windows, the desktop can provision and
