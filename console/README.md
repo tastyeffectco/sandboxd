@@ -1,11 +1,11 @@
 # sandboxd console
 
-A self-hosted app builder over sandboxd's public `/v1` API. Start with a prompt,
-choose a stack and coding agent, then build alongside a live preview. The console
-is a Vite + React SPA; it accesses neither the database nor workspace files
-except through the API.
-
-![Prompt-first builder with stack, agent and model selection](../docs/images/console-builder.png)
+Your AI crew, self-hosted, over sandboxd's public `/v1` API: it builds apps and
+runs agents for you. Tell the sandboxd agent on Home what you want (an app, a
+free open-source app or an agent such as Hermes), then keep shaping each app
+beside a live preview or chat with your agents.
+The console is a Vite + React SPA; it accesses neither the database nor
+workspace files except through the API.
 
 ![Persistent conversation beside the live preview](../docs/images/console-workspace.png)
 
@@ -29,43 +29,88 @@ profile runs sandboxd without this UI.
 
 ## Build an app
 
-1. Describe the app on **Build & projects**. Choose a runtime preset, or keep
-   **Automatic** to use the default starter. Every new app starts from your idea.
-2. Choose **OpenCode**, **Pi**, or **Claude Code**, then a connection and model.
-   OpenCode offers its built-in free tier. Pi needs a model connection; Claude
-   Code needs a connected account. The selected stack and model are sent to the
-   API, not appended as suggestions to the prompt.
-3. Select **Build app**. The console creates the app and workspace, waits for
-   readiness, then submits the initial prompt once. If workspace creation fails,
-   retry from the existing project; the original prompt is retained.
-4. Continue the conversation beside **Preview**, **Code**, **Terminal**, or **Git**.
-   Task progress streams live and reconnects through durable task history. Stop
-   an active task, inspect changed files, or restore an available task checkpoint.
+1. **Home** is one chat with your sandboxd agent. Say what you want in plain
+   words: "a habit tracker", "install JSON Crack from GitHub", "add a
+   Researcher agent". It builds the app, installs the free app or adds the
+   agent, and its replies are signed **sandboxd**. If the engine is too old to
+   have a sandboxd agent, Home opens **My apps** instead.
+2. **My apps** lists every app to open again, with search and the **Trending on
+   GitHub** free apps. The sidebar shows your agents and **Recent apps**. To
+   rename an app or an agent or change its icon, click the small pencil next to
+   it in the sidebar, or right-click it.
+3. Each app has its own chat beside **Preview**, **Code**, **Terminal**, or
+   **Git**. Task progress streams live and reconnects through durable task
+   history. Stop an active task, inspect changed files, or restore an available
+   task checkpoint with **Restore** (not offered in the sandboxd agent's chat
+   on Home). A task that ends early is marked **Didn't
+   finish** or **Stopped**; finished tasks have no badge.
+4. Opening a sleeping app wakes it ("Waking your app…"). The header shows
+   **Wake up** for a stopped app and **Set up app** when it has no workspace yet.
+
+### Choose the AI
+
+Above every message box, the **AI** button (for example **AI · Free AI**) lists
+your AIs in plain words: **Free AI** (OpenCode's built-in free tier, no
+account), each model of your connections ("DeepSeek V4 Pro · OpenRouter"),
+**ChatGPT (Codex)**, **Claude**, and OpenCode or Pi accounts. **Connect another
+AI** opens Settings → AI. **More options** shows the detailed agent, connection
+and model pickers. New chats start on the AI chosen in **Settings → AI**. A
+Claude Pro or Max subscription signs in once in each project when the chat asks
+("Sign in with Claude").
+
+### Attach files
+
+Click **+** next to the message box, drop files on the chat, or paste (for
+example a screenshot), on Home and in every app chat. Up to 10 files at a time,
+25 MB each. They are saved in the project's hidden `.attachments/` folder
+(`PUT /v1/sandboxes/{id}/files`), and the message tells the agent where they
+are. The built-in Free AI cannot look at images; it may read them slowly with
+code, so pick another AI for picture-heavy work. Agent rooms (Hermes, OpenClaw,
+OpenMausBot) have their own attachments.
 
 The project menu contains workspace controls, rename and deletion. **More** opens
 secrets, versions, project memory, runtime and activity. On small screens, switch
-between **Chat** and **Workspace**. `Ctrl+K` / `Cmd+K` searches projects and settings.
-Project tabs and settings categories support hash URLs.
+between **Chat** and **Workspace**. `Ctrl+K` / `Cmd+K` searches apps and settings.
+App tabs and settings sections support hash URLs.
 
-Prompt drafts survive navigation to Settings in the current page session. They
+Message drafts survive navigation to Settings in the current page session. They
 are cleared on sign-out and are not persisted across a page reload. Code and
 memory edits survive tab switches, with a discard warning before leaving the
 project or browser page.
 
 ## Connections and settings
 
+**AI** comes first:
+
+- **New chats use:** the AI every new chat starts with. It is saved on the
+  engine as the instance setting `agents.default_ai` (`{agent, provider,
+  model}`; an empty agent means the built-in Free AI) through
+  `GET`/`PATCH /v1/settings`. You can still switch for one chat with the AI
+  button.
+- **Add an AI:** connect **OpenRouter** (one-click sign-in in the desktop app;
+  in a browser, add an OpenRouter key under Model connections); paste a **CometAPI** key (the
+  account link is a referral, with an affiliate disclosure always shown; the
+  key is checked with CometAPI before it is saved, and the connection offers
+  `auto`, `deepseek-v4-pro`, `claude-sonnet-4-6` and `qwen3-coder-plus`, starting
+  on `auto`); use a **ChatGPT subscription** through Codex; choose **Claude** for
+  a Pro or Max subscription (sign in once per project); or **Something else**
+  for any other model connection.
+
+The **Advanced** group holds the detailed pages:
+
 - **Model connections:** compatible OpenAI Chat Completions or Anthropic Messages
   endpoints, gateway keys, exact model aliases and token limits. See
   [model providers](../docs/model-providers.md) for LiteLLM and local servers.
 - **Coding agents:** connect an API key or an imported Codex/OpenCode/Pi login,
   disconnect accounts and choose built-in default models. A Claude subscription
-  signs in inside each project ("Sign in with Claude" in the Agent panel).
+  signs in inside each project ("Sign in with Claude" in the chat).
 - **Git credentials:** add named host credentials for private imports and pushes.
 - **Security & API keys:** change the console password, sign out sessions, create
   scoped API keys and revoke them. New API keys are shown only once.
-- **Lifecycle:** configure idle stopping and keepalive limits when the operator
-  allows edits. **Instance** shows runtime/network configuration and the agent
-  system prompt, including settings managed through environment variables.
+- **Sleep & wake:** configure when idle apps go to sleep and keepalive limits,
+  when the operator allows edits.
+- **Instance:** runtime/network configuration and the agent system prompt,
+  including settings managed through environment variables.
 
 Credentials are submitted to the control plane. The console does not save them
 in browser storage. Agent and model credentials stay behind the existing

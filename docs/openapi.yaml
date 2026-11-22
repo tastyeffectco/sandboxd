@@ -59,7 +59,7 @@ paths:
       summary: Edit the runtime-editable settings (allowlisted)
       description: >
         Accepts ONLY the allowlisted editable fields: lifecycle tunables,
-        agents.default_models and agents.time_zone. Any other key (auth, egress, networking, secrets,
+        agents.default_models, agents.time_zone and agents.default_ai. Any other key (auth, egress, networking, secrets,
         version, …) is rejected with 400. Persisted and hot-applied.
       requestBody:
         required: true
@@ -89,6 +89,13 @@ paths:
                       description: >
                         IANA time zone agents run in (TZ), e.g. "Europe/Paris"; ""
                         means UTC. Agents are made again to pick up a change.
+                    default_ai:
+                      allOf: [{ $ref: "#/components/schemas/DefaultAI" }]
+                      description: >
+                        Replaces the AI new chats start with (console Settings → AI).
+                        An empty agent resets it to the built-in free AI; otherwise
+                        the agent must be a runnable coding agent (400 if unknown).
+                        provider is at most 100 characters, model at most 200.
       responses:
         "200":
           description: Updated settings.
@@ -1476,32 +1483,33 @@ paths:
       summary: Write a workspace file (atomic)
       description: >
         Writes one file into the sandbox workspace. The `path` query parameter is
-        RELATIVE TO THE WORKSPACE MOUNT ROOT (`/home/sandbox` inside the container),
-        NOT the app directory. The app source lives under `workspace/app`, so the
-        app's runtime manifest must be written as
-        `path=workspace/app/sandbox.yaml`. A bare `path=sandbox.yaml` is accepted
-        but writes to the mount root (`/home/sandbox/sandbox.yaml`), where runtimed
-        does NOT read it for app runtime. Reserved subtrees (`.runtimed/`,
-        `lost+found/`) are refused. The request body is the RAW file content
-        (opaque bytes), not JSON.
+        RELATIVE TO THE APP DIRECTORY (`workspace/app`), the same root as
+        `GET /files` and `/files/content`: the app's runtime manifest is
+        `path=sandbox.yaml`. Missing parent directories are created. Reserved
+        subtrees (`.runtimed/`, `lost+found/`) are refused. The request body is
+        the RAW file content (opaque bytes, binary safe), not JSON, up to 25 MiB.
+        The console uses it for chat attachments, saved under `.attachments/`.
       parameters:
         - in: query
           name: path
           required: true
           schema: { type: string }
           description: >
-            File path relative to the workspace mount root (e.g.
-            `workspace/app/sandbox.yaml`). Absolute paths and `..` are rejected.
+            File path relative to the app directory (e.g. `sandbox.yaml`,
+            `.attachments/20261122-101500-logo.png`). Absolute paths and `..`
+            are rejected.
       requestBody:
         required: true
         description: Raw file content (opaque bytes) — not JSON.
         content:
           text/plain:
             schema: { type: string }
+          application/octet-stream:
+            schema: { type: string, format: binary }
       responses:
         "200": { description: Written }
         "400": { description: Invalid path (absolute, traversal, or reserved subtree) }
-        "413": { description: File exceeds the size limit }
+        "413": { description: File exceeds the 25 MiB limit }
 
   /v1/sandboxes/{id}/files/content:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
@@ -2133,6 +2141,9 @@ components:
               additionalProperties: { type: string }
               description: "Per-agent default model id (agent -> model), used when a task doesn't specify one. Editable via PATCH agents.default_models."
             time_zone: { type: string, description: "IANA time zone agents run in (\"\" is UTC). Editable via PATCH agents.time_zone." }
+            default_ai:
+              allOf: [{ $ref: "#/components/schemas/DefaultAI" }]
+              description: "The AI new chats start with, chosen in the console's Settings → AI. Stored for clients; the engine does not apply it to tasks itself (a task still names its own agent/model). Editable via PATCH agents.default_ai."
         presets:
           type: array
           items: { $ref: "#/components/schemas/Preset" }
@@ -2142,6 +2153,16 @@ components:
         editable:
           type: array
           items: { type: string }
+          description: "Dotted names of the fields PATCH accepts (lifecycle.*, agents.default_models, agents.time_zone, agents.default_ai); null when settings are not editable on this instance."
+    DefaultAI:
+      type: object
+      description: >
+        The coding agent, model connection and model new chats start with.
+        An empty agent means the built-in free AI (OpenCode's free tier).
+      properties:
+        agent: { type: string, description: "Coding agent id (opencode, claude-code, codex, pi); \"\" = built-in free AI." }
+        provider: { type: string, description: "Model connection id, or \"\" for the agent's own account / free tier." }
+        model: { type: string, description: "Model id, or \"\" for the default." }
     Error:
       type: object
       properties:

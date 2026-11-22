@@ -13,7 +13,16 @@ no restart.
 
 ## Console setup
 
-1. Open **Settings → Model connections → Add connection**.
+The quickest way is **Settings → AI → Add an AI**: OpenRouter (one-click
+sign-in in the desktop app), CometAPI (paste a key; it is checked with CometAPI
+before saving, and the connection starts on its `auto` model), a ChatGPT
+subscription through Codex, or **Something else**, which opens the full form
+below. **New chats use** on the same page sets the AI every new chat starts with
+(`agents.default_ai` in `/v1/settings`).
+
+For any other server:
+
+1. Open **Settings → Model connections → Add connection** (under Advanced).
 2. Enter a name, API format, API base URL, and optional API key.
 3. Add the server's exact model IDs or gateway aliases. Slashes and colons are
    preserved. The first model is the connection's default.
@@ -22,8 +31,10 @@ no restart.
    match your server.
 5. Save, then choose a model and click **Test model**. This explicitly sends a
    small inference request; remote provider charges can apply.
-6. Open an app's **Agent** panel. Choose **OpenCode**, **Pi** or **Codex**
-   (OpenAI-compatible connections only), then the connection and model. Send a prompt as usual.
+6. In any chat, click the **AI** button above the message box and pick the
+   model ("<model> · <connection>"). For a specific agent, open **More options**
+   and choose **OpenCode**, **Pi** or **Codex** (OpenAI-compatible connections
+   only), then the connection and model. Send a prompt as usual.
 
 Pi requires a connection. OpenCode also retains its existing built-in
 provider/free-tier flow when **Built-in provider** is selected.
@@ -34,8 +45,8 @@ provider/free-tier flow when **Built-in provider** is selected.
 or any gateway that serves OpenAI's **Responses API** at `<base URL>/responses`).
 Codex speaks only that API, so it is not offered Anthropic-format connections,
 and a gateway that only serves Chat Completions answers its requests with an
-error. Choose **Codex**, then the connection and model, in the app's Agent panel
-or in Ask sandboxd's picker.
+error. In a chat's **AI** button, open **More options** and choose **Codex**,
+then the connection and model (in an app's chat or on Home).
 
 runtimed starts `codex exec` with a `sandboxd` model provider pointing at the
 connection proxy (`wire_api="responses"`), and gives Codex only the task's

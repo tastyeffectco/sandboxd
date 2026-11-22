@@ -5,7 +5,8 @@ environment context — **without** putting secrets in the workspace, snapshots,
 container env, logs, events, or task results.
 
 Four coding agents ship behind one adapter interface: **OpenCode**, **Pi**,
-**Claude Code**, and **Codex**. Connect their accounts in Settings. Credentials
+**Claude Code**, and **Codex**. Connect their accounts in Settings (**AI** for
+the plain-words choices, **Coding agents** under Advanced for the details). Credentials
 stay in the control plane and are injected into requests by the auth proxy.
 
 For **local models, remote compatible APIs, and LiteLLM**, use
@@ -36,7 +37,8 @@ a Claude Pro/Max subscription must sign in to the unmodified Claude Code binary
 through Anthropic's own flow. So sandboxd never stores, imports or proxies a
 Claude subscription login:
 
-- **Sign in with Claude** (the project's Agent panel, or the API below) runs
+- **Sign in with Claude** (shown in the project's chat when Claude is the
+  chosen AI, or the API below) runs
   Claude Code's own `claude auth login` in that project's sandbox. The user opens
   Anthropic's sign-in page, approves, and pastes the code it shows; sandboxd
   types it into Claude Code, as a terminal would. Claude Code keeps the login in
@@ -259,7 +261,7 @@ layers are injected with **no change to your source**:
   `sandbox.yaml` carelessly, don't touch `/run/agent-auth`, no destructive git
   on the main branch, verify on the loopback port before finishing. It is
   surfaced **read-only** as `agents.system_prompt` in `GET /v1/settings`
-  (Console → Settings → Agent system prompt).
+  (Console → Settings → Instance → Agent system prompt).
 - **Per-app `AGENTS.md`** — the detected stack, upstream repo link, and how-to-run,
   written to `workspace/app/AGENTS.md` on runtime apply (git-ignored via
   `.git/info/exclude`) unless the repo already ships one. This is a **console**

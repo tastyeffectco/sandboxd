@@ -3,8 +3,9 @@
 Agents are assistants sandboxd runs for you, next to your apps. The first is
 [Hermes](https://github.com/NousResearch/hermes-agent) by Nous Research: it
 remembers what you tell it, learns skills, runs scheduled jobs, and can create
-and change apps on your sandboxd. You chat with it in the console
-(**Agents**) or on Telegram.
+and change apps on your sandboxd. You chat with it in the console (it is
+listed in the sidebar; **Add an agent** adds one) or on Telegram. The catalog
+has three agents: Hermes, OpenClaw and OpenMausBot.
 
 They are different from the **coding agents** (OpenCode, Claude Code, Codex,
 Pi) that build an app inside its workspace: an agent here works *across* your
@@ -12,16 +13,25 @@ apps and asks those coding agents to build or change them.
 
 ## Adding Hermes
 
-1. Add an **OpenAI-compatible model connection** in Settings → Model
-   connections (for example an OpenRouter key). Hermes cannot use OpenCode's
-   free model: that model is only served to OpenCode's own app. The apps
+1. Add an **OpenAI-compatible model connection**: in the desktop app, sign in
+   to OpenRouter right on the **Add an agent** page; anywhere, use Settings →
+   AI (OpenRouter, CometAPI) or Settings → Model connections. Hermes cannot
+   use OpenCode's free model: that model is only served to OpenCode's own app. The apps
    Hermes creates are still built by the default coding agent, which can use
    the free model.
-2. Open **Agents**, choose the model and click **Add Hermes**. The first setup
-   downloads Hermes's image (about 3 GB).
+2. Click **Add an agent** in the sidebar, choose the AI model if you have more
+   than one, and click **Add Hermes**. The first setup downloads Hermes's
+   image (about 3 GB).
 3. Optional: paste a Telegram bot token (from @BotFather) and your Telegram
    user ID. Only the listed users can talk to it. Telegram uses long polling,
    so it works behind a home router.
+
+## Changing an agent's model
+
+In an agent's room, the **AI:** button above the chat lists every model of
+every OpenAI-compatible connection ("DeepSeek V4 Pro · OpenRouter"). Picking
+one calls `PATCH /v1/agent-instances/{id}` with `connection_id` and `model`;
+the agent restarts and keeps its memory.
 
 ## What Hermes can do on sandboxd
 
@@ -95,4 +105,4 @@ OpenClaw, OpenMausBot), so a new agent needs a catalog entry, not new code.
 ## API
 
 `/v1/agent-catalog`, `/v1/agent-instances` (list, add), `/v1/agent-instances/{id}` (get,
-remove), `/v1/agent-instances/{id}/start|stop|chat`. See [openapi.yaml](openapi.yaml).
+change model, remove), `/v1/agent-instances/{id}/start|stop|chat`. See [openapi.yaml](openapi.yaml).

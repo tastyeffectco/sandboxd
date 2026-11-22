@@ -1,9 +1,11 @@
 <h1 align="center">sandboxd</h1>
 
 <p align="center">
-  <b>Open-source, self-hosted AI app builder.</b><br/>
-  Prompt it and a coding agent builds real apps in isolated sandboxes on <b>your</b>
-  server — each live at a preview URL. You own the infra, code, and data. MIT.
+  <b>Your AI crew builds apps and runs agents for you, on your machine.</b><br/>
+  Ask sandboxd in plain words: coding agents build real apps in isolated sandboxes
+  on <b>your</b> computer or server, each live at a preview URL, and always-on
+  agents (Hermes, OpenClaw, OpenMausBot) work next to them. Open-source and
+  self-hosted: you own the infra, code, and data. MIT.
 </p>
 
 <h3 align="center">🔥 Trend of the Day on Trendshift</h3>
@@ -71,9 +73,13 @@
 
 ## What is sandboxd?
 
-The apps where you type *"build me a todo app"* and a working site appears at its
-own link — Lovable, Bolt, v0, Replit. **sandboxd is the open-source engine that
-makes that work, on your own server.** One HTTP request and it:
+Your AI crew, on your own machine. Ask the sandboxd agent for an app and it gets
+built; ask for an agent and one moves in next to your apps, remembers you and
+runs jobs for you. One place to ask for either.
+
+For apps, it's what makes Lovable, Bolt, v0 or Replit work — you type *"build me
+a todo app"* and a working site appears at its own link — as **an open-source
+engine on your own computer or server.** One HTTP request and it:
 
 1. spins up a **private, isolated container** (its own filesystem + limits),
 2. runs an **AI coding agent inside it** against your prompt, and
@@ -88,10 +94,11 @@ database, no queue.
 Pi**: OpenCode's free models need no account, a Claude or ChatGPT subscription
 works as is, and OpenCode and Pi also run against local or remote
 **OpenAI-compatible** and **Anthropic-compatible** endpoints (Codex against
-OpenAI-compatible ones, such as OpenRouter). Add connections,
-model aliases and token limits in the console; provider keys stay encrypted on
-the control plane. Use your local model server or a LiteLLM gateway, including
-gateways routing to AWS Bedrock. [Set up model connections →](docs/model-providers.md)
+OpenAI-compatible ones, such as OpenRouter). In the console, **Settings → AI**
+picks the AI every new chat starts with and adds one in a few clicks
+(OpenRouter sign-in, a CometAPI key, your ChatGPT or Claude subscription, or
+any other connection); provider keys stay encrypted on the control plane. Use
+your local model server or a LiteLLM gateway, including gateways routing to AWS Bedrock. [Set up model connections →](docs/model-providers.md)
 
 ## Two ways to use it
 
@@ -104,19 +111,22 @@ gateways routing to AWS Bedrock. [Set up model connections →](docs/model-provi
 
 > **New here? Start with the console. Building a product? Drive the API.**
 
-The console starts with your idea: describe an app, choose a stack and agent,
-then work in a persistent conversation beside preview, code, terminal and Git.
-Settings groups model connections, coding-agent accounts, Git credentials and
-security controls. Workspace menus expose secrets, versions, memory and runtime
+The console opens on **Home**: one chat with the sandboxd agent, where you ask
+for an app, a free open-source app or a new agent in plain words. Each app then
+has its own conversation beside preview, code, terminal and Git; **My apps**
+lists them to open again. **Settings → AI** chooses which AI builds for you;
+model connections, coding-agent accounts, Git credentials and security controls
+sit under Advanced. Workspace menus expose secrets, versions, memory and runtime
 tools. See the [console guide](console/README.md) for the complete workflow.
 
-## What can you build?
+## What can your crew do?
 
-Anything you can describe — no code needed. Open the console (or the desktop
-app) and:
+Build anything you can describe, and run agents that work for you — no code
+needed. Open the console (or the desktop app) and:
 
-- **✨ Describe it** — "a habit tracker", "a landing page for my bakery", "a team
-  dashboard". A coding agent builds it in its own sandbox.
+- **✨ Describe it** — tell sandboxd on Home: "a habit tracker", "a landing page
+  for my bakery", "a team dashboard". A coding agent builds it in its own sandbox.
+  To use your own logo or photos, attach them in the app's chat.
 - **👀 Watch it come alive** — the app runs at a live preview URL while the agent
   works, and refreshes when each change lands.
 - **💬 Keep shaping it** — chat to change anything; every step is a checkpoint
@@ -125,34 +135,36 @@ app) and:
   repository.
 
 OpenCode's free models are built in, so you can start without an account; bring
-your own subscription or models whenever you like.
+your own subscription or models whenever you like, from **Settings → AI** or the
+**AI** button above any message box.
 
 <p align="center">
   <a href="https://sandboxd.io/guides/images-stacks-presets">Base image, stacks &amp; presets</a> &nbsp;·&nbsp;
   <a href="https://sandboxd.io/reference/architecture">Architecture</a>
 </p>
 
-## New: apps in one click, agents, and one assistant for everything
+## Apps and agents, with one assistant for everything
 
-The desktop app (and the console) now goes beyond building your own apps:
+Your crew does more than build your own apps:
 
 - **🧩 Free apps** — install popular open-source projects in one click, with
   no AI and no setup: a CAD modeler, a physics simulator (MuJoCo), a username
-  finder (Sherlock), design, PDF and slide tools… A **Trending** strip on the
-  home page shows what's hot on GitHub. Each is pinned to a tested release and
+  finder (Sherlock), design, PDF and slide tools… A **Trending** strip on
+  **My apps** shows what's hot on GitHub. Each is pinned to a tested release and
   runs in its own sandbox. [Free apps →](docs/free-apps.md)
 - **🤖 Agents** — open-source assistants that live next to your apps:
   [Hermes](https://github.com/NousResearch/hermes-agent), OpenClaw and
   OpenMausBot. They remember you, run scheduled jobs, browse, reach you on
   Telegram, and can create and change apps. Each runs in its own locked-down
   container, with no keys inside. [Agents →](docs/operator-agents.md)
-- **💬 Ask sandboxd** — one assistant for all of it, at the top of the
-  sidebar. Ask in plain words: *"install JSON Crack from GitHub"*, *"ask
-  Hermes to watch flight prices"*, *"what does Hermes remember about me?"*,
+- **💬 Ask sandboxd** — one assistant for all of it: it is **Home**, the
+  first thing you see. Ask in plain words: *"install JSON Crack from
+  GitHub"*, *"ask Hermes to watch flight prices"*, *"what does Hermes remember about me?"*,
   *"add a Researcher agent"*. It checks a project can run before installing
   it, hands tasks to your agents and brings their answers back, and deletes
   nothing without your yes. It runs on whichever AI you pick: the free model,
-  your Claude or ChatGPT subscription, or a model connection.
+  your Claude or ChatGPT subscription, or a model connection. Attach files by
+  clicking **+**, dropping them or pasting.
   [The sandboxd agent →](docs/sandboxd-agent.md)
 - **🖥️ Zero setup on Windows** — the desktop app installs its own engine in
   one click (no Docker Desktop, no terminal), and keeps it updated.
@@ -175,8 +187,9 @@ curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install
 On a clean stable release checkout with `cosign` installed, it pulls and verifies
 the matching prebuilt images. Otherwise it builds from source. It starts the
 stack **with the web console**, and prints your
-**console URL**. Create your password on first visit, then connect an agent
-under **Settings**, create an app, and build. No code needed.
+**console URL**. Create your password on first visit, then tell sandboxd on
+**Home** what app you want. The free AI needs no account; connect your own under
+**Settings → AI** whenever you like. No code needed.
 
 - **Build from source instead:** run **`./install.sh --build`** — a first-class,
   fully-supported path. Compiles every image locally so you audit exactly what
