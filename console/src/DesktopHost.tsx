@@ -137,17 +137,17 @@ export default function DesktopHost() {
                 Meet your <span className="sbx-grad-text">AI crew.</span>
               </h1>
               <p>
-                Describe an app in your own words. Your crew builds it, runs it and keeps it private on this
-                computer.
+                Ask in your own words. Your crew builds the apps you need and runs agents that keep working for
+                you, privately on this computer.
               </p>
               <div className="desktop-feature-list">
                 <span>
                   <Icon name="spark" />
-                  Start with an idea, no code needed
+                  Ask for an app or an agent, no code needed
                 </span>
                 <span>
                   <Icon name="monitor" />
-                  Watch your app come to life
+                  Apps ready to use, agents that work around the clock
                 </span>
                 <span>
                   <Icon name="lock" />
