@@ -144,11 +144,18 @@ func parseOpencodeStream(r io.Reader, emit eventSink) opencodeParseResult {
 
 		case ev.Type == "text" && ev.Part.Text != "":
 			pr.SawText = true
+			text := ev.Part.Text
 			if _, seen := parts[ev.Part.ID]; !seen {
+				// A new part is a new message (before or after a tool
+				// step): start a paragraph unless the last one ended with
+				// a space, so readers never see "done.Next".
+				if len(order) > 0 && needsBreak(parts[order[len(order)-1]]) {
+					text = "\n\n" + text
+				}
 				order = append(order, ev.Part.ID)
 			}
 			parts[ev.Part.ID] = ev.Part.Text
-			emit(runtime.EventMessage, map[string]any{"role": "agent", "text": ev.Part.Text})
+			emit(runtime.EventMessage, map[string]any{"role": "agent", "text": text})
 
 		case ev.Part.Type == "tool" && ev.Part.Tool != "":
 			// A coding-agent sub-step — the live progress feed. Emitted
@@ -182,11 +189,26 @@ func parseOpencodeStream(r io.Reader, emit eventSink) opencodeParseResult {
 		pr.Usage.CacheRead + pr.Usage.CacheWrite
 
 	var b strings.Builder
-	for _, id := range order {
+	for i, id := range order {
+		if i > 0 && needsBreak(parts[order[i-1]]) {
+			b.WriteString("\n\n")
+		}
 		b.WriteString(parts[id])
 	}
 	pr.FinalMessage = b.String()
 	return pr
+}
+
+// needsBreak reports whether text after this part would run into it.
+func needsBreak(prev string) bool {
+	if prev == "" {
+		return false
+	}
+	switch prev[len(prev)-1] {
+	case ' ', '\n', '\t':
+		return false
+	}
+	return true
 }
 
 // toolTarget pulls the most user-meaningful argument out of a tool
