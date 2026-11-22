@@ -20,8 +20,29 @@ describe('demo mode fetch', () => {
     const res = await fetch('/v1/apps')
     expect(res.ok).toBe(true)
     const body = (await res.json()) as { apps: { name: string }[] }
-    expect(body.apps.map((a) => a.name)).toEqual(['Todo App'])
+    expect(body.apps.map((a) => a.name)).toEqual(['Recipe Box', 'Todo App'])
     expect(passthrough).not.toHaveBeenCalled()
+  })
+
+  it('opens Home on the sample sandboxd agent, with its conversation', async () => {
+    const res = await fetch('/v1/assistant', { method: 'POST' })
+    expect(res.ok).toBe(true)
+    const { app_id } = (await res.json()) as { app_id: string }
+    const home = (await (await fetch(`/v1/apps/${app_id}`)).json()) as { tags: string[]; current_sandbox_id: string }
+    expect(home.tags).toContain('sandboxd:assistant')
+    const { tasks } = (await (await fetch(`/v1/sandboxes/${home.current_sandbox_id}/tasks`)).json()) as {
+      tasks: unknown[]
+    }
+    expect(tasks.length).toBeGreaterThan(0)
+  })
+
+  it('shows a crew of agents and a conversation with Hermes', async () => {
+    const { agents } = (await (await fetch('/v1/agent-instances')).json()) as { agents: { name: string }[] }
+    expect(agents.map((a) => a.name)).toEqual(['Hermes', 'OpenClaw', 'OpenMausBot'])
+    const { messages } = (await (await fetch('/v1/agent-instances/demo-hermes/messages')).json()) as {
+      messages: unknown[]
+    }
+    expect(messages.length).toBe(5)
   })
 
   it('reports signed in so the console opens without a password', async () => {
