@@ -1,7 +1,7 @@
 # sandboxd desktop
 
 The Electron desktop app is a client of the sandboxd engine, just like the web
-console. It bundles the same project builder, agents, files, terminal, previews,
+console. It bundles the same sandboxd agent (Home), apps, agents, files, terminal, previews,
 model connections and settings, with native window controls, menus, engine
 connections and a compact desktop layout. Closing it leaves engine workloads
 running. The engine stays outside Electron. On Windows, the desktop can provision and
@@ -9,10 +9,11 @@ start a dedicated WSL engine; remote connections still use an existing engine.
 
 ## Release availability
 
-The desktop version is **0.3.24**. Native installer builds are introduced
-with this feature; a signed `desktop-v0.3.24` release must be published before the
-automatic download installers can succeed. Until then, use a source build below.
-CI artifacts are review builds, not signed public releases. Do not disable
+The desktop version is **0.3.27** (`desktop/package.json`); it installs engine
+release **v0.3.28** on Windows. A signed `desktop-v…` release must be published
+before the automatic download installers can succeed (they still default to
+0.3.24). Until then, use a source build below or a `desktop-preview-v…`
+pre-release build. CI artifacts are review builds, not signed public releases. Do not disable
 Gatekeeper or SmartScreen to install them.
 
 Desktop releases use separate `desktop-v…` tags and are excluded from GitHub's
@@ -47,19 +48,23 @@ existing best-effort status; the native client can also connect to a Linux serve
 ## Windows: install from the desktop
 
 Open the Windows desktop app, choose **This computer**, and click **Install &
-open workspace**. The app checks for a running local engine first. If none is
+start**. The app checks for a running local engine first. If none is
 available, it enables WSL if needed, downloads a checksum-pinned Ubuntu Base
 24.04.5 image, creates a dedicated WSL 2 distribution, installs Docker Engine and
-Compose there, and builds the engine from a pinned public repository commit.
-Docker Desktop and an existing Ubuntu installation are not required for this flow.
+Compose there, and installs the engine release this app pins (**v0.3.28**, tag
+and commit) from its signed prebuilt images, verified with cosign; nothing is
+built on your PC. Docker Desktop and an existing Ubuntu installation are not
+required for this flow.
 
 Windows 11 with hardware virtualization enabled, internet access and sufficient
 free disk space is required. Setup downloads several GB of prebuilt images;
 it usually takes 5–15 minutes, longer on a slow connection. Windows may show a UAC
 administrator prompt when enabling WSL. If Windows requires a reboot, restart
 when convenient, reopen the app, and click **Continue setup**. The app never
-reboots Windows automatically. Progress appears in the connection panel. Keep the
-app open during setup; **Retry setup** resumes the same environment after a failure.
+reboots Windows automatically. Progress appears in the connection panel in plain
+words ("Getting this computer ready…", "Preparing the space where your apps
+run…", "Downloading sandboxd…", "Downloading your AI crew and their tools…",
+"Starting sandboxd…", "Almost ready…"). Keep the app open during setup; **Retry setup** resumes the same environment after a failure.
 
 When ready, the app connects to `http://127.0.0.1:9090` automatically and asks you
 to create the engine's first console password. Previews use port 8080. If ports
@@ -85,7 +90,7 @@ managed distribution or its user-data directory.
 
 Each desktop release pins one engine release (tag and commit). When an updated
 app opens and its managed engine runs another commit, it moves the engine to the
-pinned release ("Updating your engine to the new version…"), only once that tag
+pinned release ("Updating sandboxd to the new version…"), only once that tag
 is reachable and resolves to the pinned commit; offline, the current engine just
 starts and the update waits for the next launch. Before updating, it stops the
 stack and backs up `.env` and the engine state to
@@ -133,10 +138,11 @@ CI tests native clients against a disposable API fixture, not a Windows hypervis
    or choose **Remote engine** for an existing HTTPS API origin. Use the engine API address, not an app preview.
 2. Click **Open workspace**, then create your first console password or sign in
    with the existing one. The web console and desktop use the same engine account.
-3. Connect your coding agent/model in Settings, describe a project and build.
+3. Home opens: tell sandboxd what you want. The free AI works without an
+   account; connect your own under **Settings → AI** whenever you like.
 
 Click the engine name in the title bar or use `Cmd/Ctrl+Shift+E` to switch engines.
-`Cmd/Ctrl+K` opens search; `Cmd/Ctrl+N` returns to the project builder. Connections
+`Cmd/Ctrl+K` opens search; `Cmd/Ctrl+N` opens **My apps**. Connections
 are remembered. **Disconnect** leaves the profile and engine running; **Forget
 this engine** removes the local profile and saved session. Signing out revokes
 the session on the engine. Forgotten sessions are not remotely revoked.

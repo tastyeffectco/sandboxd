@@ -100,14 +100,20 @@ default; TLS is a config switch (see README → Production / TLS).
 
 ### Console (optional UI)
 A small React SPA served behind the same Traefik (`console.<domain>`). It is a
-**pure `/v1` API client** — it never opens the DB or a workspace. It creates
-apps, picks presets, drives sandbox lifecycle + preview, and runs the agent
-chat with **persistent task history + per-task revert**. It also **browses and
+**pure `/v1` API client** — it never opens the DB or a workspace. Its home page
+is the sandboxd agent's chat (below), the single place to ask for an app, a free
+app or an agent; **My apps** lists apps to open again. It drives sandbox
+lifecycle + preview and runs each app's agent chat with **persistent task
+history + per-task revert**, an **AI** button that maps plain-words choices
+("Free AI", "<model> · <connection>", "ChatGPT (Codex)") to an agent,
+connection and model, and **file attachments** written to the project's hidden
+`.attachments/` folder through `PUT /v1/sandboxes/{id}/files`. It also **browses and
 edits workspace files** (a tree + an in-browser CodeMirror editor, lazy-loaded,
 with inline git status/diff), **reviews and pushes with Git** (diff viewer,
 commit, push), manages config/secrets, shows the events timeline and per-process
 logs, does snapshot/fork/restore, connects agents, and reads settings (editing
-only the lifecycle tunables). Contract: `docs/openapi.yaml`.
+only the lifecycle tunables, per-agent default models, the agents' time zone
+and `agents.default_ai`, the AI new chats start with). Contract: `docs/openapi.yaml`.
 
 ### Desktop (Electron)
 `desktop/` wraps the same console in a native window. Its main process runs a
@@ -115,7 +121,8 @@ small local gateway that forwards the console's `/v1` calls to the chosen engine
 (local or remote), keeps sign-ins out of the renderer, and imports a coding
 agent's existing login (ChatGPT/Codex, OpenCode, Pi) only after a native
 confirmation. On Windows, **Install & start** creates a dedicated WSL 2
-distribution, installs Docker Engine there and runs the engine; each desktop
+distribution, installs Docker Engine there and runs the engine from the pinned
+release's signed images; each desktop
 release pins one engine release and moves the managed engine to it, with a
 backup and automatic rollback. Details: `docs/desktop.md`.
 
@@ -124,7 +131,7 @@ A list of open-source projects in the console (`console/src/catalog.ts`), each
 pinned to a tested release, with a `sandbox.yaml` the console writes itself.
 Installing one is plain `/v1` calls — create the app and sandbox, write the
 manifest (and any small helper files), restart — so it needs no AI and no core
-support. Entries marked `trending` appear on the home page. Rules for adding
+support. Entries marked `trending` appear on **My apps**. Rules for adding
 one: `docs/free-apps.md`.
 
 ### Agents (operator agents)
@@ -144,7 +151,8 @@ and can show the agent's own web app. Details: `docs/operator-agents.md`.
 One per person (table `assistant`, `GET|POST /v1/assistant`). It is the coding
 agent of a hidden app (tag `sandboxd:assistant`), so it runs on whatever the
 person picks — OpenCode, Claude Code, Codex, a subscription or a model
-connection — with no agent runtime of its own. `POST /v1/assistant` writes that
+connection — with no agent runtime of its own. It is the console's **Home**;
+an engine without it (`/v1/assistant` 404) sends Home to My apps. `POST /v1/assistant` writes that
 workspace's MCP settings for each coding agent (`opencode.json`, `.mcp.json`,
 `.codex/config.toml`) and its guide (`AGENTS.md`) with a fresh secret. Its tools,
 served at `/assistant/mcp` on the agent proxy port, act as the owner through

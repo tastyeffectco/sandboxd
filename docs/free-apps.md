@@ -22,7 +22,7 @@ the person asks the coding agent for shows up.
 
 ## Trending on GitHub
 
-Entries marked `trending` are shown on the home page under "Trending on
+Entries marked `trending` are shown on **My apps** under "Trending on
 GitHub": projects that are hyped right now, made usable by someone who is not
 technical. Same bar as below; a command-line tool needs a plain web page in
 `console/src/catalog-files/`.

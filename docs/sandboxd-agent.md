@@ -1,16 +1,24 @@
 # The sandboxd agent ("Ask sandboxd")
 
-One main assistant per person, at the top of the console's sidebar. The person
-talks to it in plain words; it acts on their sandboxd: builds and changes apps,
-installs open-source projects from GitHub, lists their agents, gives them tasks
-and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-agent-design.md` (PR #186).
+One main assistant per person: it is the console's **Home**, the first page
+and the single front door. The person talks to it in plain words; it acts on
+their sandboxd: builds and changes apps, installs open-source projects from
+GitHub, lists their agents, gives them tasks and reads what they did. Design: `docs/superpowers/specs/2026-11-16-sandboxd-agent-design.md` (PR #186).
 
 ## How it works
 
 - It is the **coding agent of a hidden project** (tag `sandboxd:assistant`),
   so it runs on whatever the person picks in that chat: OpenCode's free
   models, a Claude or ChatGPT subscription (Claude Code, Codex), or any model
-  connection (Pi). The console hides the project from the project list.
+  connection (Pi), chosen with the chat's **AI** button; a new chat starts on
+  the AI set in Settings → AI (`agents.default_ai`). The console hides the
+  project from **My apps** and its replies are signed "sandboxd". Checkpoint
+  **Restore** is not offered in this chat.
+- If the engine has no sandboxd agent (an older engine: `POST /v1/assistant`
+  answers 404), Home quietly opens **My apps** instead.
+- Files attached on Home (the **+** button, drop or paste) are saved in the
+  hidden project's `.attachments/` folder, and the message says where they
+  are.
 - `POST /v1/assistant` makes it on first use and, on every call, writes the
   project's tool settings again with a fresh secret and sandboxd's current
   address: `opencode.json` (OpenCode), `.mcp.json` + `.claude/settings.json`
