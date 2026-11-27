@@ -41,6 +41,11 @@
 
 ---
 
+<p align="center">
+  Maintained by Abdelouahed El Kasri. sandboxd is the infrastructure under uPilote and Yalla Sawi.<br/>
+  <a href="https://sandboxd.io">https://sandboxd.io</a>
+</p>
+
 ## What is sandboxd?
 
 **An AI crew that works for you: agents first, apps on demand.**
